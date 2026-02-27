@@ -1,0 +1,280 @@
+.titleContent {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+
+    color: #fff;
+
+    width: 100vw;
+    z-index: 1000;
+    //     display: flex;
+    // justify-content: space-between;
+
+
+
+
+    .firstTitle {
+        background-color: #000;
+        box-sizing: border-box;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+        border-bottom: 1px solid #292D32;
+
+        padding: 0 2.8rem;
+        height: 4.5rem;
+
+        // box-sizing: content-box;
+        .titleLeft {
+            display: flex;
+            align-items: center;
+
+            .logo {
+                font-weight: bold;
+                margin-right: 3.3rem;
+                // line-height: 1.5rem;
+                // height: 1.5rem;
+            }
+
+            .systemSelect {
+                margin-right: 3.1rem;
+            }
+
+            .connectPort {
+
+                margin-right: 3.1rem;
+            }
+
+
+        }
+
+        .titleRight {
+            display: flex;
+
+            .systemSelect {
+                margin-right: 1.6rem;
+            }
+        }
+
+
+    }
+
+    .secondTitle {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: rgba(255, 255, 255, 0);
+        position: absolute;
+        top: 100%;
+    }
+
+    .secondTitleContent {
+        position: relative;
+        padding: 0.2rem 5.6rem;
+        background: #202327;
+        box-shadow: 0px 4px 10px 0px rgba(0, 0, 0, 0.6);
+        // border-bottom-left-radius: 10px;
+        // border-bottom-right-radius: 10px;
+        border-radius: 10px;
+        display: flex;
+
+        // height: calc(27px + 0.6rem);
+        // overflow: hidden;
+        transition: all 0.2s ease-in;
+
+        .iconContentBox {
+            .iconfont {
+                color: #D1D9E1;
+            }
+
+            height: 1.625rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .iconInfo {
+            color: #D1D9E1;
+        }
+
+        .disable {
+            .iconInfo {
+                color: #606A76;
+            }
+        }
+    }
+
+    .iconContent:not(:first-child) {
+        margin-left: 1.7rem;
+    }
+
+    .iconContent {
+        padding: 0.625rem 0;
+    }
+}
+
+.fs26 {
+    font-size: 26px;
+}
+
+.selectBox {
+    border: 1px solid #55aaff;
+    background-color: rgba(75, 160, 255, 0.1);
+    position: fixed;
+    z-index: 100;
+}
+
+.selectHistoryBox {
+    border: 1px solid #55aaff;
+    background-color: rgba(75, 160, 255, 0.3);
+    position: fixed;
+}
+
+.connectButton:active {
+    transform: scale(0.96);
+}
+
+.setContent {
+    margin-top: 2rem;
+
+    .ant-input-number-input {
+        background-color: #141414;
+    }
+}
+
+.setItem {
+    display: flex;
+    font-size: 1rem;
+    color: #E6EBF0;
+    margin-bottom: 2.8rem;
+    align-items: baseline;
+
+    .set-popover {
+        padding-right: 5px;
+    }
+
+    .setItemSlide {
+        flex: 1;
+    }
+
+    .setItemInput {
+        width: 4.2rem;
+        border: 1px solid #4E565F;
+        background-color: #000;
+        color: #E6EBF0;
+
+        .ant-input-number-input {
+            color: #E6EBF0;
+
+        }
+    }
+
+    .ant-slider-handle::after {
+        background-color: #000 !important;
+        box-shadow: 0 0 0 2px #6C7784 !important;
+    }
+
+    .ant-slider-rail {
+        background: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    .ant-slider-track {
+        background-color: #6C7784 !important;
+    }
+
+    // .ant-input-number-handler-wrap{
+    //     background-color: #000;
+    //     .ant-input-number-handler-up-inner{
+    //         font-size: 12px!important;
+    //     }
+    //     .ant-input-number-handler-down-inner{
+    //         font-size: 12px!important;
+    //     }
+    // }
+
+
+}
+
+.popover {
+    background-color: #32373E !important;
+}
+
+.connectPort {
+    padding: 2px 7px;
+    background-color: #0072EF;
+    color: #E6EBF0;
+    border-radius: 5px;
+}
+
+.unclickButton {
+    padding: 0.1rem 0.4rem;
+    border: 1px solid #606A76;
+    border-radius: 5px;
+    color: #606A76;
+    margin-right: 0.7rem;
+}
+
+
+.selectInputContent {
+    position: fixed;
+    top: 14rem;
+    right: 24rem;
+    background: #1A1C20;
+    box-shadow: 0px 4px 10px 0px rgba(0, 0, 0, 0.4);
+    border-radius: 0.75rem;
+    padding: 0.875rem 1.125rem;
+
+    .selectInputTitle {
+        margin-bottom: 1rem;
+        font-size: 1.125rem;
+        // vertical-align: baseline;
+        display: flex;
+        align-items: center;
+
+        .iconfont {
+            font-size: 0.75rem;
+
+        }
+    }
+
+    .selectInput::placeholder {
+        color: #4E565F;
+    }
+
+    .selectInputItem {
+        display: flex;
+        align-items: center;
+        margin-bottom: 1rem;
+
+        .ant-input {
+            width: 10rem;
+            font-size: 0.9rem;
+        }
+    }
+
+    .selectInputTitleInfo {
+        margin-right: 0.5rem;
+    }
+
+    .selectInputItemName {
+        width: 2rem;
+        text-align: right;
+        margin-right: 0.5rem;
+    }
+
+    .selectInputButtonContent {
+        display: flex;
+        justify-content: end;
+        // width: 100%;
+    }
+
+    .selectInputButton {
+        background: #0072EF;
+        border: 1px solid #0072EF;
+        border-radius: 4px;
+        padding: 1px 8px;
+        color: #fff;
+    }
+}
