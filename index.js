@@ -3,314 +3,307 @@ const path = require('path')
 const { fork, spawn } = require('child_process')
 const { getHardwareFingerprint } = require('./util/getWinConfig')
 const { getKeyfromWinuuid } = require('./util/getServer')
-const { initDb, getCsvData } = require('./util/db')
 const http = require('http')
 const fs = require('fs')
-// const { startWorker, callPy } = require('./pyWorker')
+
 const isPackaged = app.isPackaged
+const isDev = !isPackaged
 
-function openWeb({ hostname, port, fn }) {
-  const server = http.createServer((req, res) => {
-    if (req.url === "/") {
-      // 读取打包后的 index.html 文件
-
-      const filePath = isPackaged ? path.join(__dirname, '..', "build", "index.html") : path.join(__dirname, "build", "index.html");
-
-      console.log(filePath)
-
-      fs.readFile(filePath, (err, data) => {
-        if (err) {
-          res.statusCode = 500;
-          res.setHeader("Content-Type", "text/plain");
-          res.end("Internal Server Error");
-        } else {
-          // 设置响应头和内容，发送网页文件
-          res.statusCode = 200;
-          res.setHeader("Content-Type", "text/html");
-          res.end(data);
-        }
-      });
-    } else {
-      // 处理其他请求（如样式表、脚本、图片等）
-      const filePath = isPackaged ? path.join(__dirname, '..', "build", req.url) : path.join(__dirname, "build", req.url);
-      fs.readFile(filePath, (err, data) => {
-        if (err) {
-          res.statusCode = 404;
-          res.setHeader("Content-Type", "text/plain");
-          res.end("Not Found");
-        } else {
-          res.statusCode = 200;
-          res.setHeader("Content-Type", getContentType(filePath));
-          res.end(data);
-        }
-      });
-    }
-  });
-
-  server.listen(port, hostname, () => {
-    const url = `http://${hostname}:${port}`;
-    // console.log(`Server running at http://${hostname}:${port}/`);
-    // exec(`start chrome "${url}"`, (err, stdout, stderr) => {
-    //     if (err) {
-    //         console.error(`exec error: ${err}`);
-    //         return;
-    //     }
-    //     console.log(`stdout: ${stdout}`);
-    //     console.error(`stderr: ${stderr}`);
-    // });
-    fn()
-  });
-
-  function getContentType(filePath) {
-    const extname = path.extname(filePath);
-    switch (extname) {
-      case ".html":
-        return "text/html";
-      case ".css":
-        return "text/css";
-      case ".js":
-        return "text/javascript";
-      case ".png":
-        return "image/png";
-      case ".jpg":
-        return "image/jpg";
-      default:
-        return "text/plain";
-    }
-  }
+// ─── 端口配置 ───────────────────────────────────────────
+const PORTS = {
+  frontend: 3000,      // React dev server 端口
+  frontendProd: 2999,  // 生产环境静态文件服务端口
+  api: 19245,          // 后端 API 端口
+  ws: 19999            // WebSocket 端口
 }
 
+// ─── 子进程引用 ──────────────────────────────────────────
+let apiChild = null
+let reactChild = null
+let staticServer = null
 
-
+/**
+ * 启动后端 API 子进程 (serialServer.js)
+ */
 function startApiChild() {
   return new Promise((resolve, reject) => {
-    const child = fork(path.join(__dirname, './server/serialServer.js'), {
+    apiChild = fork(path.join(__dirname, './server/serialServer.js'), {
       env: {
-        isPackaged: isPackaged,
+        ...process.env,
+        isPackaged: String(isPackaged),
         appPath: app.getAppPath()
       }
     })
 
     const readyTimer = setTimeout(() => {
-      reject(new Error('API child not ready in time'));
-    }, 15000);
+      reject(new Error('API 子进程启动超时 (15s)'))
+    }, 15000)
 
-    child.on('message', (msg) => {
+    apiChild.on('message', (msg) => {
       if (msg.type === 'ready') {
-        clearTimeout(readyTimer);
-        apiPort = msg.port;
-        resolve(msg.port);
+        clearTimeout(readyTimer)
+        console.log(`[Main] API 服务已启动，端口: ${msg.port}`)
+        resolve(msg.port)
       } else if (msg?.type === 'error') {
-        clearTimeout(readyTimer);
-        reject(new Error(`API child error: ${msg.code || ''} ${msg.message || ''}`));
+        clearTimeout(readyTimer)
+        reject(new Error(`API 子进程错误: ${msg.code || ''} ${msg.message || ''}`))
       }
     })
 
-    child.on('exit', (code, signal) => {
-      // 如果需要可在这里做自动重启
-      console.log(`API child exited: code=${code} signal=${signal}`);
-    });
+    apiChild.on('exit', (code, signal) => {
+      console.log(`[Main] API 子进程退出: code=${code} signal=${signal}`)
+      apiChild = null
+    })
+
+    apiChild.on('error', (err) => {
+      clearTimeout(readyTimer)
+      console.error('[Main] API 子进程 spawn 错误:', err)
+      reject(err)
+    })
   })
 }
 
-// const child1 = fork(path.join(__dirname, './pyWorker.js'), {
-//   env: {
-//     isPackaged: isPackaged,
-//     appPath: app.getAppPath()
-//   }
-// })
+/**
+ * 开发模式：启动 React dev server (CRA)
+ */
+function startReactDevServer() {
+  return new Promise((resolve, reject) => {
+    const clientDir = path.join(__dirname, 'client')
 
-const createWindow = () => {
+    // 使用 cross-platform 的方式启动 npm
+    const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+
+    reactChild = spawn(npmCmd, ['start'], {
+      cwd: clientDir,
+      env: {
+        ...process.env,
+        PORT: String(PORTS.frontend),
+        BROWSER: 'none'  // 阻止 CRA 自动打开浏览器
+      },
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+
+    let started = false
+    const startTimer = setTimeout(() => {
+      if (!started) {
+        started = true
+        // CRA 有时不输出 "Compiled" 但已经可用，超时后尝试连接
+        console.log('[Main] React dev server 启动超时，尝试连接...')
+        resolve(PORTS.frontend)
+      }
+    }, 30000)
+
+    reactChild.stdout.on('data', (data) => {
+      const output = data.toString()
+      process.stdout.write(`[React] ${output}`)
+      // CRA 编译成功后会输出 "Compiled" 或 "compiled"
+      if (!started && (output.includes('Compiled') || output.includes('compiled') || output.includes('webpack compiled'))) {
+        started = true
+        clearTimeout(startTimer)
+        console.log(`[Main] React dev server 已启动，端口: ${PORTS.frontend}`)
+        resolve(PORTS.frontend)
+      }
+    })
+
+    reactChild.stderr.on('data', (data) => {
+      const output = data.toString()
+      // CRA 会把一些正常信息输出到 stderr
+      process.stderr.write(`[React] ${output}`)
+      if (!started && (output.includes('Compiled') || output.includes('compiled'))) {
+        started = true
+        clearTimeout(startTimer)
+        resolve(PORTS.frontend)
+      }
+    })
+
+    reactChild.on('error', (err) => {
+      clearTimeout(startTimer)
+      console.error('[Main] React dev server 启动失败:', err)
+      if (!started) {
+        started = true
+        reject(err)
+      }
+    })
+
+    reactChild.on('exit', (code) => {
+      clearTimeout(startTimer)
+      console.log(`[Main] React dev server 退出: code=${code}`)
+      reactChild = null
+    })
+  })
+}
+
+/**
+ * 生产模式：启动静态文件服务器
+ */
+function startStaticServer() {
+  return new Promise((resolve, reject) => {
+    const MIME_TYPES = {
+      '.html': 'text/html',
+      '.css': 'text/css',
+      '.js': 'text/javascript',
+      '.json': 'application/json',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon',
+      '.woff': 'font/woff',
+      '.woff2': 'font/woff2',
+      '.ttf': 'font/ttf',
+      '.map': 'application/json'
+    }
+
+    const buildDir = isPackaged
+      ? path.join(__dirname, '..', 'build')
+      : path.join(__dirname, 'build')
+
+    staticServer = http.createServer((req, res) => {
+      let filePath = req.url === '/' ? '/index.html' : req.url
+      // 去掉 query string
+      filePath = filePath.split('?')[0]
+      const fullPath = path.join(buildDir, filePath)
+
+      fs.readFile(fullPath, (err, data) => {
+        if (err) {
+          // SPA fallback: 找不到文件时返回 index.html
+          fs.readFile(path.join(buildDir, 'index.html'), (err2, indexData) => {
+            if (err2) {
+              res.writeHead(404, { 'Content-Type': 'text/plain' })
+              res.end('Not Found')
+            } else {
+              res.writeHead(200, { 'Content-Type': 'text/html' })
+              res.end(indexData)
+            }
+          })
+        } else {
+          const ext = path.extname(fullPath).toLowerCase()
+          const contentType = MIME_TYPES[ext] || 'application/octet-stream'
+          res.writeHead(200, { 'Content-Type': contentType })
+          res.end(data)
+        }
+      })
+    })
+
+    staticServer.listen(PORTS.frontendProd, '127.0.0.1', () => {
+      console.log(`[Main] 静态文件服务已启动，端口: ${PORTS.frontendProd}`)
+      resolve(PORTS.frontendProd)
+    })
+
+    staticServer.on('error', (err) => {
+      console.error('[Main] 静态文件服务启动失败:', err)
+      reject(err)
+    })
+  })
+}
+
+/**
+ * 创建主窗口
+ */
+function createWindow(port) {
   const win = new BrowserWindow({
-    // width: 800,
-    // height: 600,
-    // fullscreen: true,
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false
     },
     icon: path.join(__dirname, 'logo.ico')
-
   })
 
-  const hostname = "127.0.0.1";
-  const port = 2999;
-
   win.maximize()
-  // win.loadURL('http://sensor.bodyta.com/4096')
 
-  // win.loadURL('https://sensor.bodyta.com/jqtools2')
+  const url = `http://127.0.0.1:${port}`
+  console.log(`[Main] 加载页面: ${url}`)
+  win.loadURL(url)
 
-  function fn() {
-    win.loadURL(`http://${hostname}:${port}`)
+  // 开发模式下打开 DevTools
+  if (isDev) {
+    win.webContents.openDevTools({ mode: 'detach' })
   }
 
-  openWeb({ hostname, port, fn })
+  return win
 }
 
-
-
-
-
-
-
-function pyBin() {
-  const isDev = !app.isPackaged
-  if (process.platform === 'win32') {
-    return isDev
-      ? path.join(__dirname, 'python', 'venv', 'Scripts', 'python.exe')
-      : path.join(process.resourcesPath, 'python', 'venv', 'Scripts', 'python.exe')
-  } else {
-    return isDev
-      ? path.join(__dirname, 'python', 'venv', 'bin', 'python')
-      : path.join(process.resourcesPath, 'python', 'venv', 'bin', 'python')
+/**
+ * 优雅关闭所有子进程
+ */
+function cleanupProcesses() {
+  if (apiChild) {
+    console.log('[Main] 关闭 API 子进程...')
+    apiChild.kill()
+    apiChild = null
+  }
+  if (reactChild) {
+    console.log('[Main] 关闭 React dev server...')
+    reactChild.kill()
+    reactChild = null
+  }
+  if (staticServer) {
+    console.log('[Main] 关闭静态文件服务...')
+    staticServer.close()
+    staticServer = null
   }
 }
-function apiPy() {
-  const isDev = !app.isPackaged
-  return isDev
-    ? path.join(__dirname, 'python', 'app', 'api.py')
-    : path.join(process.resourcesPath, 'python', 'app', 'api.py')
-}
 
-/** 主进程里直接像调用函数一样用 */
-// function callPy(fn, args) {
-//   return new Promise((resolve, reject) => {
-//     const child = spawn(pyBin(), [apiPy()], {
-//       stdio: ['pipe', 'pipe', 'pipe'],
-//       env: { ...process.env, PYTHONUNBUFFERED: '1' }
-//     })
-//     let out = '', err = ''
-//     child.stdout.on('data', d => (out += d.toString()))
-//     child.stderr.on('data', d => (err += d.toString()))
-//     child.on('error', e => reject(new Error('spawn error: ' + e.message)))
-//     child.on('close', code => {
-//       if (code !== 0) return reject(new Error(`Python exit ${code}\n${err}`))
-//       try {
-//         const last = (out.trim().split(/\r?\n/).pop() || '{}')
-//         // console.log(last, 'last')
-//         const res = JSON.parse(last)
-//         if (res.ok) resolve(res.data)
-//         else reject(new Error(res.error + '\n' + (res.trace || '')))
-//       } catch (e) {
-//         reject(new Error('Parse fail: ' + e.message + '\nraw: ' + out))
-//       }
-//     })
-//     child.stdin.write(JSON.stringify({ fn, args }) + '\n')
-//     child.stdin.end()
-//   })
-// }
-
-let py = null;
-let buf = '';
-const pending = new Map();
-
-// function startPy() {
-//   py = spawn(pyBin(), [apiPy()], { stdio: ['pipe','pipe','pipe'] });
-//   py.stdout.on('data', d => {
-//     buf += d.toString();
-//     const lines = buf.split(/\r?\n/); buf = lines.pop() || '';
-//     for (const line of lines) {
-//       if (!line.trim()) continue;
-//       const msg = JSON.parse(line);
-//       const cb = pending.get(msg.id);
-//       if (cb) { pending.delete(msg.id); cb(msg.data); }
-//     }
-//   });
-//   py.stderr.on('data', d => console.error('[PY]', d.toString()));
-//   py.on('exit', ()=>{ py=null; setTimeout(startPy, 300); });
-// }
-
-// function callPy(fn, args) {
-//   if (!py) startPy();
-//   const id = Math.random().toString(36).slice(2);
-//   return new Promise(resolve => {
-//     pending.set(id, resolve);
-//     py?.stdin.write(JSON.stringify({ id, fn, args }) + '\n');
-//   });
-// }
-
-
-// child.on('message', (msg) => {
-//   console.log('主线程', msg)
-// })
-
-function startServerProcess() {
-
-}
-
-// 调用你的函数（示例）
-// async function demo(matrix) {
-//   // 构造一条 1024 长度的测试数据
-
-//   // console.log(matrix)
-//   // const data = new Array(10).fill(new Array(1024).fill(50)); // 可以放多条
-//   // const res = await callPy('cal_cop_fromData', { data : matrix });
-//   const res = await callPy('cal_cop_fromData', { data: matrix });
-//   console.log(res);
-//   console.log('结果:', res, new Date().getTime()); // { left: [...], right: [...] }
-// }
-
+// ─── 应用生命周期 ────────────────────────────────────────
 app.whenReady().then(async () => {
-  const uuid = await getHardwareFingerprint()
-  const dateKey = await getKeyfromWinuuid(uuid)
-  console.log(uuid, dateKey)
+  try {
+    // 1. 获取硬件指纹（授权校验）
+    const uuid = await getHardwareFingerprint()
+    const dateKey = await getKeyfromWinuuid(uuid)
+    console.log(`[Main] 硬件UUID: ${uuid}, 授权: ${dateKey}`)
 
-  // 开始本地api线程
-  await startApiChild()
-  // 开启python线程
-  // startWorker(); // 
-  createWindow()
+    // 2. 启动后端 API 服务
+    console.log('[Main] 正在启动后端 API 服务...')
+    await startApiChild()
 
-  Menu.setApplicationMenu(null);
+    // 3. 启动前端
+    let frontendPort
+    if (isDev) {
+      console.log('[Main] 开发模式：正在启动 React dev server...')
+      frontendPort = await startReactDevServer()
+    } else {
+      console.log('[Main] 生产模式：正在启动静态文件服务...')
+      frontendPort = await startStaticServer()
+    }
 
-  // const data1 = await getCsvData('D:/jqtoolsWin - 副本/python/app/静态数据集1.csv')
+    // 4. 创建窗口
+    createWindow(frontendPort)
 
-  // const matrix = data1.map((a) => JSON.parse(a.data))
+    // 5. 隐藏菜单栏
+    Menu.setApplicationMenu(null)
 
-  // try {
-  //   console.log('setTimeout')
-  //   const data = await callPy('getData', { data: new Array(1024).fill(20)})
-
-  //   //  {
-  //   //   'frameData': new Array(1024).fill(0),
-  //   //   'tim': new Date().getTime() % 1000,
-  //   //   'threshold_factor': 25,
-  //   //   'continuous_on_bed_duration_minutes': 1.0,
-  //   //   'unlock_sitting_alarm_duration_minutes': 1.0,
-  //   //   'unlock_falling_alarm_duration_minutes': 1.0,
-  //   //   'sosPeakThreshold': 25.0,
-  //   //   'points_threshold_in': 3.0
-  //   // }
-  //   console.log(data, 'data')
-  // }
-  // catch (e) {
-  //   console.error('[PY ERROR]', e)
-  // }
-
-
-  // try {
-  //   const r1 = await callPy('cal_cop_fromData', {data : new Array(10).fill(new Array(1024).fill(0))})
-  //   // const r2 = await callPy('add_and_scale', { a: 1, b: 2, scale: 10 })
-  //   console.log('[PY] add =>', r1)
-  //   console.log('[PY] add_and_scale =>', r2)
-  // } catch (e) {
-  //   console.error('[PY ERROR]', e)
-  // }
-  // try {
-  //   const a = await demo(matrix)
-  //   await demo(matrix)
-  //   await demo(matrix)
-  //   await demo(matrix)
-  //   await demo(matrix)
-  //   await demo(matrix)
-  //   await demo(matrix)
-  //   await demo(matrix)
-  // } catch (e) {
-  //   console.log(e)
-  // }
+  } catch (err) {
+    console.error('[Main] 启动失败:', err)
+    cleanupProcesses()
+    app.quit()
+  }
 })
 
+// 所有窗口关闭时退出应用（macOS 除外）
+app.on('window-all-closed', () => {
+  cleanupProcesses()
+  if (process.platform !== 'darwin') {
+    app.quit()
+  }
+})
 
+// macOS 点击 dock 图标重新创建窗口
+app.on('activate', async () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    const port = isDev ? PORTS.frontend : PORTS.frontendProd
+    createWindow(port)
+  }
+})
 
+// 应用退出前清理
+app.on('before-quit', () => {
+  cleanupProcesses()
+})
+
+// 处理未捕获异常
+process.on('uncaughtException', (err) => {
+  console.error('[Main] 未捕获异常:', err)
+  cleanupProcesses()
+})

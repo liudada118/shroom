@@ -1,65 +1,85 @@
-import { create } from 'zustand';
-import { shallow } from 'zustand/shallow';
-import { maxObj } from '../assets/util/constant';
+import { create } from 'zustand'
+import { maxObj } from '../assets/util/constant'
 
-const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 1, color: 200, filter: 1, height: 1, coherent: 1 }
-const setMaxData = maxObj['bed']
-export const useEquipStore = create(set => ({
-    status: {},
-    equipStamp: 0,
-    displayStatus: {},
-    history: {},
-    cop: {},
-    systemType: 'endi',
-    systemTypeArr: [],
-    display: false,
-    equipStatus: {},
-    displayType: 'all',
-    display : 'point3D',
+// ─── 持久化设置值 ────────────────────────────────────────
+const DEFAULT_SETTINGS = { gauss: 1, color: 200, filter: 1, height: 1, coherent: 1 }
 
+function loadSettingValue() {
+  try {
+    const stored = localStorage.getItem('setValueData')
+    return stored ? JSON.parse(stored) : DEFAULT_SETTINGS
+  } catch {
+    return DEFAULT_SETTINGS
+  }
+}
 
+const initialSettings = loadSettingValue()
+const initialMaxData = maxObj['bed']
 
-    settingValue: setValueData,
-    settingValueMax : setMaxData,
-    settingValueOptimal : setValueData,
+// ─── Store 定义 ──────────────────────────────────────────
+export const useEquipStore = create((set) => ({
+  // 实时数据
+  status: {},
+  equipStamp: 0,
+  displayStatus: {},
+  cop: {},
 
+  // 系统配置
+  systemType: 'endi',
+  systemTypeArr: [],
+  displayType: 'all',
+  display: 'point3D',
 
-    selectArr : [],
-    contrast : {} , 
-    historyChart: { pressArr: {}, areaArr: {} },
-    dataStatus: 'realtime',
-    
-    setContrast :(s) => set({ contrast: s }), 
-    setHistoryChart: (s) => set({ historyChart: s }),
-    setDataStatus: (s) => set({ dataStatus: s }),
+  // 设备状态
+  equipStatus: {},
 
+  // 可视化设置
+  settingValue: initialSettings,
+  settingValueMax: initialMaxData,
+  settingValueOptimal: initialSettings,
 
-    setSelectArr :(s) => set({ selectArr: s }),
+  // 框选工具
+  selectArr: [],
 
+  // 历史数据
+  history: {},
+  historyChart: { pressArr: {}, areaArr: {} },
+  dataStatus: 'realtime',  // 'realtime' | 'history' | 'contrast'
 
-    setDisplay: (s) => set({ display: s }),
-    setDisplayType: (s) => set({ displayType: s }),
-    setSettingValue: (s) => set({ settingValue: s }),
-    setSettingValueMax: (s) => set({ settingValueMax: s }),
-    setSettingValueOptimal: (s) => set({ settingValueOptimal: s }),
+  // 对比数据
+  contrast: {},
 
+  // ─── Actions ─────────────────────────────────────────
+  setStatus: (s) => set({ status: s }),
+  setEquipStamp: (s) => set({ equipStamp: s }),
+  setDisplayStatus: (s) => set({ displayStatus: s }),
+  setEquipCop: (s) => set({ cop: s }),
 
-    setEquipStatus: (s) => set({ equipStatus: s }),
-    setDisplay: (s) => set({ display: s }),
-    setSystemType: (s) => set({ systemType: s }),
-    setSystemTypeArr: (s) => set({ systemTypeArr: s }),
-    setStatus: (s) => set({ status: s }),
-    setEquipStamp: (s) => set({ equipStamp: s }),
-    setHistoryStatus: (history) => set({ history: history }),
-    setDisplayStatus: (s) => set({ displayStatus: s }),
-    setEquipCop: (s) => set({ cop: s }),
-}));
+  setSystemType: (s) => set({ systemType: s }),
+  setSystemTypeArr: (s) => set({ systemTypeArr: s }),
+  setDisplayType: (s) => set({ displayType: s }),
+  setDisplay: (s) => set({ display: s }),
 
-export const getStatus = () => useEquipStore.getState().status;
-export const getsetDisplayStatus = () => useEquipStore.getState().displayStatus;
-export const getSysType = () => useEquipStore.getState().systemType;
-export const getSettingValue = () => useEquipStore.getState().settingValue;
-export const getDisplayType = () => useEquipStore.getState().displayType;
-export const getSettingValueOptimal = () => useEquipStore.getState().settingValueOptimal;
+  setEquipStatus: (s) => set({ equipStatus: s }),
 
+  setSettingValue: (s) => set({ settingValue: s }),
+  setSettingValueMax: (s) => set({ settingValueMax: s }),
+  setSettingValueOptimal: (s) => set({ settingValueOptimal: s }),
+
+  setSelectArr: (s) => set({ selectArr: s }),
+
+  setHistoryStatus: (history) => set({ history }),
+  setHistoryChart: (s) => set({ historyChart: s }),
+  setDataStatus: (s) => set({ dataStatus: s }),
+
+  setContrast: (s) => set({ contrast: s }),
+}))
+
+// ─── Getters (用于非 React 上下文) ───────────────────────
+export const getStatus = () => useEquipStore.getState().status
+export const getsetDisplayStatus = () => useEquipStore.getState().displayStatus
+export const getSysType = () => useEquipStore.getState().systemType
+export const getSettingValue = () => useEquipStore.getState().settingValue
+export const getDisplayType = () => useEquipStore.getState().displayType
+export const getSettingValueOptimal = () => useEquipStore.getState().settingValueOptimal
 export const getSelectArr = () => useEquipStore.getState().selectArr

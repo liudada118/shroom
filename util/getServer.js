@@ -1,23 +1,18 @@
-const { default: axios } = require("axios");
-const { backendAddress } = require("./config");
+const { default: axios } = require('axios')
+const { backendAddress } = require('./config')
 
-    /**
-     * 
-     * @param {string} uuid 传入电脑的uuid
-     * @returns 服务器查询uuid的密钥
-     */
-    async function getKeyfromWinuuid(uuid) {
-        return 1
-        const response = await axios.get(`${backendAddress}/getKey?uuid=${uuid}`)
-        console.log(response.data)
-        return response.data
-        return 1
-    }
-
-
-
-
+/**
+ * 通过设备 UUID 从服务器查询授权密钥
+ * @param {string} uuid 设备 UUID
+ * @returns {Promise<any>} 授权信息
+ */
+async function getKeyfromWinuuid(uuid) {
+  // TODO: 启用远程授权校验后取消注释
+  // const response = await axios.get(`${backendAddress}/getKey?uuid=${uuid}`)
+  // return response.data
+  return 1
+}
 
 module.exports = {
-    getKeyfromWinuuid
+  getKeyfromWinuuid
 }

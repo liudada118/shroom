@@ -1,13 +1,16 @@
 {
   "name": "jqtools2",
   "version": "1.0.0",
-  "description": "JQ",
+  "description": "JQ 压力传感器桌面工具",
   "main": "index.js",
   "scripts": {
+    "dev": "electron .",
     "start": "electron .",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "electron-builder -w",
-    "build:mac": "electron-builder -m"
+    "build:client": "cd client && npm run build",
+    "build:win": "npm run build:client && electron-builder -w",
+    "build:mac": "npm run build:client && electron-builder -m",
+    "install:all": "npm install && cd client && npm install",
+    "postinstall": "electron-builder install-app-deps"
   },
   "author": "",
   "license": "ISC",
@@ -26,8 +29,28 @@
   },
   "build": {
     "asar": true,
+    "files": [
+      "index.js",
+      "preload.js",
+      "server/**/*",
+      "util/**/*",
+      "config.txt",
+      "logo.ico",
+      "build/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "db",
+        "to": "db"
+      },
+      {
+        "from": "data",
+        "to": "data"
+      }
+    ],
     "win": {
-      "icon" : "./logo" ,
+      "icon": "./logo",
       "target": [
         {
           "target": "nsis",
