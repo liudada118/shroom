@@ -4,8 +4,10 @@ const { fork, spawn } = require('child_process')
 const { getHardwareFingerprint } = require('./util/getWinConfig')
 const { getKeyfromWinuuid } = require('./util/getServer')
 const { initDb, getCsvData } = require('./util/db')
+const { allocatePorts, DEFAULT_PORTS } = require('./util/portFinder')
 
-
+// ─── 端口配置 ────────────────────────────────────────────
+let PORTS = { ...DEFAULT_PORTS }
 
 const createWindow = () => {
   const win = new BrowserWindow({
@@ -25,11 +27,44 @@ const createWindow = () => {
 
 const isPackaged = app.isPackaged
 
-const child = fork(path.join(__dirname, './server/serialServer.js'), {
-  workerData: {
-    isPackaged: isPackaged
-  }
-})
+function startApiChild() {
+  return new Promise((resolve, reject) => {
+    const child = fork(path.join(__dirname, './server/serialServer.js'), {
+      env: {
+        ...process.env,
+        isPackaged: String(isPackaged),
+        appPath: app.getAppPath(),
+        API_PORT: String(PORTS.api),
+        WS_PORT: String(PORTS.ws)
+      }
+    })
+
+    const readyTimer = setTimeout(() => {
+      console.log('[Main] API 子进程启动超时，继续运行...')
+      resolve()
+    }, 15000)
+
+    child.on('message', (msg) => {
+      if (msg.type === 'ready') {
+        clearTimeout(readyTimer)
+        console.log(`[Main] API 服务已启动，API端口: ${msg.apiPort}, WS端口: ${msg.wsPort}`)
+        if (msg.apiPort) PORTS.api = msg.apiPort
+        if (msg.wsPort) PORTS.ws = msg.wsPort
+        resolve()
+      } else if (msg?.type === 'error') {
+        clearTimeout(readyTimer)
+        console.error('[Main] API 子进程错误:', msg.message)
+        resolve()
+      }
+    })
+
+    child.on('error', (err) => {
+      clearTimeout(readyTimer)
+      console.error('[Main] API 子进程 spawn 错误:', err)
+      resolve()
+    })
+  })
+}
 
 
 function pyBin() {
@@ -80,14 +115,6 @@ function callPy(fn, args) {
 }
 
 
-child.on('message', (msg) => {
-  console.log('主线程', msg)
-})
-
-function startServerProcess() {
-
-}
-
 // 调用你的函数（示例）
 async function demo(matrix) {
   // 构造一条 1024 长度的测试数据
@@ -102,6 +129,18 @@ app.whenReady().then(async () => {
   const uuid = await getHardwareFingerprint()
   const dateKey = await getKeyfromWinuuid(uuid)
   console.log(uuid, dateKey)
+
+  // 先分配端口，再启动子进程
+  console.log('[Main] 正在检测端口可用性...')
+  const allocated = await allocatePorts({
+    api: DEFAULT_PORTS.api,
+    ws: DEFAULT_PORTS.ws
+  })
+  PORTS = { ...PORTS, ...allocated }
+  console.log('[Main] 端口分配完成:', JSON.stringify(PORTS))
+
+  // 启动后端子进程（传入分配好的端口）
+  await startApiChild()
 
   createWindow()
   const data1 = await getCsvData('D:/jqtoolsWin - 副本/python/app/静态数据集1.csv')
@@ -128,6 +167,5 @@ app.whenReady().then(async () => {
     console.log(e)
   }
 })
-
 
 

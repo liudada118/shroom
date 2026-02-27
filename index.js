@@ -3,20 +3,15 @@ const path = require('path')
 const { fork, spawn } = require('child_process')
 const { getHardwareFingerprint } = require('./util/getWinConfig')
 const { getKeyfromWinuuid } = require('./util/getServer')
-const { allocatePorts } = require('./util/portFinder')
+const { allocatePorts, DEFAULT_PORTS, listenWithRetry } = require('./util/portFinder')
 const http = require('http')
 const fs = require('fs')
 
 const isPackaged = app.isPackaged
 const isDev = !isPackaged
 
-// ─── 首选端口配置 ────────────────────────────────────────
-const PREFERRED_PORTS = {
-  api: 19245,          // 后端 API 端口
-  ws: 19999,           // WebSocket 端口
-  frontend: 3000,      // React dev server 端口（开发模式）
-  frontendProd: 2999   // 静态文件服务端口（生产模式）
-}
+// ─── 首选端口配置（从 portFinder 统一管理）─────────────────
+const PREFERRED_PORTS = { ...DEFAULT_PORTS }
 
 // ─── 实际分配的端口（启动时动态确定）────────────────────────
 let PORTS = { ...PREFERRED_PORTS }
@@ -145,9 +140,10 @@ function startReactDevServer() {
 /**
  * 生产模式：启动静态文件服务器
  * 注入端口配置到 HTML 页面中
+ * 使用 listenWithRetry 自动处理端口冲突
  */
 function startStaticServer() {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const MIME_TYPES = {
       '.html': 'text/html',
       '.css': 'text/css',
@@ -211,15 +207,16 @@ function startStaticServer() {
       })
     })
 
-    staticServer.listen(PORTS.frontendProd, '127.0.0.1', () => {
-      console.log(`[Main] 静态文件服务已启动，端口: ${PORTS.frontendProd}`)
-      resolve(PORTS.frontendProd)
-    })
-
-    staticServer.on('error', (err) => {
+    try {
+      // 使用 listenWithRetry 自动处理端口冲突
+      const actualPort = await listenWithRetry(staticServer, PORTS.frontendProd, '127.0.0.1')
+      PORTS.frontendProd = actualPort
+      console.log(`[Main] 静态文件服务已启动，端口: ${actualPort}`)
+      resolve(actualPort)
+    } catch (err) {
       console.error('[Main] 静态文件服务启动失败:', err)
       reject(err)
-    })
+    }
   })
 }
 

@@ -5,15 +5,28 @@
  */
 const { SerialPort, DelimiterParser } = require('serialport')
 const WebSocket = require('ws');
+const http = require('http');
 var dgram = require('dgram');
 var udp_client = dgram.createSocket('udp4');
-const server = new WebSocket.Server({ port: 19999 });
+const { listenWithRetry, DEFAULT_PORTS } = require('./util/portFinder');
+
+// WebSocket 端口从环境变量读取，否则使用默认值
+const WS_PREFERRED_PORT = parseInt(process.env.WS_PORT, 10) || DEFAULT_PORTS.ws;
 
 const readline = require('readline').createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
+// 使用 noServer 模式 + listenWithRetry 处理端口冲突
+const wsHttpServer = http.createServer();
+const server = new WebSocket.Server({ noServer: true });
+
+wsHttpServer.on('upgrade', (request, socket, head) => {
+  server.handleUpgrade(request, socket, head, (ws) => {
+    server.emit('connection', ws, request);
+  });
+});
 
 server.on('open', function open() {
   console.log('connected');
@@ -214,3 +227,12 @@ parser.on('data', function (data) {
     });
   }
 })
+
+// 启动 WebSocket 服务器（自动处理端口冲突）
+listenWithRetry(wsHttpServer, WS_PREFERRED_PORT, '0.0.0.0')
+  .then((actualPort) => {
+    console.log(`[KartingCar] WebSocket 服务已启动，端口: ${actualPort}`);
+  })
+  .catch((err) => {
+    console.error('[KartingCar] WebSocket 服务启动失败:', err.message);
+  });

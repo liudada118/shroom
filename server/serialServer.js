@@ -4,6 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const cors = require('cors')
 const WebSocket = require('ws')
+const http = require('http')
 const HttpResult = require('./HttpResult')
 const { SerialPort, DelimiterParser } = require('serialport')
 const { getPort } = require('../util/serialport')
@@ -14,11 +15,12 @@ const { hand, jqbed, endiSit, endiBack, endiSit1024, endiBack1024 } = require('.
 const { decryptStr } = require('../util/aes_ecb')
 const { default: axios } = require('axios')
 const module2 = require('../util/aes_ecb')
+const { listenWithRetry, DEFAULT_PORTS } = require('../util/portFinder')
 
 // ─── 常量配置 ────────────────────────────────────────────
 // 端口优先从环境变量读取（由主进程分配），否则使用默认值
-const API_PORT = parseInt(process.env.API_PORT, 10) || 19245
-const WS_PORT = parseInt(process.env.WS_PORT, 10) || 19999
+let API_PORT = parseInt(process.env.API_PORT, 10) || DEFAULT_PORTS.api
+let WS_PORT = parseInt(process.env.WS_PORT, 10) || DEFAULT_PORTS.ws
 const RECONNECT_INTERVAL = 3000  // 串口断线重连间隔 (ms)
 const DATA_SEND_INTERVAL = 80    // 数据发送间隔 (ms)
 const MIN_HZ_INTERVAL = 50       // 最小数据帧间隔 (ms)
@@ -512,7 +514,16 @@ app.post('/getSysconfig', (req, res) => {
 //  WebSocket 服务
 // ═══════════════════════════════════════════════════════════
 
-const wsServer = new WebSocket.Server({ port: WS_PORT })
+// WebSocket 服务器使用 noServer 模式，绑定到独立的 HTTP 服务器
+// 通过 listenWithRetry 自动处理端口冲突
+const wsHttpServer = http.createServer()
+let wsServer = new WebSocket.Server({ noServer: true })
+
+wsHttpServer.on('upgrade', (request, socket, head) => {
+  wsServer.handleUpgrade(request, socket, head, (ws) => {
+    wsServer.emit('connection', ws, request)
+  })
+})
 
 wsServer.on('connection', (ws, req) => {
   const clientName = `${req.connection.remoteAddress}:${req.connection.remotePort}`
@@ -980,13 +991,39 @@ function storageData(data) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  启动服务
+//  启动服务（带端口冲突自动重试）
 // ═══════════════════════════════════════════════════════════
 
-app.listen(API_PORT, () => {
-  process.send?.({ type: 'ready', apiPort: API_PORT, wsPort: WS_PORT })
-  console.log(`[Server] API 服务已启动，端口: ${API_PORT}, WebSocket 端口: ${WS_PORT}`)
-})
+async function startServer() {
+  try {
+    // 1. 启动 WebSocket HTTP 服务器（带端口冲突重试）
+    const actualWsPort = await listenWithRetry(wsHttpServer, WS_PORT, '0.0.0.0')
+    if (actualWsPort !== WS_PORT) {
+      console.log(`[Server] WebSocket 端口从 ${WS_PORT} 切换到 ${actualWsPort}`)
+      WS_PORT = actualWsPort
+    }
+    console.log(`[Server] WebSocket 服务已启动，端口: ${WS_PORT}`)
+
+    // 2. 启动 Express API 服务器（带端口冲突重试）
+    const apiServer = http.createServer(app)
+    const actualApiPort = await listenWithRetry(apiServer, API_PORT, '0.0.0.0')
+    if (actualApiPort !== API_PORT) {
+      console.log(`[Server] API 端口从 ${API_PORT} 切换到 ${actualApiPort}`)
+      API_PORT = actualApiPort
+    }
+    console.log(`[Server] API 服务已启动，端口: ${API_PORT}`)
+
+    // 3. 通知主进程实际使用的端口
+    process.send?.({ type: 'ready', apiPort: API_PORT, wsPort: WS_PORT })
+    console.log(`[Server] 所有服务启动完成 — API: ${API_PORT}, WS: ${WS_PORT}`)
+  } catch (err) {
+    console.error('[Server] 服务启动失败:', err)
+    process.send?.({ type: 'error', code: 'START_FAILED', message: err.message })
+    process.exit(1)
+  }
+}
+
+startServer()
 
 // ─── 串口断线重连监控 ─────────────────────────────────────
 setInterval(() => {

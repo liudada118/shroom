@@ -2,9 +2,13 @@
 info:
   title: jqtools serialServer API
   version: 1.0.0
-  description: API for serialServer.js (HTTP). WebSocket uses ws://localhost:19999 and is documented in api.md.
+  description: |
+    API for serialServer.js (HTTP). WebSocket is documented in api.md.
+    Note: Ports are dynamically allocated. Default API port is 19245, default WS port is 19999.
+    When ports conflict, the system automatically finds available ports.
 servers:
   - url: http://localhost:19245
+    description: Default API server (port may change if 19245 is occupied)
 paths:
   /:
     get:
