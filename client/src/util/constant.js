@@ -75,5 +75,6 @@ export const systemConfig = {
 
 // ─── 服务地址配置 ────────────────────────────────────────
 export const serverAddress = process.env.REACT_APP_SERVER_ADDRESS || 'https://sensor.bodyta.com'
-export const localAddress = process.env.REACT_APP_LOCAL_ADDRESS || 'http://localhost:19245'
-export const wsAddress = process.env.REACT_APP_WS_ADDRESS || 'ws://127.0.0.1:19999'
+
+// 动态端口配置：从 portConfig 统一管理，支持端口冲突自动分配
+export { localAddress, wsAddress } from './portConfig'

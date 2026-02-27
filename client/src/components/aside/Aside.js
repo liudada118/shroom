@@ -49,7 +49,7 @@ export default function Aside() {
   //   matrixDataRef.current.push(ndata1)
   //   axios({
   //     method: 'post',
-  //     url: 'http://localhost:19245/getCop',
+  //     url: `${localAddress}/getCop`,
   //     data: {
   //       MatrixList: matrixDataRef.current,
   //     }

@@ -4,7 +4,7 @@ import axios from 'axios'
 import { message } from 'antd'
 import { getDisplayType, getSelectArr, getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
-import { systemPointConfig } from '../../util/constant'
+import { systemPointConfig, localAddress } from '../../util/constant'
 import { colSelectMatrix } from '../../util/util'
 
 export default function Col(props) {
@@ -43,7 +43,7 @@ export default function Col(props) {
             const hz = HZ ? HZ : 30
             axios({
                 method: 'post',
-                url: 'http://localhost:19245/startCol',
+                url: `${localAddress}/startCol`,
                 data: {
                     fileName: fileName,
                     HZ: hz,
@@ -70,7 +70,7 @@ export default function Col(props) {
 
                         axios({
                             method: 'post',
-                            url: 'http://localhost:19245/upsertRemark',
+                            url: `${localAddress}/upsertRemark`,
                             data
                         }).then((remarkRes) => {
                             if (remarkRes.data?.message == 'error') {
@@ -89,7 +89,7 @@ export default function Col(props) {
         } else {
             axios({
                 method: 'get',
-                url: 'http://localhost:19245/endCol',
+                url: `${localAddress}/endCol`,
             }).then((res) => {
                 if (res.data.message == 'error') {
                     message.error(res.data.data)

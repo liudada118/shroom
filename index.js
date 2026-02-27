@@ -3,19 +3,23 @@ const path = require('path')
 const { fork, spawn } = require('child_process')
 const { getHardwareFingerprint } = require('./util/getWinConfig')
 const { getKeyfromWinuuid } = require('./util/getServer')
+const { allocatePorts } = require('./util/portFinder')
 const http = require('http')
 const fs = require('fs')
 
 const isPackaged = app.isPackaged
 const isDev = !isPackaged
 
-// ─── 端口配置 ───────────────────────────────────────────
-const PORTS = {
-  frontend: 3000,      // React dev server 端口
-  frontendProd: 2999,  // 生产环境静态文件服务端口
+// ─── 首选端口配置 ────────────────────────────────────────
+const PREFERRED_PORTS = {
   api: 19245,          // 后端 API 端口
-  ws: 19999            // WebSocket 端口
+  ws: 19999,           // WebSocket 端口
+  frontend: 3000,      // React dev server 端口（开发模式）
+  frontendProd: 2999   // 静态文件服务端口（生产模式）
 }
+
+// ─── 实际分配的端口（启动时动态确定）────────────────────────
+let PORTS = { ...PREFERRED_PORTS }
 
 // ─── 子进程引用 ──────────────────────────────────────────
 let apiChild = null
@@ -24,6 +28,7 @@ let staticServer = null
 
 /**
  * 启动后端 API 子进程 (serialServer.js)
+ * 通过环境变量将动态端口传递给子进程
  */
 function startApiChild() {
   return new Promise((resolve, reject) => {
@@ -31,7 +36,9 @@ function startApiChild() {
       env: {
         ...process.env,
         isPackaged: String(isPackaged),
-        appPath: app.getAppPath()
+        appPath: app.getAppPath(),
+        API_PORT: String(PORTS.api),
+        WS_PORT: String(PORTS.ws)
       }
     })
 
@@ -42,8 +49,11 @@ function startApiChild() {
     apiChild.on('message', (msg) => {
       if (msg.type === 'ready') {
         clearTimeout(readyTimer)
-        console.log(`[Main] API 服务已启动，端口: ${msg.port}`)
-        resolve(msg.port)
+        console.log(`[Main] API 服务已启动，API端口: ${msg.apiPort}, WS端口: ${msg.wsPort}`)
+        // 更新实际端口（子进程可能因为冲突使用了不同端口）
+        if (msg.apiPort) PORTS.api = msg.apiPort
+        if (msg.wsPort) PORTS.ws = msg.wsPort
+        resolve({ apiPort: msg.apiPort, wsPort: msg.wsPort })
       } else if (msg?.type === 'error') {
         clearTimeout(readyTimer)
         reject(new Error(`API 子进程错误: ${msg.code || ''} ${msg.message || ''}`))
@@ -65,12 +75,11 @@ function startApiChild() {
 
 /**
  * 开发模式：启动 React dev server (CRA)
+ * 通过环境变量传入端口和后端地址
  */
 function startReactDevServer() {
   return new Promise((resolve, reject) => {
     const clientDir = path.join(__dirname, 'client')
-
-    // 使用 cross-platform 的方式启动 npm
     const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
     reactChild = spawn(npmCmd, ['start'], {
@@ -78,7 +87,10 @@ function startReactDevServer() {
       env: {
         ...process.env,
         PORT: String(PORTS.frontend),
-        BROWSER: 'none'  // 阻止 CRA 自动打开浏览器
+        BROWSER: 'none',
+        // 通过 CRA 环境变量将动态端口传给前端
+        REACT_APP_API_PORT: String(PORTS.api),
+        REACT_APP_WS_PORT: String(PORTS.ws)
       },
       stdio: ['pipe', 'pipe', 'pipe']
     })
@@ -87,33 +99,30 @@ function startReactDevServer() {
     const startTimer = setTimeout(() => {
       if (!started) {
         started = true
-        // CRA 有时不输出 "Compiled" 但已经可用，超时后尝试连接
         console.log('[Main] React dev server 启动超时，尝试连接...')
         resolve(PORTS.frontend)
       }
     }, 30000)
 
-    reactChild.stdout.on('data', (data) => {
-      const output = data.toString()
-      process.stdout.write(`[React] ${output}`)
-      // CRA 编译成功后会输出 "Compiled" 或 "compiled"
+    const checkOutput = (output) => {
       if (!started && (output.includes('Compiled') || output.includes('compiled') || output.includes('webpack compiled'))) {
         started = true
         clearTimeout(startTimer)
         console.log(`[Main] React dev server 已启动，端口: ${PORTS.frontend}`)
         resolve(PORTS.frontend)
       }
+    }
+
+    reactChild.stdout.on('data', (data) => {
+      const output = data.toString()
+      process.stdout.write(`[React] ${output}`)
+      checkOutput(output)
     })
 
     reactChild.stderr.on('data', (data) => {
       const output = data.toString()
-      // CRA 会把一些正常信息输出到 stderr
       process.stderr.write(`[React] ${output}`)
-      if (!started && (output.includes('Compiled') || output.includes('compiled'))) {
-        started = true
-        clearTimeout(startTimer)
-        resolve(PORTS.frontend)
-      }
+      checkOutput(output)
     })
 
     reactChild.on('error', (err) => {
@@ -135,6 +144,7 @@ function startReactDevServer() {
 
 /**
  * 生产模式：启动静态文件服务器
+ * 注入端口配置到 HTML 页面中
  */
 function startStaticServer() {
   return new Promise((resolve, reject) => {
@@ -159,29 +169,44 @@ function startStaticServer() {
       ? path.join(__dirname, '..', 'build')
       : path.join(__dirname, 'build')
 
+    // 生成注入到 HTML <head> 中的端口配置脚本
+    const portInjectionScript = `<script>window.__PORTS__=${JSON.stringify({
+      api: PORTS.api,
+      ws: PORTS.ws
+    })};</script>`
+
     staticServer = http.createServer((req, res) => {
       let filePath = req.url === '/' ? '/index.html' : req.url
-      // 去掉 query string
       filePath = filePath.split('?')[0]
       const fullPath = path.join(buildDir, filePath)
 
       fs.readFile(fullPath, (err, data) => {
         if (err) {
-          // SPA fallback: 找不到文件时返回 index.html
+          // SPA fallback
           fs.readFile(path.join(buildDir, 'index.html'), (err2, indexData) => {
             if (err2) {
               res.writeHead(404, { 'Content-Type': 'text/plain' })
               res.end('Not Found')
             } else {
+              // 注入端口配置
+              const html = indexData.toString().replace('<head>', `<head>${portInjectionScript}`)
               res.writeHead(200, { 'Content-Type': 'text/html' })
-              res.end(indexData)
+              res.end(html)
             }
           })
         } else {
           const ext = path.extname(fullPath).toLowerCase()
           const contentType = MIME_TYPES[ext] || 'application/octet-stream'
-          res.writeHead(200, { 'Content-Type': contentType })
-          res.end(data)
+
+          // 对 HTML 文件注入端口配置
+          if (ext === '.html') {
+            const html = data.toString().replace('<head>', `<head>${portInjectionScript}`)
+            res.writeHead(200, { 'Content-Type': contentType })
+            res.end(html)
+          } else {
+            res.writeHead(200, { 'Content-Type': contentType })
+            res.end(data)
+          }
         }
       })
     })
@@ -217,7 +242,6 @@ function createWindow(port) {
   console.log(`[Main] 加载页面: ${url}`)
   win.loadURL(url)
 
-  // 开发模式下打开 DevTools
   if (isDev) {
     win.webContents.openDevTools({ mode: 'detach' })
   }
@@ -246,7 +270,10 @@ function cleanupProcesses() {
   }
 }
 
-// ─── 应用生命周期 ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+//  应用生命周期
+// ═══════════════════════════════════════════════════════════
+
 app.whenReady().then(async () => {
   try {
     // 1. 获取硬件指纹（授权校验）
@@ -254,11 +281,20 @@ app.whenReady().then(async () => {
     const dateKey = await getKeyfromWinuuid(uuid)
     console.log(`[Main] 硬件UUID: ${uuid}, 授权: ${dateKey}`)
 
-    // 2. 启动后端 API 服务
+    // 2. 端口分配：检测冲突并自动分配可用端口
+    console.log('[Main] 正在检测端口可用性...')
+    const portsToAllocate = isDev
+      ? { api: PREFERRED_PORTS.api, ws: PREFERRED_PORTS.ws, frontend: PREFERRED_PORTS.frontend }
+      : { api: PREFERRED_PORTS.api, ws: PREFERRED_PORTS.ws, frontendProd: PREFERRED_PORTS.frontendProd }
+
+    PORTS = { ...PREFERRED_PORTS, ...(await allocatePorts(portsToAllocate)) }
+    console.log('[Main] 端口分配完成:', JSON.stringify(PORTS))
+
+    // 3. 启动后端 API 服务（传入分配好的端口）
     console.log('[Main] 正在启动后端 API 服务...')
     await startApiChild()
 
-    // 3. 启动前端
+    // 4. 启动前端
     let frontendPort
     if (isDev) {
       console.log('[Main] 开发模式：正在启动 React dev server...')
@@ -268,10 +304,10 @@ app.whenReady().then(async () => {
       frontendPort = await startStaticServer()
     }
 
-    // 4. 创建窗口
+    // 5. 创建窗口
     createWindow(frontendPort)
 
-    // 5. 隐藏菜单栏
+    // 6. 隐藏菜单栏
     Menu.setApplicationMenu(null)
 
   } catch (err) {
@@ -281,7 +317,6 @@ app.whenReady().then(async () => {
   }
 })
 
-// 所有窗口关闭时退出应用（macOS 除外）
 app.on('window-all-closed', () => {
   cleanupProcesses()
   if (process.platform !== 'darwin') {
@@ -289,7 +324,6 @@ app.on('window-all-closed', () => {
   }
 })
 
-// macOS 点击 dock 图标重新创建窗口
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     const port = isDev ? PORTS.frontend : PORTS.frontendProd
@@ -297,12 +331,10 @@ app.on('activate', async () => {
   }
 })
 
-// 应用退出前清理
 app.on('before-quit', () => {
   cleanupProcesses()
 })
 
-// 处理未捕获异常
 process.on('uncaughtException', (err) => {
   console.error('[Main] 未捕获异常:', err)
   cleanupProcesses()

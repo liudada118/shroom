@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Checkbox, Flex, Radio, Divider, Input, Button } from 'antd';
 import './index.scss'
 import axios from 'axios';
+import { localAddress } from '../../../util/constant';
 const options = [
     { label: '床垫', value: 'bed' },
     { label: '汽车座椅', value: 'car' },
@@ -173,7 +174,7 @@ export default function SystemSetting() {
 
                     axios({
                         method: 'post',
-                        url: 'http://localhost:19245/getSysconfig',
+                        url: `${localAddress}/getSysconfig`,
                         data: {
                             config: newObj,
                         }

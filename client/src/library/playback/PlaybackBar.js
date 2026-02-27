@@ -4,6 +4,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import { shallow } from 'zustand/shallow';
 import { useEquipStore } from '../../store/equipStore';
+import { localAddress } from '../../util/constant';
 import PlaybackSpeedMenu from './PlaybackSpeedMenu';
 import PlaybackPlayToggle from './PlaybackPlayToggle';
 
@@ -36,7 +37,7 @@ export default function PlaybackBar(props) {
     const handleSliderChange = (index) => {
         axios({
             method: 'post',
-            url: 'http://localhost:19245/getDbHistoryIndex',
+            url: `${localAddress}/getDbHistoryIndex`,
             data: {
                 index,
             },
@@ -56,7 +57,7 @@ export default function PlaybackBar(props) {
     const handlePlay = () => {
         axios({
             method: 'post',
-            url: 'http://localhost:19245/getDbHistoryPlay',
+            url: `${localAddress}/getDbHistoryPlay`,
         })
             .then((res) => {
                 if (res.data.message == 'error') {
@@ -71,7 +72,7 @@ export default function PlaybackBar(props) {
     const handleStop = () => {
         axios({
             method: 'post',
-            url: 'http://localhost:19245/getDbHistoryStop',
+            url: `${localAddress}/getDbHistoryStop`,
         })
             .then(() => {
                 setDataPlay(true);
@@ -83,7 +84,7 @@ export default function PlaybackBar(props) {
         setSpeed(nextSpeed);
         axios({
             method: 'post',
-            url: 'http://localhost:19245/changeDbplaySpeed',
+            url: `${localAddress}/changeDbplaySpeed`,
             data: {
                 speed: Number(nextSpeed),
             },

@@ -6,7 +6,7 @@ import customParseFormat from 'dayjs/plugin/customParseFormat';
 import './index.scss'
 
 import dayjs from 'dayjs';
-import { serverAddress } from '../../../util/constant';
+import { serverAddress, localAddress, wsAddress } from '../../../util/constant';
 
 
 dayjs.extend(customParseFormat);
@@ -16,7 +16,7 @@ const CheckboxGroup = Checkbox.Group;
 
 export default function Addequip() {
     const connent = () => {
-        axios.get('http://localhost:19245/connPort', {}).then((res) => {
+        axios.get(`${localAddress}/connPort`, {}).then((res) => {
             console.log(res)
         })
     }
@@ -42,7 +42,7 @@ export default function Addequip() {
         }
 
         function connect() {
-            ws = new WebSocket(" ws://127.0.0.1:19999");
+            ws = new WebSocket(wsAddress);
             ws.onopen = () => {
                 // connection opened
                 reconnectAttempts = 0;
@@ -56,7 +56,7 @@ export default function Addequip() {
             if (jsonObj.macInfo) {
                 setMacInfo(jsonObj.macInfo)
                 console.log(jsonObj.macInfo)
-                // axios.get('http://localhost:19245/sendMac', {}).then((res) => {
+                // axios.get(`${localAddress}/sendMac`, {}).then((res) => {
                 //     console.log(res)
                 // })
 
@@ -133,13 +133,13 @@ export default function Addequip() {
 
     // const connentEquip = () => {
     //     connent()
-    //     // axios.get('http://localhost:19245/getMac', {}).then((res) => {
+    //     // axios.get(`${localAddress}/getMac`, {}).then((res) => {
     //     //     console.log(res)
     //     // })
     // }
 
     const readMac = () => {
-        axios.get('http://localhost:19245/sendMac', {}).then((res) => {
+        axios.get(`${localAddress}/sendMac`, {}).then((res) => {
             console.log(res)
         })
     }

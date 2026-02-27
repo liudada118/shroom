@@ -16,8 +16,9 @@ const { default: axios } = require('axios')
 const module2 = require('../util/aes_ecb')
 
 // ─── 常量配置 ────────────────────────────────────────────
-const API_PORT = 19245
-const WS_PORT = 19999
+// 端口优先从环境变量读取（由主进程分配），否则使用默认值
+const API_PORT = parseInt(process.env.API_PORT, 10) || 19245
+const WS_PORT = parseInt(process.env.WS_PORT, 10) || 19999
 const RECONNECT_INTERVAL = 3000  // 串口断线重连间隔 (ms)
 const DATA_SEND_INTERVAL = 80    // 数据发送间隔 (ms)
 const MIN_HZ_INTERVAL = 50       // 最小数据帧间隔 (ms)
@@ -983,8 +984,8 @@ function storageData(data) {
 // ═══════════════════════════════════════════════════════════
 
 app.listen(API_PORT, () => {
-  process.send?.({ type: 'ready', port: API_PORT })
-  console.log(`[Server] API 服务已启动，端口: ${API_PORT}`)
+  process.send?.({ type: 'ready', apiPort: API_PORT, wsPort: WS_PORT })
+  console.log(`[Server] API 服务已启动，端口: ${API_PORT}, WebSocket 端口: ${WS_PORT}`)
 })
 
 // ─── 串口断线重连监控 ─────────────────────────────────────

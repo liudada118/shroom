@@ -16,7 +16,7 @@ import { SelectionHelper } from '../../components/selectBox/SelectBox'
 import Aside from '../../components/aside/Aside'
 import { brushInstance } from '../../components/selectBox/newSelecttBox'
 import { getDisplayType, getSelectArr, getsetDisplayStatus, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore'
-import { pointConfig, systemConfig, systemPointConfig } from '../../util/constant'
+import { pointConfig, systemConfig, systemPointConfig, localAddress, wsAddress } from '../../util/constant'
 import CanvasShow from '../../components/canvasShow/CanvasShow'
 import { shallow } from 'zustand/shallow'
 import Endi from '../../components/three/ThreeAndCarPoint'
@@ -41,7 +41,7 @@ function Test() {
     const [value, setValue] = useState('')
 
     const connPort = () => {
-        axios.get('http://localhost:19245/connPort', {}).then((res) => {
+        axios.get(`${localAddress}/connPort`, {}).then((res) => {
             console.log(res)
         })
     }
@@ -52,14 +52,14 @@ function Test() {
     }
 
     const postKey = () => {
-        // axios.post('http://localhost:19245/bindKey', {
+        // axios.post(`${localAddress}/bindKey`, {
         //     key : value
         // }).then((res) => {
         //     console.log(res)
         // })
         axios({
             method: 'post',
-            url: 'http://localhost:19245/bindKey',
+            url: `${localAddress}/bindKey`,
             data: {
                 key: value
             }
@@ -91,7 +91,7 @@ function Test() {
         }
 
         function connect() {
-            ws = new WebSocket(" ws://127.0.0.1:19999");
+            ws = new WebSocket(wsAddress);
             ws.onopen = () => {
                 // connection opened
                 reconnectAttempts = 0;
@@ -1291,7 +1291,7 @@ function Test() {
 
             axios({
                 method: 'post',
-                url: 'http://localhost:19245/getDbHistorySelect',
+                url: `${localAddress}/getDbHistorySelect`,
                 data: {
                     selectJson
                 }
@@ -1358,7 +1358,7 @@ function Test() {
     // const systemType = 'car'
     useLayoutEffect(() => {
         const { setSystemType, setSystemTypeArr } = useEquipStore.getState()
-        axios.get('http://localhost:19245/getSystem', {}).then((res) => {
+        axios.get(`${localAddress}/getSystem`, {}).then((res) => {
 
 
             console.log(res)

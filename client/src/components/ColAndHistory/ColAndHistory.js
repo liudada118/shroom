@@ -12,6 +12,7 @@ import { withTranslation } from 'react-i18next'
 import { useDebounce } from '../../hooks/useDebounce'
 import { useEquipStore } from '../../store/equipStore'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
+import { localAddress } from '../../util/constant'
 import dayjs from 'dayjs'
 import { pageContext } from '../../page/test/Test'
 
@@ -74,7 +75,7 @@ const ColAndHistory = memo((props) => {
         sethistoryDrawer(!historyDrawer)
         axios({
             method: 'get',
-            url: 'http://localhost:19245/getColHistory',
+            url: `${localAddress}/getColHistory`,
         }).then((res) => {
             console.log(res.data.data)
             const arr = res.data.data.map((a) => {
@@ -110,7 +111,7 @@ const ColAndHistory = memo((props) => {
         console.log(operateStatus, selectArr)
         axios({
             method: 'post',
-            url: 'http://localhost:19245/downlaod',
+            url: `${localAddress}/downlaod`,
             data: {
                 fileArr: selectArr,
             }
@@ -138,7 +139,7 @@ const ColAndHistory = memo((props) => {
         if (Onindex == 0) {
             axios({
                 method: 'post',
-                url: 'http://localhost:19245/delete',
+                url: `${localAddress}/delete`,
                 data: {
                     fileArr: selectArr,
                 }
@@ -181,7 +182,7 @@ const ColAndHistory = memo((props) => {
     const close = () => {
         axios({
             method: 'post',
-            url: 'http://localhost:19245/cancalDbPlay',
+            url: `${localAddress}/cancalDbPlay`,
         }).then((res) => {
 
         })
@@ -234,7 +235,7 @@ const ColAndHistory = memo((props) => {
         }
         axios({
             method: 'post',
-            url: 'http://localhost:19245/upsertRemark',
+            url: `${localAddress}/upsertRemark`,
             data: {
                 date: selectedDbDate,
                 alias: changedAlias,
@@ -489,7 +490,7 @@ const ColAndHistory = memo((props) => {
                                                 } else {
                                                     axios({
                                                         method: 'post',
-                                                        url: 'http://localhost:19245/getDbHistory',
+                                                        url: `${localAddress}/getDbHistory`,
                                                         data: {
                                                             time: dbInfo.date,
                                                         }
@@ -561,7 +562,7 @@ const ColAndHistory = memo((props) => {
                                             } else {
                                                 axios({
                                                     method: 'post',
-                                                    url: 'http://localhost:19245/getCsvData',
+                                                    url: `${localAddress}/getCsvData`,
                                                     data: {
                                                         fileName: a,
                                                     }
@@ -673,7 +674,7 @@ const ColAndHistory = memo((props) => {
 
                                 axios({
                                     method: 'post',
-                                    url: 'http://localhost:19245/getContrastData',
+                                    url: `${localAddress}/getContrastData`,
                                     data: {
                                         left: contrastArr.left.date,
                                         right: contrastArr.right.date,

@@ -8,7 +8,7 @@ import logo from '../../assets/image/logo.png'
 import axios from 'axios'
 import { withTranslation } from "react-i18next";
 import { pageContext } from '../../page/test/Test'
-import { systemConfig } from '../../util/constant'
+import { systemConfig, localAddress } from '../../util/constant'
 import { useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 
@@ -16,10 +16,10 @@ import { shallow } from 'zustand/shallow'
 const Title = memo((props) => {
   const { t, i18n } = props;
   const connent = () => {
-    axios.get('http://localhost:19245/connPort', {}).then((res) => {
+    axios.get(`${localAddress}/connPort`, {}).then((res) => {
       console.log(res)
     })
-    axios.get('http://localhost:19245/sendMac', {}).then((res) => {
+    axios.get(`${localAddress}/sendMac`, {}).then((res) => {
       console.log(res)
     })
   }
@@ -39,7 +39,7 @@ const Title = memo((props) => {
     // useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
     axios({
       method: 'post',
-      url: 'http://localhost:19245/changeSystemType',
+      url: `${localAddress}/changeSystemType`,
       data: {
         system: e,
       }
