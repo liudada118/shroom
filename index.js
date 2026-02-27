@@ -87,7 +87,8 @@ function startReactDevServer() {
         REACT_APP_API_PORT: String(PORTS.api),
         REACT_APP_WS_PORT: String(PORTS.ws)
       },
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: true   // Windows 上必须通过 shell 执行 .cmd/.bat 脚本
     })
 
     let started = false
