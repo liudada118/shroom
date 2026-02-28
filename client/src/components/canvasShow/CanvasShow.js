@@ -1,5 +1,5 @@
 import React from 'react'
-import NumThree from '../three/NumThreeColor copy';
+import NumThree from '../three/NumThreeColorBase';
 import { useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 

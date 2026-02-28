@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useRef, useState } from 'react'
 import { isMoreMatrix } from '../../assets/util/util';
-import NumThree from '../../components/three/NumThreeColor copy 3'
-import NumThree2 from '../../components/three/NumThreeColor copy 4'
+import NumThree from '../../components/three/NumThreeColorV3'
+import NumThree2 from '../../components/three/NumThreeColorV4'
 import { useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 import { pageContext } from '../../page/test/Test';

@@ -1,0 +1,40 @@
+# Dependencies
+/node_modules
+/client/node_modules
+
+# Build output
+/build
+/dist
+/release
+
+# Data & database (runtime generated)
+/data/*.csv
+/db/*.db
+!db/init.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env.local
+.env.*.local
+
+# Electron
+*.dmg
+*.exe
+*.msi
+*.deb
+*.rpm
+*.snap
