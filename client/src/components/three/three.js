@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { TrackballControls } from "three/examples/jsm/controls/TrackballControls";
 import React, { useEffect, useImperativeHandle, useRef, useState } from "react";
+import { cleanupThree } from '../../util/disposeThree'
 import { TextureLoader } from "three";
 import * as TWEEN from '@tweenjs/tween.js'
 import {
@@ -658,7 +659,7 @@ const Canvas = React.forwardRef((props, refs) => {
     init();
     animate();
     return () => {
-      cancelAnimationFrame(animationRequestId);
+      cleanupThree({ scene, renderer, animationId: animationRequestId, controls })
       group = new THREE.Group();
     };
   }, []);

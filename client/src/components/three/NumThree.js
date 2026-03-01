@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useRef } from 'react'
 import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
+import { cleanupThree } from '../../util/disposeThree'
 
 export default function NumThree() {
 
@@ -134,6 +135,9 @@ export default function NumThree() {
         scene.add(mesh);
         renderer.render(scene, camera);
 
+        return () => {
+            cleanupThree({ scene, renderer })
+        }
     }, [])
 
 

@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useRef } from 'react'
 import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
 import './canvas.scss'
+import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
 
@@ -353,7 +354,7 @@ export default function NumThree(props) {
     renderer.render(scene, camera);
 
     return () => {
-      cancelAnimationFrame(animationRequestId);
+      cleanupThree({ scene, renderer, animationId: animationRequestId })
     };
 
   }, [])
