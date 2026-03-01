@@ -291,6 +291,39 @@ module.exports = function (webpackEnv) {
         // This is only used in production mode
         new CssMinimizerPlugin(),
       ],
+      splitChunks: {
+        chunks: 'all',
+        cacheGroups: {
+          // Three.js 单独打包（体积大，更新频率低）
+          three: {
+            test: /[\\/]node_modules[\\/]three[\\/]/,
+            name: 'vendor-three',
+            priority: 30,
+            chunks: 'all',
+          },
+          // ECharts 单独打包
+          echarts: {
+            test: /[\\/]node_modules[\\/](echarts|zrender)[\\/]/,
+            name: 'vendor-echarts',
+            priority: 30,
+            chunks: 'all',
+          },
+          // Ant Design 单独打包
+          antd: {
+            test: /[\\/]node_modules[\\/](antd|@ant-design|rc-)[\\/]/,
+            name: 'vendor-antd',
+            priority: 20,
+            chunks: 'all',
+          },
+          // 其他 vendor
+          vendors: {
+            test: /[\\/]node_modules[\\/]/,
+            name: 'vendors',
+            priority: 10,
+            chunks: 'all',
+          },
+        },
+      },
     },
     resolve: {
       // This allows you to set a fallback for where webpack should look for modules.

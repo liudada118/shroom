@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useRef, useState } from 'react'
 import Drawer from '../Drawer/Drawer'
 
-import * as echarts from "echarts";
+import echarts from '../../util/echarts';
 import { Scheduler } from '../../scheduler/scheduler';
 import './index.scss'
 import { useTranslation, withTranslation } from 'react-i18next';

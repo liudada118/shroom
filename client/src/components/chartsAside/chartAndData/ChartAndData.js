@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import './index.scss'
-import * as echarts from "echarts";
+import echarts from '../../../util/echarts';
 import { Scheduler } from '../../../scheduler/scheduler';
 
 const nameObj = {
