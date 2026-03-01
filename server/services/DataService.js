@@ -64,7 +64,7 @@ function parseData(parserArr, objs, type) {
 function sendData() {
   let obj
   if (state.baudRate === 921600) {
-    obj = parseData(state.parserArr, JSON.parse(JSON.stringify({ ...state.dataMap })))
+    obj = parseData(state.parserArr, structuredClone(state.dataMap))
 
     Object.keys(obj).forEach((key) => {
       if (!Object.values(constantObj.type).includes(key)) {
@@ -76,7 +76,7 @@ function sendData() {
       broadcast(JSON.stringify({ data: obj }))
     }
   } else {
-    obj = parseData(state.parserArr, JSON.parse(JSON.stringify({ ...state.dataMap })), 'highHZ')
+    obj = parseData(state.parserArr, structuredClone(state.dataMap), 'highHZ')
     broadcast(JSON.stringify({ sitData: obj }))
   }
   return obj

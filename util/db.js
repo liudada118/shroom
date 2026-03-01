@@ -83,18 +83,20 @@ function ensureRemarksTable(db) {
 }
 
 function genDb(file, filePath) {
+  let db
   if (fs.existsSync(file)) {
-    const db = new sqlite3.Database(file);
-    ensureRemarksTable(db);
-    return db;
+    db = new sqlite3.Database(file);
   } else {
     console.log(`[DB] 数据库不存在，从模板创建: ${file}`)
     const data = fs.readFileSync(`${filePath}/init.db`);
     fs.writeFileSync(file, data);
-    const db = new sqlite3.Database(file);
-    ensureRemarksTable(db);
-    return db;
+    db = new sqlite3.Database(file);
   }
+  // 启用 WAL 模式：提升写入性能，支持读写并发
+  db.run('PRAGMA journal_mode = WAL;')
+  db.run('PRAGMA synchronous = NORMAL;')
+  ensureRemarksTable(db);
+  return db;
 }
 
 /**
