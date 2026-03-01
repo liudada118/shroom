@@ -1,10 +1,44 @@
 import { useEffect, useRef } from 'react'
 import { wsAddress } from '../util/constant'
 
+let msgpackDecode = null
+try {
+  // 尝试加载 @msgpack/msgpack（前端）
+  const msgpack = require('@msgpack/msgpack')
+  msgpackDecode = msgpack.decode
+  console.log('[WS] MessagePack 解码器已加载')
+} catch {
+  // 未安装则使用 JSON 回退
+}
+
+/**
+ * 解析 WebSocket 消息，自动适配 JSON 和 MessagePack 格式
+ */
+function parseMessage(data) {
+  // 二进制数据 → MessagePack 解码
+  if (data instanceof ArrayBuffer) {
+    if (msgpackDecode) {
+      return msgpackDecode(new Uint8Array(data))
+    }
+    // 无解码器时尝试当 JSON 文本处理
+    const text = new TextDecoder().decode(data)
+    return JSON.parse(text)
+  }
+  // Blob 不应出现（已设置 binaryType = arraybuffer），但做兜底
+  if (data instanceof Blob) {
+    // 同步场景无法处理 Blob，返回空
+    console.warn('[WS] 收到 Blob 类型消息，请检查 binaryType 设置')
+    return {}
+  }
+  // 字符串 → JSON
+  return JSON.parse(data)
+}
+
 /**
  * WebSocket 连接 Hook
  * 
  * 封装 WebSocket 连接管理、自动重连、消息分发
+ * 自动适配 JSON 和 MessagePack 两种传输格式
  * 
  * @param {Object} handlers - 消息处理回调
  * @param {Function} handlers.onSitData - 实时数据回调 (sitData)
@@ -35,6 +69,8 @@ export function useWebSocket(handlers = {}) {
 
     function connect() {
       ws = new WebSocket(wsAddress)
+      // 设置为 arraybuffer 以支持二进制消息
+      ws.binaryType = 'arraybuffer'
 
       ws.onopen = () => {
         reconnectAttempts = 0
@@ -43,7 +79,7 @@ export function useWebSocket(handlers = {}) {
 
       ws.onmessage = (e) => {
         try {
-          const jsonObj = JSON.parse(e.data)
+          const jsonObj = parseMessage(e.data)
           const h = handlersRef.current
 
           // 实时数据
