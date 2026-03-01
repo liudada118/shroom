@@ -8,7 +8,7 @@ import { shallow } from 'zustand/shallow';
 import axios from 'axios';
 import { python } from '../../assets/util/pythonDataFormat';
 
-export default function Aside() {
+const Aside = React.memo(function Aside() {
 
   const [rect, setRect] = useState([]);
 
@@ -93,4 +93,5 @@ export default function Aside() {
     </Drawer>
 
   )
-}
+})
+export default Aside

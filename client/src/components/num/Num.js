@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useState } from 'react'
 import { pageContext } from '../../page/test/Test';
 import { Button } from 'antd';
 let oldTime
-export default function Num() {
+const Num = React.memo(function Num() {
     const pageInfo = useContext(pageContext);
     // console.log(pageInfo.equipStatus.data)
     const wsData = pageInfo.equipStatus.data
@@ -106,4 +106,5 @@ export default function Num() {
             }}>col</Button>
         </div>
     )
-}
+})
+export default Num

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import './index.scss'
 
-export default function Drawer(props) {
+const Drawer = React.memo(function Drawer(props) {
     const { show, title, setShow, children, asideClose, zindex, close, direction = 'right' } = props
 
     return (
@@ -36,4 +36,5 @@ export default function Drawer(props) {
             </div>
         </div>
     )
-}
+})
+export default Drawer

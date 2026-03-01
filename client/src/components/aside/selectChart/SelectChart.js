@@ -3,6 +3,7 @@ import './index.scss'
 import { pageContext } from '../../../page/test/Test';
 import { calMatrixArea } from '../../../assets/util/selectMatrix';
 import { getStatus, useEquipStore } from '../../../store/equipStore';
+import { shallow } from 'zustand/shallow';
 
 export default function SelectChart(props) {
     const { index, select } = props
@@ -37,7 +38,7 @@ export default function SelectChart(props) {
     const [press, setPress] = useState(0)
     const [area, setArea] = useState(0)
 
-    let data  = useEquipStore(s => s.status); 
+    let data  = useEquipStore(s => s.status, shallow); 
 
     useEffect(() => {
         pageRef.current = pageInfo

@@ -75,7 +75,7 @@ function boxBlur_2(scl, tcl, w, h, r) {
 }
 
 
-const Num = ((props) => {
+const Num = React.memo((props) => {
     let width = 32, canvasheight = 32
     if (props.matrixName == 'carCol') {
         width = 10

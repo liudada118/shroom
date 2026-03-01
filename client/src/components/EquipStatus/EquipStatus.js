@@ -5,7 +5,7 @@ import { withTranslation } from 'react-i18next';
 import { useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 
-function EquipStatus(props) {
+const EquipStatus = React.memo(function EquipStatus(props) {
 
     const { t, i18n } = props;
     const { fileName } = props
@@ -47,6 +47,6 @@ function EquipStatus(props) {
             }
         </div>
     )
-}
+})
 
 export default withTranslation('translation')(EquipStatus);

@@ -10,7 +10,7 @@ const nameObj = {
     aver: '点数'
 }
 
-export default function ChartAndData(props) {
+const ChartAndData = React.memo(function ChartAndData(props) {
     const { lineArr, data } = props
     const myChart1 = useRef()
     const myChart2 = useRef()
@@ -163,4 +163,5 @@ export default function ChartAndData(props) {
             }
         </div>
     )
-}
+})
+export default ChartAndData
