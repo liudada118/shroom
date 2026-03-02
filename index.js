@@ -9,6 +9,9 @@ const fs = require('fs')
 
 const isPackaged = app.isPackaged
 const isDev = !isPackaged
+// In some environments CRA dev server may hang before first compile.
+// Set USE_REACT_DEV_SERVER=0 to run against local static build instead.
+const useReactDevServer = isDev && process.env.USE_REACT_DEV_SERVER !== '0'
 
 // ─── 首选端口配置（从 portFinder 统一管理）─────────────────
 const PREFERRED_PORTS = { ...DEFAULT_PORTS }
@@ -281,7 +284,7 @@ app.whenReady().then(async () => {
 
     // 2. 端口分配：检测冲突并自动分配可用端口
     console.log('[Main] 正在检测端口可用性...')
-    const portsToAllocate = isDev
+    const portsToAllocate = useReactDevServer
       ? { api: PREFERRED_PORTS.api, ws: PREFERRED_PORTS.ws, frontend: PREFERRED_PORTS.frontend }
       : { api: PREFERRED_PORTS.api, ws: PREFERRED_PORTS.ws, frontendProd: PREFERRED_PORTS.frontendProd }
 
@@ -294,11 +297,11 @@ app.whenReady().then(async () => {
 
     // 4. 启动前端
     let frontendPort
-    if (isDev) {
+    if (useReactDevServer) {
       console.log('[Main] 开发模式：正在启动 React dev server...')
       frontendPort = await startReactDevServer()
     } else {
-      console.log('[Main] 生产模式：正在启动静态文件服务...')
+      console.log('[Main] 正在启动静态文件服务...')
       frontendPort = await startStaticServer()
     }
 
@@ -324,7 +327,7 @@ app.on('window-all-closed', () => {
 
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    const port = isDev ? PORTS.frontend : PORTS.frontendProd
+    const port = useReactDevServer ? PORTS.frontend : PORTS.frontendProd
     createWindow(port)
   }
 })
