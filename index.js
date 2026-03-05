@@ -9,25 +9,25 @@ const fs = require('fs')
 
 const isPackaged = app.isPackaged
 const isDev = !isPackaged
-// In some environments CRA dev server may hang before first compile.
-// Set USE_REACT_DEV_SERVER=0 to run against local static build instead.
-const useReactDevServer = isDev && process.env.USE_REACT_DEV_SERVER !== '0'
 
-// ─── 首选端口配置（从 portFinder 统一管理）─────────────────
+// ─── 开发模式前端策略 ────────────────────────────────────
+// 默认使用 build 静态文件（秒启动），设置 USE_REACT_DEV_SERVER=1 启用热更新
+const useReactDevServer = isDev && process.env.USE_REACT_DEV_SERVER === '1'
+
+// ─── 首选端口配置 ────────────────────────────────────────
 const PREFERRED_PORTS = { ...DEFAULT_PORTS }
-
-// ─── 实际分配的端口（启动时动态确定）────────────────────────
 let PORTS = { ...PREFERRED_PORTS }
 
 // ─── 子进程引用 ──────────────────────────────────────────
 let apiChild = null
 let reactChild = null
 let staticServer = null
+let mainWindow = null
 
-/**
- * 启动后端 API 子进程 (serialServer.js)
- * 通过环境变量将动态端口传递给子进程
- */
+// ═══════════════════════════════════════════════════════════
+//  启动后端 API 子进程
+// ═══════════════════════════════════════════════════════════
+
 function startApiChild() {
   return new Promise((resolve, reject) => {
     apiChild = fork(path.join(__dirname, './server/serialServer.js'), {
@@ -48,7 +48,6 @@ function startApiChild() {
       if (msg.type === 'ready') {
         clearTimeout(readyTimer)
         console.log(`[Main] API 服务已启动，API端口: ${msg.apiPort}, WS端口: ${msg.wsPort}`)
-        // 更新实际端口（子进程可能因为冲突使用了不同端口）
         if (msg.apiPort) PORTS.api = msg.apiPort
         if (msg.wsPort) PORTS.ws = msg.wsPort
         resolve({ apiPort: msg.apiPort, wsPort: msg.wsPort })
@@ -71,10 +70,10 @@ function startApiChild() {
   })
 }
 
-/**
- * 开发模式：启动 React dev server (CRA)
- * 通过环境变量传入端口和后端地址
- */
+// ═══════════════════════════════════════════════════════════
+//  启动 React dev server（仅 USE_REACT_DEV_SERVER=1 时使用）
+// ═══════════════════════════════════════════════════════════
+
 function startReactDevServer() {
   return new Promise((resolve, reject) => {
     const clientDir = path.join(__dirname, 'client')
@@ -86,12 +85,11 @@ function startReactDevServer() {
         ...process.env,
         PORT: String(PORTS.frontend),
         BROWSER: 'none',
-        // 通过 CRA 环境变量将动态端口传给前端
         REACT_APP_API_PORT: String(PORTS.api),
         REACT_APP_WS_PORT: String(PORTS.ws)
       },
       stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true   // Windows 上必须通过 shell 执行 .cmd/.bat 脚本
+      shell: true
     })
 
     let started = false
@@ -127,10 +125,7 @@ function startReactDevServer() {
     reactChild.on('error', (err) => {
       clearTimeout(startTimer)
       console.error('[Main] React dev server 启动失败:', err)
-      if (!started) {
-        started = true
-        reject(err)
-      }
+      if (!started) { started = true; reject(err) }
     })
 
     reactChild.on('exit', (code) => {
@@ -141,35 +136,31 @@ function startReactDevServer() {
   })
 }
 
-/**
- * 生产模式：启动静态文件服务器
- * 注入端口配置到 HTML 页面中
- * 使用 listenWithRetry 自动处理端口冲突
- */
+// ═══════════════════════════════════════════════════════════
+//  启动静态文件服务器（默认模式，秒启动）
+// ═══════════════════════════════════════════════════════════
+
 function startStaticServer() {
   return new Promise(async (resolve, reject) => {
     const MIME_TYPES = {
-      '.html': 'text/html',
-      '.css': 'text/css',
-      '.js': 'text/javascript',
-      '.json': 'application/json',
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.svg': 'image/svg+xml',
-      '.ico': 'image/x-icon',
-      '.woff': 'font/woff',
-      '.woff2': 'font/woff2',
-      '.ttf': 'font/ttf',
-      '.map': 'application/json'
+      '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript',
+      '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2',
+      '.ttf': 'font/ttf', '.map': 'application/json'
     }
 
+    // 开发模式和生产模式的 build 目录不同
     const buildDir = isPackaged
       ? path.join(__dirname, '..', 'build')
-      : path.join(__dirname, 'build')
+      : path.join(__dirname, 'client', 'build')
 
-    // 生成注入到 HTML <head> 中的端口配置脚本
+    // 检查 build 目录是否存在
+    if (!fs.existsSync(path.join(buildDir, 'index.html'))) {
+      reject(new Error(`构建产物不存在: ${buildDir}/index.html\n请先运行 cd client && npm run build`))
+      return
+    }
+
     const portInjectionScript = `<script>window.__PORTS__=${JSON.stringify({
       api: PORTS.api,
       ws: PORTS.ws
@@ -188,7 +179,6 @@ function startStaticServer() {
               res.writeHead(404, { 'Content-Type': 'text/plain' })
               res.end('Not Found')
             } else {
-              // 注入端口配置
               const html = indexData.toString().replace('<head>', `<head>${portInjectionScript}`)
               res.writeHead(200, { 'Content-Type': 'text/html' })
               res.end(html)
@@ -197,8 +187,6 @@ function startStaticServer() {
         } else {
           const ext = path.extname(fullPath).toLowerCase()
           const contentType = MIME_TYPES[ext] || 'application/octet-stream'
-
-          // 对 HTML 文件注入端口配置
           if (ext === '.html') {
             const html = data.toString().replace('<head>', `<head>${portInjectionScript}`)
             res.writeHead(200, { 'Content-Type': contentType })
@@ -212,8 +200,8 @@ function startStaticServer() {
     })
 
     try {
-      // 使用 listenWithRetry 自动处理端口冲突
-      const actualPort = await listenWithRetry(staticServer, PORTS.frontendProd, '127.0.0.1')
+      const port = useReactDevServer ? PORTS.frontendProd : PORTS.frontendProd
+      const actualPort = await listenWithRetry(staticServer, port, '127.0.0.1')
       PORTS.frontendProd = actualPort
       console.log(`[Main] 静态文件服务已启动，端口: ${actualPort}`)
       resolve(actualPort)
@@ -224,35 +212,51 @@ function startStaticServer() {
   })
 }
 
-/**
- * 创建主窗口
- */
+// ═══════════════════════════════════════════════════════════
+//  创建主窗口
+// ═══════════════════════════════════════════════════════════
+
 function createWindow(port) {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false
     },
-    icon: path.join(__dirname, 'logo.ico')
+    icon: path.join(__dirname, 'logo.ico'),
+    show: false,           // 先不显示，等加载完成后再显示避免白屏
+    backgroundColor: '#1a1a2e'  // 设置背景色，减少白屏感
   })
 
-  win.maximize()
+  mainWindow.maximize()
 
   const url = `http://127.0.0.1:${port}`
   console.log(`[Main] 加载页面: ${url}`)
-  win.loadURL(url)
+  mainWindow.loadURL(url)
+
+  // 页面加载完成后再显示窗口
+  mainWindow.webContents.once('did-finish-load', () => {
+    mainWindow.show()
+  })
+
+  // 备用：如果 3 秒内没有触发 did-finish-load，也显示窗口
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      mainWindow.show()
+    }
+  }, 3000)
 
   if (isDev) {
-    win.webContents.openDevTools({ mode: 'detach' })
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
 
-  return win
+  return mainWindow
 }
 
-/**
- * 优雅关闭所有子进程
- */
+// ═══════════════════════════════════════════════════════════
+//  优雅关闭
+// ═══════════════════════════════════════════════════════════
+
 function cleanupProcesses() {
   if (apiChild) {
     console.log('[Main] 关闭 API 子进程...')
@@ -272,44 +276,60 @@ function cleanupProcesses() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  应用生命周期
+//  应用生命周期 — 优化启动速度
 // ═══════════════════════════════════════════════════════════
 
 app.whenReady().then(async () => {
-  try {
-    // 1. 获取硬件指纹（授权校验）
-    const uuid = await getHardwareFingerprint()
-    const dateKey = await getKeyfromWinuuid(uuid)
-    console.log(`[Main] 硬件UUID: ${uuid}, 授权: ${dateKey}`)
+  const startTime = Date.now()
 
-    // 2. 端口分配：检测冲突并自动分配可用端口
-    console.log('[Main] 正在检测端口可用性...')
+  try {
+    // 1. 并行执行：硬件指纹 + 端口分配（互不依赖）
+    console.log('[Main] 正在初始化...')
     const portsToAllocate = useReactDevServer
       ? { api: PREFERRED_PORTS.api, ws: PREFERRED_PORTS.ws, frontend: PREFERRED_PORTS.frontend }
       : { api: PREFERRED_PORTS.api, ws: PREFERRED_PORTS.ws, frontendProd: PREFERRED_PORTS.frontendProd }
 
-    PORTS = { ...PREFERRED_PORTS, ...(await allocatePorts(portsToAllocate)) }
-    console.log('[Main] 端口分配完成:', JSON.stringify(PORTS))
+    const [uuid, allocatedPorts] = await Promise.all([
+      getHardwareFingerprint(),
+      allocatePorts(portsToAllocate)
+    ])
 
-    // 3. 启动后端 API 服务（传入分配好的端口）
-    console.log('[Main] 正在启动后端 API 服务...')
-    await startApiChild()
+    PORTS = { ...PREFERRED_PORTS, ...allocatedPorts }
 
-    // 4. 启动前端
+    // 授权校验（当前是空实现，不阻塞）
+    const dateKey = await getKeyfromWinuuid(uuid)
+    console.log(`[Main] 硬件UUID: ${uuid}, 授权: ${dateKey}`)
+    console.log(`[Main] 端口分配完成: ${JSON.stringify(PORTS)} (${Date.now() - startTime}ms)`)
+
+    // 2. 并行启动：后端 API + 前端服务
+    console.log('[Main] 正在启动服务...')
     let frontendPort
+
     if (useReactDevServer) {
-      console.log('[Main] 开发模式：正在启动 React dev server...')
-      frontendPort = await startReactDevServer()
+      // 热更新模式：并行启动后端和前端
+      const [_, devPort] = await Promise.all([
+        startApiChild(),
+        startReactDevServer()
+      ])
+      frontendPort = devPort
     } else {
-      console.log('[Main] 正在启动静态文件服务...')
-      frontendPort = await startStaticServer()
+      // 默认模式：并行启动后端和静态文件服务（秒启动）
+      const [_, staticPort] = await Promise.all([
+        startApiChild(),
+        startStaticServer()
+      ])
+      frontendPort = staticPort
     }
 
-    // 5. 创建窗口
+    console.log(`[Main] 所有服务已就绪 (${Date.now() - startTime}ms)`)
+
+    // 3. 创建窗口
     createWindow(frontendPort)
 
-    // 6. 隐藏菜单栏
+    // 4. 隐藏菜单栏
     Menu.setApplicationMenu(null)
+
+    console.log(`[Main] 启动完成，总耗时: ${Date.now() - startTime}ms`)
 
   } catch (err) {
     console.error('[Main] 启动失败:', err)

@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "electron .",
+    "dev:hot": "cross-env USE_REACT_DEV_SERVER=1 electron .",
     "start": "electron .",
     "build:client": "cd client && npm run build",
     "build:win": "npm run build:client && electron-builder -w",
