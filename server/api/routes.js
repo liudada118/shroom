@@ -21,8 +21,8 @@ const router = express.Router()
 function asyncHandler(fn) {
   return (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch((err) => {
-      console.error('[Server] 路由错误:', err)
-      res.json(new HttpResult(1, {}, err.message || '服务器内部错误'))
+      console.error('[Server] Route error:', err)
+      res.json(new HttpResult(1, {}, err.message || 'Internal server error'))
     })
   }
 }
@@ -47,7 +47,7 @@ router.get('/getSystem', asyncHandler(async (req, res) => {
   const { db } = initDb(state.file, state._dbPath)
   state.currentDb = db
 
-  res.json(new HttpResult(0, configResult, '获取设备列表成功'))
+  res.json(new HttpResult(0, configResult, 'Get device list success'))
 }))
 
 router.post('/selectSystem', asyncHandler(async (req, res) => {
@@ -55,7 +55,7 @@ router.post('/selectSystem', asyncHandler(async (req, res) => {
   const { db } = initDb(state.file, state._dbPath)
   state.currentDb = db
   state.baudRate = constantObj.blue.includes(state.file) ? 921600 : 1000000
-  res.json(new HttpResult(0, {}, '切换成功'))
+  res.json(new HttpResult(0, {}, 'Switch success'))
 }))
 
 router.post('/changeSystemType', asyncHandler(async (req, res) => {
@@ -76,23 +76,23 @@ router.get('/getPort', asyncHandler(async (req, res) => {
   const { getPort } = require('../../util/serialport')
   const ports = await SerialPort.list()
   const portsRes = getPort(ports)
-  res.json(new HttpResult(0, portsRes, '获取设备列表成功'))
+  res.json(new HttpResult(0, portsRes, 'Get device list success'))
 }))
 
 router.get('/connPort', asyncHandler(async (req, res) => {
   const port = await connectPort(broadcast, colAndSendData)
-  res.json(new HttpResult(0, port, '连接成功'))
+  res.json(new HttpResult(0, port, 'Connect success'))
 }))
 
 router.get('/sendMac', asyncHandler(async (req, res) => {
   if (!Object.keys(state.parserArr).length) {
-    res.json(new HttpResult(0, {}, '请先连接串口'))
+    res.json(new HttpResult(0, {}, 'Please connect serial port first'))
     return
   }
 
   const tasks = Object.keys(state.parserArr).map((key) => portWrite(state.parserArr[key].port))
   await Promise.all(tasks)
-  res.json(new HttpResult(0, {}, '发送成功'))
+  res.json(new HttpResult(0, {}, 'Send success'))
 }))
 
 // ─── 数据采集 ────────────────────────────────────────────
@@ -108,15 +108,15 @@ router.post('/startCol', asyncHandler(async (req, res) => {
   if (matchCount > 0) {
     state.colFlag = true
     state.colName = String(fileName)
-    res.json(new HttpResult(0, {}, '开始采集'))
+    res.json(new HttpResult(0, {}, 'Collection started'))
   } else {
-    res.json(new HttpResult(0, '请选择正确传感器类型', 'error'))
+    res.json(new HttpResult(0, 'Please select correct sensor type', 'error'))
   }
 }))
 
 router.get('/endCol', (req, res) => {
   state.colFlag = false
-  res.json(new HttpResult(0, 'success', '停止采集'))
+  res.json(new HttpResult(0, 'success', 'Collection stopped'))
 })
 
 // ─── 历史数据管理 ─────────────────────────────────────────
@@ -251,7 +251,7 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
 
 router.post('/getDbHistoryPlay', asyncHandler(async (req, res) => {
   if (!state.historyDbArr) {
-    res.json(new HttpResult(1, '请选择回放时间段', 'error'))
+    res.json(new HttpResult(1, 'Please select playback time range', 'error'))
     return
   }
   startPlayback()
@@ -281,7 +281,7 @@ router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
   const { index } = req.body
 
   if (!state.historyDbArr) {
-    res.json(new HttpResult(555, '请选择回放时间段', 'error'))
+    res.json(new HttpResult(555, 'Please select playback time range', 'error'))
     return
   }
 
@@ -299,24 +299,24 @@ router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
 router.post('/downlaod', asyncHandler(async (req, res) => {
   const { fileArr, selectJson } = req.body || {}
   if (!fileArr || !fileArr.length) {
-    res.json(new HttpResult(555, '请选择先数据', 'error'))
+    res.json(new HttpResult(555, 'Please select data first', 'error'))
     return
   }
   const selectOverride = selectJson && typeof selectJson === 'object' ? selectJson : state.historySelectCache
   const data = await dbLoadCsv({ db: state.currentDb, params: fileArr, file: state.file, isPackaged: state._isPackaged, selectJson: selectOverride })
-  res.json(new HttpResult(0, data, '下载'))
+  res.json(new HttpResult(0, data, 'Download'))
 }))
 
 router.post('/delete', asyncHandler(async (req, res) => {
   const { fileArr } = req.body
   const data = await deleteDbData({ db: state.currentDb, params: fileArr })
-  res.json(new HttpResult(0, data, '删除成功'))
+  res.json(new HttpResult(0, data, 'Delete success'))
 }))
 
 router.post('/changeDbName', asyncHandler(async (req, res) => {
   const { newDate, oldDate } = req.body
   const data = await changeDbName({ db: state.currentDb, params: [newDate, oldDate] })
-  res.json(new HttpResult(0, data, '修改成功'))
+  res.json(new HttpResult(0, data, 'Update success'))
 }))
 
 router.post('/changeDbDataName', asyncHandler(async (req, res) => {
@@ -348,40 +348,40 @@ router.post('/getRemark', asyncHandler(async (req, res) => {
   res.json(new HttpResult(0, data, 'success'))
 }))
 
-// ─── 设备缓存管理 ───────────────────────────────────────────
+// ─── Device缓存管理 ───────────────────────────────────────────
 
-// 获取所有缓存的设备列表
+// 获取所有缓存的Device列表
 router.get('/cache/devices', asyncHandler(async (req, res) => {
   const devices = getAllCached()
   res.json(new HttpResult(0, devices, 'success'))
 }))
 
-// 添加/更新设备缓存
+// 添加/更新Device缓存
 router.post('/cache/devices', asyncHandler(async (req, res) => {
   const { mac, type, deviceClass, alias } = req.body
   if (!mac || !type) {
-    res.json(new HttpResult(1, {}, 'mac 和 type 必填'))
+    res.json(new HttpResult(1, {}, 'mac and type are required'))
     return
   }
   setTypeToCache(mac, type, deviceClass || 'foot', alias || '')
-  res.json(new HttpResult(0, {}, '设备缓存已更新'))
+  res.json(new HttpResult(0, {}, 'Device cache updated'))
 }))
 
-// 删除单个设备缓存
+// 删除单个Device缓存
 router.delete('/cache/devices', asyncHandler(async (req, res) => {
   const { mac } = req.body
   if (!mac) {
-    res.json(new HttpResult(1, {}, 'mac 必填'))
+    res.json(new HttpResult(1, {}, 'mac is required'))
     return
   }
   removeFromCache(mac)
-  res.json(new HttpResult(0, {}, '设备缓存已删除'))
+  res.json(new HttpResult(0, {}, 'Device cache deleted'))
 }))
 
-// 清空所有设备缓存
+// 清空所有Device缓存
 router.post('/cache/clear', asyncHandler(async (req, res) => {
   clearCache()
-  res.json(new HttpResult(0, {}, '缓存已清空'))
+  res.json(new HttpResult(0, {}, 'Cache cleared'))
 }))
 
 // ─── 授权模式管理 ──────────────────────────────────────────
@@ -395,12 +395,12 @@ router.get('/auth/mode', (req, res) => {
 router.post('/auth/mode', asyncHandler(async (req, res) => {
   const { mode } = req.body
   if (!['online', 'local'].includes(mode)) {
-    res.json(new HttpResult(1, {}, '模式只能是 online 或 local'))
+    res.json(new HttpResult(1, {}, 'Mode must be online or local'))
     return
   }
   constantObj.AUTH_MODE = mode
-  console.log(`[Auth] 授权模式已切换为: ${mode}`)
-  res.json(new HttpResult(0, { mode }, `已切换为${mode === 'online' ? '联网' : '本地'}模式`))
+  console.log(`[Auth] Auth mode switched to: ${mode}`)
+  res.json(new HttpResult(0, { mode }, `Switched to ${mode} mode`))
 }))
 
 // ─── 其他 ──────────────────────────────────────────────────
@@ -408,9 +408,9 @@ router.post('/auth/mode', asyncHandler(async (req, res) => {
 router.post('/bindKey', (req, res) => {
   try {
     const { key } = req.body
-    res.json(new HttpResult(0, {}, '绑定成功'))
+    res.json(new HttpResult(0, {}, 'Bindkey success'))
   } catch {
-    res.json(new HttpResult(1, {}, '绑定失败'))
+    res.json(new HttpResult(1, {}, 'Bindkey failed'))
   }
 })
 

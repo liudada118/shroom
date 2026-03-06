@@ -1,8 +1,8 @@
 /**
- * 串口设备本地缓存模块
+ * 串口Device本地缓存模块
  *
- * 管理 serial_cache.json 文件，存储 MAC 地址 → 设备类型的映射关系。
- * 用于本地模式下的设备类型识别，无需联网。
+ * 管理 serial_cache.json 文件，存储 MAC 地址 → Device类型的映射关系。
+ * 用于In local mode的Device类型识别，无需联网。
  *
  * 缓存文件格式：
  * {
@@ -41,7 +41,7 @@ function readCache() {
       return JSON.parse(raw)
     }
   } catch (err) {
-    console.error('[SerialCache] 读取缓存失败:', err.message)
+    console.error('[SerialCache] Cache read failed:', err.message)
   }
   return { devices: {}, updatedAt: null }
 }
@@ -55,12 +55,12 @@ function writeCache(cache) {
     cache.updatedAt = new Date().toISOString()
     fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2), 'utf-8')
   } catch (err) {
-    console.error('[SerialCache] 写入缓存失败:', err.message)
+    console.error('[SerialCache] Cache write failed:', err.message)
   }
 }
 
 /**
- * 从缓存中查询 MAC 地址对应的设备类型
+ * 从缓存中查询 MAC 地址对应的Device类型
  * @param {string} mac MAC 地址
  * @returns {Object|null} { type, deviceClass, alias } 或 null
  */
@@ -79,11 +79,11 @@ function getTypeFromCache(mac) {
 }
 
 /**
- * 将 MAC 地址和设备类型写入缓存
+ * 将 MAC 地址和Device类型写入缓存
  * @param {string} mac MAC 地址
- * @param {string} deviceType 设备类型（如 foot1, foot2）
- * @param {string} deviceClass 设备大类（如 foot, hand）
- * @param {string} [alias] 设备别名
+ * @param {string} deviceType Device类型（如 foot1, foot2）
+ * @param {string} deviceClass Device大类（如 foot, hand）
+ * @param {string} [alias] Device别名
  */
 function setTypeToCache(mac, deviceType, deviceClass, alias) {
   if (!mac || !deviceType) return
@@ -96,7 +96,7 @@ function setTypeToCache(mac, deviceType, deviceClass, alias) {
     alias: alias || '',
   }
   writeCache(cache)
-  console.log(`[SerialCache] 已缓存: ${normalizedMac} → ${deviceType}`)
+  console.log(`[SerialCache] Cached: ${normalizedMac} → ${deviceType}`)
 }
 
 /**
@@ -112,7 +112,7 @@ function removeFromCache(mac) {
 }
 
 /**
- * 获取所有缓存的设备列表
+ * 获取所有缓存的Device列表
  * @returns {Object} { mac: { type, deviceClass, lastSeen, alias } }
  */
 function getAllCached() {

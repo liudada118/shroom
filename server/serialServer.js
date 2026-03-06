@@ -24,7 +24,7 @@ const { createWsServer, getHttpServer } = require('./websocket')
 const { startReconnectMonitor } = require('./serial/SerialManager')
 const routes = require('./api/routes')
 
-// ─── 端口配置 ────────────────────────────────────────────
+// ─── Port配置 ────────────────────────────────────────────
 let API_PORT = parseInt(process.env.API_PORT, 10) || DEFAULT_PORTS.api
 let WS_PORT = parseInt(process.env.WS_PORT, 10) || DEFAULT_PORTS.ws
 
@@ -51,7 +51,7 @@ if (isPackaged) {
 // ─── 配置文件读取 ─────────────────────────────────────────
 const config = fs.readFileSync('./config.txt', 'utf-8')
 const result = JSON.parse(decryptStr(config))
-console.log('[Server] 配置加载完成:', Object.keys(result))
+console.log('[Server] Config loaded:', Object.keys(result))
 
 // ─── 初始化全局状态 ──────────────────────────────────────
 state.file = result.value
@@ -60,7 +60,7 @@ state._isPackaged = isPackaged
 
 const { db } = initDb(state.file, dbPath)
 state.currentDb = db
-console.log('[Server] 数据库初始化完成:', dbPath)
+console.log('[Server] Database initialized:', dbPath)
 
 // ─── Express 应用配置 ─────────────────────────────────────
 const app = express()
@@ -73,7 +73,7 @@ app.use(routes)
 createWsServer()
 
 // ═══════════════════════════════════════════════════════════
-//  启动服务（带端口冲突自动重试）
+//  启动服务（带Port冲突自动重试）
 // ═══════════════════════════════════════════════════════════
 
 async function startServer() {
@@ -82,25 +82,25 @@ async function startServer() {
     const wsHttpServer = getHttpServer()
     const actualWsPort = await listenWithRetry(wsHttpServer, WS_PORT, '0.0.0.0')
     if (actualWsPort !== WS_PORT) {
-      console.log(`[Server] WebSocket 端口从 ${WS_PORT} 切换到 ${actualWsPort}`)
+      console.log(`[Server] WebSocket port changed from ${WS_PORT} switched to ${actualWsPort}`)
       WS_PORT = actualWsPort
     }
-    console.log(`[Server] WebSocket 服务已启动，端口: ${WS_PORT}`)
+    console.log(`[Server] WebSocket service started, port: ${WS_PORT}`)
 
     // 2. 启动 Express API 服务器
     const apiServer = http.createServer(app)
     const actualApiPort = await listenWithRetry(apiServer, API_PORT, '0.0.0.0')
     if (actualApiPort !== API_PORT) {
-      console.log(`[Server] API 端口从 ${API_PORT} 切换到 ${actualApiPort}`)
+      console.log(`[Server] API port changed from ${API_PORT} switched to ${actualApiPort}`)
       API_PORT = actualApiPort
     }
-    console.log(`[Server] API 服务已启动，端口: ${API_PORT}`)
+    console.log(`[Server] API service started, port: ${API_PORT}`)
 
-    // 3. 通知主进程实际使用的端口
+    // 3. 通知主进程actually using的Port
     process.send?.({ type: 'ready', apiPort: API_PORT, wsPort: WS_PORT })
-    console.log(`[Server] 所有服务启动完成 — API: ${API_PORT}, WS: ${WS_PORT}`)
+    console.log(`[Server] All services started — API: ${API_PORT}, WS: ${WS_PORT}`)
   } catch (err) {
-    console.error('[Server] 服务启动失败:', err)
+    console.error('[Server] Service startup failed:', err)
     process.send?.({ type: 'error', code: 'START_FAILED', message: err.message })
     process.exit(1)
   }

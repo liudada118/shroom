@@ -14,7 +14,7 @@ const isDev = !isPackaged
 // 默认使用 build 静态文件（秒启动），设置 USE_REACT_DEV_SERVER=1 启用热更新
 const useReactDevServer = isDev && process.env.USE_REACT_DEV_SERVER === '1'
 
-// ─── 首选端口配置 ────────────────────────────────────────
+// ─── 首选Port配置 ────────────────────────────────────────
 const PREFERRED_PORTS = { ...DEFAULT_PORTS }
 let PORTS = { ...PREFERRED_PORTS }
 
@@ -47,7 +47,7 @@ function startApiChild() {
     apiChild.on('message', (msg) => {
       if (msg.type === 'ready') {
         clearTimeout(readyTimer)
-        console.log(`[Main] API 服务已启动，API端口: ${msg.apiPort}, WS端口: ${msg.wsPort}`)
+        console.log(`[Main] API service started, API port: ${msg.apiPort}, WSPort: ${msg.wsPort}`)
         if (msg.apiPort) PORTS.api = msg.apiPort
         if (msg.wsPort) PORTS.ws = msg.wsPort
         resolve({ apiPort: msg.apiPort, wsPort: msg.wsPort })
@@ -58,13 +58,13 @@ function startApiChild() {
     })
 
     apiChild.on('exit', (code, signal) => {
-      console.log(`[Main] API 子进程退出: code=${code} signal=${signal}`)
+      console.log(`[Main] API child process exited: code=${code} signal=${signal}`)
       apiChild = null
     })
 
     apiChild.on('error', (err) => {
       clearTimeout(readyTimer)
-      console.error('[Main] API 子进程 spawn 错误:', err)
+      console.error('[Main] API child process spawn error:', err)
       reject(err)
     })
   })
@@ -96,7 +96,7 @@ function startReactDevServer() {
     const startTimer = setTimeout(() => {
       if (!started) {
         started = true
-        console.log('[Main] React dev server 启动超时，尝试连接...')
+        console.log('[Main] React dev server start timeout, trying to connect...')
         resolve(PORTS.frontend)
       }
     }, 30000)
@@ -105,7 +105,7 @@ function startReactDevServer() {
       if (!started && (output.includes('Compiled') || output.includes('compiled') || output.includes('webpack compiled'))) {
         started = true
         clearTimeout(startTimer)
-        console.log(`[Main] React dev server 已启动，端口: ${PORTS.frontend}`)
+        console.log(`[Main] React dev server started, port: ${PORTS.frontend}`)
         resolve(PORTS.frontend)
       }
     }
@@ -124,13 +124,13 @@ function startReactDevServer() {
 
     reactChild.on('error', (err) => {
       clearTimeout(startTimer)
-      console.error('[Main] React dev server 启动失败:', err)
+      console.error('[Main] React dev server start failed:', err)
       if (!started) { started = true; reject(err) }
     })
 
     reactChild.on('exit', (code) => {
       clearTimeout(startTimer)
-      console.log(`[Main] React dev server 退出: code=${code}`)
+      console.log(`[Main] React dev server exited: code=${code}`)
       reactChild = null
     })
   })
@@ -203,10 +203,10 @@ function startStaticServer() {
       const port = useReactDevServer ? PORTS.frontendProd : PORTS.frontendProd
       const actualPort = await listenWithRetry(staticServer, port, '127.0.0.1')
       PORTS.frontendProd = actualPort
-      console.log(`[Main] 静态文件服务已启动，端口: ${actualPort}`)
+      console.log(`[Main] Static file server started, port: ${actualPort}`)
       resolve(actualPort)
     } catch (err) {
-      console.error('[Main] 静态文件服务启动失败:', err)
+      console.error('[Main] Static file server start failed:', err)
       reject(err)
     }
   })
@@ -231,7 +231,7 @@ function createWindow(port) {
   mainWindow.maximize()
 
   const url = `http://127.0.0.1:${port}`
-  console.log(`[Main] 加载页面: ${url}`)
+  console.log(`[Main] Loading page: ${url}`)
   mainWindow.loadURL(url)
 
   // 页面加载完成后再显示窗口
@@ -259,17 +259,17 @@ function createWindow(port) {
 
 function cleanupProcesses() {
   if (apiChild) {
-    console.log('[Main] 关闭 API 子进程...')
+    console.log('[Main] Closing API child process...')
     apiChild.kill()
     apiChild = null
   }
   if (reactChild) {
-    console.log('[Main] 关闭 React dev server...')
+    console.log('[Main] Closing React dev server...')
     reactChild.kill()
     reactChild = null
   }
   if (staticServer) {
-    console.log('[Main] 关闭静态文件服务...')
+    console.log('[Main] Closing static file server...')
     staticServer.close()
     staticServer = null
   }
@@ -283,8 +283,8 @@ app.whenReady().then(async () => {
   const startTime = Date.now()
 
   try {
-    // 1. 并行执行：硬件指纹 + 端口分配（互不依赖）
-    console.log('[Main] 正在初始化...')
+    // 1. 并行执行：硬件指纹 + Port分配（互不依赖）
+    console.log('[Main] Initializing...')
     const portsToAllocate = useReactDevServer
       ? { api: PREFERRED_PORTS.api, ws: PREFERRED_PORTS.ws, frontend: PREFERRED_PORTS.frontend }
       : { api: PREFERRED_PORTS.api, ws: PREFERRED_PORTS.ws, frontendProd: PREFERRED_PORTS.frontendProd }
@@ -298,11 +298,11 @@ app.whenReady().then(async () => {
 
     // 授权校验（当前是空实现，不阻塞）
     const dateKey = await getKeyfromWinuuid(uuid)
-    console.log(`[Main] 硬件UUID: ${uuid}, 授权: ${dateKey}`)
-    console.log(`[Main] 端口分配完成: ${JSON.stringify(PORTS)} (${Date.now() - startTime}ms)`)
+    console.log(`[Main] Hardware UUID: ${uuid}, Auth: ${dateKey}`)
+    console.log(`[Main] Port allocation done: ${JSON.stringify(PORTS)} (${Date.now() - startTime}ms)`)
 
     // 2. 并行启动：后端 API + 前端服务
-    console.log('[Main] 正在启动服务...')
+    console.log('[Main] Starting services...')
     let frontendPort
 
     if (useReactDevServer) {
@@ -321,7 +321,7 @@ app.whenReady().then(async () => {
       frontendPort = staticPort
     }
 
-    console.log(`[Main] 所有服务已就绪 (${Date.now() - startTime}ms)`)
+    console.log(`[Main] All services ready (${Date.now() - startTime}ms)`)
 
     // 3. 创建窗口
     createWindow(frontendPort)
@@ -329,10 +329,10 @@ app.whenReady().then(async () => {
     // 4. 隐藏菜单栏
     Menu.setApplicationMenu(null)
 
-    console.log(`[Main] 启动完成，总耗时: ${Date.now() - startTime}ms`)
+    console.log(`[Main] Startup complete, total time: ${Date.now() - startTime}ms`)
 
   } catch (err) {
-    console.error('[Main] 启动失败:', err)
+    console.error('[Main] Startup failed:', err)
     cleanupProcesses()
     app.quit()
   }
@@ -357,6 +357,6 @@ app.on('before-quit', () => {
 })
 
 process.on('uncaughtException', (err) => {
-  console.error('[Main] 未捕获异常:', err)
+  console.error('[Main] Uncaught exception:', err)
   cleanupProcesses()
 })

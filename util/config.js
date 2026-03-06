@@ -1,11 +1,11 @@
 /**
  * 全局常量配置
  *
- * 包含：串口协议参数、波特率探测配置、设备类型映射、远程服务地址等
+ * 包含：串口协议参数、波特率探测配置、Device类型映射、远程服务地址等
  */
 
 // ═══════════════════════════════════════════════════════════
-//  波特率与设备映射
+//  波特率与Device映射
 // ═══════════════════════════════════════════════════════════
 
 /**
@@ -15,8 +15,8 @@
 const BAUD_CANDIDATES = [921600, 1000000, 3000000]
 
 /**
- * 波特率 → 设备大类映射
- * 探测到波特率后，通过此表确定设备属于哪个大类
+ * 波特率 → Device大类映射
+ * 探测到波特率后，通过此表确定Device属于哪个大类
  */
 const BAUD_DEVICE_MAP = {
   921600: 'hand',     // 手套
@@ -25,7 +25,7 @@ const BAUD_DEVICE_MAP = {
 }
 
 /**
- * 各设备大类的默认波特率
+ * 各Device大类的默认波特率
  */
 const baudRateObj = {
   hand: 921600,
@@ -40,11 +40,11 @@ const baudRateObj = {
 /** 数据帧分隔符 */
 const splitArr = [0xaa, 0x55, 0x03, 0x99]
 
-/** AT 指令：查询设备 MAC 地址 (AT+NAME=ESP32\r\n) */
+/** AT 指令：查询Device MAC 地址 (AT+NAME=ESP32\r\n) */
 const AT_MAC_COMMAND = Buffer.from('41542B4E414D453D45535033320d0a', 'hex')
 
-/** 波特率探测超时时间 (ms) */
-const BAUD_DETECT_TIMEOUT = 800
+/** 波特率探测超时时间 (ms)，需要足够长以等待Device稳定发送数据 */
+const BAUD_DETECT_TIMEOUT = 2000
 
 /** MAC 指令发送间隔 (ms)，脚垫可能不会立即响应 */
 const MAC_SEND_INTERVAL = 300
@@ -96,12 +96,12 @@ const typeConfig = {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  设备授权模式
+//  Device授权模式
 // ═══════════════════════════════════════════════════════════
 
 /**
  * 授权模式：
- *   'online'  — 联网模式，通过远程服务器查询 MAC 地址对应的设备类型和授权
+ *   'online'  — 联网模式，通过远程服务器查询 MAC 地址对应的Device类型和授权
  *   'local'   — 本地模式，通过 serial_cache.json 本地缓存查询，无需联网
  */
 let AUTH_MODE = process.env.AUTH_MODE || 'local'

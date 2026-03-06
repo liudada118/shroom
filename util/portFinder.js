@@ -1,20 +1,18 @@
 const net = require('net')
 
-// ─── 默认端口配置 ────────────────────────────────────────
-// 集中管理所有服务的首选端口，方便统一修改
+// ─── Default Port Config ────────────────────────────────────────
 const DEFAULT_PORTS = {
-  api: 19245,          // 后端 API 端口
-  ws: 19999,           // WebSocket 端口
-  frontend: 3000,      // React dev server 端口（开发模式）
-  frontendProd: 2999   // 静态文件服务端口（生产模式）
+  api: 19245,          // Backend API port
+  ws: 19999,           // WebSocket port
+  frontend: 3000,      // React dev server port (dev mode)
+  frontendProd: 2999   // Static file server port (prod mode)
 }
 
 /**
- * 检测指定端口是否可用
- * 通过尝试绑定端口来检测，比简单的连接测试更可靠
- * @param {number} port 要检测的端口号
- * @param {string} host 主机地址，默认 127.0.0.1
- * @returns {Promise<boolean>} 端口是否可用
+ * Check if a port is available by attempting to bind it
+ * @param {number} port Port number to check
+ * @param {string} host Host address, default 127.0.0.1
+ * @returns {Promise<boolean>} Whether the port is available
  */
 function isPortAvailable(port, host = '127.0.0.1') {
   return new Promise((resolve) => {
@@ -29,8 +27,7 @@ function isPortAvailable(port, host = '127.0.0.1') {
       if (err.code === 'EADDRINUSE') {
         resolve(false)
       } else {
-        // 其他错误（如权限不足）也视为不可用
-        console.log(`[PortFinder] 端口 ${port} 检测异常: ${err.code || err.message}`)
+        console.log(`[PortFinder] Port ${port} detection error: ${err.code || err.message}`)
         resolve(false)
       }
     })
@@ -46,12 +43,11 @@ function isPortAvailable(port, host = '127.0.0.1') {
 }
 
 /**
- * 从指定端口开始，查找第一个可用端口
- * @param {number} startPort 起始端口号
- * @param {number} maxAttempts 最大尝试次数，默认 100
- * @param {string} host 主机地址，默认 127.0.0.1
- * @returns {Promise<number>} 可用的端口号
- * @throws {Error} 如果在最大尝试次数内未找到可用端口
+ * Find the first available port starting from the given port
+ * @param {number} startPort Starting port number
+ * @param {number} maxAttempts Max attempts, default 100
+ * @param {string} host Host address, default 127.0.0.1
+ * @returns {Promise<number>} Available port number
  */
 async function findAvailablePort(startPort, maxAttempts = 100, host = '127.0.0.1') {
   for (let i = 0; i < maxAttempts; i++) {
@@ -64,21 +60,21 @@ async function findAvailablePort(startPort, maxAttempts = 100, host = '127.0.0.1
     }
 
     if (i === 0) {
-      console.log(`[PortFinder] 端口 ${startPort} 已被占用，正在寻找可用端口...`)
+      console.log(`[PortFinder] Port ${startPort} in use, finding available port...`)
     }
   }
 
-  throw new Error(`[PortFinder] 在 ${startPort}-${startPort + maxAttempts - 1} 范围内未找到可用端口`)
+  throw new Error(`[PortFinder] No available port found in range ${startPort}-${startPort + maxAttempts - 1}`)
 }
 
 /**
- * 尝试在指定端口启动服务器，如果端口被占用则自动查找下一个可用端口
- * 解决 isPortAvailable 检测与实际 listen 之间的 TOCTOU 竞态问题
- * @param {Object} server 一个 net.Server 或兼容对象（如 Express app、http.Server）
- * @param {number} preferredPort 首选端口
- * @param {string} host 主机地址，默认 127.0.0.1
- * @param {number} maxAttempts 最大尝试次数，默认 100
- * @returns {Promise<number>} 实际绑定的端口号
+ * Try to listen on the preferred port, auto-retry on next port if occupied
+ * Solves TOCTOU race between isPortAvailable check and actual listen
+ * @param {Object} server A net.Server or compatible object (Express app, http.Server)
+ * @param {number} preferredPort Preferred port
+ * @param {string} host Host address, default 127.0.0.1
+ * @param {number} maxAttempts Max attempts, default 100
+ * @returns {Promise<number>} Actual bound port number
  */
 function listenWithRetry(server, preferredPort, host = '127.0.0.1', maxAttempts = 100) {
   return new Promise((resolve, reject) => {
@@ -87,17 +83,16 @@ function listenWithRetry(server, preferredPort, host = '127.0.0.1', maxAttempts 
 
     function tryListen() {
       if (attempts >= maxAttempts || currentPort > 65535) {
-        reject(new Error(`[PortFinder] 在 ${preferredPort}-${currentPort - 1} 范围内未能成功绑定端口`))
+        reject(new Error(`[PortFinder] Failed to bind port in range ${preferredPort}-${currentPort - 1}`))
         return
       }
 
-      // 移除之前可能绑定的 error 监听器
       server.removeAllListeners('error')
 
       server.once('error', (err) => {
         if (err.code === 'EADDRINUSE') {
           if (attempts === 0) {
-            console.log(`[PortFinder] 端口 ${preferredPort} 已被占用，正在寻找可用端口...`)
+            console.log(`[PortFinder] Port ${preferredPort} in use, finding available port...`)
           }
           attempts++
           currentPort++
@@ -109,7 +104,7 @@ function listenWithRetry(server, preferredPort, host = '127.0.0.1', maxAttempts 
 
       server.listen(currentPort, host, () => {
         if (currentPort !== preferredPort) {
-          console.log(`[PortFinder] ${preferredPort} 已占用 → 实际使用 ${currentPort}`)
+          console.log(`[PortFinder] ${preferredPort} in use -> using ${currentPort}`)
         }
         resolve(currentPort)
       })
@@ -120,10 +115,10 @@ function listenWithRetry(server, preferredPort, host = '127.0.0.1', maxAttempts 
 }
 
 /**
- * 批量分配多个不冲突的可用端口
- * 确保分配的端口之间也不会互相冲突
- * @param {Object} portConfig 端口配置 { name: preferredPort, ... }
- * @returns {Promise<Object>} 实际分配的端口 { name: actualPort, ... }
+ * Allocate multiple non-conflicting available ports
+ * Ensures allocated ports don't conflict with each other
+ * @param {Object} portConfig Port config { name: preferredPort, ... }
+ * @returns {Promise<Object>} Actual allocated ports { name: actualPort, ... }
  */
 async function allocatePorts(portConfig) {
   const allocated = {}
@@ -134,10 +129,9 @@ async function allocatePorts(portConfig) {
     let attempts = 0
     const maxAttempts = 100
 
-    // 如果首选端口已被其他服务占用或已分配给前面的服务
     while (attempts < maxAttempts) {
       if (port > 65535) {
-        throw new Error(`[PortFinder] 无法为 ${name} 分配可用端口（超出端口范围）`)
+        throw new Error(`[PortFinder] Cannot allocate port for ${name} (port out of range)`)
       }
 
       if (!usedPorts.has(port) && await isPortAvailable(port)) {
@@ -149,13 +143,13 @@ async function allocatePorts(portConfig) {
     }
 
     if (attempts >= maxAttempts) {
-      throw new Error(`[PortFinder] 无法为 ${name} 分配可用端口（已尝试 ${maxAttempts} 次）`)
+      throw new Error(`[PortFinder] Cannot allocate port for ${name} (tried ${maxAttempts} times)`)
     }
 
     if (port !== preferredPort) {
-      console.log(`[PortFinder] ${name}: ${preferredPort} 已占用 → 使用 ${port}`)
+      console.log(`[PortFinder] ${name}: ${preferredPort} in use -> using ${port}`)
     } else {
-      console.log(`[PortFinder] ${name}: ${port} ✓`)
+      console.log(`[PortFinder] ${name}: ${port} ok`)
     }
 
     allocated[name] = port
@@ -166,9 +160,9 @@ async function allocatePorts(portConfig) {
 }
 
 /**
- * 强制释放指定端口上的进程（仅限开发环境使用）
- * @param {number} port 要释放的端口号
- * @returns {Promise<boolean>} 是否成功释放
+ * Force kill process on specified port (dev only)
+ * @param {number} port Port number to release
+ * @returns {Promise<boolean>} Whether successfully released
  */
 function killPortProcess(port) {
   return new Promise((resolve) => {
@@ -180,10 +174,10 @@ function killPortProcess(port) {
 
     exec(cmd, (err) => {
       if (err) {
-        console.log(`[PortFinder] 未能释放端口 ${port} 上的进程（可能无进程占用）`)
+        console.log(`[PortFinder] Failed to release port ${port} (may not be occupied)`)
         resolve(false)
       } else {
-        console.log(`[PortFinder] 已释放端口 ${port} 上的进程`)
+        console.log(`[PortFinder] Released process on port ${port}`)
         resolve(true)
       }
     })

@@ -99,7 +99,7 @@ function storageData(data) {
     [JSON.stringify(newData), timestamp, state.colName, JSON.stringify(state.selectArr)],
     function (err) {
       if (err) {
-        console.error('[DB] 数据插入失败:', err)
+        console.error('[DB] Data insert failed:', err)
       }
     }
   )

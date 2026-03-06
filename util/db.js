@@ -87,7 +87,7 @@ function genDb(file, filePath) {
   if (fs.existsSync(file)) {
     db = new sqlite3.Database(file);
   } else {
-    console.log(`[DB] 数据库不存在，从模板创建: ${file}`)
+    console.log(`[DB] Database not found, creating from template: ${file}`)
     const data = fs.readFileSync(`${filePath}/init.db`);
     fs.writeFileSync(file, data);
     db = new sqlite3.Database(file);
@@ -302,10 +302,10 @@ function dbload(db, param, file, isPackaged, selectJson) {
         if (!hasBom) {
           fs.writeFileSync(csvFilePath, Buffer.concat([Buffer.from('\ufeff'), content]))
         }
-        console.log("[DB] CSV 导出成功:", csvFilePath)
+        console.log("[DB] CSV export success:", csvFilePath)
         resolve({ [param]: 'success' })
       } catch (err) {
-        console.error("[DB] CSV 导出失败:", err)
+        console.error("[DB] CSV export failed:", err)
         reject({ [param]: err })
       }
     }).catch(reject)

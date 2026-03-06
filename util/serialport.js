@@ -71,7 +71,7 @@ function parseData(parserArr, objs) {
             const dataStamp = new Date().getTime() - data.stamp
             json[data.type] = {}
 
-            // 根据发送时间与最新时间戳的差值  判断设备的在离线状态
+            // 根据发送时间与最新时间戳的差值  判断Device的在离线状态
             if (dataStamp < 1000) {
                 json[data.type].status = 'online'
                 json[data.type].arr = blueArr

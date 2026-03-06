@@ -9,9 +9,9 @@ const http = require('http')
 let msgpack = null
 try {
   msgpack = require('@msgpack/msgpack')
-  console.log('[WS] MessagePack 已加载，启用二进制传输')
+  console.log('[WS] MessagePack loaded, binary transport enabled')
 } catch {
-  console.log('[WS] MessagePack 未安装，使用 JSON 传输')
+  console.log('[WS] MessagePack not installed, using JSON transport')
 }
 
 let wsHttpServer = null
@@ -32,7 +32,7 @@ function createWsServer() {
 
   wsServer.on('connection', (ws, req) => {
     const clientName = `${req.connection.remoteAddress}:${req.connection.remotePort}`
-    console.log(`[WS] 客户端已连接: ${clientName}`)
+    console.log(`[WS] Client connected: ${clientName}`)
     broadcast(JSON.stringify({}))
   })
 

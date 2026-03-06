@@ -3,9 +3,9 @@
  *
  * 职责：
  *   1. 枚举串口 → 筛选 CH340
- *   2. 波特率自动探测 → 确定设备大类（手套/坐垫/脚垫）
- *   3. 设备类型细分：手套通过帧类型位，脚垫通过 AT 指令获取 MAC
- *   4. 设备授权：联网模式查远程服务器，本地模式查 serial_cache.json
+ *   2. 波特率自动探测 → 确定Device大类（手套/坐垫/脚垫）
+ *   3. Device类型细分：手套通过帧类型位，脚垫通过 AT 指令获取 MAC
+ *   4. Device授权：联网模式查远程服务器，本地模式查 serial_cache.json
  *   5. 数据帧解析与实时推送
  *   6. 断线自动重连
  */
@@ -54,20 +54,22 @@ async function detectBaudRate(portPath) {
     try {
       const result = await tryBaudRate(portPath, baud, splitBuffer, BAUD_DETECT_TIMEOUT)
       if (result) {
-        console.log(`[BaudDetect] ${portPath} → 波特率 ${baud} 匹配成功`)
+        console.log(`[BaudDetect] ${portPath} -> baud ${baud} matched`)
         return baud
       }
     } catch (err) {
-      console.warn(`[BaudDetect] ${portPath} @ ${baud} 探测异常:`, err.message)
+      console.warn(`[BaudDetect] ${portPath} @ ${baud} detect error:`, err.message)
     }
   }
 
-  console.warn(`[BaudDetect] ${portPath} → 所有候选波特率均未匹配`)
+  console.warn(`[BaudDetect] ${portPath} → All candidate baud rates failed to match`)
   return null
 }
 
 /**
  * 尝试以指定波特率打开串口，监听是否收到有效数据
+ *
+ * 使用累积缓冲区实现跨包匹配分隔符，解决高波特率下数据碎片化问题
  *
  * @param {string} portPath 串口路径
  * @param {number} baudRate 波特率
@@ -80,6 +82,7 @@ function tryBaudRate(portPath, baudRate, delimiter, timeout) {
     let port = null
     let timer = null
     let resolved = false
+    let accumBuf = Buffer.alloc(0)  // 累积缓冲区，解决跨包匹配
 
     function cleanup() {
       if (resolved) return
@@ -93,16 +96,23 @@ function tryBaudRate(portPath, baudRate, delimiter, timeout) {
     try {
       port = new SerialPort({ path: portPath, baudRate, autoOpen: true }, (err) => {
         if (err) {
+          console.log(`[BaudDetect] ${portPath} @ ${baudRate} open failed: ${err.message}`)
           cleanup()
           resolve(false)
           return
         }
+        console.log(`[BaudDetect] ${portPath} @ ${baudRate} opened, waiting for data...`)
       })
 
-      // 监听原始数据，检查是否包含分隔符
+      // 监听原始数据，累积到缓冲区后检查是否包含分隔符
       const onData = (data) => {
-        const buf = Buffer.from(data)
-        if (bufferContains(buf, delimiter)) {
+        accumBuf = Buffer.concat([accumBuf, Buffer.from(data)])
+        // 限制缓冲区大小，避免内存溢出（只保留最后 64KB）
+        if (accumBuf.length > 65536) {
+          accumBuf = accumBuf.slice(accumBuf.length - 65536)
+        }
+        if (bufferContains(accumBuf, delimiter)) {
+          console.log(`[BaudDetect] ${portPath} @ ${baudRate} delimiter FOUND (${accumBuf.length} bytes received)`)
           port.removeListener('data', onData)
           cleanup()
           resolve(true)
@@ -111,13 +121,15 @@ function tryBaudRate(portPath, baudRate, delimiter, timeout) {
 
       port.on('data', onData)
 
-      port.on('error', () => {
+      port.on('error', (err) => {
+        console.log(`[BaudDetect] ${portPath} @ ${baudRate} error: ${err.message}`)
         cleanup()
         resolve(false)
       })
 
       // 超时
       timer = setTimeout(() => {
+        console.log(`[BaudDetect] ${portPath} @ ${baudRate} timeout (${accumBuf.length} bytes received, no delimiter)`)
         port.removeListener('data', onData)
         cleanup()
         resolve(false)
@@ -147,13 +159,13 @@ function bufferContains(buf, sub) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  阶段三：MAC 地址获取与设备类型分配
+//  阶段三：MAC 地址获取与Device类型分配
 // ═══════════════════════════════════════════════════════════
 
 /**
  * 向串口持续发送 AT 指令获取 MAC 地址
  *
- * 脚垫设备可能不会立即响应，因此每 MAC_SEND_INTERVAL 毫秒发送一次，
+ * 脚垫Device可能不会立即响应，因此每 MAC_SEND_INTERVAL 毫秒发送一次，
  * 直到收到包含 Unique ID 的回复或超时。
  *
  * @param {SerialPort} port 串口实例
@@ -197,7 +209,7 @@ function sendMacCommand(port, parser) {
     const sendOnce = () => {
       if (port.isOpen && !resolved) {
         port.write(AT_MAC_COMMAND, (err) => {
-          if (err) console.warn('[Serial] AT 指令发送失败:', err.message)
+          if (err) console.warn('[Serial] AT command send failed:', err.message)
         })
       }
     }
@@ -215,11 +227,11 @@ function sendMacCommand(port, parser) {
 }
 
 /**
- * 根据 MAC 地址解析设备类型（联网查询）
+ * 根据 MAC 地址解析Device类型（联网查询）
  *
- * 向远程服务器查询设备详情和授权状态
+ * 向远程服务器查询Device详情和授权状态
  *
- * @param {string} uniqueId 设备唯一标识
+ * @param {string} uniqueId Device唯一标识
  * @returns {Promise<{type: string|null, premission: boolean}>}
  */
 async function resolveDeviceTypeOnline(uniqueId) {
@@ -230,7 +242,7 @@ async function resolveDeviceTypeOnline(uniqueId) {
     ])
 
     if (!response.data.data) {
-      console.warn(`[Auth-Online] 设备 ${uniqueId} 未注册`)
+      console.warn(`[Auth-Online] Device ${uniqueId} not registered`)
       return { type: null, premission: false }
     }
 
@@ -239,40 +251,40 @@ async function resolveDeviceTypeOnline(uniqueId) {
     const deviceType = JSON.parse(response.data.data.typeInfo)[0]
     const premission = nowTime < expireTime
 
-    console.log(`[Auth-Online] 设备 ${uniqueId} → 类型: ${deviceType}, 授权: ${premission}`)
+    console.log(`[Auth-Online] Device ${uniqueId} → type: ${deviceType}, Auth: ${premission}`)
 
-    // 联网查询成功后同步写入本地缓存，方便下次离线使用
+    // Synced to local cache after online query for offline use
     if (deviceType) {
       setTypeToCache(uniqueId, deviceType, 'foot', '')
     }
 
     return { type: deviceType, premission }
   } catch (err) {
-    console.error(`[Auth-Online] 设备 ${uniqueId} 联网查询失败:`, err.message)
+    console.error(`[Auth-Online] Device ${uniqueId} Online query failed:`, err.message)
     return { type: null, premission: false }
   }
 }
 
 /**
- * 根据 MAC 地址解析设备类型（本地缓存查询）
+ * 根据 MAC 地址解析Device类型（本地缓存查询）
  *
  * 从 serial_cache.json 中查询
  *
- * @param {string} uniqueId 设备唯一标识
+ * @param {string} uniqueId Device唯一标识
  * @returns {{type: string|null, premission: boolean}}
  */
 function resolveDeviceTypeLocal(uniqueId) {
   const cached = getTypeFromCache(uniqueId)
   if (cached) {
-    console.log(`[Auth-Local] 设备 ${uniqueId} → 类型: ${cached.type}（缓存命中）`)
+    console.log(`[Auth-Local] Device ${uniqueId} → type: ${cached.type}（cache hit）`)
     return { type: cached.type, premission: true }
   }
-  console.warn(`[Auth-Local] 设备 ${uniqueId} 未在本地缓存中找到`)
+  console.warn(`[Auth-Local] Device ${uniqueId} not found in local cache`)
   return { type: null, premission: false }
 }
 
 /**
- * 统一的设备类型解析入口
+ * 统一的Device类型解析入口
  *
  * 策略：先查本地缓存 → 缓存未命中再联网查询（自动降级）
  * AUTH_MODE 仅控制是否允许联网：
@@ -288,12 +300,12 @@ async function resolveDeviceType(uniqueId) {
 
   // 第二步：本地缓存未命中，根据 AUTH_MODE 决定是否联网
   if (constantObj.AUTH_MODE === 'online') {
-    console.log(`[Auth] 本地缓存未命中，联网查询 ${uniqueId}...`)
+    console.log(`[Auth] Local cache miss, querying online ${uniqueId}...`)
     return resolveDeviceTypeOnline(uniqueId)
   }
 
   // 本地模式且缓存未命中
-  console.warn(`[Auth] 本地模式下 ${uniqueId} 未在缓存中找到，请手动添加到设备管理`)
+  console.warn(`[Auth] In local mode, ${uniqueId} not found in cache, please add manually`)
   return { type: null, premission: false }
 }
 
@@ -311,12 +323,12 @@ function newSerialPortLink({ path, parser, baudRate = 1000000 }) {
       baudRate,
       autoOpen: true,
     }, (err) => {
-      if (err) console.error(`[Serial] 串口打开错误 ${path}:`, err.message)
+      if (err) console.error(`[Serial] Serial port open error ${path}:`, err.message)
     })
     port.pipe(parser)
     return port
   } catch (e) {
-    console.error(`[Serial] 串口创建失败 ${path}:`, e.message)
+    console.error(`[Serial] Serial port creation failed ${path}:`, e.message)
     return null
   }
 }
@@ -328,7 +340,7 @@ function portWrite(port) {
   return new Promise((resolve, reject) => {
     port.write(constantObj.AT_MAC_COMMAND, (err) => {
       if (err) {
-        console.error('[Serial] 写入错误:', err.message)
+        console.error('[Serial] Write error:', err.message)
         reject(err)
       } else {
         resolve()
@@ -369,7 +381,7 @@ function updateHZAndStartTimer(dataItem, stamp, onTimerStart) {
     if (!state.MaxHZ && state.oldTimeObj[dataItem.type]) {
       state.MaxHZ = Math.floor(1000 / dataItem.HZ)
       state.HZ = state.MaxHZ
-      console.log(`[Serial] 检测到帧率: ${state.HZ} Hz`)
+      console.log(`[Serial] Frame rate detected: ${state.HZ} Hz`)
       if (state.playtimer) clearInterval(state.playtimer)
       state.playtimer = setInterval(onTimerStart, DATA_SEND_INTERVAL)
     }
@@ -421,7 +433,7 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       const uniqueId = uniqueIdMatch ? uniqueIdMatch[1] : null
       const version = versionMatch ? versionMatch[1] : null
 
-      console.log(`[Serial] 设备识别 - UniqueID: ${uniqueId}, Version: ${version}`)
+      console.log(`[Serial] Device identified - UniqueID: ${uniqueId}, Version: ${version}`)
       state.macInfo[portPath] = { uniqueId, version }
 
       // 所有串口的 MAC 都收集完毕后广播
@@ -429,13 +441,13 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
         broadcastFn(JSON.stringify({ macInfo: state.macInfo }))
       }
 
-      // 解析设备类型（联网或本地）
+      // 解析Device类型（联网或本地）
       if (uniqueId && dataItem.deviceClass === 'foot') {
         const { type: deviceType, premission } = await resolveDeviceType(uniqueId)
         if (deviceType) {
           dataItem.type = deviceType
           dataItem.premission = premission
-          console.log(`[Serial] ${portPath} 最终类型: ${deviceType}, 授权: ${premission}`)
+          console.log(`[Serial] ${portPath} final type: ${deviceType}, auth: ${premission}`)
           broadcastFn(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission } }))
         }
       }
@@ -588,7 +600,7 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
  *
  * 流程：
  *   1. 枚举串口 → 筛选 CH340
- *   2. 对每个串口探测波特率 → 确定设备大类
+ *   2. 对每个串口探测波特率 → 确定Device大类
  *   3. 根据大类进行细分和授权
  *   4. 绑定数据帧回调
  *
@@ -604,10 +616,10 @@ async function connectPort(broadcastFn, onTimerStart) {
   // ── 阶段一：枚举与筛选 ──
   let ports = await SerialPort.list()
   ports = getPort(ports)
-  console.log(`[Connect] 发现 ${ports.length} 个 CH340 串口`)
+  console.log(`[Connect] Found ${ports.length} CH340 serial port(s)`)
 
   if (!ports.length) {
-    broadcastFn(JSON.stringify({ connectResult: { success: false, message: '未发现可用串口设备' } }))
+    broadcastFn(JSON.stringify({ connectResult: { success: false, message: '未Found可用串口Device' } }))
     return []
   }
 
@@ -619,24 +631,24 @@ async function connectPort(broadcastFn, onTimerStart) {
 
     // 如果已连接且打开，跳过
     if (state.parserArr[portPath]?.port?.isOpen) {
-      console.log(`[Connect] ${portPath} 已连接，跳过`)
+      console.log(`[Connect] ${portPath} already connected, skipping`)
       connectedPorts.push({ path: portPath, status: 'already_connected' })
       continue
     }
 
     // ── 阶段二：波特率探测 ──
-    console.log(`[Connect] 正在探测 ${portPath} 的波特率...`)
+    console.log(`[Connect] Detecting baud rate for ${portPath} ...`)
     broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'detecting_baud' } }))
 
     const detectedBaud = await detectBaudRate(portPath)
     if (!detectedBaud) {
-      console.warn(`[Connect] ${portPath} 波特率探测失败，跳过`)
+      console.warn(`[Connect] ${portPath} Baud rate detection failed, skipping`)
       connectedPorts.push({ path: portPath, status: 'baud_detect_failed' })
       continue
     }
 
     const deviceClass = BAUD_DEVICE_MAP[detectedBaud]
-    console.log(`[Connect] ${portPath} → 波特率: ${detectedBaud}, 设备大类: ${deviceClass}`)
+    console.log(`[Connect] ${portPath} -> baud: ${detectedBaud}, device class: ${deviceClass}`)
 
     // ── 正式连接 ──
     const parserItem = state.parserArr[portPath] = state.parserArr[portPath] || {}
@@ -648,7 +660,7 @@ async function connectPort(broadcastFn, onTimerStart) {
 
     const port = newSerialPortLink({ path: portPath, parser: parserItem.parser, baudRate: detectedBaud })
     if (!port) {
-      console.error(`[Connect] ${portPath} 串口创建失败`)
+      console.error(`[Connect] ${portPath} Serial port creation failed`)
       connectedPorts.push({ path: portPath, status: 'open_failed' })
       continue
     }
@@ -660,7 +672,7 @@ async function connectPort(broadcastFn, onTimerStart) {
       // 坐垫：波特率已唯一确定，直接授权
       dataItem.type = 'sit'
       dataItem.premission = true
-      console.log(`[Connect] ${portPath} → 坐垫，直接授权`)
+      console.log(`[Connect] ${portPath} → Sit pad, direct auth`)
 
       // 绑定数据回调
       bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
@@ -669,14 +681,14 @@ async function connectPort(broadcastFn, onTimerStart) {
       // 手套：先授权，具体 HL/HR 由帧类型位在数据回调中动态确定
       dataItem.type = 'hand'  // 临时类型，后续由 130/146 帧更新为 HL 或 HR
       dataItem.premission = true
-      console.log(`[Connect] ${portPath} → 手套，等待帧数据细分 HL/HR`)
+      console.log(`[Connect] ${portPath} → Glove, waiting for frame data to determine HL/HR`)
 
       // 绑定数据回调
       bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
 
     } else if (deviceClass === 'foot') {
       // 脚垫：需要通过 AT 指令获取 MAC 地址，再查询类型
-      console.log(`[Connect] ${portPath} → 脚垫，正在获取 MAC 地址...`)
+      console.log(`[Connect] ${portPath} → Foot pad, getting MAC address...`)
       broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'getting_mac' } }))
 
       // 先绑定数据回调（sendMacCommand 需要监听 parser）
@@ -689,21 +701,21 @@ async function connectPort(broadcastFn, onTimerStart) {
       if (uniqueId) {
         console.log(`[Connect] ${portPath} MAC: ${uniqueId}, Version: ${version}`)
 
-        // 根据模式解析设备类型
+        // 根据模式解析Device类型
         const { type: deviceType, premission } = await resolveDeviceType(uniqueId)
         if (deviceType) {
           dataItem.type = deviceType
           dataItem.premission = premission
-          console.log(`[Connect] ${portPath} 最终类型: ${deviceType}, 授权: ${premission}`)
+          console.log(`[Connect] ${portPath} final type: ${deviceType}, auth: ${premission}`)
         } else {
           dataItem.type = 'foot'
           dataItem.premission = false
-          console.warn(`[Connect] ${portPath} MAC ${uniqueId} 未能映射到具体类型`)
+          console.warn(`[Connect] ${portPath} MAC ${uniqueId} Failed to map to specific type`)
         }
       } else {
         dataItem.type = 'foot'
         dataItem.premission = false
-        console.warn(`[Connect] ${portPath} 未能获取 MAC 地址`)
+        console.warn(`[Connect] ${portPath} Failed to get MAC address`)
       }
     }
 
@@ -737,7 +749,7 @@ async function connectPort(broadcastFn, onTimerStart) {
     }
   }))
 
-  console.log(`[Connect] 一键连接完成，共连接 ${connectedPorts.filter(p => p.status === 'connected').length}/${ports.length} 个设备`)
+  console.log(`[Connect] One-click connect done, connected ${connectedPorts.filter(p => p.status === 'connected').length}/${ports.length} device(s)`)
   return connectedPorts
 }
 
@@ -756,7 +768,7 @@ async function stopPort() {
         if (!err) {
           delete state.parserArr[portPath]
           delete state.dataMap[portPath]
-          console.log(`[Serial] 串口已关闭: ${portPath}`)
+          console.log(`[Serial] Serial port closed: ${portPath}`)
         }
       })
     }
@@ -781,18 +793,18 @@ function startReconnectMonitor() {
       if (item && !item.port.isOpen) {
         // 使用之前探测到的波特率重连，而不是全局 state.baudRate
         const baudRate = item.baudRate || state.baudRate
-        console.log(`[Serial] 检测到串口断开，尝试重连: ${portPath} @ ${baudRate}`)
+        console.log(`[Serial] Serial port disconnected, reconnecting: ${portPath} @ ${baudRate}`)
         try {
           item.port = new SerialPort({
             path: portPath,
             baudRate,
             autoOpen: true,
           }, (err) => {
-            if (err) console.error(`[Serial] 重连失败 ${portPath}:`, err.message)
+            if (err) console.error(`[Serial] Reconnect failed ${portPath}:`, err.message)
           })
           item.port.pipe(item.parser)
         } catch (err) {
-          console.error(`[Serial] 重连异常 ${portPath}:`, err.message)
+          console.error(`[Serial] Reconnect error ${portPath}:`, err.message)
         }
       }
     })
