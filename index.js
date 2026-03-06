@@ -74,10 +74,47 @@ function startApiChild() {
 //  启动 React dev server（仅 USE_REACT_DEV_SERVER=1 时使用）
 // ═══════════════════════════════════════════════════════════
 
+function killPortProcess(port) {
+  return new Promise((resolve) => {
+    const { exec } = require('child_process')
+    if (process.platform === 'win32') {
+      // Windows: find PID using port and kill it
+      exec(`netstat -ano | findstr :${port} | findstr LISTENING`, (err, stdout) => {
+        if (err || !stdout.trim()) { resolve(); return }
+        const lines = stdout.trim().split('\n')
+        const pids = new Set()
+        lines.forEach(line => {
+          const parts = line.trim().split(/\s+/)
+          const pid = parts[parts.length - 1]
+          if (pid && pid !== '0') pids.add(pid)
+        })
+        if (pids.size === 0) { resolve(); return }
+        const killCmd = [...pids].map(pid => `taskkill /F /PID ${pid}`).join(' & ')
+        console.log(`[Main] Killing processes on port ${port}: PIDs ${[...pids].join(', ')}`)
+        exec(killCmd, () => {
+          setTimeout(resolve, 500) // wait for port release
+        })
+      })
+    } else {
+      exec(`lsof -ti:${port}`, (err, stdout) => {
+        if (err || !stdout.trim()) { resolve(); return }
+        const pids = stdout.trim().split('\n').join(' ')
+        console.log(`[Main] Killing processes on port ${port}: PIDs ${pids}`)
+        exec(`kill -9 ${pids}`, () => {
+          setTimeout(resolve, 500)
+        })
+      })
+    }
+  })
+}
+
 function startReactDevServer() {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const clientDir = path.join(__dirname, 'client')
     const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+
+    // Kill any process already using the frontend port
+    await killPortProcess(PORTS.frontend)
 
     reactChild = spawn(npmCmd, ['start'], {
       cwd: clientDir,
@@ -99,7 +136,7 @@ function startReactDevServer() {
         console.log('[Main] React dev server start timeout, trying to connect...')
         resolve(PORTS.frontend)
       }
-    }, 30000)
+    }, 60000)
 
     const checkOutput = (output) => {
       if (!started && (output.includes('Compiled') || output.includes('compiled') || output.includes('webpack compiled'))) {
@@ -132,6 +169,11 @@ function startReactDevServer() {
       clearTimeout(startTimer)
       console.log(`[Main] React dev server exited: code=${code}`)
       reactChild = null
+      // If CRA exited before starting (port conflict etc), reject
+      if (!started) {
+        started = true
+        reject(new Error(`React dev server exited unexpectedly: code=${code}`))
+      }
     })
   })
 }
