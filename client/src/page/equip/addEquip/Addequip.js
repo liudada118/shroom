@@ -1,6 +1,7 @@
 import { Button, Checkbox, DatePicker, Input, message, Tag, Card, Tooltip, Badge, Divider, Space, Select } from 'antd'
 import axios from 'axios'
 import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { decode as msgpackDecode } from '@msgpack/msgpack'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 import dayjs from 'dayjs'
 import { serverAddress, localAddress, wsAddress } from '../../../util/constant'
@@ -92,9 +93,17 @@ export default function Addequip() {
         reconnectAttempts = 0
       }
 
-      ws.onmessage = (e) => {
+      ws.onmessage = async (e) => {
         try {
-          const data = JSON.parse(e.data)
+          let data
+          if (e.data instanceof Blob) {
+            // MessagePack binary mode: decode Blob -> ArrayBuffer -> Object
+            const arrayBuffer = await e.data.arrayBuffer()
+            data = msgpackDecode(new Uint8Array(arrayBuffer))
+          } else {
+            // JSON text mode
+            data = JSON.parse(e.data)
+          }
 
           // MAC reader log
           if (data.macReaderLog) {
