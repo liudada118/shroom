@@ -11,7 +11,7 @@ const isPackaged = app.isPackaged
 const isDev = !isPackaged
 
 // ─── 开发模式前端策略 ────────────────────────────────────
-// 开发模式默认启动 CRA dev server（热更新），设置 USE_STATIC=1 可切换为 build 静态文件
+// 开发模式默认启动 Vite dev server（热更新），设置 USE_STATIC=1 可切换为 build 静态文件
 const useReactDevServer = isDev && process.env.USE_STATIC !== '1'
 
 // ─── 首选Port配置 ────────────────────────────────────────
@@ -71,7 +71,7 @@ function startApiChild() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  启动 React dev server（仅 USE_REACT_DEV_SERVER=1 时使用）
+//  启动 Vite dev server（开发模式热更新）
 // ═══════════════════════════════════════════════════════════
 
 function killPortProcess(port) {
@@ -116,11 +116,10 @@ function startReactDevServer() {
     // Kill any process already using the frontend port
     await killPortProcess(PORTS.frontend)
 
-    reactChild = spawn(npmCmd, ['start'], {
+    reactChild = spawn(npmCmd, ['run', 'dev', '--', '--port', String(PORTS.frontend), '--host', '127.0.0.1', '--strictPort'], {
       cwd: clientDir,
       env: {
         ...process.env,
-        PORT: String(PORTS.frontend),
         BROWSER: 'none',
         REACT_APP_API_PORT: String(PORTS.api),
         REACT_APP_WS_PORT: String(PORTS.ws)
@@ -133,46 +132,45 @@ function startReactDevServer() {
     const startTimer = setTimeout(() => {
       if (!started) {
         started = true
-        console.log('[Main] React dev server start timeout, trying to connect...')
+        console.log('[Main] Vite dev server start timeout, trying to connect...')
         resolve(PORTS.frontend)
       }
-    }, 60000)
+    }, 15000)
 
     const checkOutput = (output) => {
-      if (!started && (output.includes('Compiled') || output.includes('compiled') || output.includes('webpack compiled'))) {
+      if (!started && (output.includes('VITE') || output.includes('ready in') || output.includes('Local:'))) {
         started = true
         clearTimeout(startTimer)
-        console.log(`[Main] React dev server started, port: ${PORTS.frontend}`)
+        console.log(`[Main] Vite dev server started, port: ${PORTS.frontend}`)
         resolve(PORTS.frontend)
       }
     }
 
     reactChild.stdout.on('data', (data) => {
       const output = data.toString()
-      process.stdout.write(`[React] ${output}`)
+      process.stdout.write(`[Vite] ${output}`)
       checkOutput(output)
     })
 
     reactChild.stderr.on('data', (data) => {
       const output = data.toString()
-      process.stderr.write(`[React] ${output}`)
+      process.stderr.write(`[Vite] ${output}`)
       checkOutput(output)
     })
 
     reactChild.on('error', (err) => {
       clearTimeout(startTimer)
-      console.error('[Main] React dev server start failed:', err)
+      console.error('[Main] Vite dev server start failed:', err)
       if (!started) { started = true; reject(err) }
     })
 
     reactChild.on('exit', (code) => {
       clearTimeout(startTimer)
-      console.log(`[Main] React dev server exited: code=${code}`)
+      console.log(`[Main] Vite dev server exited: code=${code}`)
       reactChild = null
-      // If CRA exited before starting (port conflict etc), reject
       if (!started) {
         started = true
-        reject(new Error(`React dev server exited unexpectedly: code=${code}`))
+        reject(new Error(`Vite dev server exited unexpectedly: code=${code}`))
       }
     })
   })
@@ -306,7 +304,7 @@ function cleanupProcesses() {
     apiChild = null
   }
   if (reactChild) {
-    console.log('[Main] Closing React dev server...')
+    console.log('[Main] Closing Vite dev server...')
     reactChild.kill()
     reactChild = null
   }
