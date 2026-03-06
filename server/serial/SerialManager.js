@@ -444,6 +444,7 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
   parserItem.parser.on('data', async (data) => {
     const buffer = Buffer.from(data)
     const pointArr = Array.from(buffer)
+    console.log(`[Serial] ${portPath} 收到数据，长度: ${pointArr.length}`)
 
     // -- MAC address response (fallback, in case delimiter follows AT response) --
     if (buffer.toString().includes('Unique ID')) {
