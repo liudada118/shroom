@@ -121,8 +121,8 @@ function startReactDevServer() {
       env: {
         ...process.env,
         BROWSER: 'none',
-        REACT_APP_API_PORT: String(PORTS.api),
-        REACT_APP_WS_PORT: String(PORTS.ws)
+        VITE_API_PORT: String(PORTS.api),
+        VITE_WS_PORT: String(PORTS.ws)
       },
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: true

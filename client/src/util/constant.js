@@ -74,7 +74,7 @@ export const systemConfig = {
 }
 
 // ─── 服务地址配置 ────────────────────────────────────────
-export const serverAddress = process.env.REACT_APP_SERVER_ADDRESS || 'https://sensor.bodyta.com'
+export const serverAddress = import.meta.env.VITE_SERVER_ADDRESS || 'https://sensor.bodyta.com'
 
 // 动态端口配置：从 portConfig 统一管理，支持端口冲突自动分配
 export { localAddress, wsAddress } from './portConfig'
