@@ -71,6 +71,7 @@ export function useWebSocket(handlers = {}) {
       ws.onmessage = (e) => {
         try {
           const jsonObj = parseMessage(e.data)
+          console.log('[WS] 收到数据:', JSON.stringify(jsonObj).slice(0, 500))
           const h = handlersRef.current
 
           // 实时数据
