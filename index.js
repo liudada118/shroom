@@ -11,8 +11,8 @@ const isPackaged = app.isPackaged
 const isDev = !isPackaged
 
 // ─── 开发模式前端策略 ────────────────────────────────────
-// 默认使用 build 静态文件（秒启动），设置 USE_REACT_DEV_SERVER=1 启用热更新
-const useReactDevServer = isDev && process.env.USE_REACT_DEV_SERVER === '1'
+// 开发模式默认启动 CRA dev server（热更新），设置 USE_STATIC=1 可切换为 build 静态文件
+const useReactDevServer = isDev && process.env.USE_STATIC !== '1'
 
 // ─── 首选Port配置 ────────────────────────────────────────
 const PREFERRED_PORTS = { ...DEFAULT_PORTS }

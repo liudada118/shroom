@@ -4,9 +4,9 @@
   "description": "JQ 压力传感器桌面工具",
   "main": "index.js",
   "scripts": {
-    "dev": "electron .",
-    "dev:hot": "cross-env USE_REACT_DEV_SERVER=1 electron .",
     "start": "electron .",
+    "dev": "electron .",
+    "dev:static": "cross-env USE_STATIC=1 electron .",
     "build:client": "cd client && npm run build",
     "build:win": "npm run build:client && electron-builder -w",
     "build:mac": "npm run build:client && electron-builder -m",
