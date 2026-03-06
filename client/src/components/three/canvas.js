@@ -8,11 +8,7 @@ import { TextureLoader } from "three";
 import * as TWEEN from '@tweenjs/tween.js'
 import {
   addSide,
-  findMax,
-  gaussBlur_1,
   gaussBlur_return,
-  interp,
-  interp1016,
   interpSquare,
   jet,
   jetgGrey,
