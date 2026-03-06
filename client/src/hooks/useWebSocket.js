@@ -1,15 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { wsAddress } from '../util/constant'
-
-let msgpackDecode = null
-try {
-  // 尝试加载 @msgpack/msgpack（前端）
-  const msgpack = require('@msgpack/msgpack')
-  msgpackDecode = msgpack.decode
-  console.log('[WS] MessagePack 解码器已加载')
-} catch {
-  // 未安装则使用 JSON 回退
-}
+import { decode as msgpackDecode } from '@msgpack/msgpack'
 
 /**
  * 解析 WebSocket 消息，自动适配 JSON 和 MessagePack 格式
