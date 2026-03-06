@@ -1,3 +1,262 @@
-.title{
-    width: 8rem;
+.mac-reader-page {
+  padding: 16px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mac-reader-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+
+  h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transition: background-color 0.3s;
+
+  &.pulse {
+    animation: pulse-animation 1.5s infinite;
+  }
+}
+
+@keyframes pulse-animation {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.3); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.mac-reader-body {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.mac-reader-left {
+  width: 280px;
+  min-width: 280px;
+  overflow-y: auto;
+
+  .control-card {
+    .baud-list {
+      .baud-label {
+        font-size: 12px;
+        color: #8c8c8c;
+        margin-bottom: 6px;
+      }
+
+      .baud-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+    }
+  }
+
+  .help-text {
+    p {
+      margin: 0 0 4px 0;
+      font-size: 12px;
+      color: #8c8c8c;
+      line-height: 1.6;
+    }
+  }
+}
+
+.mac-reader-right {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+// Detection result banner
+.detect-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  .detect-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid;
+    font-size: 13px;
+
+    .detect-icon {
+      font-size: 10px;
+    }
+
+    .detect-text strong {
+      margin-right: 4px;
+    }
+  }
+}
+
+// MAC result cards
+.mac-results-section {
+  h3 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .mac-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
+
+.mac-card {
+  width: 100%;
+  max-width: 520px;
+
+  .mac-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+
+    .mac-port {
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .mac-baud {
+      color: #8c8c8c;
+      font-size: 12px;
+    }
+  }
+
+  .mac-card-body {
+    .mac-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+      font-size: 13px;
+
+      .mac-label {
+        color: #8c8c8c;
+        min-width: 80px;
+      }
+
+      .mac-value {
+        font-family: 'Courier New', monospace;
+        font-weight: 500;
+
+        &.copyable {
+          cursor: pointer;
+          color: #1890ff;
+          transition: color 0.2s;
+
+          &:hover {
+            color: #40a9ff;
+            text-decoration: underline;
+          }
+        }
+      }
+    }
+  }
+
+  .mac-bind-form {
+    .bind-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+
+      .bind-label {
+        min-width: 70px;
+        font-size: 12px;
+        color: #595959;
+      }
+    }
+
+    .bind-actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+    }
+  }
+}
+
+// Communication logs
+.log-section {
+  flex: 1;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+
+  .log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+
+    h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+  }
+
+  .log-container {
+    flex: 1;
+    background: #1e1e1e;
+    border-radius: 6px;
+    padding: 10px 12px;
+    overflow-y: auto;
+    font-family: 'Courier New', Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    min-height: 180px;
+    max-height: 360px;
+
+    .log-empty {
+      color: #595959;
+      text-align: center;
+      padding: 40px 0;
+    }
+
+    .log-line {
+      display: flex;
+      gap: 6px;
+      word-break: break-all;
+
+      .log-time {
+        color: #595959;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      .log-msg {
+        flex: 1;
+      }
+    }
+  }
 }

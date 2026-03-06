@@ -11,7 +11,7 @@ const { decryptStr } = require('../../util/aes_ecb')
 const module2 = require('../../util/aes_ecb')
 const { state } = require('../state')
 const { broadcast } = require('../websocket')
-const { connectPort, portWrite, stopPort } = require('../serial/SerialManager')
+const { connectPort, portWrite, stopPort, detectBaudRate, sendMacCommand } = require('../serial/SerialManager')
 const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed } = require('../services/DataService')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 
@@ -93,6 +93,108 @@ router.get('/sendMac', asyncHandler(async (req, res) => {
   const tasks = Object.keys(state.parserArr).map((key) => portWrite(state.parserArr[key].port))
   await Promise.all(tasks)
   res.json(new HttpResult(0, {}, 'Send success'))
+}))
+
+/**
+ * Standalone MAC reading API for the addMac page.
+ * Independent from one-click connect — opens ports temporarily,
+ * detects baud rate, reads MAC via AT command, then closes ports.
+ * Progress is pushed via WebSocket.
+ */
+router.get('/readMacOnly', asyncHandler(async (req, res) => {
+  const { SerialPort, DelimiterParser } = require('serialport')
+  const { getPort } = require('../../util/serialport')
+
+  const sendLog = (msg, type = 'info') => {
+    broadcast(JSON.stringify({ macReaderLog: { message: msg, type, timestamp: Date.now() } }))
+  }
+
+  sendLog('Enumerating serial ports...', 'info')
+  let ports = await SerialPort.list()
+  ports = getPort(ports)
+  sendLog(`Found ${ports.length} CH340 serial port(s)`, ports.length ? 'success' : 'warning')
+
+  if (!ports.length) {
+    res.json(new HttpResult(0, { ports: [], results: [] }, 'No CH340 serial ports found'))
+    return
+  }
+
+  const results = []
+
+  for (const portInfo of ports) {
+    const portPath = portInfo.path || portInfo.comName
+    sendLog(`Detecting baud rate for ${portPath}...`, 'info')
+
+    // Phase 1: Baud rate detection
+    broadcast(JSON.stringify({ macReaderStatus: { path: portPath, stage: 'detecting' } }))
+    const detectedBaud = await detectBaudRate(portPath)
+
+    if (!detectedBaud) {
+      sendLog(`${portPath}: All candidate baud rates failed`, 'error')
+      results.push({ path: portPath, status: 'baud_detect_failed' })
+      continue
+    }
+
+    const deviceClass = constantObj.BAUD_DEVICE_MAP[detectedBaud] || 'unknown'
+    const deviceLabel = { hand: 'Glove', sit: 'Sit Pad', foot: 'Foot Pad' }[deviceClass] || 'Unknown'
+    sendLog(`${portPath}: Baud ${detectedBaud} matched -> ${deviceLabel}`, 'success')
+
+    broadcast(JSON.stringify({
+      macReaderDetect: { path: portPath, baudRate: detectedBaud, deviceClass, deviceLabel }
+    }))
+
+    // Phase 2: Re-open and read MAC
+    await new Promise(r => setTimeout(r, 200))
+    sendLog(`${portPath}: Opening stable connection for MAC reading...`, 'info')
+    broadcast(JSON.stringify({ macReaderStatus: { path: portPath, stage: 'reading' } }))
+
+    let tempPort = null
+    try {
+      tempPort = new SerialPort({ path: portPath, baudRate: detectedBaud, autoOpen: false })
+      await new Promise((resolve, reject) => {
+        tempPort.open((err) => err ? reject(err) : resolve())
+      })
+
+      sendLog(`${portPath}: Sending AT commands...`, 'info')
+      const { uniqueId, version } = await sendMacCommand(tempPort)
+
+      if (uniqueId) {
+        sendLog(`${portPath}: MAC read success - ${uniqueId}`, 'success')
+        results.push({
+          path: portPath, status: 'success',
+          baudRate: detectedBaud, deviceClass, deviceLabel,
+          uniqueId, version, timestamp: Date.now()
+        })
+
+        broadcast(JSON.stringify({
+          macReaderResult: {
+            path: portPath, uniqueId, version,
+            baudRate: detectedBaud, deviceClass, deviceLabel
+          }
+        }))
+      } else {
+        sendLog(`${portPath}: MAC read timeout, device may not support AT query`, 'warning')
+        results.push({
+          path: portPath, status: 'mac_timeout',
+          baudRate: detectedBaud, deviceClass, deviceLabel
+        })
+      }
+    } catch (err) {
+      sendLog(`${portPath}: Error - ${err.message}`, 'error')
+      results.push({ path: portPath, status: 'error', error: err.message })
+    } finally {
+      // Always close the temporary port
+      if (tempPort && tempPort.isOpen) {
+        tempPort.close(() => {
+          sendLog(`${portPath}: Port closed`, 'info')
+        })
+      }
+    }
+  }
+
+  sendLog(`MAC reading complete: ${results.filter(r => r.status === 'success').length}/${ports.length} successful`, 'success')
+  broadcast(JSON.stringify({ macReaderDone: { results } }))
+  res.json(new HttpResult(0, { results }, 'MAC reading complete'))
 }))
 
 // ─── 数据采集 ────────────────────────────────────────────
