@@ -50,7 +50,7 @@ const BAUD_DETECT_TIMEOUT = 2000
 const MAC_SEND_INTERVAL = 300
 
 /** MAC 指令最大等待时间 (ms) */
-const MAC_WAIT_TIMEOUT = 5000
+const MAC_WAIT_TIMEOUT = 60000
 
 // ═══════════════════════════════════════════════════════════
 //  帧内类型映射

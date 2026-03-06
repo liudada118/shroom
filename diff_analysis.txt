@@ -1,0 +1,48 @@
+== Web Serial (working) vs Electron serialport (failing) ==
+
+KEY DIFFERENCES:
+
+1. DETECT TIMEOUT:
+   - Web: 800ms per baud rate
+   - Electron: 2000ms (already increased, should be enough)
+
+2. DELIMITER MATCHING:
+   - Web: Sliding window on raw bytes, checks every byte as it arrives
+   - Electron: Uses Buffer.indexOf() on accumulated buffer — should also work
+
+3. CRITICAL DIFFERENCE - OPEN/CLOSE CYCLE:
+   - Web: requestPort() -> open(baud1) -> detect -> close -> open(baud2) -> detect -> close -> open(matched_baud) -> stable
+   - Electron (current): open(baud1) -> detect -> close -> open(baud2) -> detect -> close -> REUSE last open port
+   
+   Web version ALSO does close-reopen between detection attempts!
+   So the close-reopen is NOT the root cause.
+
+4. CRITICAL DIFFERENCE - SERIAL PORT CONSTRUCTOR:
+   - Web: navigator.serial.requestPort() returns a port object, then port.open({ baudRate })
+   - Electron (serialport npm): new SerialPort({ path, baudRate, autoOpen: false }) then port.open()
+   
+   In serialport npm package, the constructor syntax matters:
+   - v10+: new SerialPort({ path, baudRate })
+   - v9 and below: new SerialPort(path, { baudRate })
+   
+   Need to check which version is installed!
+
+5. POTENTIAL ISSUE - DATA FLOW AFTER OPEN:
+   - Web: port.readable.getReader() -> reader.read() in a loop
+   - Electron: port.on('data', callback) event-based
+   
+   The event-based approach should work, but there might be a timing issue
+   where the 'data' event listener is attached AFTER some initial data is lost.
+
+6. AT COMMAND FOR MAC:
+   - Web: Sends AT+NAME=ESP32\r\n as Uint8Array hex bytes
+   - Electron: Uses constantObj.AT_MAC_COMMAND - need to verify format
+
+7. MAC READ TIMEOUT:
+   - Web: 60000ms (60 seconds)
+   - Electron: MAC_WAIT_TIMEOUT in config - need to check value
+
+CONCLUSION:
+The most likely issue is that the serialport npm package version uses different
+constructor syntax, OR there's a timing issue with event listener attachment.
+Need to check package.json for serialport version.

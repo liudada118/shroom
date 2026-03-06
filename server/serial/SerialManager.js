@@ -8,6 +8,13 @@
  *   4. Device auth: online mode queries remote server, local mode queries serial_cache.json
  *   5. Data frame parsing and real-time push
  *   6. Auto-reconnect on disconnect
+ *
+ * Key design decisions (aligned with web serial version):
+ *   - Baud detection: open -> detect delimiter -> close (per candidate)
+ *   - After detection: re-open at matched baud rate for stable connection
+ *   - MAC reading: listen on RAW port (not parser), because AT response
+ *     is plain text without frame delimiter AA 55 03 99
+ *   - MAC timeout: 60 seconds (matching web version)
  */
 const { SerialPort, DelimiterParser } = require('serialport')
 const { getPort } = require('../../util/serialport')
@@ -28,18 +35,20 @@ const ONLINE_THRESHOLD = 1000
 const DATA_SEND_INTERVAL = 80
 
 // ═══════════════════════════════════════════════════════════
-//  Phase 2: Baud Rate Auto-Detection (returns reusable port)
+//  Phase 2: Baud Rate Auto-Detection
 // ═══════════════════════════════════════════════════════════
 
 /**
  * Detect baud rate for a serial port.
  *
- * Tries each candidate baud rate in order. On success, returns
- * the matched baud rate AND the already-open SerialPort instance
- * so the caller can reuse it without re-opening.
+ * Aligned with web serial version:
+ *   - Open port at candidate baud rate
+ *   - Listen for delimiter AA 55 03 99 within timeout
+ *   - Close port after each attempt (success or failure)
+ *   - Return matched baud rate (caller will re-open for stable connection)
  *
  * @param {string} portPath Serial port path
- * @returns {Promise<{baud: number, port: SerialPort}|null>}
+ * @returns {Promise<number|null>} Matched baud rate or null
  */
 async function detectBaudRate(portPath) {
   const { BAUD_CANDIDATES, BAUD_DETECT_TIMEOUT, splitArr } = constantObj
@@ -47,13 +56,13 @@ async function detectBaudRate(portPath) {
 
   for (const baud of BAUD_CANDIDATES) {
     try {
-      const result = await tryBaudRate(portPath, baud, splitBuffer, BAUD_DETECT_TIMEOUT)
-      if (result) {
+      const matched = await tryBaudRate(portPath, baud, splitBuffer, BAUD_DETECT_TIMEOUT)
+      if (matched) {
         console.log(`[BaudDetect] ${portPath} -> baud ${baud} matched`)
-        return result  // { baud, port } — port is already open
+        return baud
       }
     } catch (err) {
-      console.warn(`[BaudDetect] ${portPath} @ ${baud} detect error:`, err.message)
+      console.warn(`[BaudDetect] ${portPath} @ ${baud} error: ${err.message}`)
     }
   }
 
@@ -64,40 +73,40 @@ async function detectBaudRate(portPath) {
 /**
  * Try opening a serial port at the given baud rate and listen for the delimiter.
  *
- * Uses an accumulation buffer for cross-packet delimiter matching.
- * On SUCCESS: returns { baud, port } with the port still OPEN for reuse.
- * On FAILURE: closes the port and returns null.
+ * Uses a sliding window approach (like the web version) to match delimiter
+ * byte-by-byte as data arrives, avoiding cross-packet boundary issues.
  *
- * @param {string} portPath Serial port path
- * @param {number} baudRate Baud rate to try
- * @param {Buffer} delimiter Delimiter bytes
- * @param {number} timeout Timeout in ms
- * @returns {Promise<{baud: number, port: SerialPort}|null>}
+ * ALWAYS closes the port when done (success or failure).
+ *
+ * @returns {Promise<boolean>} true if delimiter found within timeout
  */
 function tryBaudRate(portPath, baudRate, delimiter, timeout) {
   return new Promise((resolve) => {
     let port = null
     let timer = null
     let resolved = false
-    let accumBuf = Buffer.alloc(0)
+    // Sliding window buffer — same approach as web version
+    const window = []
+    let totalBytes = 0
 
     function finish(success) {
       if (resolved) return
       resolved = true
       if (timer) clearTimeout(timer)
-      if (success) {
-        // Keep port OPEN — caller will reuse it
+
+      // Always close port after detection attempt
+      if (port) {
         port.removeAllListeners('data')
         port.removeAllListeners('error')
-        resolve({ baud: baudRate, port })
-      } else {
-        // Close port on failure
-        if (port && port.isOpen) {
-          port.removeAllListeners('data')
-          port.removeAllListeners('error')
-          port.close(() => {})
+        if (port.isOpen) {
+          port.close(() => {
+            resolve(success)
+          })
+        } else {
+          resolve(success)
         }
-        resolve(null)
+      } else {
+        resolve(success)
       }
     }
 
@@ -105,7 +114,7 @@ function tryBaudRate(portPath, baudRate, delimiter, timeout) {
       port = new SerialPort({
         path: portPath,
         baudRate,
-        autoOpen: false,  // manual open for better control
+        autoOpen: false,
       })
 
       port.on('error', (err) => {
@@ -120,19 +129,34 @@ function tryBaudRate(portPath, baudRate, delimiter, timeout) {
           return
         }
 
-        console.log(`[BaudDetect] ${portPath} @ ${baudRate} opened, waiting for data...`)
+        console.log(`[BaudDetect] ${portPath} @ ${baudRate} opened, listening...`)
 
-        // Listen for raw data, accumulate and check for delimiter
-        const onData = (data) => {
-          accumBuf = Buffer.concat([accumBuf, Buffer.from(data)])
-          // Cap buffer at 64KB to prevent memory issues
-          if (accumBuf.length > 65536) {
-            accumBuf = accumBuf.slice(accumBuf.length - 65536)
-          }
-          if (bufferContains(accumBuf, delimiter)) {
-            console.log(`[BaudDetect] ${portPath} @ ${baudRate} delimiter FOUND (${accumBuf.length} bytes)`)
-            port.removeListener('data', onData)
-            finish(true)
+        // Sliding window byte-by-byte matching (aligned with web version)
+        const onData = (chunk) => {
+          const bytes = Buffer.from(chunk)
+          for (let i = 0; i < bytes.length; i++) {
+            window.push(bytes[i])
+            totalBytes++
+            // Keep window size = delimiter length
+            if (window.length > delimiter.length) {
+              window.shift()
+            }
+            // Check if window matches delimiter
+            if (window.length === delimiter.length) {
+              let match = true
+              for (let j = 0; j < delimiter.length; j++) {
+                if (window[j] !== delimiter[j]) {
+                  match = false
+                  break
+                }
+              }
+              if (match) {
+                console.log(`[BaudDetect] ${portPath} @ ${baudRate} FOUND delimiter (${totalBytes} bytes received)`)
+                port.removeListener('data', onData)
+                finish(true)
+                return
+              }
+            }
           }
         }
 
@@ -140,7 +164,7 @@ function tryBaudRate(portPath, baudRate, delimiter, timeout) {
 
         // Timeout
         timer = setTimeout(() => {
-          console.log(`[BaudDetect] ${portPath} @ ${baudRate} timeout (${accumBuf.length} bytes, no delimiter)`)
+          console.log(`[BaudDetect] ${portPath} @ ${baudRate} timeout (${totalBytes} bytes, no delimiter)`)
           port.removeListener('data', onData)
           finish(false)
         }, timeout)
@@ -152,13 +176,46 @@ function tryBaudRate(portPath, baudRate, delimiter, timeout) {
   })
 }
 
+// ═══════════════════════════════════════════════════════════
+//  Stable Connection Helper
+// ═══════════════════════════════════════════════════════════
+
 /**
- * Check if buffer contains the given subsequence
+ * Open a serial port for stable data connection (after baud rate is known).
+ *
+ * This is the "re-open" step aligned with the web version's approach:
+ * detection closes the port, then we re-open with the matched baud rate.
+ *
+ * @param {string} portPath Serial port path
+ * @param {number} baudRate Matched baud rate
+ * @param {Buffer} delimiter Frame delimiter for parser
+ * @returns {Promise<{port: SerialPort, parser: DelimiterParser}>}
  */
-function bufferContains(buf, sub) {
-  if (buf.length < sub.length) return false
-  const idx = buf.indexOf(sub)
-  return idx !== -1
+function openStableConnection(portPath, baudRate, delimiter) {
+  return new Promise((resolve, reject) => {
+    const port = new SerialPort({
+      path: portPath,
+      baudRate,
+      autoOpen: false,
+    })
+
+    port.on('error', (err) => {
+      reject(err)
+    })
+
+    port.open((err) => {
+      if (err) {
+        reject(err)
+        return
+      }
+
+      const parser = new DelimiterParser({ delimiter })
+      port.pipe(parser)
+
+      console.log(`[Connect] ${portPath} @ ${baudRate} stable connection opened`)
+      resolve({ port, parser })
+    })
+  })
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -166,19 +223,30 @@ function bufferContains(buf, sub) {
 // ═══════════════════════════════════════════════════════════
 
 /**
- * Send AT command repeatedly to get MAC address from foot pad device.
+ * Send AT command repeatedly to get MAC address.
  *
- * @param {SerialPort} port Serial port instance
- * @param {DelimiterParser} parser Parser instance
+ * CRITICAL: Listens on the RAW port, NOT the DelimiterParser!
+ * The AT response is plain text (e.g., "Unique ID: xxx\r\nVersion: yyy\r\n")
+ * and does NOT end with the frame delimiter AA 55 03 99.
+ * If we listen on the parser, the response gets buffered forever waiting
+ * for a delimiter that never comes.
+ *
+ * Aligned with web version:
+ *   - Send AT command immediately, then every 300ms
+ *   - Accumulate text in buffer, check for "Unique ID" keyword
+ *   - Timeout: 60 seconds (web version uses 60s)
+ *
+ * @param {SerialPort} port Serial port instance (raw, not parser)
  * @returns {Promise<{uniqueId: string|null, version: string|null}>}
  */
-function sendMacCommand(port, parser) {
+function sendMacCommand(port) {
   const { AT_MAC_COMMAND, MAC_SEND_INTERVAL, MAC_WAIT_TIMEOUT } = constantObj
 
   return new Promise((resolve) => {
     let timer = null
     let interval = null
     let resolved = false
+    let textBuffer = ''
 
     function cleanup() {
       if (resolved) return
@@ -187,27 +255,45 @@ function sendMacCommand(port, parser) {
       if (interval) clearInterval(interval)
     }
 
+    // Listen on RAW port data, not parser!
     const onData = (data) => {
-      const str = Buffer.from(data).toString()
-      if (str.includes('Unique ID')) {
-        parser.removeListener('data', onData)
-        cleanup()
+      // Try to decode as text and accumulate
+      try {
+        const str = Buffer.from(data).toString('utf8')
+        textBuffer += str
 
-        const uniqueIdMatch = str.match(/Unique ID:\s*([^\s\-]+)/)
-        const versionMatch = str.match(/Versions?:\s*([^\s\-]+)/)
-        resolve({
-          uniqueId: uniqueIdMatch ? uniqueIdMatch[1] : null,
-          version: versionMatch ? versionMatch[1] : null,
-        })
+        // Cap buffer at 10000 chars (same as web version)
+        if (textBuffer.length > 10000) {
+          textBuffer = textBuffer.slice(-10000)
+        }
+
+        // Check for Unique ID in accumulated buffer
+        if (textBuffer.includes('Unique ID')) {
+          port.removeListener('data', onData)
+          cleanup()
+
+          const uniqueIdMatch = textBuffer.match(/Unique ID:\s*([^\s\-]+)/)
+          const versionMatch = textBuffer.match(/Versions?:\s*([^\s\-]+)/)
+
+          const uniqueId = uniqueIdMatch ? uniqueIdMatch[1] : null
+          const version = versionMatch ? versionMatch[1] : null
+
+          console.log(`[MAC] Response received - UniqueID: ${uniqueId}, Version: ${version}`)
+          resolve({ uniqueId, version })
+        }
+      } catch (e) {
+        // Not text data, ignore (binary sensor data)
       }
     }
 
-    parser.on('data', onData)
+    port.on('data', onData)
 
+    // Send AT command immediately, then every MAC_SEND_INTERVAL
     const sendOnce = () => {
       if (port.isOpen && !resolved) {
         port.write(AT_MAC_COMMAND, (err) => {
-          if (err) console.warn('[Serial] AT command send failed:', err.message)
+          if (err) console.warn('[MAC] AT command send failed:', err.message)
+          else console.log('[MAC] AT command sent')
         })
       }
     }
@@ -215,9 +301,11 @@ function sendMacCommand(port, parser) {
     sendOnce()
     interval = setInterval(sendOnce, MAC_SEND_INTERVAL)
 
+    // Timeout (60 seconds, aligned with web version)
     timer = setTimeout(() => {
-      parser.removeListener('data', onData)
+      port.removeListener('data', onData)
       cleanup()
+      console.warn(`[MAC] Timeout after ${MAC_WAIT_TIMEOUT}ms, device may not support MAC query`)
       resolve({ uniqueId: null, version: null })
     }, MAC_WAIT_TIMEOUT)
   })
@@ -270,8 +358,7 @@ function resolveDeviceTypeLocal(uniqueId) {
 }
 
 /**
- * Unified device type resolution entry point.
- *
+ * Unified device type resolution.
  * Strategy: local cache first -> online fallback (if AUTH_MODE = 'online')
  */
 async function resolveDeviceType(uniqueId) {
@@ -285,7 +372,7 @@ async function resolveDeviceType(uniqueId) {
     return resolveDeviceTypeOnline(uniqueId)
   }
 
-  console.warn(`[Auth] In local mode, ${uniqueId} not found in cache, please add manually`)
+  console.warn(`[Auth] Local mode, ${uniqueId} not in cache, please add manually`)
   return { type: null, premission: false }
 }
 
@@ -343,14 +430,22 @@ function updateArrList(dataItem, data, maxLength = 3) {
 // ═══════════════════════════════════════════════════════════
 
 /**
- * Bind data frame parsing callback to a connected serial port
+ * Bind data frame parsing callback to a connected serial port.
+ *
+ * Listens on the PARSER (DelimiterParser), which splits data by AA 55 03 99.
+ * This is correct for sensor data frames.
+ *
+ * Note: MAC response handling is done separately via sendMacCommand()
+ * which listens on the RAW port. The parser-based handler here also
+ * checks for "Unique ID" as a fallback in case the response happens
+ * to be followed by a delimiter.
  */
 function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, allPorts) {
   parserItem.parser.on('data', async (data) => {
     const buffer = Buffer.from(data)
     const pointArr = Array.from(buffer)
 
-    // -- MAC address response --
+    // -- MAC address response (fallback, in case delimiter follows AT response) --
     if (buffer.toString().includes('Unique ID')) {
       const str = buffer.toString()
       const uniqueIdMatch = str.match(/Unique ID:\s*([^\s\-]+)/)
@@ -358,7 +453,7 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       const uniqueId = uniqueIdMatch ? uniqueIdMatch[1] : null
       const version = versionMatch ? versionMatch[1] : null
 
-      console.log(`[Serial] Device identified - UniqueID: ${uniqueId}, Version: ${version}`)
+      console.log(`[Serial] Device identified via parser - UniqueID: ${uniqueId}, Version: ${version}`)
       state.macInfo[portPath] = { uniqueId, version }
 
       if (Object.keys(state.macInfo).length === allPorts.length) {
@@ -519,11 +614,12 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
 /**
  * Connect all available serial ports (three-layer identification funnel)
  *
- * Key change: detectBaudRate now returns the already-open SerialPort instance.
- * We REUSE that instance instead of closing and re-opening, which solves:
- *   1. CH340 chip instability on rapid open/close cycles
- *   2. Windows serial port exclusive lock release delay
- *   3. Faster connection (no redundant open/close)
+ * Aligned with web serial version:
+ *   Step 1: Enumerate & filter CH340 ports
+ *   Step 2: detectBaudRate() — open/detect/close per candidate
+ *   Step 3: openStableConnection() — re-open at matched baud rate
+ *   Step 4: For foot devices, sendMacCommand() on RAW port
+ *   Step 5: bindDataHandler() on parser for sensor data
  */
 async function connectPort(broadcastFn, onTimerStart) {
   state.macInfo = {}
@@ -553,42 +649,68 @@ async function connectPort(broadcastFn, onTimerStart) {
       continue
     }
 
-    // -- Phase 2: Baud rate detection (returns reusable port) --
+    // -- Phase 2: Baud rate detection (open/detect/close) --
     console.log(`[Connect] Detecting baud rate for ${portPath}...`)
     broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'detecting_baud' } }))
 
-    const detectResult = await detectBaudRate(portPath)
-    if (!detectResult) {
+    const detectedBaud = await detectBaudRate(portPath)
+    if (!detectedBaud) {
       console.warn(`[Connect] ${portPath} baud rate detection failed, skipping`)
       connectedPorts.push({ path: portPath, status: 'baud_detect_failed' })
       continue
     }
 
-    const { baud: detectedBaud, port: detectedPort } = detectResult
-    const deviceClass = BAUD_DEVICE_MAP[detectedBaud]
+    const deviceClass = BAUD_DEVICE_MAP[detectedBaud] || 'unknown'
     console.log(`[Connect] ${portPath} -> baud: ${detectedBaud}, device class: ${deviceClass}`)
 
-    // -- Reuse the already-open port, just pipe the parser --
-    const parserItem = state.parserArr[portPath] = state.parserArr[portPath] || {}
-    const dataItem = state.dataMap[portPath] = state.dataMap[portPath] || {}
+    // -- Phase 3: Re-open for stable connection --
+    // Small delay to ensure port is fully released after detection close
+    await new Promise(r => setTimeout(r, 200))
 
-    parserItem.parser = new DelimiterParser({ delimiter: splitBuffer })
+    let stablePort, stableParser
+    try {
+      const conn = await openStableConnection(portPath, detectedBaud, splitBuffer)
+      stablePort = conn.port
+      stableParser = conn.parser
+    } catch (err) {
+      console.error(`[Connect] ${portPath} stable connection failed: ${err.message}`)
+      // Retry once after longer delay
+      await new Promise(r => setTimeout(r, 500))
+      try {
+        const conn = await openStableConnection(portPath, detectedBaud, splitBuffer)
+        stablePort = conn.port
+        stableParser = conn.parser
+      } catch (err2) {
+        console.error(`[Connect] ${portPath} retry also failed: ${err2.message}`)
+        connectedPorts.push({ path: portPath, status: 'open_failed' })
+        continue
+      }
+    }
+
+    // Store in state
+    const parserItem = state.parserArr[portPath] = {
+      port: stablePort,
+      parser: stableParser,
+      baudRate: detectedBaud,
+    }
+    const dataItem = state.dataMap[portPath] = state.dataMap[portPath] || {}
     dataItem.deviceClass = deviceClass
     dataItem.baudRate = detectedBaud
 
-    // Pipe the already-open port to the parser (no re-open needed!)
-    detectedPort.pipe(parserItem.parser)
-    parserItem.port = detectedPort
-    parserItem.baudRate = detectedBaud
-
-    console.log(`[Connect] ${portPath} port reused from detection, parser attached`)
-
-    // -- Phase 3: Refinement & auth --
+    // -- Phase 4: Refinement & auth --
     if (deviceClass === 'sit') {
       dataItem.type = 'sit'
       dataItem.premission = true
       console.log(`[Connect] ${portPath} -> sit pad, direct auth`)
       bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
+
+      // Also try to get MAC for sit devices
+      sendMacCommand(stablePort).then(({ uniqueId, version }) => {
+        if (uniqueId) {
+          state.macInfo[portPath] = { uniqueId, version }
+          console.log(`[Connect] ${portPath} sit MAC: ${uniqueId}`)
+        }
+      }).catch(() => {})
 
     } else if (deviceClass === 'hand') {
       dataItem.type = 'hand'
@@ -596,15 +718,23 @@ async function connectPort(broadcastFn, onTimerStart) {
       console.log(`[Connect] ${portPath} -> glove, waiting for frame to determine HL/HR`)
       bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
 
+      // Also try to get MAC for hand devices
+      sendMacCommand(stablePort).then(({ uniqueId, version }) => {
+        if (uniqueId) {
+          state.macInfo[portPath] = { uniqueId, version }
+          console.log(`[Connect] ${portPath} hand MAC: ${uniqueId}`)
+        }
+      }).catch(() => {})
+
     } else if (deviceClass === 'foot') {
       console.log(`[Connect] ${portPath} -> foot pad, getting MAC address...`)
       broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'getting_mac' } }))
 
-      // Bind data handler first (sendMacCommand listens on parser)
+      // Bind data handler first for sensor data
       bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
 
-      // Send AT command to get MAC
-      const { uniqueId, version } = await sendMacCommand(detectedPort, parserItem.parser)
+      // Send AT command to get MAC (listens on RAW port, not parser)
+      const { uniqueId, version } = await sendMacCommand(stablePort)
       state.macInfo[portPath] = { uniqueId, version }
 
       if (uniqueId) {
@@ -617,7 +747,7 @@ async function connectPort(broadcastFn, onTimerStart) {
         } else {
           dataItem.type = 'foot'
           dataItem.premission = false
-          console.warn(`[Connect] ${portPath} MAC ${uniqueId} failed to map to specific type`)
+          console.warn(`[Connect] ${portPath} MAC ${uniqueId} type not resolved`)
         }
       } else {
         dataItem.type = 'foot'
@@ -696,14 +826,22 @@ function startReconnectMonitor() {
         const baudRate = item.baudRate || state.baudRate
         console.log(`[Serial] Port disconnected, reconnecting: ${portPath} @ ${baudRate}`)
         try {
-          item.port = new SerialPort({
+          const splitBuffer = Buffer.from(constantObj.splitArr)
+          const newPort = new SerialPort({
             path: portPath,
             baudRate,
             autoOpen: true,
           }, (err) => {
-            if (err) console.error(`[Serial] Reconnect failed ${portPath}:`, err.message)
+            if (err) {
+              console.error(`[Serial] Reconnect failed ${portPath}:`, err.message)
+              return
+            }
+            const newParser = new DelimiterParser({ delimiter: splitBuffer })
+            newPort.pipe(newParser)
+            item.port = newPort
+            item.parser = newParser
+            console.log(`[Serial] Reconnected: ${portPath} @ ${baudRate}`)
           })
-          item.port.pipe(item.parser)
         } catch (err) {
           console.error(`[Serial] Reconnect error ${portPath}:`, err.message)
         }
