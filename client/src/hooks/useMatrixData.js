@@ -30,7 +30,9 @@ export function useMatrixData() {
    * 计算框选区域数据
    */
   function computeSelectArr(arr, key, fullKey, select, displayType, sitDataItem) {
-    const { width, height } = systemPointConfig[fullKey]
+    const config = systemPointConfig[fullKey]
+    if (!config) return arr  // 未知设备类型，跳过框选计算
+    const { width, height } = config
 
     // 实时框选
     if (select.length && displayType.includes(key)) {
@@ -84,6 +86,7 @@ export function useMatrixData() {
    * 计算统计指标（压力、面积、重心、正态分布等）
    */
   function computeStats(data, arr, selectedArr, key, fullKey) {
+    if (!systemPointConfig[fullKey]) return  // 未知设备类型，跳过统计计算
     const { width, height } = systemPointConfig[fullKey]
 
     if (!data[key]) data[key] = {}
@@ -156,6 +159,7 @@ export function useMatrixData() {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       if (!resArr[key]) continue
       res[key] = []
+      if (!systemPointConfig[fullKey]) continue
       const { width, height } = systemPointConfig[fullKey]
       for (let y = 0; y < height; y++) {
         for (let x = width - 1; x >= 0; x--) {
@@ -175,6 +179,7 @@ export function useMatrixData() {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       if (!resArr[key]) continue
       res[key] = []
+      if (!systemPointConfig[fullKey]) continue
       const { width, height } = systemPointConfig[fullKey]
       for (let y = height - 1; y >= 0; y--) {
         for (let x = 0; x < width; x++) {
