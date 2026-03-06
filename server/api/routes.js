@@ -13,6 +13,7 @@ const { state } = require('../state')
 const { broadcast } = require('../websocket')
 const { connectPort, portWrite, stopPort } = require('../serial/SerialManager')
 const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed } = require('../services/DataService')
+const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 
 const router = express.Router()
 
@@ -347,7 +348,62 @@ router.post('/getRemark', asyncHandler(async (req, res) => {
   res.json(new HttpResult(0, data, 'success'))
 }))
 
-// ─── 其他 ────────────────────────────────────────────────
+// ─── 设备缓存管理 ───────────────────────────────────────────
+
+// 获取所有缓存的设备列表
+router.get('/cache/devices', asyncHandler(async (req, res) => {
+  const devices = getAllCached()
+  res.json(new HttpResult(0, devices, 'success'))
+}))
+
+// 添加/更新设备缓存
+router.post('/cache/devices', asyncHandler(async (req, res) => {
+  const { mac, type, deviceClass, alias } = req.body
+  if (!mac || !type) {
+    res.json(new HttpResult(1, {}, 'mac 和 type 必填'))
+    return
+  }
+  setTypeToCache(mac, type, deviceClass || 'foot', alias || '')
+  res.json(new HttpResult(0, {}, '设备缓存已更新'))
+}))
+
+// 删除单个设备缓存
+router.delete('/cache/devices', asyncHandler(async (req, res) => {
+  const { mac } = req.body
+  if (!mac) {
+    res.json(new HttpResult(1, {}, 'mac 必填'))
+    return
+  }
+  removeFromCache(mac)
+  res.json(new HttpResult(0, {}, '设备缓存已删除'))
+}))
+
+// 清空所有设备缓存
+router.post('/cache/clear', asyncHandler(async (req, res) => {
+  clearCache()
+  res.json(new HttpResult(0, {}, '缓存已清空'))
+}))
+
+// ─── 授权模式管理 ──────────────────────────────────────────
+
+// 获取当前授权模式
+router.get('/auth/mode', (req, res) => {
+  res.json(new HttpResult(0, { mode: constantObj.AUTH_MODE }, 'success'))
+})
+
+// 切换授权模式（online / local）
+router.post('/auth/mode', asyncHandler(async (req, res) => {
+  const { mode } = req.body
+  if (!['online', 'local'].includes(mode)) {
+    res.json(new HttpResult(1, {}, '模式只能是 online 或 local'))
+    return
+  }
+  constantObj.AUTH_MODE = mode
+  console.log(`[Auth] 授权模式已切换为: ${mode}`)
+  res.json(new HttpResult(0, { mode }, `已切换为${mode === 'online' ? '联网' : '本地'}模式`))
+}))
+
+// ─── 其他 ──────────────────────────────────────────────────
 
 router.post('/bindKey', (req, res) => {
   try {
