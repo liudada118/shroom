@@ -654,6 +654,7 @@ async function connectPort(broadcastFn, onTimerStart) {
   }
 
   const connectedPorts = []
+  const macResolveTasks = []  // Collect sit/foot devices for parallel MAC resolution
 
   for (let i = 0; i < ports.length; i++) {
     const portInfo = ports[i]
@@ -714,84 +715,31 @@ async function connectPort(broadcastFn, onTimerStart) {
     dataItem.deviceClass = deviceClass
     dataItem.baudRate = detectedBaud
 
-    // -- Phase 4: Refinement & auth --
-    if (deviceClass === 'sit') {
-      // Do NOT set type yet — wait for MAC + server query to determine actual type
+    // -- Phase 4: Bind data handler & prepare MAC resolution task --
+    bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
+
+    if (deviceClass === 'sit' || deviceClass === 'foot') {
+      // Need MAC + server query to determine type — will run in parallel later
       dataItem.type = null
       dataItem.premission = false
-      console.log(`[Connect] ${portPath} -> sit baud rate device, getting MAC for type resolution...`)
+      console.log(`[Connect] ${portPath} -> ${deviceClass} device, will query type via MAC...`)
       broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'getting_mac' } }))
 
-      // Bind data handler first (frames will be ignored until type is set)
-      bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
-
-      // Wait for MAC, then query server for device type
-      const { uniqueId, version } = await sendMacCommand(stablePort)
-      state.macInfo[portPath] = { uniqueId, version }
-
-      if (uniqueId) {
-        console.log(`[Connect] ${portPath} MAC: ${uniqueId}, version: ${version}`)
-        const { type: deviceType, premission } = await resolveDeviceType(uniqueId)
-        if (deviceType) {
-          dataItem.type = deviceType
-          dataItem.premission = premission
-          console.log(`[Connect] ${portPath} final type from server: ${deviceType}, auth: ${premission}`)
-          broadcastFn(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission } }))
-        } else {
-          // Server returned no type — fallback to sit, no auth
-          dataItem.type = 'sit'
-          dataItem.premission = false
-          console.warn(`[Connect] ${portPath} MAC ${uniqueId} type not resolved by server, fallback to sit`)
-        }
-      } else {
-        // MAC read failed — fallback to sit, no auth
-        dataItem.type = 'sit'
-        dataItem.premission = false
-        console.warn(`[Connect] ${portPath} failed to get MAC address, fallback to sit`)
-      }
+      // Collect task for parallel execution
+      macResolveTasks.push({ portPath, stablePort, dataItem, deviceClass })
 
     } else if (deviceClass === 'hand') {
       dataItem.type = 'hand'
       dataItem.premission = true
       console.log(`[Connect] ${portPath} -> glove, waiting for frame to determine HL/HR`)
-      bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
 
-      // Also try to get MAC for hand devices
+      // MAC read for hand is non-blocking (fire & forget)
       sendMacCommand(stablePort).then(({ uniqueId, version }) => {
         if (uniqueId) {
           state.macInfo[portPath] = { uniqueId, version }
           console.log(`[Connect] ${portPath} hand MAC: ${uniqueId}`)
         }
       }).catch(() => {})
-
-    } else if (deviceClass === 'foot') {
-      console.log(`[Connect] ${portPath} -> foot pad, getting MAC address...`)
-      broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'getting_mac' } }))
-
-      // Bind data handler first for sensor data
-      bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
-
-      // Send AT command to get MAC (listens on RAW port, not parser)
-      const { uniqueId, version } = await sendMacCommand(stablePort)
-      state.macInfo[portPath] = { uniqueId, version }
-
-      if (uniqueId) {
-        console.log(`[Connect] ${portPath} MAC: ${uniqueId}, version: ${version}`)
-        const { type: deviceType, premission } = await resolveDeviceType(uniqueId)
-        if (deviceType) {
-          dataItem.type = deviceType
-          dataItem.premission = premission
-          console.log(`[Connect] ${portPath} final type: ${deviceType}, auth: ${premission}`)
-        } else {
-          dataItem.type = 'foot'
-          dataItem.premission = false
-          console.warn(`[Connect] ${portPath} MAC ${uniqueId} type not resolved`)
-        }
-      } else {
-        dataItem.type = 'foot'
-        dataItem.premission = false
-        console.warn(`[Connect] ${portPath} failed to get MAC address`)
-      }
     }
 
     connectedPorts.push({
@@ -812,6 +760,43 @@ async function connectPort(broadcastFn, onTimerStart) {
         type: dataItem.type,
       }
     }))
+  }
+
+  // -- Phase 5: Parallel MAC read + type resolution for sit/foot devices --
+  if (macResolveTasks.length > 0) {
+    console.log(`[Connect] Starting parallel MAC resolution for ${macResolveTasks.length} device(s)...`)
+
+    await Promise.all(macResolveTasks.map(async ({ portPath, stablePort, dataItem, deviceClass }) => {
+      try {
+        const { uniqueId, version } = await sendMacCommand(stablePort)
+        state.macInfo[portPath] = { uniqueId, version }
+
+        if (uniqueId) {
+          console.log(`[Connect] ${portPath} MAC: ${uniqueId}, version: ${version}`)
+          const { type: deviceType, premission } = await resolveDeviceType(uniqueId)
+          if (deviceType) {
+            dataItem.type = deviceType
+            dataItem.premission = premission
+            console.log(`[Connect] ${portPath} final type from server: ${deviceType}, auth: ${premission}`)
+            broadcastFn(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission } }))
+          } else {
+            dataItem.type = deviceClass  // fallback to device class
+            dataItem.premission = false
+            console.warn(`[Connect] ${portPath} MAC ${uniqueId} type not resolved by server, fallback to ${deviceClass}`)
+          }
+        } else {
+          dataItem.type = deviceClass  // fallback to device class
+          dataItem.premission = false
+          console.warn(`[Connect] ${portPath} failed to get MAC, fallback to ${deviceClass}`)
+        }
+      } catch (err) {
+        console.error(`[Connect] ${portPath} MAC resolution error:`, err.message)
+        dataItem.type = deviceClass
+        dataItem.premission = false
+      }
+    }))
+
+    console.log(`[Connect] All MAC resolutions complete`)
   }
 
   // Broadcast final connect result
