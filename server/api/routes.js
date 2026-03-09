@@ -11,7 +11,7 @@ const { decryptStr } = require('../../util/aes_ecb')
 const module2 = require('../../util/aes_ecb')
 const { state } = require('../state')
 const { broadcast } = require('../websocket')
-const { connectPort, portWrite, stopPort, detectBaudRate, sendMacCommand } = require('../serial/SerialManager')
+const { connectPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
 const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed } = require('../services/DataService')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 
@@ -137,18 +137,35 @@ router.get('/sendMacConnected', asyncHandler(async (req, res) => {
 
       if (uniqueId) {
         broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: MAC 读取成功 - ${uniqueId}`, type: 'success', timestamp: Date.now() } }))
+        state.macInfo[portPath] = { uniqueId, version }
+
+        // Auto-resolve device type via server query
+        const { type: deviceType, premission } = await resolveDeviceType(uniqueId)
+        if (deviceType) {
+          dataItem.type = deviceType
+          dataItem.premission = premission
+          console.log(`[sendMacConnected] ${portPath} type resolved: ${deviceType}, auth: ${premission}`)
+          broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 设备类型已更新为 ${deviceType}`, type: 'success', timestamp: Date.now() } }))
+          broadcast(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission } }))
+        } else {
+          console.warn(`[sendMacConnected] ${portPath} type not resolved for MAC ${uniqueId}`)
+          broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 服务器未返回设备类型`, type: 'warning', timestamp: Date.now() } }))
+        }
+
         const result = {
           path: portPath, status: 'success',
           baudRate, deviceClass, deviceLabel,
-          uniqueId, version, timestamp: Date.now()
+          uniqueId, version, deviceType: deviceType || null,
+          premission: premission || false,
+          timestamp: Date.now()
         }
         results.push(result)
-        state.macInfo[portPath] = { uniqueId, version }
 
         broadcast(JSON.stringify({
           macReaderResult: {
             path: portPath, uniqueId, version,
-            baudRate, deviceClass, deviceLabel
+            baudRate, deviceClass, deviceLabel,
+            deviceType: deviceType || null
           }
         }))
       } else {
