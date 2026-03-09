@@ -11,28 +11,31 @@ import { calMatrixToSelect } from '../../assets/util/selectMatrix'
 const selectInputObj = [
     {
         name: 'X',
-        placeholder: '输入初始横向起点',
+        placeholder: '输入...',
         valueStr: 'xStart'
     }, {
         name: 'Y',
-        placeholder: '输入初始纵向起点',
+        placeholder: '输入...',
         valueStr: 'yStart'
     }, {
         name: '长',
-        placeholder: '输入框选横向点数',
+        placeholder: '输入...',
         valueStr: 'width'
     }, {
         name: '宽',
-        placeholder: '输入框选纵向点数',
+        placeholder: '输入...',
         valueStr: 'height'
     },
 ]
 
-// 单个框选面板组件（显示在框附近）
-function SelectBoxPanel({ boxData, boxIndex, matrixInfo, sysType, pageInfo, type }) {
-    const [rect, setRect] = useState({})
-    const [minimized, setMinimized] = useState(false)
+/**
+ * 单个框选面板组件 —— 统一为带输入框样式
+ * 既可以显示鼠标框选的结果（自动填入），也可以手动修改
+ */
+function SelectBoxPanel({ boxData, boxIndex, matrixInfo, sysType, pageInfo, type, onClose }) {
+    const [rect, setRect] = useState({ xStart: '', yStart: '', width: '', height: '' })
 
+    // 当框数据变化时，自动计算并填入坐标
     useEffect(() => {
         if (!boxData) return
         try {
@@ -40,9 +43,7 @@ function SelectBoxPanel({ boxData, boxIndex, matrixInfo, sysType, pageInfo, type
             if (matrix) {
                 setRect({
                     xStart: matrix.xStart,
-                    xEnd: matrix.xEnd,
                     yStart: matrix.yStart,
-                    yEnd: matrix.yEnd,
                     width: matrix.xEnd - matrix.xStart,
                     height: matrix.yEnd - matrix.yStart
                 })
@@ -54,64 +55,91 @@ function SelectBoxPanel({ boxData, boxIndex, matrixInfo, sysType, pageInfo, type
         pageInfo.brushInstance.deleteSelect(boxIndex)
     }
 
-    // 计算面板位置：在框的右上角附近
-    const panelStyle = {
-        position: 'fixed',
-        left: Math.min(boxData.x2 + 8, window.innerWidth - 200) + 'px',
-        top: Math.max(boxData.y1, 80) + 'px',
-        background: '#1A1C20',
-        boxShadow: '0px 4px 10px 0px rgba(0, 0, 0, 0.4)',
-        borderRadius: '0.75rem',
-        padding: minimized ? '0.5rem 0.75rem' : '0.875rem 1.125rem',
-        color: '#E6EBF0',
-        zIndex: 1100,
-        minWidth: minimized ? '80px' : '140px',
-        border: '1px solid #ffcc00',
-        fontSize: '0.875rem',
+    // 手动修改输入框后，点击确认更新框的位置
+    const handleConfirm = () => {
+        const config = systemPointConfig[sysType]
+        if (!config) return
+
+        const xStart = Number(rect.xStart)
+        const yStart = Number(rect.yStart)
+        const width = Number(rect.width)
+        const height = Number(rect.height)
+
+        if (isNaN(xStart) || isNaN(yStart) || isNaN(width) || isNaN(height)) {
+            message.error('请输入有效数字')
+            return
+        }
+        if (xStart < 0 || yStart < 0) {
+            message.error('初始坐标需要大于0')
+            return
+        }
+        if (xStart + width > config.width) {
+            message.error('初始横坐标加长不能超过横向传感点数')
+            return
+        }
+        if (yStart + height > config.height) {
+            message.error('初始纵坐标加宽不能超过纵向传感点数')
+            return
+        }
+
+        // 根据输入值重新计算框的像素位置
+        const selectInfoResult = calMatrixToSelect('canvasThree', {
+            xStart, yStart, sWidth: width, sHeight: height
+        }, config)
+        const { selectWidth, selectHeight, selectX, selectY } = selectInfoResult
+
+        // 更新框的位置数据
+        const box = pageInfo.brushInstance.rangeArr[boxIndex]
+        if (box) {
+            box.x1 = selectX
+            box.y1 = selectY
+            box.x2 = selectX + selectWidth
+            box.y2 = selectY + selectHeight
+
+            // 更新 DOM 元素位置
+            const el = document.querySelector(`.selectBox${box.index}`)
+            if (el) {
+                el.style.left = selectX + 'px'
+                el.style.top = selectY + 'px'
+                el.style.width = selectWidth + 'px'
+                el.style.height = selectHeight + 'px'
+            }
+            pageInfo.brushInstance.notify(pageInfo.brushInstance.rangeArr)
+        }
     }
 
-    if (minimized) {
-        return (
-            <div style={panelStyle}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>框{boxIndex + 1}</span>
-                    <div>
-                        <i className='iconfont cursor' style={{ marginRight: '8px', fontSize: '0.75rem' }}
-                            onClick={() => setMinimized(false)}>&#xe623;</i>
-                        <i className='iconfont cursor' style={{ color: '#606A76', fontSize: '0.75rem' }}
-                            onClick={deleteBox}>&#xe625;</i>
-                    </div>
-                </div>
-            </div>
-        )
-    }
+    const selectInfo = <div style={{ width: '10rem', color: '#fff' }}>
+        <div>X: 输入初始横向起点</div>
+        <div>Y: 输入初始纵向起点</div>
+        <div>长: 输入框选横向点数</div>
+        <div>宽: 输入框选纵向点数</div>
+        <div>注意: x加长不能超过横向传感点数({matrixInfo.width || 32}个),y加宽不能超过纵向传感点数({matrixInfo.height || 32}个)</div>
+    </div>
 
     return (
-        <div style={panelStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <span style={{ fontWeight: 'bold' }}>框选区域 {boxIndex + 1}</span>
-                <div>
-                    <span className='cursor' style={{ marginRight: '10px', fontSize: '0.75rem', color: '#0072EF' }}
-                        onClick={() => setMinimized(true)}>缩小</span>
-                    <i className='iconfont cursor' style={{ color: '#606A76', fontSize: '0.75rem' }}
-                        onClick={deleteBox}>&#xe625;</i>
-                </div>
+        <div className='selectInputContent' style={{ position: 'fixed', top: 'auto', right: 'auto', left: Math.min((boxData?.x2 || 0) + 8, window.innerWidth - 220) + 'px', top: Math.max((boxData?.y1 || 0), 80) + 'px' }}>
+            <div className="selectInputTitle">
+                <div className="selectInputTitleInfo">框选区域 {boxIndex + 1}</div>
+                <Popover color='#32373E' className='set-popover' placement="bottomLeft" content={selectInfo}>
+                    <i className='iconfont cursor'>&#xe674;</i>
+                </Popover>
+                <i className='iconfont cursor' style={{ marginLeft: 'auto', color: '#606A76', fontSize: '0.75rem' }}
+                    onClick={deleteBox}>&#xe625;</i>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.4rem' }}>
-                <span style={{ width: '2rem', textAlign: 'right', marginRight: '0.5rem' }}>X:</span>
-                <span>{rect.xStart}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.4rem' }}>
-                <span style={{ width: '2rem', textAlign: 'right', marginRight: '0.5rem' }}>Y:</span>
-                <span>{rect.yStart}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.4rem' }}>
-                <span style={{ width: '2rem', textAlign: 'right', marginRight: '0.5rem' }}>长:</span>
-                <span>{rect.width}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.4rem' }}>
-                <span style={{ width: '2rem', textAlign: 'right', marginRight: '0.5rem' }}>宽:</span>
-                <span>{rect.height}</span>
+            {
+                selectInputObj.map((a => {
+                    return <div className='selectInputItem' key={a.valueStr}>
+                        <div className="selectInputItemName">{a.name}:</div>
+                        <Input value={rect[a.valueStr]} onChange={(e) => {
+                            const obj = { ...rect }
+                            obj[a.valueStr] = e.target.value === '' ? '' : Number(e.target.value)
+                            setRect(obj)
+                        }} className='selectInput' style={{ width: '5rem', backgroundColor: '#202327', border: 0, color: "#E6EBF0" }} placeholder={a.placeholder} />
+                    </div>
+                }))
+            }
+            <div className="selectInputButtonContent">
+                <div className="selectInputButton connectButton cursor" onClick={handleConfirm}>确认</div>
             </div>
         </div>
     )
@@ -129,7 +157,7 @@ export default function SelectSet(props) {
     const [sysType, setSysType] = useState('')
     const [typeRef, setTypeRef] = useState('')
 
-    // 手动输入框的状态
+    // 新建框的手动输入状态
     const [inputRect, setInputRect] = useState({})
 
     useEffect(() => {
@@ -169,6 +197,7 @@ export default function SelectSet(props) {
     </div>
 
     return <>
+        {/* 新建框的输入面板（固定位置） */}
         {onSelect ? <div className='selectInputContent'>
             <div className="selectInputTitle">
                 <div className="selectInputTitleInfo">框选区域</div>
@@ -182,7 +211,7 @@ export default function SelectSet(props) {
                         <div className="selectInputItemName">{a.name}:</div>
                         <Input value={inputRect[a.valueStr]} onChange={(e) => {
                             const obj = { ...inputRect }
-                            obj[a.valueStr] = Number(e.target.value)
+                            obj[a.valueStr] = e.target.value === '' ? '' : Number(e.target.value)
                             setInputRect(obj)
                         }} className='selectInput' style={{ width: '5rem', backgroundColor: '#202327', border: 0, color: "#E6EBF0" }} placeholder={a.placeholder} />
                     </div>
@@ -243,7 +272,7 @@ export default function SelectSet(props) {
             </div>
         </div> : ''}
 
-        {/* 选中的框附近显示面板 */}
+        {/* 已有框选中时，在框附近显示带输入框的面板 */}
         {onSelect && rangeArr.map((box, idx) => {
             if (selectedBoxIndex !== idx) return null
             return <SelectBoxPanel
