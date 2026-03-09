@@ -6,6 +6,7 @@ import { withTranslation } from 'react-i18next';
 import { getSysType, useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 import { isMoreMatrix } from '../../assets/util/util';
+import { APP_VERSION } from '../../util/version';
 
 let xvalue = localStorage.getItem('bedz') ? Number(localStorage.getItem('bedz')) : 0
 
@@ -327,12 +328,7 @@ const ViewSetting = (props) => {
                         <i className='iconfont add cursor' style={{ marginRight: '1.375rem' }} onClick={addShow}>&#xe631;</i>
                     </div>
                     <Popover color='#32373E' className='set-popover' placement="top" content={<div style={{ color: '#E6EBF0' }} >{t('viewSwitch3D')}</div>} >
-                        {display == 'point3D' ? isMoreMatrix(systemType) && !['sit', 'back'].includes(displayType) ?
-                            <div className='viewAdjust cursor' style={{ display: 'flex', flexDirection: 'column' }}>
-                                <i style={{ color: '#606A76' }} className='iconfont  fs20'>&#xe606;</i>
-                                <span>{t('angleAdj')}</span>
-                            </div>
-                            :
+                        {display == 'point3D' ?
                             <div className='viewAdjust cursor' onClick={threeViewChange} style={{ display: 'flex', flexDirection: 'column' }}>
                                 <i className='iconfont  fs20'>&#xe606;</i>
                                 <span>{t('angleAdj')}</span>
@@ -372,7 +368,19 @@ const ViewSetting = (props) => {
                     </Popover> : ''} */}
                 </div>
 
-
+                <div style={{ 
+                    marginLeft: '1rem', 
+                    padding: '0.4rem 0.75rem', 
+                    background: '#202327', 
+                    borderRadius: '6px',
+                    fontSize: '0.75rem',
+                    color: '#6C7784',
+                    display: 'flex',
+                    alignItems: 'center',
+                    userSelect: 'none'
+                }}>
+                    {APP_VERSION}
+                </div>
 
             </div>
         </>

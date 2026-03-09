@@ -471,6 +471,31 @@ const Canvas =
             if (rotation.length) particles.rotation.set(...rotation)
             particles.name = name
             group.add(particles);
+
+            // 为坐垫/靠背添加有效识别范围的边缘外框
+            const halfW = (AMOUNTY * SEPARATION) / 2 * scale[0]
+            const halfH = (AMOUNTX * SEPARATION) / 2 * scale[2]
+            const borderPoints = [
+                new THREE.Vector3(-halfW, 0, -halfH),
+                new THREE.Vector3(halfW, 0, -halfH),
+                new THREE.Vector3(halfW, 0, halfH),
+                new THREE.Vector3(-halfW, 0, halfH),
+            ]
+            const borderGeometry = new THREE.BufferGeometry().setFromPoints(borderPoints)
+            const borderMaterial = new THREE.LineBasicMaterial({
+                color: 0x00ccff,
+                linewidth: 2,
+                transparent: true,
+                opacity: 0.8,
+            })
+            const borderLine = new THREE.LineLoop(borderGeometry, borderMaterial)
+            borderLine.name = name + '_border'
+            // 外框跟随点阵的位置和旋转
+            if (position.length) borderLine.position.set(...position)
+            if (rotation.length) borderLine.rotation.set(...rotation)
+            // 默认隐藏，只在单独坐垫/靠背模式下显示
+            borderLine.visible = false
+            group.add(borderLine);
         }
 
         function initPoints() {
@@ -1027,44 +1052,29 @@ const Canvas =
 
             const type = getDisplayType()
             console.log(type)
-            // alert(group.uuid)
-            // if (group) group.rotation.x = 0 + (value * 2) / 12
 
-            // if (type === 'back') {
-            //     const particles = pointGroup.children.find((a) => a.name == 'back')
-            //     particles.rotation.x = -Math.PI / 2 + (value * 2) / 12
-            // } else if (type === 'sit') {
-            //     const particles = pointGroup.children.find((a) => a.name == 'sit')
-            //     particles.rotation.x = -Math.PI / 2 + (value * 2) / 12
-            // }
-
-
-            const particles = pointGroup.children.find((a) => a.name == type)
-            if (!particles) return
-            particles.rotation.x = -Math.PI / 2 + (value * 2) / 12
-            // if()
-
-
-            // if (type === 'back') {
-            //   if (direction == 'x') {
-            //     particles1.rotation[direction] = -Math.PI / 2 - (Math.PI * 4) / 24 - (value * 6) / 12
-            //   } else {
-            //     particles1.rotation[direction] = - (value * 6) / 12
-            //   }
-            // } else if (type === 'sit') {
-            //   if (direction == 'x') {
-            //     particles.rotation[direction] = Math.PI / 3 - (value * 6) / 12
-            //   } else {
-            //     particles.rotation[direction] = (value * 6) / 12
-            //   }
-            // } else if (type === 'head') {
-            //   if (direction == 'x') {
-            //     particlesHead.rotation[direction] = backRotationX - (value * 6) / 12
-            //   } else {
-            //     particlesHead.rotation[direction] = (value * 6) / 12
-            //   }
-            // }
-            // actionAll()
+            if (type === 'all') {
+                // 整体模式：同时旋转所有子点阵，使用各自的初始 rotation 作为基准
+                const sitParticles = pointGroup.children.find((a) => a.name == 'sit')
+                const backParticles = pointGroup.children.find((a) => a.name == 'back')
+                const rotationOffset = (value * 2) / 12
+                if (sitParticles) {
+                    // sit 初始 rotation.x = -Math.PI / 6 - Math.PI / 2 + Math.PI / 2 = -Math.PI/6
+                    sitParticles.rotation.x = allConfig.sit.pointConfig.rotation[0] + rotationOffset
+                }
+                if (backParticles) {
+                    // back 初始 rotation.x = -Math.PI / 12 - Math.PI / 2
+                    backParticles.rotation.x = allConfig.back.pointConfig.rotation[0] + rotationOffset
+                }
+                // 同时旋转椅子模型
+                if (group) group.rotation.x = Math.PI / 6 + rotationOffset
+            } else {
+                // 单独坐垫/靠背模式：与整体模式一致的旋转逻辑
+                const particles = pointGroup.children.find((a) => a.name == type)
+                if (!particles) return
+                const baseRotation = allConfig[type] ? allConfig[type].pointConfig.rotation[0] : -Math.PI / 2
+                particles.rotation.x = baseRotation + (value * 2) / 12
+            }
         }
 
         function changeCamera(value) {
@@ -1130,6 +1140,18 @@ const Canvas =
         function actionSit(type) {
 
 
+            // 隐藏所有边框
+            const hideBorders = () => {
+                pointGroup.children.forEach((a) => {
+                    if (a.name && a.name.endsWith('_border')) a.visible = false
+                })
+            }
+            // 显示指定边框
+            const showBorder = (name) => {
+                const border = pointGroup.children.find((a) => a.name == name + '_border')
+                if (border) border.visible = true
+            }
+
             if (type == 'sit') {
                 const particles = pointGroup.children.find((a) => a.name == 'sit')
                 const otherParticles = pointGroup.children.find((a) => a.name != 'sit')
@@ -1140,6 +1162,8 @@ const Canvas =
 
                 }
                 if (chair) chair.visible = false
+                hideBorders()
+                showBorder('sit')
 
                 // console.log(first)
 
@@ -1169,6 +1193,8 @@ const Canvas =
 
                 }
                 if (chair) chair.visible = false
+                hideBorders()
+                showBorder('back')
 
                 // console.log(first)
 
@@ -1193,6 +1219,7 @@ const Canvas =
                 controls.current?.reset()
                 const particles = pointGroup.children
                 particles.forEach((a) => a.visible = false)
+                hideBorders()
                 if (chair) chair.visible = true
                 const sit = pointGroup.children.find((a) => a.name == 'sit')
                 const back = pointGroup.children.find((a) => a.name == 'back')

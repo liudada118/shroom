@@ -381,19 +381,7 @@ const ColAndHistory = memo((props) => {
                             } */}
 
 
-                            {operateStatus == '' ? <> <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={'重命名'}>
-                                <div className='navIconContent'>
-                                    <i className='iconfont cursor' onClick={() => {
-                                        // if (operateStatus != 'change') {
-                                        //     setOperateStatus('change')
-                                        // } else {
-                                        //     setOperateStatus('')
-                                        // }
-
-                                    }}>&#xe623;</i>
-                                </div>
-                            </Popover>
-
+                            {operateStatus == '' ? <>
                                 <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={'删除'}>
                                     <div className='navIconContent'>
                                         <i className='iconfont cursor' onClick={() => {

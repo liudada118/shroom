@@ -61,15 +61,29 @@ export default function DraggablePanel({ children, defaultPosition, title, class
         }
     }, [isDragging])
 
-    // 缩放
+    // 缩放（10%~1000%），根据当前缩放比例动态调整步长
+    const getStep = (s) => {
+        if (s <= 0.5) return 0.05
+        if (s <= 1.0) return 0.1
+        if (s <= 2.0) return 0.25
+        if (s <= 5.0) return 0.5
+        return 1.0
+    }
+
     const zoomIn = useCallback((e) => {
         e.stopPropagation()
-        setScale(s => Math.min(s + 0.15, 2.0))
+        setScale(s => {
+            const step = getStep(s)
+            return Math.min(parseFloat((s + step).toFixed(2)), 10.0)
+        })
     }, [])
 
     const zoomOut = useCallback((e) => {
         e.stopPropagation()
-        setScale(s => Math.max(s - 0.15, 0.5))
+        setScale(s => {
+            const step = getStep(s)
+            return Math.max(parseFloat((s - step).toFixed(2)), 0.1)
+        })
     }, [])
 
     const resetZoom = useCallback((e) => {
