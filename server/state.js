@@ -38,6 +38,9 @@ const state = {
   leftDbArr: null,          // 对比数据-左
   rightDbArr: null,         // 对比数据-右
 
+  // ─── 下载路径 ────────────────────────────────────────
+  downloadPath: null,         // 自定义下载路径 (null 则使用默认)
+
   // ─── 数据库 ──────────────────────────────────────────
   currentDb: null,
 }

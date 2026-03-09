@@ -158,7 +158,7 @@ async function dbGetData({ db, params }) {
  * 单条记录导出为 CSV
  * 核心优化：每行只解析一次 JSON，消除内层循环中的重复 JSON.parse
  */
-function dbload(db, param, file, isPackaged, selectJson) {
+function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
   return new Promise((resolve, reject) => {
     dbAll(db, "SELECT * FROM matrix WHERE date=?", [param]).then(async (rows) => {
       if (!rows.length) {
@@ -279,9 +279,17 @@ function dbload(db, param, file, isPackaged, selectJson) {
       const handArr = buildCsvHeaders(keyArr, file)
       handArr.push({ id: "remark", title: "remark" })
 
-      let csvPath = __dirname + "/../data"
-      if (isPackaged) {
+      let csvPath
+      if (customDownloadPath) {
+        csvPath = customDownloadPath
+      } else if (isPackaged) {
         csvPath = 'resources/data'
+      } else {
+        csvPath = __dirname + "/../data"
+      }
+      // 确保目录存在
+      if (!fs.existsSync(csvPath)) {
+        fs.mkdirSync(csvPath, { recursive: true })
       }
 
       const csvName = file === 'endi' ? 'car' : file
@@ -303,7 +311,7 @@ function dbload(db, param, file, isPackaged, selectJson) {
           fs.writeFileSync(csvFilePath, Buffer.concat([Buffer.from('\ufeff'), content]))
         }
         console.log("[DB] CSV export success:", csvFilePath)
-        resolve({ [param]: 'success' })
+        resolve({ [param]: 'success', filePath: csvFilePath })
       } catch (err) {
         console.error("[DB] CSV export failed:", err)
         reject({ [param]: err })
@@ -352,8 +360,8 @@ function buildCsvHeaders(keyArr, file) {
 /**
  * 批量导出 CSV
  */
-async function dbLoadCsv({ db, params, file, isPackaged, selectJson }) {
-  const promises = params.map((param) => dbload(db, param, file, isPackaged, selectJson))
+async function dbLoadCsv({ db, params, file, isPackaged, selectJson, customDownloadPath }) {
+  const promises = params.map((param) => dbload(db, param, file, isPackaged, selectJson, customDownloadPath))
   const results = await Promise.all(promises)
   return results
 }

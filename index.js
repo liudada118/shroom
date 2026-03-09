@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron')
 const path = require('path')
 const { fork, spawn } = require('child_process')
 const { getHardwareFingerprint } = require('./util/getWinConfig')
@@ -321,6 +321,25 @@ function cleanupProcesses() {
 
 app.whenReady().then(async () => {
   const startTime = Date.now()
+
+  // ─── IPC 处理 ─────────────────────────────────────────────
+  ipcMain.handle('select-folder', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: '选择下载路径'
+    })
+    if (result.canceled) return null
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle('open-path', async (event, filePath) => {
+    return shell.openPath(filePath)
+  })
+
+  ipcMain.handle('show-item-in-folder', async (event, filePath) => {
+    shell.showItemInFolder(filePath)
+    return true
+  })
 
   try {
     // 1. 并行执行：硬件指纹 + Port分配（互不依赖）

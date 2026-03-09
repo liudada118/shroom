@@ -29,6 +29,12 @@ const ColAndHistory = memo((props) => {
     const [showHistory, setShowHistory] = useState(false)
     const [historyDrawer, sethistoryDrawer] = useState(false)
 
+    // ─── 下载路径和弹窗状态 ───
+    const [downloadPath, setDownloadPath] = useState('')
+    const [isEditingPath, setIsEditingPath] = useState(false)
+    const [editPathValue, setEditPathValue] = useState('')
+    const [downloadToast, setDownloadToast] = useState(null) // { fileName, filePath }
+
     const [colHistoryArr, setColHistoryArr] = useState()
     const [displayHistoryArr, setDisplayHistoryArr] = useState()
     const arr = localStorage.getItem('csvArr') ? JSON.parse(localStorage.getItem('csvArr')) : []
@@ -107,6 +113,77 @@ const ColAndHistory = memo((props) => {
         })
     }
 
+    // 获取下载路径
+    useEffect(() => {
+        axios.get(`${localAddress}/getDownloadPath`).then((res) => {
+            if (res.data?.code === 0) {
+                setDownloadPath(res.data.data.path)
+            }
+        }).catch(() => {})
+    }, [])
+
+    // 下载弹窗自动消失
+    useEffect(() => {
+        if (downloadToast) {
+            const timer = setTimeout(() => {
+                setDownloadToast(null)
+            }, 3000)
+            return () => clearTimeout(timer)
+        }
+    }, [downloadToast])
+
+    const handleSelectFolder = async () => {
+        // 优先使用 Electron 文件夹选择对话框
+        if (window.electronAPI?.selectFolder) {
+            const folder = await window.electronAPI.selectFolder()
+            if (folder) {
+                axios.post(`${localAddress}/setDownloadPath`, { path: folder }).then((res) => {
+                    if (res.data?.code === 0) {
+                        setDownloadPath(folder)
+                        setIsEditingPath(false)
+                        message.success('下载路径已更新')
+                    }
+                })
+            }
+        } else {
+            // 非 Electron 环境，显示编辑框
+            setIsEditingPath(true)
+            setEditPathValue(downloadPath)
+        }
+    }
+
+    const handleSavePath = () => {
+        if (!editPathValue.trim()) return
+        axios.post(`${localAddress}/setDownloadPath`, { path: editPathValue.trim() }).then((res) => {
+            if (res.data?.code === 0) {
+                setDownloadPath(editPathValue.trim())
+                setIsEditingPath(false)
+                message.success('下载路径已更新')
+            } else {
+                message.error(res.data?.message || '设置失败')
+            }
+        })
+    }
+
+    const handleOpenFolder = () => {
+        if (!downloadPath) return
+        // 优先使用 Electron API
+        if (window.electronAPI?.openPath) {
+            window.electronAPI.openPath(downloadPath)
+        } else {
+            axios.post(`${localAddress}/openFolder`, { folderPath: downloadPath })
+        }
+    }
+
+    const handleOpenFile = (filePath) => {
+        if (!filePath) return
+        if (window.electronAPI?.openPath) {
+            window.electronAPI.openPath(filePath)
+        } else {
+            axios.post(`${localAddress}/openFile`, { filePath })
+        }
+    }
+
     const download = () => {
         console.log(operateStatus, selectArr)
         axios({
@@ -120,13 +197,31 @@ const ColAndHistory = memo((props) => {
             if (res.data.message == 'error') {
                 message.info(res.data.data)
             } else {
-                message.success('下载成功')
+                // 提取文件路径
+                const results = res.data.data
+                let lastFilePath = ''
+                let lastFileName = ''
+                if (Array.isArray(results)) {
+                    for (const item of results) {
+                        if (item && typeof item === 'object') {
+                            const keys = Object.keys(item)
+                            for (const key of keys) {
+                                if (key === 'filePath' && item[key]) {
+                                    lastFilePath = item[key]
+                                    lastFileName = item[key].split('/').pop().split('\\').pop()
+                                }
+                            }
+                        }
+                    }
+                }
+                // 显示下载成功弹窗
+                setDownloadToast({
+                    fileName: lastFileName || '文件',
+                    filePath: lastFilePath
+                })
             }
-
-
         }).catch((err) => {
             message.error('下载失败')
-
         })
     }
 
@@ -685,7 +780,93 @@ const ColAndHistory = memo((props) => {
                         }
                     </div> */}
                 </div>
+
+                    {/* ─── 下载路径区域 ─── */}
+                    <div className="downloadPathSection" style={{
+                        padding: '0.75rem 1rem',
+                        borderTop: '1px solid #3E444C',
+                        marginTop: 'auto',
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                            <span style={{ color: '#8794A1', fontSize: '0.75rem' }}>存储路径</span>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem' }} onClick={handleSelectFolder}>修改</span>
+                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem' }} onClick={handleOpenFolder}>打开</span>
+                            </div>
+                        </div>
+                        {isEditingPath ? (
+                            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                <Input
+                                    size="small"
+                                    value={editPathValue}
+                                    onChange={(e) => setEditPathValue(e.target.value)}
+                                    style={{ flex: 1, backgroundColor: '#202327', border: '1px solid #4E565F', color: '#E6EBF0', fontSize: '0.7rem' }}
+                                    onPressEnter={handleSavePath}
+                                />
+                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem', lineHeight: '24px' }} onClick={handleSavePath}>保存</span>
+                                <span className="cursor" style={{ color: '#8794A1', fontSize: '0.75rem', lineHeight: '24px' }} onClick={() => setIsEditingPath(false)}>取消</span>
+                            </div>
+                        ) : (
+                            <div
+                                className="cursor"
+                                onClick={handleOpenFolder}
+                                title={downloadPath}
+                                style={{
+                                    color: '#B4C0CA',
+                                    fontSize: '0.7rem',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    padding: '0.25rem 0.4rem',
+                                    backgroundColor: '#202327',
+                                    borderRadius: '4px',
+                                    border: '1px solid #3E444C',
+                                }}
+                            >
+                                {downloadPath || '未设置'}
+                            </div>
+                        )}
+                    </div>
             </Drawer>
+
+            {/* ─── 下载成功弹窗 ─── */}
+            {downloadToast && (
+                <div
+                    className="cursor"
+                    onClick={() => {
+                        handleOpenFile(downloadToast.filePath)
+                        setDownloadToast(null)
+                    }}
+                    style={{
+                        position: 'fixed',
+                        top: '4.5rem',
+                        right: '1.5rem',
+                        zIndex: 9999,
+                        backgroundColor: '#1B5E20',
+                        color: '#E6EBF0',
+                        padding: '0.75rem 1.25rem',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.6rem',
+                        maxWidth: '22rem',
+                        animation: 'slideInRight 0.3s ease-out',
+                    }}
+                >
+                    <i className='iconfont' style={{ color: '#4CAF50', fontSize: '1.2rem' }}>&#xe60e;</i>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '0.15rem' }}>下载成功</div>
+                        <div style={{ fontSize: '0.7rem', color: '#A5D6A7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            点击打开: {downloadToast.fileName}
+                        </div>
+                    </div>
+                    <span
+                        onClick={(e) => { e.stopPropagation(); setDownloadToast(null) }}
+                        style={{ color: '#81C784', fontSize: '1rem', marginLeft: '0.5rem' }}
+                    >×</span>
+                </div>
+            )}
 
             <div className='colAndHContent'>
                 <div className='colAndHistory'>

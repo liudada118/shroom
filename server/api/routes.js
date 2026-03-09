@@ -493,8 +493,94 @@ router.post('/downlaod', asyncHandler(async (req, res) => {
     return
   }
   const selectOverride = selectJson && typeof selectJson === 'object' ? selectJson : state.historySelectCache
-  const data = await dbLoadCsv({ db: state.currentDb, params: fileArr, file: state.file, isPackaged: state._isPackaged, selectJson: selectOverride })
+  const data = await dbLoadCsv({ db: state.currentDb, params: fileArr, file: state.file, isPackaged: state._isPackaged, selectJson: selectOverride, customDownloadPath: state.downloadPath })
   res.json(new HttpResult(0, data, 'Download'))
+}))
+
+// ─── 下载路径管理 ─────────────────────────────────────
+
+router.get('/getDownloadPath', (req, res) => {
+  const path = require('path')
+  let defaultPath
+  if (state._isPackaged) {
+    defaultPath = path.resolve('resources/data')
+  } else {
+    defaultPath = path.resolve(__dirname, '../../data')
+  }
+  const currentPath = state.downloadPath || defaultPath
+  res.json(new HttpResult(0, { path: currentPath, isDefault: !state.downloadPath }, 'success'))
+})
+
+router.post('/setDownloadPath', asyncHandler(async (req, res) => {
+  const { path: newPath } = req.body
+  if (!newPath) {
+    res.json(new HttpResult(1, {}, 'path required'))
+    return
+  }
+  const fs = require('fs')
+  // 确保目录存在
+  if (!fs.existsSync(newPath)) {
+    try {
+      fs.mkdirSync(newPath, { recursive: true })
+    } catch (err) {
+      res.json(new HttpResult(1, {}, `无法创建目录: ${err.message}`))
+      return
+    }
+  }
+  state.downloadPath = newPath
+  res.json(new HttpResult(0, { path: newPath }, 'success'))
+}))
+
+router.post('/openFile', asyncHandler(async (req, res) => {
+  const { filePath } = req.body
+  if (!filePath) {
+    res.json(new HttpResult(1, {}, 'filePath required'))
+    return
+  }
+  const { exec } = require('child_process')
+  const platform = process.platform
+  let cmd
+  if (platform === 'win32') {
+    cmd = `start "" "${filePath}"`
+  } else if (platform === 'darwin') {
+    cmd = `open "${filePath}"`
+  } else {
+    cmd = `xdg-open "${filePath}"`
+  }
+  exec(cmd, (err) => {
+    if (err) {
+      console.error('[Server] Open file error:', err)
+      res.json(new HttpResult(1, {}, err.message))
+    } else {
+      res.json(new HttpResult(0, {}, 'success'))
+    }
+  })
+}))
+
+router.post('/openFolder', asyncHandler(async (req, res) => {
+  const { folderPath } = req.body
+  if (!folderPath) {
+    res.json(new HttpResult(1, {}, 'folderPath required'))
+    return
+  }
+  const { exec } = require('child_process')
+  const platform = process.platform
+  let cmd
+  if (platform === 'win32') {
+    cmd = `explorer "${folderPath}"`
+  } else if (platform === 'darwin') {
+    cmd = `open "${folderPath}"`
+  } else {
+    cmd = `xdg-open "${folderPath}"`
+  }
+  exec(cmd, (err) => {
+    if (err) {
+      console.error('[Server] Open folder error:', err)
+      res.json(new HttpResult(1, {}, err.message))
+    } else {
+      res.json(new HttpResult(0, {}, 'success'))
+    }
+  })
 }))
 
 router.post('/delete', asyncHandler(async (req, res) => {

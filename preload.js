@@ -1,5 +1,5 @@
 // preload.js
-const { contextBridge } = require('electron')
+const { contextBridge, ipcRenderer } = require('electron')
 
 /**
  * 通过 contextBridge 安全地向渲染进程暴露 API
@@ -11,4 +11,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 文件路径获取
   getPath: (file) => file.path,
+
+  // 选择文件夹对话框
+  selectFolder: () => ipcRenderer.invoke('select-folder'),
+
+  // 打开文件
+  openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),
+
+  // 在文件管理器中显示文件
+  showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
 })
