@@ -272,8 +272,12 @@ function sendMacCommand(port) {
           port.removeListener('data', onData)
           cleanup()
 
-          const uniqueIdMatch = textBuffer.match(/Unique ID:\s*([^\s\-]+)/)
-          const versionMatch = textBuffer.match(/Versions?:\s*([^\s\-]+)/)
+          // Debug: print raw AT response
+          console.log(`[MAC] Raw AT response: ${JSON.stringify(textBuffer.substring(textBuffer.indexOf('Unique ID') - 20))}`)
+
+          // Match Unique ID: allow digits and hex chars (no dash/space truncation)
+          const uniqueIdMatch = textBuffer.match(/Unique ID:\s*([0-9A-Fa-f]+)/)
+          const versionMatch = textBuffer.match(/Versions?:\s*([^\s]+)/)
 
           const uniqueId = uniqueIdMatch ? uniqueIdMatch[1] : null
           const version = versionMatch ? versionMatch[1] : null
@@ -449,8 +453,8 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
     // -- MAC address response (fallback, in case delimiter follows AT response) --
     if (buffer.toString().includes('Unique ID')) {
       const str = buffer.toString()
-      const uniqueIdMatch = str.match(/Unique ID:\s*([^\s\-]+)/)
-      const versionMatch = str.match(/Versions?:\s*([^\s\-]+)/)
+      const uniqueIdMatch = str.match(/Unique ID:\s*([0-9A-Fa-f]+)/)
+      const versionMatch = str.match(/Versions?:\s*([^\s]+)/)
       const uniqueId = uniqueIdMatch ? uniqueIdMatch[1] : null
       const version = versionMatch ? versionMatch[1] : null
 
