@@ -15,7 +15,18 @@ export class BrushManager {
         this.pointBottomRight = [];
         this.rangeArr = []
         this.selectIndex = 20
-        this.selectedBoxIndex = -1  // 当前选中的框索引，-1 表示无选中
+        this.selectedBoxIndices = new Set()  // 支持多选：选中的框索引集合
+        // 有效区域边界（像素坐标），由外部设置
+        this._validBounds = null  // { left, top, right, bottom }
+    }
+
+    // ─── 设置有效区域边界 ──────────────────────────────
+    setValidBounds(bounds) {
+        this._validBounds = bounds  // { left, top, right, bottom }
+    }
+
+    clearValidBounds() {
+        this._validBounds = null
     }
 
     subscribe(cb) {
@@ -27,7 +38,7 @@ export class BrushManager {
     }
 
     notify(range) {
-        this.listeners.forEach(cb => cb(range, this.selectedBoxIndex));
+        this.listeners.forEach(cb => cb(range, this.selectedBoxIndices));
     }
 
     startBrush() {
@@ -39,7 +50,14 @@ export class BrushManager {
     onKeyDown = (e) => {
         // 方向键移动选中的框（如果有选中的话），否则移动最后一个
         if (!this.rangeArr.length) return
-        const targetIdx = this.selectedBoxIndex >= 0 ? this.selectedBoxIndex : this.rangeArr.length - 1
+        // 多选时移动最后一个选中的框
+        let targetIdx = -1
+        if (this.selectedBoxIndices.size > 0) {
+            const indices = Array.from(this.selectedBoxIndices)
+            targetIdx = indices[indices.length - 1]
+        } else {
+            targetIdx = this.rangeArr.length - 1
+        }
         let obj = this.rangeArr[targetIdx]
         if (!obj) return
         const el = document.querySelector(`.selectBox${obj.index}`)
@@ -84,10 +102,10 @@ export class BrushManager {
             if (el.parentElement) el.parentElement.removeChild(el)
         })
         this.rangeArr = []
-        this.selectedBoxIndex = -1
+        this.selectedBoxIndices = new Set()
     }
 
-    // ─── 点击选中/取消选中 ──────────────────────────────
+    // ─── 点击选中/取消选中（多选模式） ──────────────────
     _findClickedBox(e) {
         for (let i = this.rangeArr.length - 1; i >= 0; i--) {
             const box = this.rangeArr[i]
@@ -104,7 +122,7 @@ export class BrushManager {
             const box = this.rangeArr[i]
             const el = document.querySelector(`.selectBox${box.index}`)
             if (!el) continue
-            if (i === this.selectedBoxIndex) {
+            if (this.selectedBoxIndices.has(i)) {
                 el.style.border = `3px solid ${BOX_SELECTED_BORDER}`
                 el.style.backgroundColor = BOX_SELECTED_BG
                 el.style.boxShadow = `0 0 12px ${BOX_SELECTED_BORDER}`
@@ -117,13 +135,31 @@ export class BrushManager {
     }
 
     toggleSelectBox(index) {
-        if (this.selectedBoxIndex === index) {
-            this.selectedBoxIndex = -1  // 取消选中
+        // 多选模式：点击切换选中/取消，不影响其他框
+        if (this.selectedBoxIndices.has(index)) {
+            this.selectedBoxIndices.delete(index)  // 取消选中
         } else {
-            this.selectedBoxIndex = index
+            this.selectedBoxIndices.add(index)  // 添加选中
         }
         this._updateBoxStyles()
         this.notify(this.rangeArr)
+    }
+
+    // ─── 检查坐标是否在有效区域内 ─────────────────────
+    _isInValidBounds(x, y) {
+        if (!this._validBounds) return true  // 未设置边界则不限制
+        const { left, top, right, bottom } = this._validBounds
+        return x >= left && x <= right && y >= top && y <= bottom
+    }
+
+    // ─── 将坐标限制在有效区域内 ──────────────────────
+    _clampToValidBounds(x, y) {
+        if (!this._validBounds) return { x, y }
+        const { left, top, right, bottom } = this._validBounds
+        return {
+            x: Math.max(left, Math.min(right, x)),
+            y: Math.max(top, Math.min(bottom, y))
+        }
     }
 
     onMouseDown = (e) => {
@@ -133,6 +169,12 @@ export class BrushManager {
             // 标记为点击已有框，不创建新框
             this._clickedExisting = true
             this.toggleSelectBox(clickedIdx)
+            return
+        }
+
+        // 检查是否在有效区域内，不在则不允许框选
+        if (!this._isInValidBounds(e.clientX, e.clientY)) {
+            this._clickedExisting = true  // 阻止创建新框
             return
         }
 
@@ -157,15 +199,19 @@ export class BrushManager {
     onMouseMove = (e) => {
         if (this._clickedExisting) return
         if (this.isBrushing && this.start) {
-            if (Math.abs(this.start.x - e.clientX) > 5 && Math.abs(this.start.y - e.clientY) > 5) {
+            // 将鼠标位置限制在有效区域内
+            const clamped = this._clampToValidBounds(e.clientX, e.clientY)
+            const clampedStart = this._clampToValidBounds(this.start.x, this.start.y)
+
+            if (Math.abs(clampedStart.x - clamped.x) > 5 && Math.abs(clampedStart.y - clamped.y) > 5) {
                 this.element.classList.add(`selectBox${this.selectIndex}`);
                 this.element.style.opacity = 1
                 this.element.style.display = 'block';
 
-                this.pointBottomRight.x = Math.max(this.start.x, e.clientX);
-                this.pointBottomRight.y = Math.max(this.start.y, e.clientY);
-                this.pointTopLeft.x = Math.min(this.start.x, e.clientX);
-                this.pointTopLeft.y = Math.min(this.start.y, e.clientY);
+                this.pointBottomRight.x = Math.max(clampedStart.x, clamped.x);
+                this.pointBottomRight.y = Math.max(clampedStart.y, clamped.y);
+                this.pointTopLeft.x = Math.min(clampedStart.x, clamped.x);
+                this.pointTopLeft.y = Math.min(clampedStart.y, clamped.y);
 
                 this.element.style.left = this.pointTopLeft.x + 'px';
                 this.element.style.top = this.pointTopLeft.y + 'px';
@@ -207,12 +253,17 @@ export class BrushManager {
         const element = document.querySelector(`.selectBox${elementIndex}`)
         this.rangeArr.splice(index, 1)
         if (element && element.parentElement) element.parentElement.removeChild(element)
-        // 更新选中索引
-        if (this.selectedBoxIndex === index) {
-            this.selectedBoxIndex = -1
-        } else if (this.selectedBoxIndex > index) {
-            this.selectedBoxIndex--
+        // 更新选中索引集合
+        const newSet = new Set()
+        for (const idx of this.selectedBoxIndices) {
+            if (idx < index) {
+                newSet.add(idx)
+            } else if (idx > index) {
+                newSet.add(idx - 1)
+            }
+            // idx === index 的被删除，不加入
         }
+        this.selectedBoxIndices = newSet
         this._updateBoxStyles()
         this.notify(this.rangeArr);
     }
