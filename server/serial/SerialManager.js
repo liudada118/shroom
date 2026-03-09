@@ -288,17 +288,13 @@ function sendMacCommand(port) {
           textBuffer = textBuffer.slice(-10000)
         }
 
-        // Once we detect 'Unique ID', keep collecting for 500ms to get complete response
+        // Once we detect 'Unique ID', wait fixed 500ms for remaining data
+        // Do NOT reset timer on each data chunk — sensor data arrives continuously
+        // and would prevent the timer from ever firing
         if (textBuffer.includes('Unique ID') && !foundUniqueId) {
           foundUniqueId = true
           if (interval) clearInterval(interval) // Stop sending AT commands
           console.log('[MAC] Detected Unique ID keyword, waiting 500ms for complete response...')
-          collectTimer = setTimeout(extractAndResolve, 500)
-        }
-
-        // If already collecting, reset the 500ms timer on each new data chunk
-        if (foundUniqueId && collectTimer) {
-          clearTimeout(collectTimer)
           collectTimer = setTimeout(extractAndResolve, 500)
         }
       } catch (e) {
