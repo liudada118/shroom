@@ -11,7 +11,8 @@
     "build:win": "npm run build:client && electron-builder -w",
     "build:mac": "npm run build:client && electron-builder -m",
     "install:all": "npm install && cd client && npm install",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps || echo [postinstall] skip native rebuild",
+    "rebuild:native": "electron-builder install-app-deps"
   },
   "author": "",
   "license": "ISC",
@@ -76,5 +77,12 @@
   "devDependencies": {
     "electron": "^31.3.0",
     "electron-builder": "^24.13.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "sqlite3",
+      "@serialport/bindings-cpp"
+    ]
   }
 }
