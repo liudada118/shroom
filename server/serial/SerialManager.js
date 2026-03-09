@@ -256,34 +256,50 @@ function sendMacCommand(port) {
     }
 
     // Listen on RAW port data, not parser!
+    let foundUniqueId = false
+    let collectTimer = null
+
+    const extractAndResolve = () => {
+      port.removeListener('data', onData)
+      cleanup()
+
+      // Debug: print raw AT response
+      console.log(`[MAC] Raw AT response: ${JSON.stringify(textBuffer.substring(Math.max(0, textBuffer.indexOf('Unique ID') - 20)))}`)
+
+      // Match Unique ID: allow digits and hex chars
+      const uniqueIdMatch = textBuffer.match(/Unique ID:\s*([0-9A-Fa-f]+)/)
+      const versionMatch = textBuffer.match(/Versions?:\s*([^\s]+)/)
+
+      const uniqueId = uniqueIdMatch ? uniqueIdMatch[1] : null
+      const version = versionMatch ? versionMatch[1] : null
+
+      console.log(`[MAC] Response received - UniqueID: ${uniqueId}, Version: ${version}`)
+      resolve({ uniqueId, version })
+    }
+
     const onData = (data) => {
       // Try to decode as text and accumulate
       try {
         const str = Buffer.from(data).toString('utf8')
         textBuffer += str
 
-        // Cap buffer at 10000 chars (same as web version)
+        // Cap buffer at 10000 chars
         if (textBuffer.length > 10000) {
           textBuffer = textBuffer.slice(-10000)
         }
 
-        // Check for Unique ID in accumulated buffer
-        if (textBuffer.includes('Unique ID')) {
-          port.removeListener('data', onData)
-          cleanup()
+        // Once we detect 'Unique ID', keep collecting for 500ms to get complete response
+        if (textBuffer.includes('Unique ID') && !foundUniqueId) {
+          foundUniqueId = true
+          if (interval) clearInterval(interval) // Stop sending AT commands
+          console.log('[MAC] Detected Unique ID keyword, waiting 500ms for complete response...')
+          collectTimer = setTimeout(extractAndResolve, 500)
+        }
 
-          // Debug: print raw AT response
-          console.log(`[MAC] Raw AT response: ${JSON.stringify(textBuffer.substring(textBuffer.indexOf('Unique ID') - 20))}`)
-
-          // Match Unique ID: allow digits and hex chars (no dash/space truncation)
-          const uniqueIdMatch = textBuffer.match(/Unique ID:\s*([0-9A-Fa-f]+)/)
-          const versionMatch = textBuffer.match(/Versions?:\s*([^\s]+)/)
-
-          const uniqueId = uniqueIdMatch ? uniqueIdMatch[1] : null
-          const version = versionMatch ? versionMatch[1] : null
-
-          console.log(`[MAC] Response received - UniqueID: ${uniqueId}, Version: ${version}`)
-          resolve({ uniqueId, version })
+        // If already collecting, reset the 500ms timer on each new data chunk
+        if (foundUniqueId && collectTimer) {
+          clearTimeout(collectTimer)
+          collectTimer = setTimeout(extractAndResolve, 500)
         }
       } catch (e) {
         // Not text data, ignore (binary sensor data)
