@@ -716,18 +716,39 @@ async function connectPort(broadcastFn, onTimerStart) {
 
     // -- Phase 4: Refinement & auth --
     if (deviceClass === 'sit') {
-      dataItem.type = 'sit'
-      dataItem.premission = true
-      console.log(`[Connect] ${portPath} -> sit pad, direct auth`)
+      // Do NOT set type yet — wait for MAC + server query to determine actual type
+      dataItem.type = null
+      dataItem.premission = false
+      console.log(`[Connect] ${portPath} -> sit baud rate device, getting MAC for type resolution...`)
+      broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'getting_mac' } }))
+
+      // Bind data handler first (frames will be ignored until type is set)
       bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
 
-      // Also try to get MAC for sit devices
-      sendMacCommand(stablePort).then(({ uniqueId, version }) => {
-        if (uniqueId) {
-          state.macInfo[portPath] = { uniqueId, version }
-          console.log(`[Connect] ${portPath} sit MAC: ${uniqueId}`)
+      // Wait for MAC, then query server for device type
+      const { uniqueId, version } = await sendMacCommand(stablePort)
+      state.macInfo[portPath] = { uniqueId, version }
+
+      if (uniqueId) {
+        console.log(`[Connect] ${portPath} MAC: ${uniqueId}, version: ${version}`)
+        const { type: deviceType, premission } = await resolveDeviceType(uniqueId)
+        if (deviceType) {
+          dataItem.type = deviceType
+          dataItem.premission = premission
+          console.log(`[Connect] ${portPath} final type from server: ${deviceType}, auth: ${premission}`)
+          broadcastFn(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission } }))
+        } else {
+          // Server returned no type — fallback to sit, no auth
+          dataItem.type = 'sit'
+          dataItem.premission = false
+          console.warn(`[Connect] ${portPath} MAC ${uniqueId} type not resolved by server, fallback to sit`)
         }
-      }).catch(() => {})
+      } else {
+        // MAC read failed — fallback to sit, no auth
+        dataItem.type = 'sit'
+        dataItem.premission = false
+        console.warn(`[Connect] ${portPath} failed to get MAC address, fallback to sit`)
+      }
 
     } else if (deviceClass === 'hand') {
       dataItem.type = 'hand'
