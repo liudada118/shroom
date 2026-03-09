@@ -13,6 +13,7 @@ import { pageContext } from '../../page/test/Test';
 import { shallow } from 'zustand/shallow';
 import FootTrack from '../chart/Chart';
 import { graCenter } from '../../util/util';
+import DraggablePanel from '../draggablePanel/DraggablePanel';
 
 function ChartsAside(props) {
 
@@ -632,7 +633,7 @@ function ChartsAside(props) {
         // <Drawer direction='left' show={show} asideClose setShow={setShow} title={'数据'} >
 
         <>
-            <div className='leftChairContent'>
+            <DraggablePanel title={t('pressureCurve') + ' / ' + t('areaCurve')} defaultPosition={{ x: 20, y: 80 }}>
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">
@@ -734,8 +735,8 @@ function ChartsAside(props) {
 
 
                 </div>
-            </div>
-            <div className='rightChairContent'>
+            </DraggablePanel>
+            <DraggablePanel title={t('pressureCenterCurve') + ' / ' + t('pressureNormalDist')} defaultPosition={{ x: window.innerWidth - 380, y: 80 }}>
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">
@@ -827,7 +828,7 @@ function ChartsAside(props) {
 
 
                 </div>
-            </div>
+            </DraggablePanel>
         </>
     )
 }
