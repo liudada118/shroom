@@ -104,7 +104,7 @@ const typeConfig = {
  *   'online'  — 联网模式，通过远程服务器查询 MAC 地址对应的Device类型和授权
  *   'local'   — 本地模式，通过 serial_cache.json 本地缓存查询，无需联网
  */
-let AUTH_MODE = process.env.AUTH_MODE || 'local'
+let AUTH_MODE = process.env.AUTH_MODE || 'online'
 
 /** 远程授权服务地址 */
 const backendAddress = 'https://sensor.bodyta.com'
