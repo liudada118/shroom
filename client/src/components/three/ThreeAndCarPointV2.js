@@ -370,7 +370,7 @@ const Canvas =
                 dataConfig: backConfig,
                 name: 'back',
                 // 增大z方向scale使靠背云图变高，匹配头枕位置
-                pointConfig: { position: [2.5, -12, 5], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.0028] },
+                pointConfig: { position: [2.5, -12, 5], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.006, 0.0028] },
                 // pointConfig: { position: [2.5, -28, -50], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.002] },
             },
             sit: {
@@ -896,7 +896,7 @@ const Canvas =
 
                     position[k] = iy * SEPARATION - (AMOUNTX * SEPARATION) / 2; // x
 
-                    position[k + 1] = smoothBig[l] * height; // y
+                    position[k + 1] = smoothBig[l] * height * 0.1; // y (乘以0.1缩放因子使高度调节更合理)
 
                     position[k + 2] = ix * SEPARATION - (AMOUNTY * SEPARATION) / 2; // z 
 
@@ -1067,14 +1067,16 @@ const Canvas =
                 // 整体模式：同时旋转所有子点阵，使用各自的初始 rotation 作为基准
                 const sitParticles = pointGroup.children.find((a) => a.name == 'sit')
                 const backParticles = pointGroup.children.find((a) => a.name == 'back')
+                const sitBorder = pointGroup.children.find((a) => a.name == 'sit_border')
+                const backBorder = pointGroup.children.find((a) => a.name == 'back_border')
                 const rotationOffset = (value * 2) / 12
                 if (sitParticles) {
-                    // sit 初始 rotation.x = -Math.PI / 6 - Math.PI / 2 + Math.PI / 2 = -Math.PI/6
                     sitParticles.rotation.x = allConfig.sit.pointConfig.rotation[0] + rotationOffset
+                    if (sitBorder) sitBorder.rotation.x = sitParticles.rotation.x
                 }
                 if (backParticles) {
-                    // back 初始 rotation.x = -Math.PI / 12 - Math.PI / 2
                     backParticles.rotation.x = allConfig.back.pointConfig.rotation[0] + rotationOffset
+                    if (backBorder) backBorder.rotation.x = backParticles.rotation.x
                 }
                 // 同时旋转椅子模型
                 if (group) group.rotation.x = Math.PI / 6 + rotationOffset
@@ -1084,6 +1086,9 @@ const Canvas =
                 if (!particles) return
                 const baseRotation = allConfig[type] ? allConfig[type].pointConfig.rotation[0] : -Math.PI / 2
                 particles.rotation.x = baseRotation + (value * 2) / 12
+                // 同步边框旋转
+                const border = pointGroup.children.find((a) => a.name == type + '_border')
+                if (border) border.rotation.x = particles.rotation.x
             }
         }
 
@@ -1133,6 +1138,10 @@ const Canvas =
         }
 
         function move(position, time, particles) {
+            // 查找对应的边框，使边框跟随粒子同步移动
+            const borderName = particles.name + '_border'
+            const border = pointGroup.children.find((a) => a.name === borderName)
+
             const p1 = {
                 x: particles.position.x,
                 y: particles.position.y,
@@ -1149,6 +1158,11 @@ const Canvas =
             tween1.onUpdate(() => {
                 particles.position.set(p1.x, p1.y, p1.z);
                 if (p1.rotationx) particles.rotation.x = p1.rotationx;
+                // 同步更新边框位置和旋转
+                if (border) {
+                    border.position.set(p1.x, p1.y, p1.z);
+                    if (p1.rotationx) border.rotation.x = p1.rotationx;
+                }
             });
 
             return tween1;

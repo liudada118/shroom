@@ -836,7 +836,7 @@ const Canvas =
 
                     position[k] = iy * SEPARATION - (AMOUNTX * SEPARATION) / 2; // x
 
-                    position[k + 1] = smoothBig[l] * height; // y
+                    position[k + 1] = smoothBig[l] * height * 0.1; // y (乘以0.1缩放因子使高度调节更合理)
 
                     position[k + 2] = ix * SEPARATION - (AMOUNTY * SEPARATION) / 2; // z 
 

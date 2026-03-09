@@ -112,8 +112,8 @@ export function gaussBlur_return(scl, w, h, r) {
 
 
 export function jetWhite3(min, max, x) {
-  if (!x) {
-    return rainbowTextColorsxy[rainbowTextColorsxy.length - 1]
+  if (!x || x <= min) {
+    return [0, 0, 255]; // 0值返回蓝色（与2D背景一致）
   }
   const length = rainbowTextColorsxy.length;
   const count = (max - min) * 2 / length;

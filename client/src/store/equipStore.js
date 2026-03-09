@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { maxObj } from '../assets/util/constant'
 
 // ─── 持久化设置值 ────────────────────────────────────────
-const DEFAULT_SETTINGS = { gauss: 1, color: 200, filter: 1, height: 1, coherent: 1 }
+const DEFAULT_SETTINGS = { gauss: 1, color: 200, filter: 1, height: 15, coherent: 1 }
 
 function loadSettingValue() {
   try {
