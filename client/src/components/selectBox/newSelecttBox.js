@@ -38,35 +38,35 @@ export class BrushManager {
 
     onKeyDown = (e) => {
         console.log(e.key, (this.range))
-        let obj = this.rangeArr[0]
+        // 方向键移动最后一个框选区域
+        if (!this.rangeArr.length) return
+        let obj = this.rangeArr[this.rangeArr.length - 1]
+        const el = document.querySelector(`.selectBox${obj.index}`)
         switch (e.key) {
 
             case 'ArrowUp':
-                // this.selectIndex--
-
                 obj.y1 -= 1
                 obj.y2 -= 1
+                if (el) el.style.top = obj.y1 + 'px';
                 this.notify(this.rangeArr);
-                this.element.style.top = obj.y1 + 'px';
                 break;
             case 'ArrowDown':
-
                 obj.y1 += 1
                 obj.y2 += 1
-                this.element.style.top = obj.y1 + 'px';
+                if (el) el.style.top = obj.y1 + 'px';
                 this.notify(this.rangeArr);
                 break;
             case 'ArrowLeft':
                 obj.x1 -= 1
                 obj.x2 -= 1
+                if (el) el.style.left = obj.x1 + 'px';
                 this.notify(this.rangeArr);
-                this.element.style.left = obj.x1 + 'px';
                 break;
             case 'ArrowRight':
                 obj.x1 += 1
                 obj.x2 += 1
+                if (el) el.style.left = obj.x1 + 'px';
                 this.notify(this.rangeArr);
-                this.element.style.left = obj.x1 + 'px';
                 break;
             default:
                 return
@@ -99,14 +99,12 @@ export class BrushManager {
 
     onMouseDown = (e) => {
         console.log('dowm')
-        // this.removeChild()
         this.isBrushing = true;
         this.start = { x: e.clientX, y: e.clientY };
         window.addEventListener('mousemove', this.onMouseMove);
         window.addEventListener('mouseup', this.onMouseUp);
         this.element = document.createElement('div');
         this.element.classList.add('selectBox');
-        // this.elementArr.push(this.element)
         this.element.style.pointerEvents = 'none';
         document.body.appendChild(this.element);
 
@@ -115,19 +113,10 @@ export class BrushManager {
         this.element.style.width = '0px';
         this.element.style.height = '0px';
 
-        // this.start.x = e.clientX;
-        // this.start.y = e.clientY;
-
 
     };
 
     onMouseMove = (e) => {
-        // if (!this.isBrushing) return;
-
-
-        // this.start.x = e.clientX;
-        // this.start.y = e.clientY;    
-        // console.log(this.start.x - e.clientX, this.start.y - e.clientY, this.isBrushing)
         if (this.isBrushing && this.start) {
             if (Math.abs(this.start.x - e.clientX) > 5 && Math.abs(this.start.y - e.clientY) > 5) {
                 console.log('range')
@@ -136,8 +125,6 @@ export class BrushManager {
                 const r = bgc[0]
                 const g = bgc[1]
                 const b = bgc[2]
-
-                //    console.log(`#${toHex2(r)}${toHex2(g)}${toHex2(b)}`)
 
                 this.element.style.backgroundColor = `#${toHex2(r)}${toHex2(g)}${toHex2(b)}`
                 this.element.style.opacity = 0.6
@@ -170,29 +157,18 @@ export class BrushManager {
     onMouseUp = () => {
         console.log(this.pointBottomRight.x - this.pointTopLeft.x, this.pointBottomRight.y - this.pointTopLeft.y)
         if (this.pointBottomRight.x - this.pointTopLeft.x > 5 && this.pointBottomRight.y - this.pointTopLeft.y > 5) {
-            this.selectIndex += 10
             console.log(this.range)
             this.rangeArr.push(this.range)
-            // this.stopBrush();
             this.isBrushing = false
             this.pointTopLeft = { x: 0, y: 0 }
             this.pointBottomRight = { x: 0, y: 0 }
 
-            if (this.rangeArr.length > 1) {
-                const element = document.querySelector(`.selectBox${20}`)
-                document.body.removeChild(element)
-                this.rangeArr.splice(0, 1)
-            }
-            this.selectIndex = 20
+            // 每个框选区域使用不同的 selectIndex，递增以区分
+            this.selectIndex += 10
+
             this.notify(this.rangeArr);
         } else {
             document.body.removeChild(this.element); 
-            // this.rangeArr = []
-            // this.notify(this.rangeArr);
-            // this.pointTopLeft = { x: 0, y: 0 }
-            // this.pointBottomRight = { x: 0, y: 0 }
-            // this.start = { x: 0, y: 0 }
-            // this.stopBrush();
         }
         this.start = undefined
 
@@ -202,7 +178,7 @@ export class BrushManager {
         const elementIndex = this.rangeArr[index].index
         const element = document.querySelector(`.selectBox${elementIndex}`)
         this.rangeArr.splice(index, 1)
-        document.body.removeChild(element)
+        if (element) document.body.removeChild(element)
         this.notify(this.rangeArr);
     }
 }

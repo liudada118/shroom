@@ -148,7 +148,8 @@ function endiSit(arr) {
 function endiBack(arr) {
     let arrX = [[14, 63]]
     let arrY = [[0, 63]]
-    return arrToRealLine(arr, arrX, arrY)
+    // 线序旋转180度
+    return arrToRealLine(arr, arrX, arrY).reverse()
 }
 // endiSit()
 
@@ -314,13 +315,9 @@ function endiBack1024(arr) {
             res.push(newArr[width * 50 + 49 - j])
         }
     }
-    
 
-
-    // newArr = rotate90(newArr, 45, 45)
-
-    // console.log(newArr.length)
-    return res
+    // 线序旋转180度
+    return res.reverse()
 }
 
 function pressNew1220({ arr, width, height, type = "row", value }) {
