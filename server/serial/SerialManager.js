@@ -460,7 +460,10 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
   parserItem.parser.on('data', async (data) => {
     const buffer = Buffer.from(data)
     const pointArr = Array.from(buffer)
-    console.log(`[Serial] ${portPath} 收到数据，长度: ${pointArr.length}`)
+    // Debug: print device type info instead of frame length
+    if (pointArr.length === 1024 || pointArr.length === 1025 || pointArr.length === 4096 || pointArr.length === 4097) {
+      console.log(`[Serial] ${portPath} type: ${dataItem.type}, deviceClass: ${dataItem.deviceClass}, premission: ${dataItem.premission}, frameLen: ${pointArr.length}`)
+    }
 
     // -- MAC address response (fallback, in case delimiter follows AT response) --
     if (buffer.toString().includes('Unique ID')) {
