@@ -189,8 +189,8 @@ export default function Addequip() {
       })
   }
 
-  // ─── Start MAC reading ─────────────────────────────────
-  const startReadMac = () => {
+  // ─── Reset state helper ────────────────────────────────
+  const resetState = () => {
     setIsReading(true)
     setStatus('detecting')
     setLogs([])
@@ -200,18 +200,44 @@ export default function Addequip() {
     setCheckedList({})
     setRemark({})
     setDateObj({})
+  }
 
-    addLog('Starting MAC address reading...', 'info')
+  // ─── Read MAC from already-connected devices ───────────
+  const readMacFromConnected = () => {
+    resetState()
+    addLog('通过已有连接读取 MAC 地址...', 'info')
+
+    axios.get(`${localAddress}/sendMacConnected`)
+      .then((res) => {
+        if (res.data.code !== 0) {
+          addLog(`错误: ${res.data.msg}`, 'error')
+          setStatus('error')
+          message.warning(res.data.msg)
+        }
+      })
+      .catch((err) => {
+        addLog(`请求失败: ${err.message}`, 'error')
+        setStatus('error')
+      })
+      .finally(() => {
+        setIsReading(false)
+      })
+  }
+
+  // ─── Start MAC reading (standalone, re-open ports) ─────
+  const startReadMac = () => {
+    resetState()
+    addLog('独立模式：自动探测波特率 & 读取 MAC...', 'info')
 
     axios.get(`${localAddress}/readMacOnly`)
       .then((res) => {
         if (res.data.code !== 0) {
-          addLog(`Error: ${res.data.msg}`, 'error')
+          addLog(`错误: ${res.data.msg}`, 'error')
           setStatus('error')
         }
       })
       .catch((err) => {
-        addLog(`Request failed: ${err.message}`, 'error')
+        addLog(`请求失败: ${err.message}`, 'error')
         setStatus('error')
       })
       .finally(() => {
@@ -344,28 +370,32 @@ export default function Addequip() {
                 type="primary"
                 block
                 loading={isReading}
-                onClick={startReadMac}
+                onClick={readMacFromConnected}
                 style={{ marginTop: 12 }}
               >
-                {isReading ? '读取中...' : '自动探测 & 读取 MAC'}
+                {isReading ? '读取中...' : '读取已连接设备 MAC'}
               </Button>
               <Button
                 block
-                onClick={oneClickConnect}
+                loading={isReading}
+                onClick={startReadMac}
                 style={{ marginTop: 8 }}
               >
-                一键连接（数据模式）
+                独立探测 & 读取 MAC（未连接时用）
               </Button>
             </div>
           </Card>
 
           <Card size="small" title="使用说明" className="control-card" style={{ marginTop: 12 }}>
             <div className="help-text">
+              <p><strong>方式一（推荐）：</strong></p>
+              <p>1. 先在主页面点击“一键连接”</p>
+              <p>2. 连接成功后进入此页面</p>
+              <p>3. 点击“读取已连接设备 MAC”</p>
+              <p style={{ marginTop: 8 }}><strong>方式二（未连接时）：</strong></p>
               <p>1. 将设备通过 USB 连接到电脑</p>
-              <p>2. 点击"自动探测 & 读取 MAC"</p>
-              <p>3. 系统自动识别波特率和设备类型</p>
-              <p>4. 等待 AT 指令响应（最长 60 秒）</p>
-              <p>5. 读取成功后可绑定设备信息</p>
+              <p>2. 点击“独立探测 & 读取 MAC”</p>
+              <p>3. 等待自动探测波特率和读取 MAC</p>
             </div>
           </Card>
         </div>

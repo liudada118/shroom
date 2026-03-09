@@ -96,6 +96,77 @@ router.get('/sendMac', asyncHandler(async (req, res) => {
 }))
 
 /**
+ * Read MAC addresses from already-connected serial ports.
+ * Uses existing connections (from one-click connect) — no re-open/close.
+ * Results are pushed via WebSocket using macReaderResult events.
+ */
+router.get('/sendMacConnected', asyncHandler(async (req, res) => {
+  const connectedPorts = Object.keys(state.parserArr)
+  if (!connectedPorts.length) {
+    res.json(new HttpResult(1, {}, '没有已连接的设备，请先一键连接'))
+    return
+  }
+
+  broadcast(JSON.stringify({ macReaderLog: { message: `检测到 ${connectedPorts.length} 个已连接设备，开始读取 MAC...`, type: 'info', timestamp: Date.now() } }))
+
+  const results = []
+
+  for (const portPath of connectedPorts) {
+    const parserItem = state.parserArr[portPath]
+    const dataItem = state.dataMap[portPath] || {}
+    const port = parserItem.port
+
+    if (!port || !port.isOpen) {
+      broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 端口未打开，跳过`, type: 'warning', timestamp: Date.now() } }))
+      results.push({ path: portPath, status: 'not_open' })
+      continue
+    }
+
+    const deviceClass = dataItem.deviceClass || 'unknown'
+    const baudRate = dataItem.baudRate || parserItem.baudRate
+    const deviceLabel = { hand: '手套', sit: '坐垫', foot: '脚垫' }[deviceClass] || '未知'
+
+    broadcast(JSON.stringify({
+      macReaderDetect: { path: portPath, baudRate, deviceClass, deviceLabel }
+    }))
+    broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 发送 AT 指令读取 MAC (${deviceLabel})...`, type: 'info', timestamp: Date.now() } }))
+    broadcast(JSON.stringify({ macReaderStatus: { path: portPath, stage: 'reading' } }))
+
+    try {
+      const { uniqueId, version } = await sendMacCommand(port)
+
+      if (uniqueId) {
+        broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: MAC 读取成功 - ${uniqueId}`, type: 'success', timestamp: Date.now() } }))
+        const result = {
+          path: portPath, status: 'success',
+          baudRate, deviceClass, deviceLabel,
+          uniqueId, version, timestamp: Date.now()
+        }
+        results.push(result)
+        state.macInfo[portPath] = { uniqueId, version }
+
+        broadcast(JSON.stringify({
+          macReaderResult: {
+            path: portPath, uniqueId, version,
+            baudRate, deviceClass, deviceLabel
+          }
+        }))
+      } else {
+        broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: MAC 读取超时`, type: 'warning', timestamp: Date.now() } }))
+        results.push({ path: portPath, status: 'mac_timeout', baudRate, deviceClass, deviceLabel })
+      }
+    } catch (err) {
+      broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 错误 - ${err.message}`, type: 'error', timestamp: Date.now() } }))
+      results.push({ path: portPath, status: 'error', error: err.message })
+    }
+  }
+
+  broadcast(JSON.stringify({ macReaderLog: { message: `MAC 读取完成: ${results.filter(r => r.status === 'success').length}/${connectedPorts.length} 成功`, type: 'success', timestamp: Date.now() } }))
+  broadcast(JSON.stringify({ macReaderDone: { results } }))
+  res.json(new HttpResult(0, { results }, 'MAC reading complete'))
+}))
+
+/**
  * Standalone MAC reading API for the addMac page.
  * Independent from one-click connect — opens ports temporarily,
  * detects baud rate, reads MAC via AT command, then closes ports.
