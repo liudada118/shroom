@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-03-06
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-03-09
 
 ## 1. 项目概述
 
@@ -251,6 +251,7 @@ graph TD
 | 2026-03-02 | React 渲染优化 | 10 个组件添加 React.memo，zustand shallow 比较 |
 | 2026-03-02 | 打包优化 | Webpack splitChunks、echarts 按需引入、统一日志模块 |
 | 2026-03-06 | 前端迁移到 Vite | CRA/Webpack → Vite 5，启动 ~200ms，HMR <100ms |
+| 2026-03-09 | WebSocket 调试工具 | 在 useWebSocket Hook 中添加 WS 数据打印调试功能，支持开关、过滤、计数、查看最近消息 |
 
 ## 9. 更新日志
 
@@ -262,6 +263,7 @@ graph TD
 | 2026-03-02 | 优化重构 | P1: 10 个组件添加 React.memo，zustand shallow 比较 |
 | 2026-03-02 | 优化重构 | P2: Webpack splitChunks 代码分割、echarts 按需引入、统一日志模块 |
 | 2026-03-06 | 依赖升级 | 前端从 CRA (react-scripts/Webpack) 迁移到 Vite 5，启动速度提升 100x |
+| 2026-03-09 | 新增功能 | useWebSocket Hook 添加 WS 数据打印调试工具，支持 wsDebugOn/Off/Filter/Last/Count 控制台命令 |
 
 *变更类型：`新增功能` / `优化重构` / `修复缺陷` / `配置变更` / `文档更新` / `依赖升级` / `初始化`*
 
