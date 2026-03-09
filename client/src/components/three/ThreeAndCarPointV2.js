@@ -369,7 +369,8 @@ const Canvas =
             back: {
                 dataConfig: backConfig,
                 name: 'back',
-                pointConfig: { position: [2.5, -15, 0], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.002] },
+                // 增大z方向scale使靠背云图变高，匹配头枕位置
+                pointConfig: { position: [2.5, -12, 5], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.0028] },
                 // pointConfig: { position: [2.5, -28, -50], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.002] },
             },
             sit: {
@@ -473,13 +474,22 @@ const Canvas =
             group.add(particles);
 
             // 为坐垫/靠背添加有效识别范围的边缘外框
-            const halfW = (AMOUNTY * SEPARATION) / 2 * scale[0]
-            const halfH = (AMOUNTX * SEPARATION) / 2 * scale[2]
+            // 点阵坐标计算：
+            //   x 方向: iy * SEPARATION - (AMOUNTX * SEPARATION) / 2, iy 范围 [0, AMOUNTY-1]
+            //     实际 x 范围: [-(AMOUNTX*SEP)/2, (AMOUNTY-1)*SEP - (AMOUNTX*SEP)/2]
+            //   z 方向: ix * SEPARATION - (AMOUNTY * SEPARATION) / 2, ix 范围 [0, AMOUNTX-1]
+            //     实际 z 范围: [-(AMOUNTY*SEP)/2, (AMOUNTX-1)*SEP - (AMOUNTY*SEP)/2]
+            const xMin = -(AMOUNTX * SEPARATION) / 2
+            const xMax = (AMOUNTY - 1) * SEPARATION - (AMOUNTX * SEPARATION) / 2
+            const zMin = -(AMOUNTY * SEPARATION) / 2
+            const zMax = (AMOUNTX - 1) * SEPARATION - (AMOUNTY * SEPARATION) / 2
+            // 边框稍微扩大半个 SEPARATION 的间距，确保完全包围所有点
+            const padding = SEPARATION * 0.5
             const borderPoints = [
-                new THREE.Vector3(-halfW, 0, -halfH),
-                new THREE.Vector3(halfW, 0, -halfH),
-                new THREE.Vector3(halfW, 0, halfH),
-                new THREE.Vector3(-halfW, 0, halfH),
+                new THREE.Vector3((xMin - padding) * scale[0], 0, (zMin - padding) * scale[2]),
+                new THREE.Vector3((xMax + padding) * scale[0], 0, (zMin - padding) * scale[2]),
+                new THREE.Vector3((xMax + padding) * scale[0], 0, (zMax + padding) * scale[2]),
+                new THREE.Vector3((xMin - padding) * scale[0], 0, (zMax + padding) * scale[2]),
             ]
             const borderGeometry = new THREE.BufferGeometry().setFromPoints(borderPoints)
             const borderMaterial = new THREE.LineBasicMaterial({
@@ -1078,7 +1088,9 @@ const Canvas =
         }
 
         function changeCamera(value) {
-            if (camera.current) camera.current.position.z = (-120 * 100 / value);
+            // 限制缩放范围 10%-1000%
+            const clampedValue = Math.max(10, Math.min(1000, value))
+            if (camera.current) camera.current.position.z = (-120 * 100 / clampedValue);
         }
 
         useImperativeHandle(refs, () => ({
@@ -1096,13 +1108,23 @@ const Canvas =
                 clearTimeout(timer);
             }
 
+            // 限制camera.position.z在10%-1000%对应的范围内
+            // 10% -> z = -1200, 1000% -> z = -12
+            const minZ = -120 * 100 / 10   // -1200 (对应10%)
+            const maxZ = -120 * 100 / 1000 // -12   (对应1000%)
+            if (camera.current) {
+                camera.current.position.z = Math.max(minZ, Math.min(maxZ, camera.current.position.z))
+            }
+
             // 设置一个新的计时器，例如 300毫秒后触发
             timer = setTimeout(() => {
                 console.log('鼠标滚轮滑动结束');
                 // 在这里执行滚动结束后的操作，例如加载更多内容
 
-
-                props.changeViewProp((Math.floor(-120 * 100 / camera.current.position.z)))
+                let zoomValue = Math.floor(-120 * 100 / camera.current.position.z)
+                // clamp到10%-1000%
+                zoomValue = Math.max(10, Math.min(1000, zoomValue))
+                props.changeViewProp(zoomValue)
                 timer = null; // 重置 timer 变量
 
             }, 400); // 300毫秒为一个示例值
@@ -1153,20 +1175,13 @@ const Canvas =
             }
 
             if (type == 'sit') {
-                const particles = pointGroup.children.find((a) => a.name == 'sit')
-                const otherParticles = pointGroup.children.find((a) => a.name != 'sit')
-
-                console.log(otherParticles)
-                if (Array.isArray(otherParticles)) { otherParticles.forEach((a, index) => a.visible = false) } else {
-                    otherParticles.visible = false
-
-                }
+                // 隐藏所有子对象（包括边框）
+                pointGroup.children.forEach((a) => a.visible = false)
                 if (chair) chair.visible = false
                 hideBorders()
                 showBorder('sit')
 
-                // console.log(first)
-
+                const particles = pointGroup.children.find((a) => a.name == 'sit')
                 particles.visible = true;
                 controls.current?.reset()
                 tween = move(
@@ -1184,20 +1199,13 @@ const Canvas =
                 sitshowFlag = true
                 backshowFlag = false
             } else if (type == 'back') {
-                const particles = pointGroup.children.find((a) => a.name == 'back')
-                const otherParticles = pointGroup.children.find((a) => a.name != 'back')
-
-                console.log(otherParticles)
-                if (Array.isArray(otherParticles)) { otherParticles.forEach((a, index) => a.visible = false) } else {
-                    otherParticles.visible = false
-
-                }
+                // 隐藏所有子对象（包括边框）
+                pointGroup.children.forEach((a) => a.visible = false)
                 if (chair) chair.visible = false
                 hideBorders()
                 showBorder('back')
 
-                // console.log(first)
-
+                const particles = pointGroup.children.find((a) => a.name == 'back')
                 particles.visible = true;
                 controls.current?.reset()
                 tween = move(
@@ -1216,48 +1224,45 @@ const Canvas =
                 sitshowFlag = false
                 backshowFlag = true
             } else {
+                // 整体模式：先隐藏所有，再恢复 sit 和 back 到初始位置
                 controls.current?.reset()
-                const particles = pointGroup.children
-                particles.forEach((a) => a.visible = false)
+                pointGroup.children.forEach((a) => a.visible = false)
                 hideBorders()
                 if (chair) chair.visible = true
                 const sit = pointGroup.children.find((a) => a.name == 'sit')
                 const back = pointGroup.children.find((a) => a.name == 'back')
-                sit.visible = true
-                back.visible = true
+                if (sit) sit.visible = true
+                if (back) back.visible = true
 
-
-
-                // 16.5, -10, 95
-
-                // if (sit.position.x == 0) {
+                // 恢复 sit 到 allConfig 中定义的初始位置和旋转
+                const sitInitPos = allConfig.sit.pointConfig.position
+                const sitInitRot = allConfig.sit.pointConfig.rotation
                 tween = move(
                     {
-                        x: 0,
-                        y: -30,
-                        z: -5,
-                        rotationx: -Math.PI / 6 - Math.PI / 2 + Math.PI / 2,
+                        x: sitInitPos[0],
+                        y: sitInitPos[1],
+                        z: sitInitPos[2],
+                        rotationx: sitInitRot[0],
                     },
                     600,
                     sit
                 );
                 tween.start();
-                // }
 
-                // 16.5, -3, 90
-                // if (back.position.x == 17) {
+                // 恢复 back 到 allConfig 中定义的初始位置和旋转
+                const backInitPos = allConfig.back.pointConfig.position
+                const backInitRot = allConfig.back.pointConfig.rotation
                 tween1 = move(
                     {
-                        x: 2.5,
-                        y: -15,
-                        z: 0,
-                        rotationx: -Math.PI / 12 - Math.PI / 2,
+                        x: backInitPos[0],
+                        y: backInitPos[1],
+                        z: backInitPos[2],
+                        rotationx: backInitRot[0],
                     },
                     600,
                     back
                 );
                 tween1.start();
-                // }
 
                 sitshowFlag = false
                 backshowFlag = false

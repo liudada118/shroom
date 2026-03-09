@@ -65,12 +65,35 @@ const ColAndHistory = memo((props) => {
 
     const [uploadFileShow, setUploadFileShow] = useState(false)
 
+    const [uploadLoading, setUploadLoading] = useState(false)
+
     const handleUpload = () => {
-        setUploadFileShow(false)
-        const res = [...localArr]
-        res.push(fileName)
-        setLocalArr(res)
-        localStorage.setItem('csvArr', JSON.stringify(res))
+        if (!uploadFileRef.current) {
+            message.info(t('selectDataFirst'))
+            return
+        }
+        setUploadLoading(true)
+        const formData = new FormData()
+        formData.append('file', uploadFileRef.current)
+        axios.post(`${localAddress}/uploadCsv`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        }).then((res) => {
+            if (res.data?.code === 0) {
+                const { fileName, filePath } = res.data.data
+                const newArr = [...localArr]
+                newArr.push(filePath || fileName)
+                setLocalArr(newArr)
+                localStorage.setItem('csvArr', JSON.stringify(newArr))
+                message.success(t('uploadSuccess') || 'Upload success')
+                setUploadFileShow(false)
+            } else {
+                message.error(res.data?.message || t('downloadFailed'))
+            }
+        }).catch((err) => {
+            message.error(err.message || t('downloadFailed'))
+        }).finally(() => {
+            setUploadLoading(false)
+        })
     }
 
     const handleUploadCancel = () => {
@@ -141,7 +164,7 @@ const ColAndHistory = memo((props) => {
                     if (res.data?.code === 0) {
                         setDownloadPath(folder)
                         setIsEditingPath(false)
-                        message.success('下载路径已更新')
+                        message.success(t('pathUpdated'))
                     }
                 })
             }
@@ -158,9 +181,9 @@ const ColAndHistory = memo((props) => {
             if (res.data?.code === 0) {
                 setDownloadPath(editPathValue.trim())
                 setIsEditingPath(false)
-                message.success('下载路径已更新')
+                message.success(t('pathUpdated'))
             } else {
-                message.error(res.data?.message || '设置失败')
+                message.error(res.data?.message || t('downloadFailed'))
             }
         })
     }
@@ -221,14 +244,14 @@ const ColAndHistory = memo((props) => {
                 })
             }
         }).catch((err) => {
-            message.error('下载失败')
+            message.error(t('downloadFailed'))
         })
     }
 
     const deleteData = () => {
 
         if (!selectArr.length) {
-            message.info('请先选择数据')
+            message.info(t('selectDataFirst'))
             return
         }
         if (Onindex == 0) {
@@ -244,10 +267,10 @@ const ColAndHistory = memo((props) => {
                 resArr = resArr.filter((a) => !selectArr.includes(a.date))
                 setColHistoryArr(resArr)
                 setDisplayHistoryArr(resArr)
-                message.success('删除成功')
+                message.success(t('deleteSuccess'))
                 setSelectArr([])
             }).catch((err) => {
-                message.error('删除失败')
+                message.error(t('deleteFailed'))
 
             })
         } else {
@@ -262,12 +285,14 @@ const ColAndHistory = memo((props) => {
 
 
     const [fileName, setFileName] = useState('')
+    const uploadFileRef = useRef(null)
 
     const fileChange = (e) => {
         const file = e.target.files[0];
-        const filePath = window.electronAPI?.getPath?.(file); // 可选链防报错
-        console.log('文件路径:', filePath);
-        setFileName(filePath)
+        if (file) {
+            uploadFileRef.current = file
+            setFileName(file.name)
+        }
     }
 
 
@@ -412,7 +437,7 @@ const ColAndHistory = memo((props) => {
                     {t('storageName')}: <Input value={changedAlias} onChange={(e) => { setChangedAlias(e.target.value) }} />
                 </div>
                 <div className='colChangeItem' style={{ marginTop: '12px' }}>
-                    备注: <Input.TextArea value={changedRemark} maxLength={400} autoSize={{ minRows: 3, maxRows: 6 }} onChange={(e) => { setChangedRemark(e.target.value) }} />
+                    {t('remark')}: <Input.TextArea value={changedRemark} maxLength={400} autoSize={{ minRows: 3, maxRows: 6 }} onChange={(e) => { setChangedRemark(e.target.value) }} />
                 </div>
 
             </Modal>
@@ -430,24 +455,25 @@ const ColAndHistory = memo((props) => {
                     }
                     setRightClickFlag(false)
                 }}>
-                    修改信息
+                    {t('modifyInfo')}
                 </div>
             </div> : ''}
 
             <Modal
-                title="上传文件"
+                title={t('uploadFile')}
                 closable={{ 'aria-label': 'Custom Close Button' }}
                 open={uploadFileShow}
                 onOk={handleUpload}
                 onCancel={handleUploadCancel}
             >
-                <input type="file" onChange={(e) => { fileChange(e) }} id="file" />
+                <input type="file" accept=".csv" onChange={(e) => { fileChange(e) }} id="file" />
+                {fileName && <div style={{ marginTop: '8px', color: '#8794A1', fontSize: '0.8rem' }}>{fileName}</div>}
             </Modal>
 
             <Drawer zindex={2} title={t('history')} show={historyDrawer} setShow={sethistoryDrawer} close={close} >
                 <Input
                     style={{ backgroundColor: '#202327', border: 0, color: "#E6EBF0", marginBottom: '1.5rem' }}
-                    placeholder="搜索..."
+                    placeholder={t('searchPlaceholder')}
                     onChange={(e) => { setSearchInfo(e.target.value) }}
                     prefix={<i className='iconfont' style={{ color: '#E6EBF0' }}>&#xe61f;</i>}
                 // suffix={
@@ -476,8 +502,9 @@ const ColAndHistory = memo((props) => {
                             } */}
 
 
-                            {operateStatus == '' ? <>
-                                <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={'删除'}>
+                            {Onindex == 0 ? (
+                                operateStatus == '' ? <>
+                                <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={t('delete')}>
                                     <div className='navIconContent'>
                                         <i className='iconfont cursor' onClick={() => {
                                             if (operateStatus != 'delete') {
@@ -490,7 +517,7 @@ const ColAndHistory = memo((props) => {
                                     </div>
                                 </Popover>
 
-                                <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={'下载'}>
+                                <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={t('download')}>
                                     <div className='navIconContent'>
                                         <i className='iconfont cursor' onClick={() => {
                                             if (operateStatus != 'download') {
@@ -511,9 +538,9 @@ const ColAndHistory = memo((props) => {
                                     <div className='modalConfirmButton cursor' onClick={() => {
                                         setSelectArr([])
                                         setOperateStatus('')
-                                    }}>{t('取消')}</div>
+                                    }}>{t('cancel')}</div>
                                 </>
-                            }
+                            ) : null}
                         </div>
                     </div>
 
@@ -523,7 +550,7 @@ const ColAndHistory = memo((props) => {
                                 Onindex == 0 && displayHistoryArr ? displayHistoryArr.map((dbInfo, index) => {
 
                                     return (
-                                        <div className="playbackItem cursor"
+                                        <div className={`playbackItem cursor ${currentName === dbInfo.name ? 'playbackItemActive' : ''}`}
 
                                             onClick={() => {
                                                 if (operateStatus == 'contrast') {
@@ -555,7 +582,7 @@ const ColAndHistory = memo((props) => {
                                                             }
                                                             setSelectArr(arr)
                                                         } else {
-                                                            message.info('已经选择两组数据')
+                                                            message.info(t('twoGroupsSelected'))
                                                         }
                                                     }
                                                     console.log(obj)
@@ -615,9 +642,15 @@ const ColAndHistory = memo((props) => {
                                                     <img style={{ transform: selectArr.includes(dbInfo.date) ? 'scale(1.1)' : 'scale(0)' }} src={selected} alt="" />
                                                 </div> : ''}
 
+                                                {currentName === dbInfo.name ?
+                                                    <div className='fs14' style={{ right: 5, top: 5, position: 'absolute', color: '#1890ff', }}>  
+                                                        <i className='iconfont fs14' style={{ zIndex: 2, color: '#1890ff' }}>&#xe60e;</i>
+                                                    </div>
+                                                    : ''}
+
                                                 {dbInfo.selected ?
                                                     <div className='fs14' style={{ left: 5, bottom: 5, position: 'absolute', color: '#5CDBD3', }}>
-                                                        <i className='iconfont fs14' style={{ zIndex: 2, color: '#5CDBD3' }}>&#xe60e;</i> 框选
+                                                        <i className='iconfont fs14' style={{ zIndex: 2, color: '#5CDBD3' }}>&#xe60e;</i> {t('selected')}
                                                     </div>
                                                     : ''}
 
@@ -698,7 +731,7 @@ const ColAndHistory = memo((props) => {
 
                                             {contrastArr.left.selected ?
                                                 <div className='fs14' style={{ left: 5, bottom: 5, position: 'absolute', color: '#5CDBD3', }}>
-                                                    <i className='iconfont fs14' style={{ zIndex: 2, color: '#5CDBD3' }}>&#xe60e;</i> 框选
+                                                    <i className='iconfont fs14' style={{ zIndex: 2, color: '#5CDBD3' }}>&#xe60e;</i> {t('selected')}
                                                 </div>
                                                 : ''}
 
@@ -730,7 +763,7 @@ const ColAndHistory = memo((props) => {
 
                                             {contrastArr.right.selected ?
                                                 <div className='fs14' style={{ left: 5, bottom: 5, position: 'absolute', color: '#5CDBD3', }}>
-                                                    <i className='iconfont fs14' style={{ zIndex: 2, color: '#5CDBD3' }}>&#xe60e;</i> 框选
+                                                    <i className='iconfont fs14' style={{ zIndex: 2, color: '#5CDBD3' }}>&#xe60e;</i> {t('selected')}
                                                 </div>
                                                 : ''}
 
@@ -788,10 +821,10 @@ const ColAndHistory = memo((props) => {
                         marginTop: 'auto',
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                            <span style={{ color: '#8794A1', fontSize: '0.75rem' }}>存储路径</span>
+                            <span style={{ color: '#8794A1', fontSize: '0.75rem' }}>{t('storagePath')}</span>
                             <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem' }} onClick={handleSelectFolder}>修改</span>
-                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem' }} onClick={handleOpenFolder}>打开</span>
+                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem' }} onClick={handleSelectFolder}>{t('modify')}</span>
+                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem' }} onClick={handleOpenFolder}>{t('open')}</span>
                             </div>
                         </div>
                         {isEditingPath ? (
@@ -803,8 +836,8 @@ const ColAndHistory = memo((props) => {
                                     style={{ flex: 1, backgroundColor: '#202327', border: '1px solid #4E565F', color: '#E6EBF0', fontSize: '0.7rem' }}
                                     onPressEnter={handleSavePath}
                                 />
-                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem', lineHeight: '24px' }} onClick={handleSavePath}>保存</span>
-                                <span className="cursor" style={{ color: '#8794A1', fontSize: '0.75rem', lineHeight: '24px' }} onClick={() => setIsEditingPath(false)}>取消</span>
+                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem', lineHeight: '24px' }} onClick={handleSavePath}>{t('save')}</span>
+                                <span className="cursor" style={{ color: '#8794A1', fontSize: '0.75rem', lineHeight: '24px' }} onClick={() => setIsEditingPath(false)}>{t('cancel')}</span>
                             </div>
                         ) : (
                             <div
@@ -823,7 +856,7 @@ const ColAndHistory = memo((props) => {
                                     border: '1px solid #3E444C',
                                 }}
                             >
-                                {downloadPath || '未设置'}
+                                {downloadPath || t('notSet')}
                             </div>
                         )}
                     </div>
@@ -856,9 +889,9 @@ const ColAndHistory = memo((props) => {
                 >
                     <i className='iconfont' style={{ color: '#4CAF50', fontSize: '1.2rem' }}>&#xe60e;</i>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '0.15rem' }}>下载成功</div>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '0.15rem' }}>{t('downloadSuccess')}</div>
                         <div style={{ fontSize: '0.7rem', color: '#A5D6A7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            点击打开: {downloadToast.fileName}
+                            {t('clickToOpen')}: {downloadToast.fileName}
                         </div>
                     </div>
                     <span

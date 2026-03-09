@@ -88,13 +88,6 @@ function SecondTitle(props) {
             min: 10,
             step: 10,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('sensitivity')}</div>
-        }, {
-            title: t('分压'),
-            type: 'press',
-            max: 6000,
-            min: 1,
-            step: 10,
-            content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('sensitivity')}</div>
         },
     ]
 
@@ -119,7 +112,7 @@ function SecondTitle(props) {
                 useEquipStore.getState().setSelectArr([])
             }
         } else {
-            message.info('请在2D模式下使用')
+            message.info(t('use2DMode'))
         }
 
     }
@@ -146,7 +139,7 @@ function SecondTitle(props) {
                 pageInfo?.newRuler.stopRuler()
             }
         } else {
-            message.info('请在2D模式下使用')
+            message.info(t('use2DMode'))
         }
         // pageInfo?.newRuler.startRuler();
     }
@@ -302,14 +295,14 @@ function SecondTitle(props) {
                     <IconAndText text={t('zeroPre')} onClickStatus={onZero} show={show} onClick={wsDataZero} icon={<div className='iconContentBox'><i style={{ color: onZero ? '#fff' : '#D1D9E1' }} className='iconfont fs18'>&#xe604;</i></div>} />
                     <IconAndText onClickStatus={onSelect} text={t('select')} onClick={() => {
                         if (onRuler) {
-                            message.info('请不要同时使用框选和量尺')
+                            message.info(t('noSimultaneousUse'))
                         } else {
                             selectClick()
                         }
                     }} show={show} icon={<div className='iconContentBox'> <i style={{ color: onSelect ? '#fff' : '#D1D9E1' }} className='iconfont fs18'>&#xe60e;</i> </div>} />
                     <IconAndText onClickStatus={onRuler} onClick={() => {
                         if (onSelect) {
-                            message.info('请不要同时使用框选和量尺')
+                            message.info(t('noSimultaneousUse'))
                         } else {
                             rulerClick()
                         }
@@ -318,9 +311,9 @@ function SecondTitle(props) {
                         if (display == 'num') {
                             setOnMagnifier(!onMagnifier)
                         } else {
-                            message.info('请在2D模式下使用')
+                            message.info(t('use2DMode'))
                         }
-                    }} text={'放大镜'} show={show} icon={<div className='iconContentBox'> <i style={{ color: onMagnifier ? '#fff' : '#D1D9E1' }} className='iconfont fs16'>&#xe61f;</i></div>} />
+                    }} text={t('magnifier')} show={show} icon={<div className='iconContentBox'> <i style={{ color: onMagnifier ? '#fff' : '#D1D9E1' }} className='iconfont fs16'>&#xe61f;</i></div>} />
                     <IconAndText onClick={() => { setSetshow(!setshow) }} text={t('adjust')} show={show} icon={<div className='iconContentBox'><i className='iconfont fs16'>&#xe60d;</i></div>} />
                     <IconAndText disable text={t('upload')} show={show} icon={<div className='iconContentBox'><i className='iconfont fs18'>&#xe609;</i></div>} />
                 </div>

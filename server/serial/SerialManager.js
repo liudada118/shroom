@@ -837,38 +837,114 @@ async function stopPort() {
 /**
  * Start serial port disconnect monitor.
  * Checks every RECONNECT_INTERVAL ms and reconnects using the detected baud rate.
+ * 支持端口更换后自动重新扫描和连接：
+ *   - 先尝试在原端口重连
+ *   - 如果原端口重连失败，扫描所有CH340端口并尝试连接新端口
  */
+let _reconnectBroadcastFn = null
+let _reconnectOnTimerStart = null
+let _reconnectScanning = false
+
+function setReconnectCallbacks(broadcastFn, onTimerStart) {
+  _reconnectBroadcastFn = broadcastFn
+  _reconnectOnTimerStart = onTimerStart
+}
+
 function startReconnectMonitor() {
-  setInterval(() => {
+  setInterval(async () => {
     if (!Object.keys(state.parserArr).length) return
 
-    Object.keys(state.parserArr).forEach((portPath) => {
+    let hasDisconnected = false
+
+    for (const portPath of Object.keys(state.parserArr)) {
       const item = state.parserArr[portPath]
       if (item && !item.port.isOpen) {
+        hasDisconnected = true
         const baudRate = item.baudRate || state.baudRate
         console.log(`[Serial] Port disconnected, reconnecting: ${portPath} @ ${baudRate}`)
+
+        // 先尝试在原端口重连
         try {
           const splitBuffer = Buffer.from(constantObj.splitArr)
-          const newPort = new SerialPort({
-            path: portPath,
-            baudRate,
-            autoOpen: true,
-          }, (err) => {
-            if (err) {
-              console.error(`[Serial] Reconnect failed ${portPath}:`, err.message)
-              return
-            }
-            const newParser = new DelimiterParser({ delimiter: splitBuffer })
-            newPort.pipe(newParser)
-            item.port = newPort
-            item.parser = newParser
-            console.log(`[Serial] Reconnected: ${portPath} @ ${baudRate}`)
+          await new Promise((resolve, reject) => {
+            const newPort = new SerialPort({
+              path: portPath,
+              baudRate,
+              autoOpen: true,
+            }, (err) => {
+              if (err) {
+                reject(err)
+                return
+              }
+              const newParser = new DelimiterParser({ delimiter: splitBuffer })
+              newPort.pipe(newParser)
+              item.port = newPort
+              item.parser = newParser
+              console.log(`[Serial] Reconnected on same port: ${portPath} @ ${baudRate}`)
+              if (_reconnectBroadcastFn) {
+                _reconnectBroadcastFn(JSON.stringify({ reconnected: { path: portPath, baudRate } }))
+              }
+              resolve()
+            })
           })
         } catch (err) {
-          console.error(`[Serial] Reconnect error ${portPath}:`, err.message)
+          console.warn(`[Serial] Same port reconnect failed ${portPath}: ${err.message}`)
+          // 原端口重连失败，尝试扫描新端口
+          if (!_reconnectScanning) {
+            _reconnectScanning = true
+            console.log(`[Serial] Scanning for new ports to reconnect...`)
+            try {
+              let ports = await SerialPort.list()
+              ports = getPort(ports)
+              const knownPaths = Object.keys(state.parserArr)
+              const newPorts = ports.filter(p => !knownPaths.includes(p.path))
+
+              for (const newPortInfo of newPorts) {
+                const newPath = newPortInfo.path
+                console.log(`[Serial] Trying new port: ${newPath}`)
+                const detectedBaud = await detectBaudRate(newPath)
+                if (detectedBaud) {
+                  await new Promise(r => setTimeout(r, 200))
+                  try {
+                    const splitBuffer = Buffer.from(constantObj.splitArr)
+                    const conn = await openStableConnection(newPath, detectedBaud, splitBuffer)
+                    // 迁移旧端口的数据到新端口
+                    state.parserArr[newPath] = {
+                      port: conn.port,
+                      parser: conn.parser,
+                      baudRate: detectedBaud,
+                    }
+                    if (state.dataMap[portPath]) {
+                      state.dataMap[newPath] = state.dataMap[portPath]
+                      delete state.dataMap[portPath]
+                    }
+                    delete state.parserArr[portPath]
+
+                    // 重新绑定数据处理器
+                    const dataItem = state.dataMap[newPath] || {}
+                    bindDataHandler(newPath, state.parserArr[newPath], dataItem, _reconnectBroadcastFn || (() => {}), _reconnectOnTimerStart, ports)
+
+                    console.log(`[Serial] Reconnected on new port: ${newPath} @ ${detectedBaud} (was ${portPath})`)
+                    if (_reconnectBroadcastFn) {
+                      _reconnectBroadcastFn(JSON.stringify({
+                        reconnected: { oldPath: portPath, newPath, baudRate: detectedBaud }
+                      }))
+                    }
+                    break // 成功连接一个就跳出
+                  } catch (connErr) {
+                    console.warn(`[Serial] New port ${newPath} connection failed: ${connErr.message}`)
+                  }
+                }
+              }
+            } catch (scanErr) {
+              console.error(`[Serial] Port scan error:`, scanErr.message)
+            } finally {
+              _reconnectScanning = false
+            }
+          }
         }
       }
-    })
+    }
   }, RECONNECT_INTERVAL)
 }
 
@@ -897,6 +973,7 @@ module.exports = {
   stopPort,
   portWrite,
   startReconnectMonitor,
+  setReconnectCallbacks,
   detectBaudRate,
   sendMacCommand,
   resolveDeviceType,

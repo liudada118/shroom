@@ -690,6 +690,51 @@ router.post('/bindKey', (req, res) => {
   }
 })
 
+// ─── CSV文件上传 ───────────────────────────────────────
+const multer = require('multer')
+const csvUploadStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const path = require('path')
+    let uploadDir
+    if (state._isPackaged) {
+      uploadDir = path.resolve('resources/data/csv')
+    } else {
+      uploadDir = path.resolve(__dirname, '../../data/csv')
+    }
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true })
+    }
+    cb(null, uploadDir)
+  },
+  filename: (req, file, cb) => {
+    // 保留原始文件名，解码中文
+    const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8')
+    cb(null, originalName)
+  }
+})
+const csvUpload = multer({
+  storage: csvUploadStorage,
+  fileFilter: (req, file, cb) => {
+    const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8')
+    if (originalName.toLowerCase().endsWith('.csv')) {
+      cb(null, true)
+    } else {
+      cb(new Error('Only CSV files are allowed'))
+    }
+  },
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB限制
+})
+
+router.post('/uploadCsv', csvUpload.single('file'), asyncHandler(async (req, res) => {
+  if (!req.file) {
+    res.json(new HttpResult(1, {}, 'No file uploaded'))
+    return
+  }
+  const filePath = req.file.path
+  const fileName = req.file.filename
+  res.json(new HttpResult(0, { fileName, filePath }, 'Upload success'))
+}))
+
 router.post('/getCsvData', asyncHandler(async (req, res) => {
   const { fileName } = req.body
   const data = getCsvData(fileName)

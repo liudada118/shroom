@@ -4,16 +4,7 @@ function determineParity(index) {
     return index % 2 == 0
 }
 
-function drawBlock(ctx, type) {
-
-}
-
-function drawLine(ctx,) {
-
-}
-
 function drawRoundRectWithText(ctx, x, y, width, height, radius, fillColor, text, textColor = '#fff', fontSize = 16, fontFamily = 'sans-serif') {
-    // ---- 绘制圆角矩形 ----
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
     ctx.lineTo(x + width - radius, y);
@@ -29,51 +20,290 @@ function drawRoundRectWithText(ctx, x, y, width, height, radius, fillColor, text
     ctx.fillStyle = fillColor;
     ctx.fill();
 
-    // ---- 绘制文字 ----
     ctx.fillStyle = textColor;
     ctx.font = `${fontSize}px ${fontFamily}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // 自动计算文字位置（居中）
     const centerX = x + width / 2;
     const centerY = y + height / 2;
 
     ctx.fillText(text, centerX, centerY);
 }
 
+/**
+ * 判断点击位置是否在某条量尺附近（线段距离检测）
+ */
+function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+    let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const projX = x1 + t * dx;
+    const projY = y1 + t * dy;
+    return Math.sqrt((px - projX) ** 2 + (py - projY) ** 2);
+}
 
 class ruler {
     constructor() {
         this.listeners = []
         this.rulersFlag = false
-        // this.rulerState = 'start'
-        this.selectIndex = 20
         this.clickIndex = 0
         this.width = 32
         this.height = 32
         this.distanceX = 6
         this.distanceY = 6
+        // 存储所有量尺线段 [{startGrid, endGrid, distance}]
+        this.rulerLines = []
+        // 选中的量尺索引集合
+        this.selectedIndices = new Set()
+        // 当前绘制模式：'draw' 或 'select'
+        this.mode = 'draw'
+        // 临时起点（正在绘制中的起点）
+        this.tempStart = null
+
         this.onClick = (e) => {
+            if (this.mode === 'select') {
+                this._handleSelectClick(e)
+                return
+            }
             this.clickIndex++
             this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
             const ctx = this.canvas.getContext('2d');
-            if (determineParity(this.clickIndex)) {
-                this.drawBlock(ctx, 'end', { pageX: e.pageX, pageY: e.pageY }, this.listeners[this.listeners.length - 2])
-                this.drawLine(ctx, { pageX: e.pageX, pageY: e.pageY }, this.listeners[this.listeners.length - 2])
-            } else {
-                this.drawBlock(ctx, 'start', { pageX: e.pageX, pageY: e.pageY })
-            }
 
+            if (determineParity(this.clickIndex)) {
+                // 完成一条量尺
+                const startPoint = this.listeners[this.listeners.length - 2]
+                const endPoint = { pageX: e.pageX, pageY: e.pageY }
+                const startGrid = this._toGrid(startPoint)
+                const endGrid = this._toGrid(endPoint)
+                const x = Math.abs(endGrid.x - startGrid.x) * this.distanceX
+                const y = Math.abs(endGrid.y - startGrid.y) * this.distanceY
+                const distance = (Math.sqrt(x * x + y * y)).toFixed(0)
+
+                this.rulerLines.push({
+                    startGrid,
+                    endGrid,
+                    distance: `${distance}mm`
+                })
+                this.tempStart = null
+                this._redraw()
+            } else {
+                // 绘制起点
+                this.tempStart = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
+                this._redraw()
+            }
         }
     }
 
-    subscribe(cb) {
-        this.listeners.add(cb);
+    _toGrid(pointInfo) {
+        const startX = this.canvas.getBoundingClientRect().left
+        const startY = this.canvas.getBoundingClientRect().top
+        const propW = this.canvas.width / this.width
+        const propH = this.canvas.height / this.height
+        return {
+            x: Math.floor((pointInfo.pageX - startX) / propW),
+            y: Math.floor((pointInfo.pageY - startY) / propH)
+        }
     }
 
-    unsubscribe(cb) {
-        this.listeners.delete(cb);
+    _handleSelectClick(e) {
+        const grid = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
+        const propW = this.canvas.width / this.width
+        const propH = this.canvas.height / this.height
+        const px = (grid.x + 0.5) * propW
+        const py = (grid.y + 0.5) * propH
+        const threshold = propW * 2 // 点击容差
+
+        let clickedIndex = -1
+        let minDist = Infinity
+
+        for (let i = 0; i < this.rulerLines.length; i++) {
+            const line = this.rulerLines[i]
+            const x1 = (line.startGrid.x + 0.5) * propW
+            const y1 = (line.startGrid.y + 0.5) * propH
+            const x2 = (line.endGrid.x + 0.5) * propW
+            const y2 = (line.endGrid.y + 0.5) * propH
+            const dist = pointToSegmentDistance(px, py, x1, y1, x2, y2)
+            if (dist < threshold && dist < minDist) {
+                minDist = dist
+                clickedIndex = i
+            }
+        }
+
+        if (clickedIndex >= 0) {
+            // 切换选中状态（支持多选）
+            if (this.selectedIndices.has(clickedIndex)) {
+                this.selectedIndices.delete(clickedIndex)
+            } else {
+                this.selectedIndices.add(clickedIndex)
+            }
+        }
+
+        this._redraw()
+    }
+
+    /**
+     * 重绘所有量尺
+     */
+    _redraw() {
+        if (!this.canvas) return
+        const ctx = this.canvas.getContext('2d')
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+
+        const propW = this.canvas.width / this.width
+        const propH = this.canvas.height / this.height
+
+        // 绘制所有已完成的量尺
+        for (let i = 0; i < this.rulerLines.length; i++) {
+            const line = this.rulerLines[i]
+            const isSelected = this.selectedIndices.has(i)
+            this._drawRulerLine(ctx, line, propW, propH, isSelected, i)
+        }
+
+        // 绘制正在绘制的临时起点
+        if (this.tempStart) {
+            ctx.beginPath();
+            ctx.arc((this.tempStart.x + 0.5) * propW, (this.tempStart.y + 0.5) * propH, propW / 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.font = `${propH}px sans-serif`;
+            ctx.fillStyle = '#fff';
+            ctx.fillText(`S`, (this.tempStart.x - 0.5) * propW, (this.tempStart.y + 0.5) * propH);
+        }
+    }
+
+    /**
+     * 绘制单条量尺线段
+     */
+    _drawRulerLine(ctx, line, propW, propH, isSelected, index) {
+        const { startGrid, endGrid, distance } = line
+        const lineColor = isSelected ? '#FF6B35' : '#fff'
+        const pointColor = isSelected ? '#FF6B35' : '#fff'
+
+        // 绘制起点圆点
+        ctx.beginPath();
+        ctx.arc((startGrid.x + 0.5) * propW, (startGrid.y + 0.5) * propH, propW / 4, 0, Math.PI * 2);
+        ctx.fillStyle = pointColor;
+        ctx.fill();
+
+        // 绘制起点S标记
+        ctx.font = `${propH}px sans-serif`;
+        ctx.fillStyle = pointColor;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`S`, (startGrid.x - 0.5) * propW, (startGrid.y + 0.5) * propH);
+
+        // 绘制终点圆点
+        ctx.beginPath();
+        ctx.arc((endGrid.x + 0.5) * propW, (endGrid.y + 0.5) * propH, propW / 4, 0, Math.PI * 2);
+        ctx.fillStyle = pointColor;
+        ctx.fill();
+
+        // 绘制连线
+        ctx.beginPath();
+        ctx.strokeStyle = lineColor;
+        ctx.lineWidth = isSelected ? 2.5 : 1.5;
+        ctx.moveTo((startGrid.x + 0.5) * propW, (startGrid.y + 0.5) * propH);
+        ctx.lineTo((endGrid.x + 0.5) * propW, (endGrid.y + 0.5) * propH);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+
+        // 绘制距离标签
+        const fontsize = propH
+        const labelWidth = distance.length * propH * 0.7
+        const labelBg = isSelected ? '#FF6B35' : '#fff'
+        const labelColor = isSelected ? '#fff' : '#000'
+        drawRoundRectWithText(ctx, (endGrid.x + 1) * propW, (endGrid.y - 0.5) * propH + 2, labelWidth, propH + 4, (propH + 4) / 2, labelBg, distance, labelColor, propH)
+
+        // 如果选中，绘制删除按钮
+        if (isSelected) {
+            const midX = ((startGrid.x + endGrid.x) / 2 + 0.5) * propW
+            const midY = ((startGrid.y + endGrid.y) / 2 + 0.5) * propH - propH * 1.2
+            const btnSize = propW * 0.8
+
+            // 删除按钮背景（红色圆形）
+            ctx.beginPath();
+            ctx.arc(midX, midY, btnSize, 0, Math.PI * 2);
+            ctx.fillStyle = '#E53935';
+            ctx.fill();
+
+            // 删除按钮X图标
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            const offset = btnSize * 0.5;
+            ctx.beginPath();
+            ctx.moveTo(midX - offset, midY - offset);
+            ctx.lineTo(midX + offset, midY + offset);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(midX + offset, midY - offset);
+            ctx.lineTo(midX - offset, midY + offset);
+            ctx.stroke();
+            ctx.lineWidth = 1;
+
+            // 选中高亮边框
+            const minX = Math.min(startGrid.x, endGrid.x)
+            const maxX = Math.max(startGrid.x, endGrid.x)
+            const minY = Math.min(startGrid.y, endGrid.y)
+            const maxY = Math.max(startGrid.y, endGrid.y)
+            const pad = 1
+            ctx.strokeStyle = 'rgba(255, 107, 53, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 4]);
+            ctx.strokeRect(
+                (minX - pad) * propW,
+                (minY - pad) * propH,
+                (maxX - minX + 2 * pad + 1) * propW,
+                (maxY - minY + 2 * pad + 1) * propH
+            );
+            ctx.setLineDash([]);
+            ctx.lineWidth = 1;
+        }
+    }
+
+    /**
+     * 删除所有选中的量尺
+     */
+    deleteSelected() {
+        if (this.selectedIndices.size === 0) return
+        const indicesToRemove = Array.from(this.selectedIndices).sort((a, b) => b - a)
+        for (const idx of indicesToRemove) {
+            this.rulerLines.splice(idx, 1)
+        }
+        this.selectedIndices.clear()
+        this._redraw()
+    }
+
+    /**
+     * 切换到选择模式
+     */
+    enterSelectMode() {
+        this.mode = 'select'
+        // 如果有未完成的起点，取消它
+        if (this.tempStart) {
+            this.tempStart = null
+            this.clickIndex = this.clickIndex % 2 === 0 ? this.clickIndex : this.clickIndex - 1
+        }
+        this._redraw()
+    }
+
+    /**
+     * 切换到绘制模式
+     */
+    enterDrawMode() {
+        this.mode = 'draw'
+        this.selectedIndices.clear()
+        this._redraw()
+    }
+
+    /**
+     * 获取选中数量
+     */
+    getSelectedCount() {
+        return this.selectedIndices.size
     }
 
     startRuler({ num, widthDistance, heightDistance }) {
@@ -82,10 +312,8 @@ class ruler {
         this.distanceX = widthDistance
         this.distanceY = heightDistance
         this.rulersFlag = true
-        // this
-        // window.addEventListener('click', (e) => this.onClick(e));
+        this.mode = 'draw'
         if (document.querySelector('.canvasRuler')) {
-            const that = this
             this.canvas = document.querySelector('.canvasRuler')
             this.canvas.addEventListener('click', this.onClick)
         } else {
@@ -94,89 +322,26 @@ class ruler {
     }
 
     stopRuler() {
-        const that = this
         this.clickIndex = 0
-        this.canvas.removeEventListener('click', this.onClick)
-        const ctx = this.canvas.getContext('2d');
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
-
+        if (this.canvas) {
+            this.canvas.removeEventListener('click', this.onClick)
+            const ctx = this.canvas.getContext('2d');
+            ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+        }
+        this.rulerLines = []
+        this.selectedIndices.clear()
+        this.tempStart = null
+        this.mode = 'draw'
     }
 
-    drawBlock(ctx, type, pointInfo,startPointInfo) {
-        const startX = this.canvas.getBoundingClientRect().left
-        const startY = this.canvas.getBoundingClientRect().top
-
-        const propW = this.canvas.width / this.width
-        const propH = this.canvas.height / this.height
-
-        const newX = Math.floor((pointInfo.pageX - startX) / (propW))
-        const newY = Math.floor((pointInfo.pageY - startY) / (propH))
-
-        console.log(newX * propW, newY * propH, propW, propH)
-
-       
-
-        ctx.fillStyle = "#FF0000";
-        // ctx.fillRect(newX * propW, newY * propH, propW, propH);
-        ctx.beginPath();
-        ctx.arc((newX + 0.5) * propW, (newY + 0.5) * propH, propW / 4, 0, Math.PI * 2);
-        ctx.fillStyle = '#fff';        // 设置填充颜色
-        ctx.fill();
-
-        ctx.font = `${propH}px sans-serif`;
-        if (type == 'start') {
-            ctx.fillStyle = '#fff';
-            ctx.fillText(`S`, (newX - 0.5) * propW, (newY + 0.5) * propH);
-        } else {
-
-             const newStartX = Math.floor((startPointInfo.pageX - startX) / (propW))
-        const newStartY = Math.floor((startPointInfo.pageY - startY) / (propH))
-
-        const x = Math.abs(newX - newStartX) * this.distanceX
-        const y = Math.abs(newY - newStartY) * this.distanceY
-
-        const distance = (Math.sqrt(x * x + y * y)).toFixed(0)
-            // ctx.fillStyle = '#fff';
-            // ctx.fillText(`E`, (newX + 0.2) * propW, (newY + 0.8) * propH);
-            const fontsize = propH
-            const width = `${distance}mm`.length * propH
-            drawRoundRectWithText(ctx,  (newX + 1) * propW, (newY -0.5) * propH +2, width, propH + 4, (propH + 4)/2, '#fff', `${distance}mm`, '#000', propH)
-        }
+    // 保留旧接口兼容性（不再直接使用，由_redraw统一处理）
+    drawBlock(ctx, type, pointInfo, startPointInfo) {
+        // 已由 _redraw 替代
     }
 
     drawLine(ctx, pointInfo, startPointInfo) {
-        const startX = this.canvas.getBoundingClientRect().left
-        const startY = this.canvas.getBoundingClientRect().top
-
-
-        const propW = this.canvas.width / this.width
-        const propH = this.canvas.height / this.height
-
-        const newEndX = Math.floor((pointInfo.pageX - startX) / (propW))
-        const newEndY = Math.floor((pointInfo.pageY - startY) / (propH))
-
-        const newStartX = Math.floor((startPointInfo.pageX - startX) / (propW))
-        const newStartY = Math.floor((startPointInfo.pageY - startY) / (propH))
-
-        ctx.beginPath();
-        ctx.strokeStyle = '#fff'
-        console.log(startPointInfo.pageX, startPointInfo.pageY, pointInfo.pageX, pointInfo.pageY)
-        ctx.moveTo((newStartX + 0.5) * propW, (newStartY + 0.5) * propH);
-        ctx.lineTo((newEndX + 0.5) * propW, (newEndY + 0.5) * propH);
-        ctx.stroke();
-
-        const x = Math.abs(newEndX - newStartX) * this.distanceX
-        const y = Math.abs(newEndY - newStartY) * this.distanceY
-
-        const distance = (Math.sqrt(x * x + y * y)).toFixed(0)
-
-        // ctx.font = `${propH}px sans-serif`;
-        // ctx.fillStyle = '#fff';
-        // ctx.fillText(distance, (newStartX + newEndX) / 2 * propW, (newStartY + newEndY + 1) / 2 * propH);
-
+        // 已由 _redraw 替代
     }
-
-    // onClick
 }
 
 export const newRuler = new ruler()

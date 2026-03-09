@@ -21,7 +21,7 @@ const { initDb } = require('../util/db')
 // ─── 模块导入 ────────────────────────────────────────────
 const { state } = require('./state')
 const { createWsServer, getHttpServer } = require('./websocket')
-const { startReconnectMonitor } = require('./serial/SerialManager')
+const { startReconnectMonitor, setReconnectCallbacks } = require('./serial/SerialManager')
 const routes = require('./api/routes')
 
 // ─── Port配置 ────────────────────────────────────────────
@@ -109,4 +109,6 @@ async function startServer() {
 startServer()
 
 // ─── 串口断线重连监控 ─────────────────────────────────────
+const { broadcast } = require('./websocket')
+setReconnectCallbacks(broadcast, null)
 startReconnectMonitor()

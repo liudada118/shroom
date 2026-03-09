@@ -48,20 +48,33 @@ const ViewSetting = (props) => {
 
     const subShow = () => {
         if (display == 'point3D') {
-
-
-            if (showProp > 10) {
-                setShowProp(showProp - 10)
-                props.three?.current?.changeCamera(showProp - 10)
+            // 根据当前值动态调整步长
+            let step = 10
+            if (showProp <= 20) step = 1
+            else if (showProp <= 50) step = 5
+            
+            const newVal = Math.max(10, showProp - step)
+            if (newVal !== showProp) {
+                setShowProp(newVal)
+                props.three?.current?.changeCamera(newVal)
             }
         }
-
     }
 
     const addShow = () => {
         if (display == 'point3D') {
-            setShowProp(showProp + 10)
-            props.three?.current?.changeCamera(showProp + 10)
+            // 根据当前值动态调整步长
+            let step = 10
+            if (showProp < 20) step = 1
+            else if (showProp < 50) step = 5
+            else if (showProp >= 200) step = 50
+            else if (showProp >= 500) step = 100
+            
+            const newVal = Math.min(1000, showProp + step)
+            if (newVal !== showProp) {
+                setShowProp(newVal)
+                props.three?.current?.changeCamera(newVal)
+            }
         }
     }
 
