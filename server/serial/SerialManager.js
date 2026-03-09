@@ -264,7 +264,7 @@ function sendMacCommand(port) {
       cleanup()
 
       // Debug: print raw AT response
-      console.log(`[MAC] Raw AT response: ${JSON.stringify(textBuffer.substring(Math.max(0, textBuffer.indexOf('Unique ID') - 20)))}`)
+
 
       // Match Unique ID: allow digits and hex chars
       const uniqueIdMatch = textBuffer.match(/Unique ID:\s*([0-9A-Fa-f]+)/)
@@ -294,7 +294,7 @@ function sendMacCommand(port) {
         if (textBuffer.includes('Unique ID') && !foundUniqueId) {
           foundUniqueId = true
           if (interval) clearInterval(interval) // Stop sending AT commands
-          console.log('[MAC] Detected Unique ID keyword, waiting 500ms for complete response...')
+
           collectTimer = setTimeout(extractAndResolve, 500)
         }
       } catch (e) {
@@ -309,7 +309,7 @@ function sendMacCommand(port) {
       if (port.isOpen && !resolved) {
         port.write(AT_MAC_COMMAND, (err) => {
           if (err) console.warn('[MAC] AT command send failed:', err.message)
-          else console.log('[MAC] AT command sent')
+
         })
       }
     }
@@ -460,10 +460,6 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
   parserItem.parser.on('data', async (data) => {
     const buffer = Buffer.from(data)
     const pointArr = Array.from(buffer)
-    // Debug: print device type info instead of frame length
-    if (pointArr.length === 1024 || pointArr.length === 1025 || pointArr.length === 4096 || pointArr.length === 4097) {
-      console.log(`[Serial] ${portPath} type: ${dataItem.type}, deviceClass: ${dataItem.deviceClass}, premission: ${dataItem.premission}, frameLen: ${pointArr.length}`)
-    }
 
     // -- MAC address response (fallback, in case delimiter follows AT response) --
     if (buffer.toString().includes('Unique ID')) {
