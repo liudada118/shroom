@@ -540,6 +540,35 @@ const ColAndHistory = memo((props) => {
                                         setOperateStatus('')
                                     }}>{t('cancel')}</div>
                                 </>
+                            ) : Onindex == 1 ? (
+                                operateStatus == '' ? <>
+                                <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={t('uploadFile') || 'CSV导入'}>
+                                    <div className='navIconContent'>
+                                        <i className='iconfont cursor' onClick={() => {
+                                            setUploadFileShow(true)
+                                        }}>&#xe631;</i>
+                                    </div>
+                                </Popover>
+                                <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={t('delete')}>
+                                    <div className='navIconContent'>
+                                        <i className='iconfont cursor' onClick={() => {
+                                            if (operateStatus != 'delete') {
+                                                setOperateStatus('delete')
+                                            } else {
+                                                setOperateStatus('')
+                                            }
+                                        }}>&#xe60f;</i>
+                                    </div>
+                                </Popover></> :
+                                <>
+                                    {
+                                        operateStatus == 'delete' ? <div className='modalConfirmButton cursor' onClick={deleteData}>{t('delete')}</div> : ''
+                                    }
+                                    <div className='modalConfirmButton cursor' onClick={() => {
+                                        setSelectArr([])
+                                        setOperateStatus('')
+                                    }}>{t('cancel')}</div>
+                                </>
                             ) : null}
                         </div>
                     </div>
@@ -827,38 +856,34 @@ const ColAndHistory = memo((props) => {
                                 <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem' }} onClick={handleOpenFolder}>{t('open')}</span>
                             </div>
                         </div>
-                        {isEditingPath ? (
-                            <div style={{ display: 'flex', gap: '0.4rem' }}>
-                                <Input
-                                    size="small"
-                                    value={editPathValue}
-                                    onChange={(e) => setEditPathValue(e.target.value)}
-                                    style={{ flex: 1, backgroundColor: '#202327', border: '1px solid #4E565F', color: '#E6EBF0', fontSize: '0.7rem' }}
-                                    onPressEnter={handleSavePath}
-                                />
-                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem', lineHeight: '24px' }} onClick={handleSavePath}>{t('save')}</span>
-                                <span className="cursor" style={{ color: '#8794A1', fontSize: '0.75rem', lineHeight: '24px' }} onClick={() => setIsEditingPath(false)}>{t('cancel')}</span>
-                            </div>
-                        ) : (
-                            <div
-                                className="cursor"
-                                onClick={handleOpenFolder}
-                                title={downloadPath}
-                                style={{
-                                    color: '#B4C0CA',
-                                    fontSize: '0.7rem',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                    padding: '0.25rem 0.4rem',
-                                    backgroundColor: '#202327',
-                                    borderRadius: '4px',
-                                    border: '1px solid #3E444C',
-                                }}
-                            >
-                                {downloadPath || t('notSet')}
-                            </div>
-                        )}
+                        <Input
+                            size="small"
+                            value={downloadPath}
+                            onChange={(e) => setDownloadPath(e.target.value)}
+                            onBlur={(e) => {
+                                const val = e.target.value.trim()
+                                if (val) {
+                                    axios.post(`${localAddress}/setDownloadPath`, { path: val }).then((res) => {
+                                        if (res.data?.code === 0) {
+                                            setDownloadPath(val)
+                                        }
+                                    }).catch(() => {})
+                                }
+                            }}
+                            onPressEnter={(e) => {
+                                const val = e.target.value.trim()
+                                if (val) {
+                                    axios.post(`${localAddress}/setDownloadPath`, { path: val }).then((res) => {
+                                        if (res.data?.code === 0) {
+                                            setDownloadPath(val)
+                                            message.success(t('pathUpdated') || '路径已更新')
+                                        }
+                                    }).catch(() => {})
+                                }
+                            }}
+                            style={{ backgroundColor: '#202327', border: '1px solid #4E565F', color: '#E6EBF0', fontSize: '0.7rem' }}
+                            placeholder={t('inputPath') || '输入存储路径...'}
+                        />
                     </div>
             </Drawer>
 

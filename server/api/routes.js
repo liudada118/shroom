@@ -501,8 +501,13 @@ router.post('/downlaod', asyncHandler(async (req, res) => {
 
 router.get('/getDownloadPath', (req, res) => {
   const path = require('path')
+  const os = require('os')
   let defaultPath
-  if (state._isPackaged) {
+  // 默认路径为用户桌面
+  const desktopPath = path.join(os.homedir(), 'Desktop')
+  if (fs.existsSync(desktopPath)) {
+    defaultPath = desktopPath
+  } else if (state._isPackaged) {
     defaultPath = path.resolve('resources/data')
   } else {
     defaultPath = path.resolve(__dirname, '../../data')

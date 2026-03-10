@@ -1,4 +1,5 @@
 import React from 'react';
+import { message } from 'antd';
 
 // ─── 统一框选颜色 ───────────────────────────────────────
 const BOX_BORDER_COLOR = '#ff4444'       // 未选中边框
@@ -16,7 +17,7 @@ export class BrushManager {
         this.rangeArr = []
         this.selectIndex = 20
         this.selectedBoxIndices = new Set()  // 支持多选：选中的框索引集合
-        // 有效区域边界（像素坐标），由外部设置
+        // 有效区域边界（像素坐标），由外部设置或自动获取
         this._validBounds = null  // { left, top, right, bottom }
     }
 
@@ -27,6 +28,20 @@ export class BrushManager {
 
     clearValidBounds() {
         this._validBounds = null
+    }
+
+    // ─── 自动获取 canvasThree 的有效区域 ─────────────────
+    _autoDetectValidBounds() {
+        const canvas = document.querySelector('.canvasThree')
+        if (canvas) {
+            const rect = canvas.getBoundingClientRect()
+            this._validBounds = {
+                left: rect.left,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.bottom
+            }
+        }
     }
 
     subscribe(cb) {
@@ -43,6 +58,8 @@ export class BrushManager {
 
     startBrush() {
         this.isBrushing = true;
+        // 启动时自动获取有效区域边界
+        this._autoDetectValidBounds();
         window.addEventListener('mousedown', this.onMouseDown);
         window.addEventListener('keydown', this.onKeyDown);
     }
@@ -147,9 +164,20 @@ export class BrushManager {
 
     // ─── 检查坐标是否在有效区域内 ─────────────────────
     _isInValidBounds(x, y) {
-        if (!this._validBounds) return true  // 未设置边界则不限制
+        // 每次检查时重新获取最新边界（防止延迟渲染导致边界不准）
+        this._autoDetectValidBounds()
+        if (!this._validBounds) return true  // 未找到canvas则不限制
         const { left, top, right, bottom } = this._validBounds
         return x >= left && x <= right && y >= top && y <= bottom
+    }
+
+    // ─── 检查框选区域是否完全在有效区域内 ────────────────
+    _isBoxInValidBounds(x1, y1, x2, y2) {
+        // 每次检查时重新获取最新边界
+        this._autoDetectValidBounds()
+        if (!this._validBounds) return true
+        const { left, top, right, bottom } = this._validBounds
+        return x1 >= left && y1 >= top && x2 <= right && y2 <= bottom
     }
 
     // ─── 将坐标限制在有效区域内 ──────────────────────
@@ -172,9 +200,10 @@ export class BrushManager {
             return
         }
 
-        // 检查是否在有效区域内，不在则不允许框选
+        // 检查起点是否在有效区域内
         if (!this._isInValidBounds(e.clientX, e.clientY)) {
             this._clickedExisting = true  // 阻止创建新框
+            message.warning('已超出有效框选范围，请在有效范围内进行框选')
             return
         }
 
@@ -199,7 +228,7 @@ export class BrushManager {
     onMouseMove = (e) => {
         if (this._clickedExisting) return
         if (this.isBrushing && this.start) {
-            // 将鼠标位置限制在有效区域内
+            // 将鼠标位置限制在有效区域内（实时限制，不允许拖出边界）
             const clamped = this._clampToValidBounds(e.clientX, e.clientY)
             const clampedStart = this._clampToValidBounds(this.start.x, this.start.y)
 
@@ -232,7 +261,28 @@ export class BrushManager {
 
     onMouseUp = () => {
         if (this._clickedExisting) return
-        if (this.pointBottomRight.x - this.pointTopLeft.x > 5 && this.pointBottomRight.y - this.pointTopLeft.y > 5) {
+
+        const hasValidSize = this.pointBottomRight.x - this.pointTopLeft.x > 5 &&
+                             this.pointBottomRight.y - this.pointTopLeft.y > 5
+
+        if (hasValidSize) {
+            // 最终验证：框选区域是否完全在有效范围内
+            if (!this._isBoxInValidBounds(
+                this.pointTopLeft.x, this.pointTopLeft.y,
+                this.pointBottomRight.x, this.pointBottomRight.y
+            )) {
+                // 超出有效范围，取消该次框选并提示
+                message.warning('已超出有效框选范围，请在有效范围内进行框选')
+                if (this.element && this.element.parentElement) {
+                    document.body.removeChild(this.element);
+                }
+                this.isBrushing = false
+                this.pointTopLeft = { x: 0, y: 0 }
+                this.pointBottomRight = { x: 0, y: 0 }
+                this.start = undefined
+                return
+            }
+
             this.rangeArr.push(this.range)
             this.isBrushing = false
             this.pointTopLeft = { x: 0, y: 0 }
