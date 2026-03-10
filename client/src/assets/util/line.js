@@ -112,8 +112,8 @@ export function gaussBlur_return(scl, w, h, r) {
 
 
 export function jetWhite3(min, max, x) {
-  if (!x || x <= min) {
-    return [0, 0, 255]; // 0值返回蓝色（与2D背景一致）
+  if (!x) {
+    return rainbowTextColorsxy[rainbowTextColorsxy.length - 1]
   }
   const length = rainbowTextColorsxy.length;
   const count = (max - min) * 2 / length;
@@ -172,15 +172,19 @@ export const rainbowTextColorsxy = [
   [0, 40, 255],
   [0, 16, 255],
   [0, 0, 255],
-  // Blue (低值统一为蓝色，不再过渡到白色)
-  [0, 0, 255],
-  [0, 0, 255],
-  [0, 0, 255],
-  [0, 0, 255],
-  [0, 0, 255],
-  [0, 0, 255],
-  [0, 0, 255],
-  [0, 0, 255],
-  [0, 0, 255],
-  [0, 0, 255],
+  // Blue -> White (keep neutral, avoid purple)
+  [24, 24, 255],
+  [48, 48, 255],
+  [72, 72, 255],
+  [96, 96, 255],
+  [120, 120, 255],
+  [144, 144, 255],
+  [168, 168, 255],
+  [192, 192, 255],
+  [216, 216, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
 ];
