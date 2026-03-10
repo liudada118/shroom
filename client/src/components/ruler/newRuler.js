@@ -46,6 +46,13 @@ function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
     return Math.sqrt((px - projX) ** 2 + (py - projY) ** 2);
 }
 
+/**
+ * 判断点击位置是否在距离标签区域内
+ */
+function isPointInLabel(px, py, labelX, labelY, labelWidth, labelHeight) {
+    return px >= labelX && px <= labelX + labelWidth && py >= labelY && py <= labelY + labelHeight;
+}
+
 class ruler {
     constructor() {
         this.listeners = []
@@ -59,19 +66,26 @@ class ruler {
         this.rulerLines = []
         // 选中的量尺索引集合
         this.selectedIndices = new Set()
-        // 当前绘制模式：'draw' 或 'select'
-        this.mode = 'draw'
         // 临时起点（正在绘制中的起点）
         this.tempStart = null
 
         this.onClick = (e) => {
-            if (this.mode === 'select') {
-                this._handleSelectClick(e)
+            // 先检查是否点击了已有量尺（线条或标签）
+            const hitIndex = this._hitTest(e)
+            if (hitIndex >= 0) {
+                // 切换选中状态（支持多选）
+                if (this.selectedIndices.has(hitIndex)) {
+                    this.selectedIndices.delete(hitIndex)
+                } else {
+                    this.selectedIndices.add(hitIndex)
+                }
+                this._redraw()
                 return
             }
+
+            // 没有点击到已有量尺，进入绘制逻辑
             this.clickIndex++
             this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
-            const ctx = this.canvas.getContext('2d');
 
             if (determineParity(this.clickIndex)) {
                 // 完成一条量尺
@@ -109,13 +123,20 @@ class ruler {
         }
     }
 
-    _handleSelectClick(e) {
+    /**
+     * 点击命中测试：检查是否点击了某条量尺的线条或距离标签
+     * 返回命中的量尺索引，-1表示未命中
+     */
+    _hitTest(e) {
+        if (this.rulerLines.length === 0) return -1
+
         const grid = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
         const propW = this.canvas.width / this.width
         const propH = this.canvas.height / this.height
         const px = (grid.x + 0.5) * propW
         const py = (grid.y + 0.5) * propH
-        const threshold = propW * 2 // 点击容差
+        // 线条点击容差：加大到3个格子宽度，更容易点击
+        const lineThreshold = propW * 3
 
         let clickedIndex = -1
         let minDist = Infinity
@@ -126,23 +147,41 @@ class ruler {
             const y1 = (line.startGrid.y + 0.5) * propH
             const x2 = (line.endGrid.x + 0.5) * propW
             const y2 = (line.endGrid.y + 0.5) * propH
+
+            // 检查是否点击了线条
             const dist = pointToSegmentDistance(px, py, x1, y1, x2, y2)
-            if (dist < threshold && dist < minDist) {
+            if (dist < lineThreshold && dist < minDist) {
                 minDist = dist
                 clickedIndex = i
             }
-        }
 
-        if (clickedIndex >= 0) {
-            // 切换选中状态（支持多选）
-            if (this.selectedIndices.has(clickedIndex)) {
-                this.selectedIndices.delete(clickedIndex)
-            } else {
-                this.selectedIndices.add(clickedIndex)
+            // 检查是否点击了距离标签区域
+            const labelFontSize = propH
+            const labelWidth = line.distance.length * propH * 0.7
+            const labelHeight = propH + 4
+            const labelX = (line.endGrid.x + 1) * propW
+            const labelY = (line.endGrid.y - 0.5) * propH + 2
+            if (isPointInLabel(px, py, labelX, labelY, labelWidth, labelHeight)) {
+                clickedIndex = i
+                break // 标签命中优先
+            }
+
+            // 检查是否点击了起点圆点附近
+            const startDist = Math.sqrt((px - x1) ** 2 + (py - y1) ** 2)
+            if (startDist < propW * 1.5) {
+                clickedIndex = i
+                break
+            }
+
+            // 检查是否点击了终点圆点附近
+            const endDist = Math.sqrt((px - x2) ** 2 + (py - y2) ** 2)
+            if (endDist < propW * 1.5) {
+                clickedIndex = i
+                break
             }
         }
 
-        this._redraw()
+        return clickedIndex
     }
 
     /**
@@ -166,12 +205,12 @@ class ruler {
         // 绘制正在绘制的临时起点
         if (this.tempStart) {
             ctx.beginPath();
-            ctx.arc((this.tempStart.x + 0.5) * propW, (this.tempStart.y + 0.5) * propH, propW / 4, 0, Math.PI * 2);
+            ctx.arc((this.tempStart.x + 0.5) * propW, (this.tempStart.y + 0.5) * propH, propW / 3, 0, Math.PI * 2);
             ctx.fillStyle = '#fff';
             ctx.fill();
-            ctx.font = `${propH}px sans-serif`;
+            ctx.font = `bold ${propH * 1.2}px sans-serif`;
             ctx.fillStyle = '#fff';
-            ctx.fillText(`S`, (this.tempStart.x - 0.5) * propW, (this.tempStart.y + 0.5) * propH);
+            ctx.fillText(`S`, (this.tempStart.x - 0.8) * propW, (this.tempStart.y + 0.5) * propH);
         }
     }
 
@@ -182,30 +221,33 @@ class ruler {
         const { startGrid, endGrid, distance } = line
         const lineColor = isSelected ? '#FF6B35' : '#fff'
         const pointColor = isSelected ? '#FF6B35' : '#fff'
+        // 线宽：普通3px，选中4.5px（加宽，更容易看到和点击）
+        const normalLineWidth = 3
+        const selectedLineWidth = 4.5
 
-        // 绘制起点圆点
+        // 绘制起点圆点（加大）
         ctx.beginPath();
-        ctx.arc((startGrid.x + 0.5) * propW, (startGrid.y + 0.5) * propH, propW / 4, 0, Math.PI * 2);
+        ctx.arc((startGrid.x + 0.5) * propW, (startGrid.y + 0.5) * propH, propW / 3, 0, Math.PI * 2);
         ctx.fillStyle = pointColor;
         ctx.fill();
 
-        // 绘制起点S标记
-        ctx.font = `${propH}px sans-serif`;
+        // 绘制起点S标记（加大字体）
+        ctx.font = `bold ${propH * 1.2}px sans-serif`;
         ctx.fillStyle = pointColor;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`S`, (startGrid.x - 0.5) * propW, (startGrid.y + 0.5) * propH);
+        ctx.fillText(`S`, (startGrid.x - 0.8) * propW, (startGrid.y + 0.5) * propH);
 
-        // 绘制终点圆点
+        // 绘制终点圆点（加大）
         ctx.beginPath();
-        ctx.arc((endGrid.x + 0.5) * propW, (endGrid.y + 0.5) * propH, propW / 4, 0, Math.PI * 2);
+        ctx.arc((endGrid.x + 0.5) * propW, (endGrid.y + 0.5) * propH, propW / 3, 0, Math.PI * 2);
         ctx.fillStyle = pointColor;
         ctx.fill();
 
-        // 绘制连线
+        // 绘制连线（加宽）
         ctx.beginPath();
         ctx.strokeStyle = lineColor;
-        ctx.lineWidth = isSelected ? 2.5 : 1.5;
+        ctx.lineWidth = isSelected ? selectedLineWidth : normalLineWidth;
         ctx.moveTo((startGrid.x + 0.5) * propW, (startGrid.y + 0.5) * propH);
         ctx.lineTo((endGrid.x + 0.5) * propW, (endGrid.y + 0.5) * propH);
         ctx.stroke();
@@ -218,7 +260,7 @@ class ruler {
         const labelColor = isSelected ? '#fff' : '#000'
         drawRoundRectWithText(ctx, (endGrid.x + 1) * propW, (endGrid.y - 0.5) * propH + 2, labelWidth, propH + 4, (propH + 4) / 2, labelBg, distance, labelColor, propH)
 
-        // 如果选中，绘制删除按钮
+        // 如果选中，绘制删除按钮和高亮边框
         if (isSelected) {
             const midX = ((startGrid.x + endGrid.x) / 2 + 0.5) * propW
             const midY = ((startGrid.y + endGrid.y) / 2 + 0.5) * propH - propH * 1.2
@@ -278,28 +320,6 @@ class ruler {
     }
 
     /**
-     * 切换到选择模式
-     */
-    enterSelectMode() {
-        this.mode = 'select'
-        // 如果有未完成的起点，取消它
-        if (this.tempStart) {
-            this.tempStart = null
-            this.clickIndex = this.clickIndex % 2 === 0 ? this.clickIndex : this.clickIndex - 1
-        }
-        this._redraw()
-    }
-
-    /**
-     * 切换到绘制模式
-     */
-    enterDrawMode() {
-        this.mode = 'draw'
-        this.selectedIndices.clear()
-        this._redraw()
-    }
-
-    /**
      * 获取选中数量
      */
     getSelectedCount() {
@@ -312,7 +332,6 @@ class ruler {
         this.distanceX = widthDistance
         this.distanceY = heightDistance
         this.rulersFlag = true
-        this.mode = 'draw'
         if (document.querySelector('.canvasRuler')) {
             this.canvas = document.querySelector('.canvasRuler')
             this.canvas.addEventListener('click', this.onClick)
@@ -331,7 +350,6 @@ class ruler {
         this.rulerLines = []
         this.selectedIndices.clear()
         this.tempStart = null
-        this.mode = 'draw'
     }
 
     // 保留旧接口兼容性（不再直接使用，由_redraw统一处理）
