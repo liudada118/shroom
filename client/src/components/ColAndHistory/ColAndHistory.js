@@ -2,7 +2,7 @@ import React, { memo, useContext, useEffect, useRef, useState } from 'react'
 import Col from '../col/Col'
 import './index.scss'
 import Drawer from '../Drawer/Drawer'
-import { Button, Checkbox, Input, message, Modal, Popover, Slider, Tabs } from 'antd'
+import { Button, Checkbox, Input, message, Modal, Popover, Progress, Slider, Tabs } from 'antd'
 import selected from '../../assets/image/select.png'
 import history from '../../assets/image/history.png'
 import axios from 'axios'
@@ -34,6 +34,8 @@ const ColAndHistory = memo((props) => {
     const [isEditingPath, setIsEditingPath] = useState(false)
     const [editPathValue, setEditPathValue] = useState('')
     const [downloadToast, setDownloadToast] = useState(null) // { fileName, filePath }
+    const [showDownloadPathModal, setShowDownloadPathModal] = useState(false) // 下载前路径选择对话框
+    const [downloadProgress, setDownloadProgress] = useState(null) // { percent, status: 'downloading'|'done'|'error', files: [] }
 
     const [colHistoryArr, setColHistoryArr] = useState()
     const [displayHistoryArr, setDisplayHistoryArr] = useState()
@@ -188,13 +190,24 @@ const ColAndHistory = memo((props) => {
         })
     }
 
-    const handleOpenFolder = () => {
-        if (!downloadPath) return
+    const handleOpenFolder = (folderPathOverride) => {
+        const targetPath = folderPathOverride || downloadPath
+        if (!targetPath) {
+            message.warning(t('noPath') || '路径为空')
+            return
+        }
         // 优先使用 Electron API
         if (window.electronAPI?.openPath) {
-            window.electronAPI.openPath(downloadPath)
+            window.electronAPI.openPath(targetPath)
         } else {
-            axios.post(`${localAddress}/openFolder`, { folderPath: downloadPath })
+            axios.post(`${localAddress}/openFolder`, { folderPath: targetPath }).then((res) => {
+                if (res.data?.code !== 0) {
+                    message.error(res.data?.message || '打开文件夹失败')
+                }
+            }).catch((err) => {
+                console.error('Open folder error:', err)
+                message.error('打开文件夹失败')
+            })
         }
     }
 
@@ -203,12 +216,49 @@ const ColAndHistory = memo((props) => {
         if (window.electronAPI?.openPath) {
             window.electronAPI.openPath(filePath)
         } else {
-            axios.post(`${localAddress}/openFile`, { filePath })
+            axios.post(`${localAddress}/openFile`, { filePath }).then((res) => {
+                if (res.data?.code !== 0) {
+                    // 如果打开文件失败，尝试打开所在文件夹
+                    const folderPath = filePath.replace(/[\\/][^\\/]+$/, '')
+                    if (folderPath && folderPath !== filePath) {
+                        handleOpenFolder(folderPath)
+                    } else {
+                        message.error(res.data?.message || '打开文件失败')
+                    }
+                }
+            }).catch((err) => {
+                console.error('Open file error:', err)
+                // 降级：尝试打开所在文件夹
+                const folderPath = filePath.replace(/[\\/][^\\/]+$/, '')
+                if (folderPath && folderPath !== filePath) {
+                    handleOpenFolder(folderPath)
+                }
+            })
         }
     }
 
+    // 点击下载按钮：先弹出路径选择对话框
     const download = () => {
-        console.log(operateStatus, selectArr)
+        if (!selectArr.length) {
+            message.info(t('selectDataFirst'))
+            return
+        }
+        setShowDownloadPathModal(true)
+    }
+
+    // 确认下载：关闭路径对话框，显示进度弹窗，执行下载
+    const confirmDownload = () => {
+        setShowDownloadPathModal(false)
+        setDownloadProgress({ percent: 0, status: 'downloading', files: [] })
+
+        // 模拟进度动画
+        let fakePercent = 0
+        const progressTimer = setInterval(() => {
+            fakePercent += Math.random() * 15 + 5
+            if (fakePercent > 90) fakePercent = 90
+            setDownloadProgress(prev => prev ? { ...prev, percent: Math.round(fakePercent) } : prev)
+        }, 300)
+
         axios({
             method: 'post',
             url: `${localAddress}/downlaod`,
@@ -216,35 +266,38 @@ const ColAndHistory = memo((props) => {
                 fileArr: selectArr,
             }
         }).then((res) => {
+            clearInterval(progressTimer)
             console.log(res)
             if (res.data.message == 'error') {
+                setDownloadProgress({ percent: 100, status: 'error', files: [] })
                 message.info(res.data.data)
+                setTimeout(() => setDownloadProgress(null), 2000)
             } else {
-                // 提取文件路径
+                // 提取所有文件路径
                 const results = res.data.data
-                let lastFilePath = ''
-                let lastFileName = ''
+                const downloadedFiles = []
                 if (Array.isArray(results)) {
                     for (const item of results) {
                         if (item && typeof item === 'object') {
                             const keys = Object.keys(item)
                             for (const key of keys) {
                                 if (key === 'filePath' && item[key]) {
-                                    lastFilePath = item[key]
-                                    lastFileName = item[key].split('/').pop().split('\\').pop()
+                                    downloadedFiles.push({
+                                        filePath: item[key],
+                                        fileName: item[key].split('/').pop().split('\\').pop()
+                                    })
                                 }
                             }
                         }
                     }
                 }
-                // 显示下载成功弹窗
-                setDownloadToast({
-                    fileName: lastFileName || '文件',
-                    filePath: lastFilePath
-                })
+                setDownloadProgress({ percent: 100, status: 'done', files: downloadedFiles })
             }
         }).catch((err) => {
+            clearInterval(progressTimer)
+            setDownloadProgress({ percent: 100, status: 'error', files: [] })
             message.error(t('downloadFailed'))
+            setTimeout(() => setDownloadProgress(null), 2000)
         })
     }
 
@@ -468,6 +521,105 @@ const ColAndHistory = memo((props) => {
             >
                 <input type="file" accept=".csv" onChange={(e) => { fileChange(e) }} id="file" />
                 {fileName && <div style={{ marginTop: '8px', color: '#8794A1', fontSize: '0.8rem' }}>{fileName}</div>}
+            </Modal>
+
+            {/* ─── 下载路径选择对话框 ─── */}
+            <Modal
+                title={t('downloadPathSelect') || '下载路径选择'}
+                open={showDownloadPathModal}
+                onOk={confirmDownload}
+                onCancel={() => setShowDownloadPathModal(false)}
+                okText={t('startDownload') || '开始下载'}
+                cancelText={t('cancel')}
+                width={480}
+            >
+                <div style={{ marginBottom: '12px', color: '#666', fontSize: '0.85rem' }}>
+                    {t('downloadPathHint') || '请确认或修改下载保存路径：'}
+                </div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <Input
+                        value={downloadPath}
+                        onChange={(e) => setDownloadPath(e.target.value)}
+                        onBlur={(e) => {
+                            const val = e.target.value.trim()
+                            if (val) {
+                                axios.post(`${localAddress}/setDownloadPath`, { path: val }).catch(() => {})
+                            }
+                        }}
+                        style={{ flex: 1 }}
+                        placeholder={t('inputPath') || '输入存储路径...'}
+                    />
+                    <Button onClick={handleSelectFolder}>{t('browse') || '浏览'}</Button>
+                    <Button onClick={() => handleOpenFolder()}>{t('open')}</Button>
+                </div>
+                <div style={{ marginTop: '12px', color: '#999', fontSize: '0.8rem' }}>
+                    {t('selectedCount') || '已选择'}: {selectArr.length} {t('items') || '项'}
+                </div>
+            </Modal>
+
+            {/* ─── 下载进度弹窗 ─── */}
+            <Modal
+                title={downloadProgress?.status === 'done' ? (t('downloadSuccess') || '下载完成') : downloadProgress?.status === 'error' ? (t('downloadFailed') || '下载失败') : (t('downloading') || '正在下载...')}
+                open={!!downloadProgress}
+                footer={downloadProgress?.status === 'done' ? [
+                    <Button key="openFolder" type="primary" onClick={() => {
+                        handleOpenFolder()
+                        setDownloadProgress(null)
+                        setSelectArr([])
+                        setOperateStatus('')
+                    }}>{t('openFolder') || '打开文件夹'}</Button>,
+                    <Button key="close" onClick={() => {
+                        setDownloadProgress(null)
+                        setSelectArr([])
+                        setOperateStatus('')
+                    }}>{t('close') || '关闭'}</Button>
+                ] : downloadProgress?.status === 'error' ? [
+                    <Button key="close" onClick={() => setDownloadProgress(null)}>{t('close') || '关闭'}</Button>
+                ] : []}
+                closable={downloadProgress?.status !== 'downloading'}
+                maskClosable={false}
+                width={480}
+            >
+                <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                    <Progress
+                        percent={downloadProgress?.percent || 0}
+                        status={downloadProgress?.status === 'error' ? 'exception' : downloadProgress?.status === 'done' ? 'success' : 'active'}
+                        strokeColor={downloadProgress?.status === 'done' ? '#52c41a' : '#1890ff'}
+                    />
+                    {downloadProgress?.status === 'downloading' && (
+                        <div style={{ marginTop: '12px', color: '#666', fontSize: '0.85rem' }}>
+                            {t('downloadingHint') || '正在导出数据，请稍候...'}
+                        </div>
+                    )}
+                    {downloadProgress?.status === 'done' && downloadProgress.files.length > 0 && (
+                        <div style={{ marginTop: '16px', textAlign: 'left' }}>
+                            <div style={{ fontSize: '0.85rem', color: '#333', marginBottom: '8px', fontWeight: 'bold' }}>
+                                {t('downloadedFiles') || '已下载文件：'}
+                            </div>
+                            {downloadProgress.files.map((f, idx) => (
+                                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', padding: '6px 8px', backgroundColor: '#f6ffed', borderRadius: '4px', border: '1px solid #b7eb8f' }}>
+                                    <span style={{ flex: 1, fontSize: '0.8rem', color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {f.fileName}
+                                    </span>
+                                    <span
+                                        className="cursor"
+                                        style={{ color: '#1890ff', fontSize: '0.8rem', whiteSpace: 'nowrap', textDecoration: 'underline' }}
+                                        onClick={() => handleOpenFile(f.filePath)}
+                                    >
+                                        {t('clickToOpen') || '点击打开'}
+                                    </span>
+                                </div>
+                            ))}
+                            <div
+                                className="cursor"
+                                style={{ marginTop: '8px', color: '#1890ff', fontSize: '0.8rem', textDecoration: 'underline' }}
+                                onClick={() => handleOpenFolder()}
+                            >
+                                {t('openDownloadFolder') || '打开下载文件夹'}: {downloadPath}
+                            </div>
+                        </div>
+                    )}
+                </div>
             </Modal>
 
             <Drawer zindex={2} title={t('history')} show={historyDrawer} setShow={sethistoryDrawer} close={close} >
@@ -887,44 +1039,7 @@ const ColAndHistory = memo((props) => {
                     </div>
             </Drawer>
 
-            {/* ─── 下载成功弹窗 ─── */}
-            {downloadToast && (
-                <div
-                    className="cursor"
-                    onClick={() => {
-                        handleOpenFile(downloadToast.filePath)
-                        setDownloadToast(null)
-                    }}
-                    style={{
-                        position: 'fixed',
-                        top: '4.5rem',
-                        right: '1.5rem',
-                        zIndex: 9999,
-                        backgroundColor: '#1B5E20',
-                        color: '#E6EBF0',
-                        padding: '0.75rem 1.25rem',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.6rem',
-                        maxWidth: '22rem',
-                        animation: 'slideInRight 0.3s ease-out',
-                    }}
-                >
-                    <i className='iconfont' style={{ color: '#4CAF50', fontSize: '1.2rem' }}>&#xe60e;</i>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '0.15rem' }}>{t('downloadSuccess')}</div>
-                        <div style={{ fontSize: '0.7rem', color: '#A5D6A7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {t('clickToOpen')}: {downloadToast.fileName}
-                        </div>
-                    </div>
-                    <span
-                        onClick={(e) => { e.stopPropagation(); setDownloadToast(null) }}
-                        style={{ color: '#81C784', fontSize: '1rem', marginLeft: '0.5rem' }}
-                    >×</span>
-                </div>
-            )}
+            {/* 旧的下载成功弹窗已替换为上方的下载进度 Modal */}
 
             <div className='colAndHContent'>
                 <div className='colAndHistory'>

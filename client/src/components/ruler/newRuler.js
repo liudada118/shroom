@@ -53,6 +53,13 @@ function isPointInLabel(px, py, labelX, labelY, labelWidth, labelHeight) {
     return px >= labelX && px <= labelX + labelWidth && py >= labelY && py <= labelY + labelHeight;
 }
 
+// ─── 选中颜色配置 ───
+const SELECTED_COLOR = '#FFD600'          // 选中线条/端点颜色（黄色）
+const SELECTED_LABEL_BG = '#FFD600'       // 选中标签背景（黄色）
+const SELECTED_LABEL_TEXT = '#000'         // 选中标签文字（黑色）
+const SELECTED_BORDER_COLOR = 'rgba(255, 214, 0, 0.5)' // 选中高亮边框
+const DELETE_BTN_COLOR = '#E53935'         // 删除按钮背景（红色）
+
 class ruler {
     constructor() {
         this.listeners = []
@@ -70,7 +77,27 @@ class ruler {
         this.tempStart = null
 
         this.onClick = (e) => {
-            // 先检查是否点击了已有量尺（线条或标签）
+            // 1. 先检查是否点击了某个选中量尺的删除按钮
+            const deleteIndex = this._hitTestDeleteBtn(e)
+            if (deleteIndex >= 0) {
+                // 删除该量尺
+                this.rulerLines.splice(deleteIndex, 1)
+                // 更新selectedIndices：删除该索引，大于该索引的减1
+                const newSelected = new Set()
+                for (const idx of this.selectedIndices) {
+                    if (idx === deleteIndex) continue
+                    if (idx > deleteIndex) {
+                        newSelected.add(idx - 1)
+                    } else {
+                        newSelected.add(idx)
+                    }
+                }
+                this.selectedIndices = newSelected
+                this._redraw()
+                return
+            }
+
+            // 2. 检查是否点击了已有量尺（线条或标签）
             const hitIndex = this._hitTest(e)
             if (hitIndex >= 0) {
                 // 切换选中状态（支持多选）
@@ -83,7 +110,7 @@ class ruler {
                 return
             }
 
-            // 没有点击到已有量尺，进入绘制逻辑
+            // 3. 没有点击到已有量尺，进入绘制逻辑
             this.clickIndex++
             this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
 
@@ -124,6 +151,36 @@ class ruler {
     }
 
     /**
+     * 检查是否点击了某个选中量尺的删除按钮
+     * 返回该量尺的索引，-1表示未命中
+     */
+    _hitTestDeleteBtn(e) {
+        if (this.rulerLines.length === 0 || this.selectedIndices.size === 0) return -1
+
+        const grid = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
+        const propW = this.canvas.width / this.width
+        const propH = this.canvas.height / this.height
+        const px = (grid.x + 0.5) * propW
+        const py = (grid.y + 0.5) * propH
+
+        for (const i of this.selectedIndices) {
+            if (i >= this.rulerLines.length) continue
+            const line = this.rulerLines[i]
+            // 删除按钮位置（与_drawRulerLine中一致）
+            const midX = ((line.startGrid.x + line.endGrid.x) / 2 + 0.5) * propW
+            const midY = ((line.startGrid.y + line.endGrid.y) / 2 + 0.5) * propH - propH * 1.2
+            const btnSize = propW * 1.2 // 加大点击区域
+
+            const dist = Math.sqrt((px - midX) ** 2 + (py - midY) ** 2)
+            if (dist <= btnSize) {
+                return i
+            }
+        }
+
+        return -1
+    }
+
+    /**
      * 点击命中测试：检查是否点击了某条量尺的线条或距离标签
      * 返回命中的量尺索引，-1表示未命中
      */
@@ -135,7 +192,7 @@ class ruler {
         const propH = this.canvas.height / this.height
         const px = (grid.x + 0.5) * propW
         const py = (grid.y + 0.5) * propH
-        // 线条点击容差：加大到3个格子宽度，更容易点击
+        // 线条点击容差：3个格子宽度
         const lineThreshold = propW * 3
 
         let clickedIndex = -1
@@ -156,7 +213,6 @@ class ruler {
             }
 
             // 检查是否点击了距离标签区域
-            const labelFontSize = propH
             const labelWidth = line.distance.length * propH * 0.7
             const labelHeight = propH + 4
             const labelX = (line.endGrid.x + 1) * propW
@@ -219,32 +275,32 @@ class ruler {
      */
     _drawRulerLine(ctx, line, propW, propH, isSelected, index) {
         const { startGrid, endGrid, distance } = line
-        const lineColor = isSelected ? '#FF6B35' : '#fff'
-        const pointColor = isSelected ? '#FF6B35' : '#fff'
-        // 线宽：普通3px，选中4.5px（加宽，更容易看到和点击）
+        const lineColor = isSelected ? SELECTED_COLOR : '#fff'
+        const pointColor = isSelected ? SELECTED_COLOR : '#fff'
+        // 线宽：普通3px，选中4.5px
         const normalLineWidth = 3
         const selectedLineWidth = 4.5
 
-        // 绘制起点圆点（加大）
+        // 绘制起点圆点
         ctx.beginPath();
         ctx.arc((startGrid.x + 0.5) * propW, (startGrid.y + 0.5) * propH, propW / 3, 0, Math.PI * 2);
         ctx.fillStyle = pointColor;
         ctx.fill();
 
-        // 绘制起点S标记（加大字体）
+        // 绘制起点S标记
         ctx.font = `bold ${propH * 1.2}px sans-serif`;
         ctx.fillStyle = pointColor;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(`S`, (startGrid.x - 0.8) * propW, (startGrid.y + 0.5) * propH);
 
-        // 绘制终点圆点（加大）
+        // 绘制终点圆点
         ctx.beginPath();
         ctx.arc((endGrid.x + 0.5) * propW, (endGrid.y + 0.5) * propH, propW / 3, 0, Math.PI * 2);
         ctx.fillStyle = pointColor;
         ctx.fill();
 
-        // 绘制连线（加宽）
+        // 绘制连线
         ctx.beginPath();
         ctx.strokeStyle = lineColor;
         ctx.lineWidth = isSelected ? selectedLineWidth : normalLineWidth;
@@ -254,10 +310,9 @@ class ruler {
         ctx.lineWidth = 1;
 
         // 绘制距离标签
-        const fontsize = propH
         const labelWidth = distance.length * propH * 0.7
-        const labelBg = isSelected ? '#FF6B35' : '#fff'
-        const labelColor = isSelected ? '#fff' : '#000'
+        const labelBg = isSelected ? SELECTED_LABEL_BG : '#fff'
+        const labelColor = isSelected ? SELECTED_LABEL_TEXT : '#000'
         drawRoundRectWithText(ctx, (endGrid.x + 1) * propW, (endGrid.y - 0.5) * propH + 2, labelWidth, propH + 4, (propH + 4) / 2, labelBg, distance, labelColor, propH)
 
         // 如果选中，绘制删除按钮和高亮边框
@@ -269,7 +324,7 @@ class ruler {
             // 删除按钮背景（红色圆形）
             ctx.beginPath();
             ctx.arc(midX, midY, btnSize, 0, Math.PI * 2);
-            ctx.fillStyle = '#E53935';
+            ctx.fillStyle = DELETE_BTN_COLOR;
             ctx.fill();
 
             // 删除按钮X图标
@@ -286,13 +341,13 @@ class ruler {
             ctx.stroke();
             ctx.lineWidth = 1;
 
-            // 选中高亮边框
+            // 选中高亮边框（黄色虚线）
             const minX = Math.min(startGrid.x, endGrid.x)
             const maxX = Math.max(startGrid.x, endGrid.x)
             const minY = Math.min(startGrid.y, endGrid.y)
             const maxY = Math.max(startGrid.y, endGrid.y)
             const pad = 1
-            ctx.strokeStyle = 'rgba(255, 107, 53, 0.5)';
+            ctx.strokeStyle = SELECTED_BORDER_COLOR;
             ctx.lineWidth = 2;
             ctx.setLineDash([4, 4]);
             ctx.strokeRect(
@@ -352,14 +407,9 @@ class ruler {
         this.tempStart = null
     }
 
-    // 保留旧接口兼容性（不再直接使用，由_redraw统一处理）
-    drawBlock(ctx, type, pointInfo, startPointInfo) {
-        // 已由 _redraw 替代
-    }
-
-    drawLine(ctx, pointInfo, startPointInfo) {
-        // 已由 _redraw 替代
-    }
+    // 保留旧接口兼容性
+    drawBlock(ctx, type, pointInfo, startPointInfo) {}
+    drawLine(ctx, pointInfo, startPointInfo) {}
 }
 
 export const newRuler = new ruler()

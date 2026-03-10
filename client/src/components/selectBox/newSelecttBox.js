@@ -7,6 +7,9 @@ const BOX_BG_COLOR = 'rgba(255,68,68,0.15)' // 未选中背景
 const BOX_SELECTED_BORDER = '#ffcc00'    // 选中边框（高亮黄色）
 const BOX_SELECTED_BG = 'rgba(255,204,0,0.25)' // 选中背景
 
+// 超出提示消息
+const OUT_OF_BOUNDS_MSG = '已超出有效框选范围，请在有效范围内进行框选'
+
 export class BrushManager {
     constructor() {
         this.listeners = new Set();
@@ -17,7 +20,7 @@ export class BrushManager {
         this.rangeArr = []
         this.selectIndex = 20
         this.selectedBoxIndices = new Set()  // 支持多选：选中的框索引集合
-        // 有效区域边界（像素坐标），由外部设置或自动获取
+        // 有效区域边界（像素坐标）
         this._validBounds = null  // { left, top, right, bottom }
     }
 
@@ -30,18 +33,30 @@ export class BrushManager {
         this._validBounds = null
     }
 
-    // ─── 自动获取 canvasThree 的有效区域 ─────────────────
+    // ─── 自动获取有效区域 ─────────────────────────────
+    // 优先使用 canvasNumInner（正方形数据容器），备选 canvasThree
     _autoDetectValidBounds() {
-        const canvas = document.querySelector('.canvasThree')
-        if (canvas) {
-            const rect = canvas.getBoundingClientRect()
-            this._validBounds = {
-                left: rect.left,
-                top: rect.top,
-                right: rect.right,
-                bottom: rect.bottom
+        // 按优先级尝试多个选择器
+        const selectors = ['.canvasNumInner', '.canvasThree', 'canvas.canvasThree']
+        for (const selector of selectors) {
+            const el = document.querySelector(selector)
+            if (el) {
+                const rect = el.getBoundingClientRect()
+                // 验证 rect 是否有效（宽高大于0）
+                if (rect.width > 0 && rect.height > 0) {
+                    this._validBounds = {
+                        left: rect.left,
+                        top: rect.top,
+                        right: rect.right,
+                        bottom: rect.bottom
+                    }
+                    return true
+                }
             }
         }
+        // 所有选择器都没找到有效元素
+        this._validBounds = null
+        return false
     }
 
     subscribe(cb) {
@@ -58,16 +73,15 @@ export class BrushManager {
 
     startBrush() {
         this.isBrushing = true;
-        // 启动时自动获取有效区域边界
+        // 启动时获取有效区域边界
         this._autoDetectValidBounds();
         window.addEventListener('mousedown', this.onMouseDown);
         window.addEventListener('keydown', this.onKeyDown);
     }
 
     onKeyDown = (e) => {
-        // 方向键移动选中的框（如果有选中的话），否则移动最后一个
+        // 方向键移动选中的框
         if (!this.rangeArr.length) return
-        // 多选时移动最后一个选中的框
         let targetIdx = -1
         if (this.selectedBoxIndices.size > 0) {
             const indices = Array.from(this.selectedBoxIndices)
@@ -152,11 +166,10 @@ export class BrushManager {
     }
 
     toggleSelectBox(index) {
-        // 多选模式：点击切换选中/取消，不影响其他框
         if (this.selectedBoxIndices.has(index)) {
-            this.selectedBoxIndices.delete(index)  // 取消选中
+            this.selectedBoxIndices.delete(index)
         } else {
-            this.selectedBoxIndices.add(index)  // 添加选中
+            this.selectedBoxIndices.add(index)
         }
         this._updateBoxStyles()
         this.notify(this.rangeArr)
@@ -164,9 +177,10 @@ export class BrushManager {
 
     // ─── 检查坐标是否在有效区域内 ─────────────────────
     _isInValidBounds(x, y) {
-        // 每次检查时重新获取最新边界（防止延迟渲染导致边界不准）
+        // 每次检查时重新获取最新边界
         this._autoDetectValidBounds()
-        if (!this._validBounds) return true  // 未找到canvas则不限制
+        // 如果无法获取有效区域，阻止框选（而不是允许）
+        if (!this._validBounds) return false
         const { left, top, right, bottom } = this._validBounds
         return x >= left && x <= right && y >= top && y <= bottom
     }
@@ -175,13 +189,16 @@ export class BrushManager {
     _isBoxInValidBounds(x1, y1, x2, y2) {
         // 每次检查时重新获取最新边界
         this._autoDetectValidBounds()
-        if (!this._validBounds) return true
+        // 如果无法获取有效区域，阻止框选
+        if (!this._validBounds) return false
         const { left, top, right, bottom } = this._validBounds
         return x1 >= left && y1 >= top && x2 <= right && y2 <= bottom
     }
 
     // ─── 将坐标限制在有效区域内 ──────────────────────
     _clampToValidBounds(x, y) {
+        // 每次clamp前也重新获取边界
+        this._autoDetectValidBounds()
         if (!this._validBounds) return { x, y }
         const { left, top, right, bottom } = this._validBounds
         return {
@@ -194,16 +211,26 @@ export class BrushManager {
         // 先检查是否点击了已有的框
         const clickedIdx = this._findClickedBox(e)
         if (clickedIdx >= 0) {
-            // 标记为点击已有框，不创建新框
             this._clickedExisting = true
             this.toggleSelectBox(clickedIdx)
             return
         }
 
+        // 每次mouseDown都重新获取有效区域边界
+        const foundBounds = this._autoDetectValidBounds()
+
+        // 如果找不到有效区域，阻止框选
+        if (!foundBounds || !this._validBounds) {
+            this._clickedExisting = true
+            message.warning(OUT_OF_BOUNDS_MSG)
+            return
+        }
+
         // 检查起点是否在有效区域内
-        if (!this._isInValidBounds(e.clientX, e.clientY)) {
-            this._clickedExisting = true  // 阻止创建新框
-            message.warning('已超出有效框选范围，请在有效范围内进行框选')
+        const { left, top, right, bottom } = this._validBounds
+        if (e.clientX < left || e.clientX > right || e.clientY < top || e.clientY > bottom) {
+            this._clickedExisting = true
+            message.warning(OUT_OF_BOUNDS_MSG)
             return
         }
 
@@ -228,7 +255,7 @@ export class BrushManager {
     onMouseMove = (e) => {
         if (this._clickedExisting) return
         if (this.isBrushing && this.start) {
-            // 将鼠标位置限制在有效区域内（实时限制，不允许拖出边界）
+            // 将鼠标位置严格限制在有效区域内
             const clamped = this._clampToValidBounds(e.clientX, e.clientY)
             const clampedStart = this._clampToValidBounds(this.start.x, this.start.y)
 
@@ -271,8 +298,7 @@ export class BrushManager {
                 this.pointTopLeft.x, this.pointTopLeft.y,
                 this.pointBottomRight.x, this.pointBottomRight.y
             )) {
-                // 超出有效范围，取消该次框选并提示
-                message.warning('已超出有效框选范围，请在有效范围内进行框选')
+                message.warning(OUT_OF_BOUNDS_MSG)
                 if (this.element && this.element.parentElement) {
                     document.body.removeChild(this.element);
                 }
@@ -303,7 +329,6 @@ export class BrushManager {
         const element = document.querySelector(`.selectBox${elementIndex}`)
         this.rangeArr.splice(index, 1)
         if (element && element.parentElement) element.parentElement.removeChild(element)
-        // 更新选中索引集合
         const newSet = new Set()
         for (const idx of this.selectedBoxIndices) {
             if (idx < index) {
@@ -311,7 +336,6 @@ export class BrushManager {
             } else if (idx > index) {
                 newSet.add(idx - 1)
             }
-            // idx === index 的被删除，不加入
         }
         this.selectedBoxIndices = newSet
         this._updateBoxStyles()

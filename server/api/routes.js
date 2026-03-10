@@ -542,24 +542,33 @@ router.post('/openFile', asyncHandler(async (req, res) => {
     res.json(new HttpResult(1, {}, 'filePath required'))
     return
   }
-  const { exec } = require('child_process')
-  const platform = process.platform
-  let cmd
-  if (platform === 'win32') {
-    cmd = `start "" "${filePath}"`
-  } else if (platform === 'darwin') {
-    cmd = `open "${filePath}"`
-  } else {
-    cmd = `xdg-open "${filePath}"`
+  // 检查文件是否存在
+  if (!fs.existsSync(filePath)) {
+    console.error('[Server] File not found:', filePath)
+    res.json(new HttpResult(1, {}, `文件不存在: ${filePath}`))
+    return
   }
-  exec(cmd, (err) => {
-    if (err) {
-      console.error('[Server] Open file error:', err)
-      res.json(new HttpResult(1, {}, err.message))
+  const { spawn } = require('child_process')
+  const platform = process.platform
+  try {
+    if (platform === 'win32') {
+      // Windows: 使用 cmd /c start 打开文件
+      const child = spawn('cmd', ['/c', 'start', '""', filePath], {
+        shell: true,
+        detached: true,
+        stdio: 'ignore'
+      })
+      child.unref()
+    } else if (platform === 'darwin') {
+      spawn('open', [filePath], { detached: true, stdio: 'ignore' }).unref()
     } else {
-      res.json(new HttpResult(0, {}, 'success'))
+      spawn('xdg-open', [filePath], { detached: true, stdio: 'ignore' }).unref()
     }
-  })
+    res.json(new HttpResult(0, {}, 'success'))
+  } catch (err) {
+    console.error('[Server] Open file error:', err)
+    res.json(new HttpResult(1, {}, err.message))
+  }
 }))
 
 router.post('/openFolder', asyncHandler(async (req, res) => {
@@ -568,24 +577,34 @@ router.post('/openFolder', asyncHandler(async (req, res) => {
     res.json(new HttpResult(1, {}, 'folderPath required'))
     return
   }
-  const { exec } = require('child_process')
-  const platform = process.platform
-  let cmd
-  if (platform === 'win32') {
-    cmd = `explorer "${folderPath}"`
-  } else if (platform === 'darwin') {
-    cmd = `open "${folderPath}"`
-  } else {
-    cmd = `xdg-open "${folderPath}"`
+  // 检查路径是否存在
+  if (!fs.existsSync(folderPath)) {
+    console.error('[Server] Folder not found:', folderPath)
+    res.json(new HttpResult(1, {}, `路径不存在: ${folderPath}`))
+    return
   }
-  exec(cmd, (err) => {
-    if (err) {
-      console.error('[Server] Open folder error:', err)
-      res.json(new HttpResult(1, {}, err.message))
+  const { spawn } = require('child_process')
+  const platform = process.platform
+  try {
+    if (platform === 'win32') {
+      // Windows: explorer.exe 的退出码总是1（已知行为），使用 spawn + detached 忽略退出码
+      const normalizedPath = folderPath.replace(/\//g, '\\\\')
+      const child = spawn('explorer', [normalizedPath], {
+        detached: true,
+        stdio: 'ignore'
+      })
+      child.unref()
+      // explorer 即使成功也返回退出码1，不等待结果
+    } else if (platform === 'darwin') {
+      spawn('open', [folderPath], { detached: true, stdio: 'ignore' }).unref()
     } else {
-      res.json(new HttpResult(0, {}, 'success'))
+      spawn('xdg-open', [folderPath], { detached: true, stdio: 'ignore' }).unref()
     }
-  })
+    res.json(new HttpResult(0, {}, 'success'))
+  } catch (err) {
+    console.error('[Server] Open folder error:', err)
+    res.json(new HttpResult(1, {}, err.message))
+  }
 }))
 
 router.post('/delete', asyncHandler(async (req, res) => {

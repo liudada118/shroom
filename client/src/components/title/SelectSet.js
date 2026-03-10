@@ -175,7 +175,7 @@ export default function SelectSet(props) {
 
         // 设置有效区域边界（基于 canvas 元素的位置）
         const updateValidBounds = () => {
-            const canvas = document.querySelector('.canvasThree')
+            const canvas = document.querySelector('.canvasNumInner') || document.querySelector('.canvasThree')
             if (canvas && pageInfo.brushInstance) {
                 const rect = canvas.getBoundingClientRect()
                 pageInfo.brushInstance.setValidBounds({
