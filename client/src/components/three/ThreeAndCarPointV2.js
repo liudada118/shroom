@@ -961,12 +961,12 @@ const Canvas =
 
         //模型动画
 
-        function animate() {
+        function animate(time) {
 
             const date = new Date().getTime();
             controls.current?.update();  // 必须更新
-            if (tween) tween.update(); // 👈 必须！
-            if (tween1) tween1.update(); // 👈 必须！
+            if (tween) tween.update(time); // 👈 必须传入时间参数！
+            if (tween1) tween1.update(time); // 👈 必须传入时间参数！
             render();
 
             // pointMove()
@@ -1115,6 +1115,8 @@ const Canvas =
                 }
             }
             requestAnimationFrame(animateZoom)
+            // 放大缩小时回到初始位置（整体模式）
+            actionSit('all');
         }
 
         useImperativeHandle(refs, () => ({
