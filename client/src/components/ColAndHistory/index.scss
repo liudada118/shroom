@@ -155,7 +155,7 @@
     }
 
     .navTitleItem {
-        padding: 0.6rem 1rem;
+        padding: 0.4rem 0.8rem;
         box-sizing: border-box;
         font-size: 0.875rem;
     }
@@ -181,18 +181,19 @@
 .playbackContent {
     display: flex;
     flex-direction: column;
-    height: 90%;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 
     .playbackItemContent {
-        // display: flex;
         position: relative;
-        padding: 0.65rem 1.2rem;
+        padding: 0.5rem 0.8rem;
         flex-wrap: wrap;
         justify-content: space-between;
-        // align-items: first baseline;
         border: 1px solid #3E444C;
         flex: 1;
-        overflow-y: scroll;
+        min-height: 0;
+        overflow-y: auto;
 
 
         .playbackItems {
@@ -204,12 +205,9 @@
 
         .playbackItem {
             flex: 0 0 30%;
-            // height: 5rem;
-            // background-color: #fff;
-            margin-bottom: 1rem;
+            margin-bottom: 0.6rem;
             overflow: hidden;
             margin-right: 5%;
-            // aspect-ratio: 1 / 1;
         }
 
         .playbackItem:nth-child(3n) {
@@ -421,8 +419,8 @@
     position: fixed;
     top: 0;
     left: 0;
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
     background: rgba(0, 0, 0, 0);
     z-index: 400;
 
