@@ -5,6 +5,7 @@ import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
+import { jetWhite3 } from '../../assets/util/line';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -111,8 +112,8 @@ export default function NumThree(props) {
       const cx = x * cellSize;
       const cy = y * cellSize;
 
-      // ✅ 计算背景颜色
-      const [r, g, b] = jet(0, value, i);
+      // ✅ 计算背景颜色（使用与3D统一的颜色映射）
+      const [r, g, b] = jetWhite3(0, value, i);
       ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
@@ -420,20 +421,12 @@ export default function NumThree(props) {
         uvOffsets[i * 2] = (d % 16) / 16;
         uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
 
-        // const d = Math.floor(Math.random() * 256);
-        const r = d / 255;
-        const g = 0.2;
-        const b = 1.0 - r;
-
-        colorArray[i * 3 + 0] = r;
-        colorArray[i * 3 + 1] = g;
-        colorArray[i * 3 + 2] = b;
-
-        // const rgb = jet(0 , 30 , d)
-
-        // colorArray[i * 3 + 0] = rgb[0];
-        // colorArray[i * 3 + 1] = rgb[1];
-        // colorArray[i * 3 + 2] = rgb[2];
+        // 使用与3D统一的颜色映射
+        const colorMax = textureMaxRef.current || 22;
+        const rgb = jetWhite3(0, colorMax, d);
+        colorArray[i * 3 + 0] = rgb[0] / 255;
+        colorArray[i * 3 + 1] = rgb[1] / 255;
+        colorArray[i * 3 + 2] = rgb[2] / 255;
 
         geometry.setAttribute("instanceColor", new THREE.InstancedBufferAttribute(colorArray, 3));
         geometry.attributes.instanceColor.needsUpdate = true;
@@ -466,19 +459,8 @@ export default function NumThree(props) {
 
     const wheelTarget = canvasNum;
     const applyMatrixColor = (value, colorMax) => {
-      const [tr, tg, tb] = jet(0, colorMax, value).map((v) => v / 255);
-      const vr = value / 255;
-      let r = tr * vr;
-      let g = tg * 0.2;
-      let b = tb * (1 - vr);
-      r = Math.pow(Math.min(1, r * 1.5), 1 / 2.2);
-      g = Math.pow(Math.min(1, g * 1.5), 1 / 2.2);
-      b = Math.pow(Math.min(1, b * 1.5), 1 / 2.2);
-      return [
-        Math.round(r * 255),
-        Math.round(g * 255),
-        Math.round(b * 255)
-      ];
+      // 使用与3D统一的颜色映射
+      return jetWhite3(0, colorMax, value);
     };
 
     const drawMagnifier = (col, row) => {
