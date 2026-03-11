@@ -1,49 +1,59 @@
 import React, { useState } from 'react';
-import { AppstoreOutlined, MailOutlined, SettingOutlined } from '@ant-design/icons';
-import { Menu } from 'antd';
+import { AppstoreOutlined, PlusCircleOutlined, UnorderedListOutlined, SettingOutlined } from '@ant-design/icons';
+import { Menu, Layout } from 'antd';
 import Addequip from './addEquip/Addequip';
 import EquipList from './equipList/EquipList';
 import SystemSetting from './systemSetting/SystemSetting';
+
+const { Sider, Content } = Layout;
+
 const items = [
     {
         key: 'grp',
         label: '设备管理',
         type: 'group',
         children: [
-            { key: '0', label: '设备添加' },
-            { key: '1', label: '设备列表' },
-            { key: '2', label: '配置系统' },
+            { key: '0', label: '设备添加', icon: <PlusCircleOutlined /> },
+            { key: '1', label: '设备列表', icon: <UnorderedListOutlined /> },
+            { key: '2', label: '配置系统', icon: <SettingOutlined /> },
         ],
     },
 ];
 
 const componentArr = {
-    0 : <Addequip />,
-    1 :  <EquipList />,
-    2 : <SystemSetting />
+    0: <Addequip />,
+    1: <EquipList />,
+    2: <SystemSetting />
 }
-const App = () => {
 
+const App = () => {
     const [key, setKey] = useState('2')
     const onClick = e => {
-        console.log('click ', e.key);
         setKey(e.key)
     };
     return (
-        <div style={{ padding: 10, display: 'flex' }}>
-            <Menu
-                onClick={onClick}
-                style={{ width: 256 }}
-                defaultSelectedKeys={[key]}
-                defaultOpenKeys={[key]}
-                mode="inline"
-                items={items}
-            />
-            <div style={{ marginLeft: 10 }}>{
-                // key == '1' ? <Addequip /> : <EquipList />
-                componentArr[key]
-            }</div>
-        </div>
+        <Layout style={{ minHeight: '100vh', background: '#f5f7fa' }}>
+            <Sider
+                width={200}
+                style={{
+                    background: '#fff',
+                    borderRight: '1px solid #f0f0f0',
+                    boxShadow: '2px 0 8px rgba(0,0,0,0.04)'
+                }}
+            >
+                <Menu
+                    onClick={onClick}
+                    style={{ borderRight: 'none', paddingTop: 8 }}
+                    defaultSelectedKeys={[key]}
+                    defaultOpenKeys={[key]}
+                    mode="inline"
+                    items={items}
+                />
+            </Sider>
+            <Content style={{ padding: '16px 24px', overflow: 'auto' }}>
+                {componentArr[key]}
+            </Content>
+        </Layout>
     );
 };
 export default App;
