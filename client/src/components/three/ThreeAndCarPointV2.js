@@ -239,7 +239,13 @@ const Canvas =
 
             //FlyControls
             controls.current = new TrackballControls(camera.current, renderer.domElement);
-            // controls.current?.noZoom = true;
+            // 缩放优化配置
+            controls.current.zoomSpeed = 0.8;        // 缩放灵敏度（默认1.2，降低使滚轮更平滑）
+            controls.current.rotateSpeed = 2.0;      // 旋转灵敏度
+            controls.current.panSpeed = 0.8;          // 平移灵敏度
+            controls.current.minDistance = 12;        // 最近距离（对应约1000%）
+            controls.current.maxDistance = 1200;      // 最远距离（对应约10%）
+            controls.current.dynamicDampingFactor = 0.15; // 阻尼系数，使缩放有惯性过渡
             controls.current?.update();
             window.addEventListener("resize", onWindowResize);
 
@@ -1092,7 +1098,23 @@ const Canvas =
         function changeCamera(value) {
             // 限制缩放范围 10%-1000%
             const clampedValue = Math.max(10, Math.min(1000, value))
-            if (camera.current) camera.current.position.z = (-120 * 100 / clampedValue);
+            if (!camera.current) return
+            const targetZ = -120 * 100 / clampedValue
+            const startZ = camera.current.position.z
+            // 平滑过渡动画（200ms）
+            const duration = 200
+            const startTime = performance.now()
+            function animateZoom(now) {
+                const elapsed = now - startTime
+                const progress = Math.min(elapsed / duration, 1)
+                // easeOutCubic 缓动函数，先快后慢更自然
+                const eased = 1 - Math.pow(1 - progress, 3)
+                camera.current.position.z = startZ + (targetZ - startZ) * eased
+                if (progress < 1) {
+                    requestAnimationFrame(animateZoom)
+                }
+            }
+            requestAnimationFrame(animateZoom)
         }
 
         useImperativeHandle(refs, () => ({
@@ -1103,35 +1125,27 @@ const Canvas =
         }));
         //   视图数据
 
+        // 用于滚轮实时更新的 requestAnimationFrame ID
+        let wheelRAF = null
+
         function wheel(event) {
-
-            // 清除之前的计时器，避免在短时间内多次触发
-            if (timer) {
-                clearTimeout(timer);
-            }
-
-            // 限制camera.position.z在10%-1000%对应的范围内
-            // 10% -> z = -1200, 1000% -> z = -12
+            // 限制 camera.position.z 在 10%-1000% 对应的范围内
             const minZ = -120 * 100 / 10   // -1200 (对应10%)
             const maxZ = -120 * 100 / 1000 // -12   (对应1000%)
             if (camera.current) {
                 camera.current.position.z = Math.max(minZ, Math.min(maxZ, camera.current.position.z))
             }
 
-            // 设置一个新的计时器，例如 300毫秒后触发
-            timer = setTimeout(() => {
-                console.log('鼠标滚轮滑动结束');
-                // 在这里执行滚动结束后的操作，例如加载更多内容
-
-                let zoomValue = Math.floor(-120 * 100 / camera.current.position.z)
-                // clamp到10%-1000%
-                zoomValue = Math.max(10, Math.min(1000, zoomValue))
-                props.changeViewProp(zoomValue)
-                timer = null; // 重置 timer 变量
-
-            }, 400); // 300毫秒为一个示例值
-
-
+            // 使用 requestAnimationFrame 实时更新百分比显示，避免延迟感
+            if (wheelRAF) cancelAnimationFrame(wheelRAF)
+            wheelRAF = requestAnimationFrame(() => {
+                if (camera.current) {
+                    let zoomValue = Math.round(-120 * 100 / camera.current.position.z)
+                    zoomValue = Math.max(10, Math.min(1000, zoomValue))
+                    props.changeViewProp(zoomValue)
+                }
+                wheelRAF = null
+            })
         }
 
         function move(position, time, particles) {
@@ -1293,6 +1307,7 @@ const Canvas =
             return () => {
                 renderer.setAnimationLoop(null);
                 document.removeEventListener("wheel", wheel)
+                if (wheelRAF) cancelAnimationFrame(wheelRAF)
                 cleanupThree({ scene, renderer, controls: controls.current })
             };
         }, []);
