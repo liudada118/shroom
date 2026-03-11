@@ -15,7 +15,7 @@ import {
 } from "../../util/util";
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
-import { lineInterp } from "../../assets/util/line";
+import { jetWhite3, lineInterp } from "../../assets/util/line";
 import { getSettingValue, getStatus } from "../../store/equipStore";
 
 let camera
@@ -165,6 +165,8 @@ const Canvas = memo(React.forwardRef((props, refs) => {
     container.appendChild(renderer.domElement);
 
     renderer.setClearColor(0x000000);
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 
     //FlyControls
     controls = new TrackballControls(camera, renderer.domElement);
@@ -716,7 +718,7 @@ const Canvas = memo(React.forwardRef((props, refs) => {
         positions[k + 2] = ix * SEPARATION - (AMOUNTX * SEPARATION) / 2; // z
 
         let rgb
-        rgb = jet(0, color, smoothBig[l]);
+        rgb = jetWhite3(0, color, smoothBig[l]);
 
         colors[k] = rgb[0] / 255;
         colors[k + 1] = rgb[1] / 255;

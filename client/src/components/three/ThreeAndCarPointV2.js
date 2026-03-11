@@ -234,10 +234,8 @@ const Canvas =
 
             renderer.setClearColor(0x000000);
 
-            renderer.outputColorSpace = THREE.SRGBColorSpace;
-            renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            // 亮度调节
-            renderer.toneMappingExposure = 1.0; // 往上调更亮，往下调更暗
+            renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+            renderer.toneMapping = THREE.NoToneMapping;
 
             //FlyControls
             controls.current = new TrackballControls(camera.current, renderer.domElement);
