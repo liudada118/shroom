@@ -77,6 +77,29 @@ class ruler {
         this.tempStart = null
 
         this.onClick = (e) => {
+            // 如果正在绘制中（已有起点，等待终点），直接完成绘制，跳过命中检测
+            if (this.tempStart) {
+                this.clickIndex++
+                this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
+
+                const startPoint = this.listeners[this.listeners.length - 2]
+                const endPoint = { pageX: e.pageX, pageY: e.pageY }
+                const startGrid = this._toGrid(startPoint)
+                const endGrid = this._toGrid(endPoint)
+                const x = Math.abs(endGrid.x - startGrid.x) * this.distanceX
+                const y = Math.abs(endGrid.y - startGrid.y) * this.distanceY
+                const distance = (Math.sqrt(x * x + y * y)).toFixed(0)
+
+                this.rulerLines.push({
+                    startGrid,
+                    endGrid,
+                    distance: `${distance}mm`
+                })
+                this.tempStart = null
+                this._redraw()
+                return
+            }
+
             // 1. 先检查是否点击了某个选中量尺的删除按钮
             const deleteIndex = this._hitTestDeleteBtn(e)
             if (deleteIndex >= 0) {
@@ -110,32 +133,11 @@ class ruler {
                 return
             }
 
-            // 3. 没有点击到已有量尺，进入绘制逻辑
+            // 3. 没有点击到已有量尺，进入绘制起点逻辑
             this.clickIndex++
             this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
-
-            if (determineParity(this.clickIndex)) {
-                // 完成一条量尺
-                const startPoint = this.listeners[this.listeners.length - 2]
-                const endPoint = { pageX: e.pageX, pageY: e.pageY }
-                const startGrid = this._toGrid(startPoint)
-                const endGrid = this._toGrid(endPoint)
-                const x = Math.abs(endGrid.x - startGrid.x) * this.distanceX
-                const y = Math.abs(endGrid.y - startGrid.y) * this.distanceY
-                const distance = (Math.sqrt(x * x + y * y)).toFixed(0)
-
-                this.rulerLines.push({
-                    startGrid,
-                    endGrid,
-                    distance: `${distance}mm`
-                })
-                this.tempStart = null
-                this._redraw()
-            } else {
-                // 绘制起点
-                this.tempStart = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
-                this._redraw()
-            }
+            this.tempStart = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
+            this._redraw()
         }
     }
 
