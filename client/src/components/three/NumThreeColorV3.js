@@ -5,7 +5,6 @@ import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
-import { jetWhite3 } from '../../assets/util/line';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -64,8 +63,6 @@ export default function NumThree(props) {
   const gridRef = useRef({ width: 0, height: 0 });
   const invertYRef = useRef(false);
   const textureMaxRef = useRef(22);
-  const magnifierPosRef = useRef({ col: -1, row: -1 });
-  const drawMagnifierRef = useRef(null);
   // const pageRef = useRef(pageInfo)
 
   // useEffect(() => {
@@ -112,8 +109,8 @@ export default function NumThree(props) {
       const cx = x * cellSize;
       const cy = y * cellSize;
 
-      // ✅ 计算背景颜色（使用与3D统一的颜色映射）
-      const [r, g, b] = jetWhite3(0, value, i);
+      // ✅ 计算背景颜色
+      const [r, g, b] = jet(0, value, i);
       ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
@@ -423,12 +420,14 @@ export default function NumThree(props) {
         uvOffsets[i * 2] = (d % 16) / 16;
         uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
 
-        // 使用与3D统一的颜色映射
-        const colorMax = textureMaxRef.current || 22;
-        const rgb = jetWhite3(0, colorMax, d);
-        colorArray[i * 3 + 0] = rgb[0] / 255;
-        colorArray[i * 3 + 1] = rgb[1] / 255;
-        colorArray[i * 3 + 2] = rgb[2] / 255;
+        // const d = Math.floor(Math.random() * 256);
+        const r = d / 255;
+        const g = 0.2;
+        const b = 1.0 - r;
+
+        colorArray[i * 3 + 0] = r;
+        colorArray[i * 3 + 1] = g;
+        colorArray[i * 3 + 2] = b;
 
         // const rgb = jet(0 , 30 , d)
 
@@ -446,11 +445,6 @@ export default function NumThree(props) {
       renderer.render(scene, camera);
       oldTime = new Date().getTime()
 
-      // 放大镜实时更新：即使鼠标不动，数据变化时也重绘放大镜
-      if (magnifierEnabledRef.current && drawMagnifierRef.current && magnifierPosRef.current.col >= 0) {
-        drawMagnifierRef.current(magnifierPosRef.current.col, magnifierPosRef.current.row);
-      }
-
     }
 
     geometry.setAttribute('uvOffset', new THREE.InstancedBufferAttribute(uvOffsets, 2));
@@ -467,8 +461,19 @@ export default function NumThree(props) {
 
     const wheelTarget = canvasNum;
     const applyMatrixColor = (value, colorMax) => {
-      // 使用与3D统一的颜色映射
-      return jetWhite3(0, colorMax, value);
+      const [tr, tg, tb] = jet(0, colorMax, value).map((v) => v / 255);
+      const vr = value / 255;
+      let r = tr * vr;
+      let g = tg * 0.2;
+      let b = tb * (1 - vr);
+      r = Math.pow(Math.min(1, r * 1.5), 1 / 2.2);
+      g = Math.pow(Math.min(1, g * 1.5), 1 / 2.2);
+      b = Math.pow(Math.min(1, b * 1.5), 1 / 2.2);
+      return [
+        Math.round(r * 255),
+        Math.round(g * 255),
+        Math.round(b * 255)
+      ];
     };
 
     const drawMagnifier = (col, row) => {
@@ -508,7 +513,6 @@ export default function NumThree(props) {
       ctx.strokeRect(2 * cellSize + 1, 2 * cellSize + 1, cellSize - 2, cellSize - 2);
       ctx.lineWidth = 1;
     };
-    drawMagnifierRef.current = drawMagnifier;
 
     const handleMouseMove = (event) => {
       if (!magnifierEnabledRef.current) return;
@@ -533,12 +537,10 @@ export default function NumThree(props) {
       if (invertYRef.current) {
         row = height - 1 - row;
       }
-      magnifierPosRef.current = { col, row };
       drawMagnifier(col, row);
     };
 
     const handleMouseLeave = () => {
-      magnifierPosRef.current = { col: -1, row: -1 };
       const ctx = magnifierCtxRef.current;
       const canvas = magnifierCanvasRef.current;
       if (ctx && canvas && magnifierEnabledRef.current) {
