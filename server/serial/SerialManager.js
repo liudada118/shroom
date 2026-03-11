@@ -33,6 +33,43 @@ const RECONNECT_INTERVAL = 3000
 const MIN_HZ_INTERVAL = 50
 const ONLINE_THRESHOLD = 1000
 const DATA_SEND_INTERVAL = 80
+const MAX_PORT_DATA_KEEP = 2  // 最多保留的端口数据数量
+
+/**
+ * 记录端口连接历史并清理超出限制的旧端口数据
+ * 只保留最新 MAX_PORT_DATA_KEEP 个端口的数据
+ * @param {string} newPortPath 新连接的端口路径
+ */
+function trackPortAndCleanup(newPortPath) {
+  // 移除已存在的同路径记录（避免重复）
+  state.portHistory = state.portHistory.filter(p => p.path !== newPortPath)
+  // 添加新端口到历史记录末尾
+  state.portHistory.push({ path: newPortPath, connectedAt: Date.now() })
+  console.log(`[PortCleanup] Port history updated: [${state.portHistory.map(p => p.path).join(', ')}]`)
+
+  // 如果端口数超过限制，清理最旧的
+  while (state.portHistory.length > MAX_PORT_DATA_KEEP) {
+    const oldest = state.portHistory.shift()
+    if (oldest) {
+      const oldPath = oldest.path
+      // 关闭旧端口
+      if (state.parserArr[oldPath]?.port?.isOpen) {
+        try {
+          state.parserArr[oldPath].port.close()
+          console.log(`[PortCleanup] Closed old port: ${oldPath}`)
+        } catch (e) {
+          console.warn(`[PortCleanup] Failed to close old port ${oldPath}: ${e.message}`)
+        }
+      }
+      // 清理旧端口数据
+      delete state.parserArr[oldPath]
+      delete state.dataMap[oldPath]
+      delete state.macInfo[oldPath]
+      delete state.oldTimeObj[oldPath]
+      console.log(`[PortCleanup] Cleaned up old port data: ${oldPath}`)
+    }
+  }
+}
 
 // ═══════════════════════════════════════════════════════════
 //  Phase 2: Baud Rate Auto-Detection
@@ -714,6 +751,9 @@ async function connectPort(broadcastFn, onTimerStart) {
     dataItem.deviceClass = deviceClass
     dataItem.baudRate = detectedBaud
 
+    // 记录端口连接顺序并清理超出限制的旧端口数据
+    trackPortAndCleanup(portPath)
+
     // -- Phase 4: Bind data handler & prepare MAC resolution task --
     bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
 
@@ -830,6 +870,7 @@ async function stopPort() {
     }
   })
 
+  state.portHistory = []
   if (state.playtimer) clearInterval(state.playtimer)
   state.MaxHZ = undefined
 }
@@ -855,6 +896,60 @@ function startReconnectMonitor() {
     if (!Object.keys(state.parserArr).length) return
 
     let hasDisconnected = false
+
+    // 主动检测新端口插入（端口更换自动重连）
+    if (!_reconnectScanning) {
+      try {
+        let availablePorts = await SerialPort.list()
+        availablePorts = getPort(availablePorts)
+        const knownPaths = Object.keys(state.parserArr)
+        const brandNewPorts = availablePorts.filter(p => !knownPaths.includes(p.path))
+
+        if (brandNewPorts.length > 0) {
+          _reconnectScanning = true
+          console.log(`[Serial] Detected ${brandNewPorts.length} new port(s): ${brandNewPorts.map(p => p.path).join(', ')}`)
+          for (const newPortInfo of brandNewPorts) {
+            const newPath = newPortInfo.path
+            try {
+              const detectedBaud = await detectBaudRate(newPath)
+              if (detectedBaud) {
+                await new Promise(r => setTimeout(r, 200))
+                const splitBuffer = Buffer.from(constantObj.splitArr)
+                const conn = await openStableConnection(newPath, detectedBaud, splitBuffer)
+                state.parserArr[newPath] = {
+                  port: conn.port,
+                  parser: conn.parser,
+                  baudRate: detectedBaud,
+                }
+                state.dataMap[newPath] = state.dataMap[newPath] || {}
+                const { BAUD_DEVICE_MAP } = constantObj
+                state.dataMap[newPath].deviceClass = BAUD_DEVICE_MAP[detectedBaud] || 'unknown'
+                state.dataMap[newPath].baudRate = detectedBaud
+
+                // 记录新端口并清理超出限制的旧端口数据
+                trackPortAndCleanup(newPath)
+
+                // 绑定数据处理器
+                bindDataHandler(newPath, state.parserArr[newPath], state.dataMap[newPath], _reconnectBroadcastFn || (() => {}), _reconnectOnTimerStart, availablePorts)
+
+                console.log(`[Serial] Auto-connected new port: ${newPath} @ ${detectedBaud}`)
+                if (_reconnectBroadcastFn) {
+                  _reconnectBroadcastFn(JSON.stringify({
+                    reconnected: { newPath, baudRate: detectedBaud, reason: 'new_port_detected' }
+                  }))
+                }
+              }
+            } catch (connErr) {
+              console.warn(`[Serial] Auto-connect new port ${newPath} failed: ${connErr.message}`)
+            }
+          }
+          _reconnectScanning = false
+        }
+      } catch (scanErr) {
+        console.warn(`[Serial] New port scan error: ${scanErr.message}`)
+        _reconnectScanning = false
+      }
+    }
 
     for (const portPath of Object.keys(state.parserArr)) {
       const item = state.parserArr[portPath]
@@ -919,6 +1014,9 @@ function startReconnectMonitor() {
                       delete state.dataMap[portPath]
                     }
                     delete state.parserArr[portPath]
+
+                    // 记录新端口连接顺序并清理超出限制的旧端口数据
+                    trackPortAndCleanup(newPath)
 
                     // 重新绑定数据处理器
                     const dataItem = state.dataMap[newPath] || {}

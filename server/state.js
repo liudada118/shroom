@@ -13,6 +13,7 @@ const state = {
   dataMap: {},              // 串口数据缓存 { portPath: { type, arr, stamp, ... } }
   macInfo: {},              // 设备 MAC 信息
   linkIngPort: [],
+  portHistory: [],            // 端口连接时间顺序 [{ path, connectedAt }]
 
   // ─── 帧率控制 ────────────────────────────────────────
   HZ: 30,                   // 发送频率
@@ -52,6 +53,7 @@ function resetSerialState() {
   state.parserArr = {}
   state.dataMap = {}
   state.macInfo = {}
+  state.portHistory = []
   state.HZ = 30
   state.MaxHZ = undefined
   state.sendDataLength = 0
