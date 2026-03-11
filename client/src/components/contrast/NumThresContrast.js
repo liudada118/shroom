@@ -21,7 +21,7 @@ export default function NumThresContrast(props) {
 
     return (
         <>{isMoreMatrix(systemType) ?
-            displayType.includes('back') ? <div style={{ display: 'flex', width: '100vw', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }}>
+            displayType.includes('back') ? <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }}>
 
                 <div style={{ display: 'flex', flexDirection: 'column', position: 'relative', alignItems: 'center' }}>
                     <NumThree2 width={50} height={64} sitData={sitData} classIndex={1} />
