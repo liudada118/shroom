@@ -624,7 +624,7 @@ const ColAndHistory = memo((props) => {
 
             <Drawer zindex={2} title={t('history')} show={historyDrawer} setShow={sethistoryDrawer} close={close} >
                 <Input
-                    style={{ backgroundColor: '#202327', border: 0, color: "#E6EBF0", marginBottom: '1.5rem' }}
+                    style={{ backgroundColor: '#202327', border: 0, color: "#E6EBF0", marginBottom: '0.75rem' }}
                     placeholder={t('searchPlaceholder')}
                     onChange={(e) => { setSearchInfo(e.target.value) }}
                     prefix={<i className='iconfont' style={{ color: '#E6EBF0' }}>&#xe61f;</i>}
@@ -997,11 +997,12 @@ const ColAndHistory = memo((props) => {
 
                     {/* ─── 下载路径区域 ─── */}
                     <div className="downloadPathSection" style={{
-                        padding: '0.75rem 1rem',
+                        padding: '0.5rem 0.6rem',
                         borderTop: '1px solid #3E444C',
                         marginTop: 'auto',
+                        flexShrink: 0,
                     }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                             <span style={{ color: '#8794A1', fontSize: '0.75rem' }}>{t('storagePath')}</span>
                             <div style={{ display: 'flex', gap: '0.5rem' }}>
                                 <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem' }} onClick={handleSelectFolder}>{t('modify')}</span>

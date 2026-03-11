@@ -8,34 +8,37 @@
     border: 1px solid #292D32;
     border-right: 0px;
     transition: all 0.5s ease-in-out;
-    padding: 1.7rem 2.1rem;
+    padding: 1rem 1.2rem;
     box-sizing: border-box;
     z-index: 100;
-    // height: 100%;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 
     .iconfont {
         font-size: 0.875rem;
     }
 
     .drawerTitle {
-
         display: flex;
         align-items: center;
         justify-content: space-between;
+        flex-shrink: 0;
+        padding-bottom: 0.5rem;
 
         .titleInfo {
             color: #E6EBF0;
             font-size: 1.125rem;
         }
-
     }
 
     .drawerInside {
         flex: 1;
-        overflow-y: scroll;
-        padding-top: 1rem;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        padding-top: 0.5rem;
+        min-height: 0;
     }
 
     .drawerInside::-webkit-scrollbar {
