@@ -369,8 +369,7 @@ const Canvas =
             back: {
                 dataConfig: backConfig,
                 name: 'back',
-                // 增大z方向scale使靠背云图变高，匹配头枕位置
-                pointConfig: { position: [2.5, -12, 5], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.006, 0.0028] },
+                pointConfig: { position: [2.5, -15, 0], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.002] },
                 // pointConfig: { position: [2.5, -28, -50], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.002] },
             },
             sit: {
