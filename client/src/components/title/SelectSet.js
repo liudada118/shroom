@@ -39,13 +39,25 @@ function SelectBoxPanel({ boxData, boxIndex, matrixInfo, sysType, pageInfo, type
     useEffect(() => {
         if (!boxData) return
         try {
-            const matrix = colSelectMatrix('canvasThree', boxData, systemPointConfig[type])
+            const config = systemPointConfig[type]
+            const matrix = colSelectMatrix('canvasThree', boxData, config)
             if (matrix) {
+                const w = matrix.xEnd - matrix.xStart
+                const h = matrix.yEnd - matrix.yStart
+                // 校验框选区域是否超出传感点数范围
+                if (config) {
+                    if (matrix.xStart + w > config.width) {
+                        message.warning(`初始横坐标X(${matrix.xStart}) + 框选区域长度(${w}) = ${matrix.xStart + w}，超过横向传感点数(${config.width})，请调整框选范围`)
+                    }
+                    if (matrix.yStart + h > config.height) {
+                        message.warning(`初始纵坐标Y(${matrix.yStart}) + 框选区域宽度(${h}) = ${matrix.yStart + h}，超过纵向传感点数(${config.height})，请调整框选范围`)
+                    }
+                }
                 setRect({
                     xStart: matrix.xStart,
                     yStart: matrix.yStart,
-                    width: matrix.xEnd - matrix.xStart,
-                    height: matrix.yEnd - matrix.yStart
+                    width: w,
+                    height: h
                 })
             }
         } catch (e) { }
