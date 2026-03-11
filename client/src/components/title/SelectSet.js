@@ -86,6 +86,17 @@ export default function SelectSet(props) {
                 obj.width = obj.xEnd - obj.xStart
                 obj.height = obj.yEnd - obj.yStart
                 console.log(obj)
+
+                // 校验框选范围是否超出传感点数
+                const maxW = systemPointConfig[type].width
+                const maxH = systemPointConfig[type].height
+                if (obj.xStart + obj.width > maxW) {
+                    message.warning(`初始横坐标X + 框选区域长度 不能超过横向传感点数(${maxW}个)`)
+                }
+                if (obj.yStart + obj.height > maxH) {
+                    message.warning(`初始纵坐标Y + 框选区域宽度 不能超过纵向传感点数(${maxH}个)`)
+                }
+
                 return { ...obj };
             });
         }
@@ -134,13 +145,16 @@ export default function SelectSet(props) {
                         return
                     }
 
-                    if (rect.xStart + rect.width > systemPointConfig[sysType].width) {
-                        message.error('初始横坐标加长不能超过横向传感点数(50个)')
+                    const maxW = systemPointConfig[sysType].width
+                    const maxH = systemPointConfig[sysType].height
+
+                    if (rect.xStart + rect.width > maxW) {
+                        message.warning(`初始横坐标X + 框选区域长度 不能超过横向传感点数(${maxW}个)`)
                         return
                     }
 
-                    if (rect.yStart + rect.height > systemPointConfig[sysType].height) {
-                        message.error('初始纵坐标加宽不能超过横向传感点数(50个)')
+                    if (rect.yStart + rect.height > maxH) {
+                        message.warning(`初始纵坐标Y + 框选区域宽度 不能超过纵向传感点数(${maxH}个)`)
                         return
                     }
                     const selectInfo = calMatrixToSelect('canvasThree', { xStart: rect.xStart, yStart: rect.yStart, sWidth: rect.width, sHeight: rect.height }, systemPointConfig[sysType])
