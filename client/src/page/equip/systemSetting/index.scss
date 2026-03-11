@@ -1,13 +1,208 @@
-.sysSetting {
-    .ant-radio-wrapper {
-        align-items: center;
-        width: 6rem;
+.sys-setting-container {
+    padding: 4px 0;
+    max-width: 960px;
+    min-width: 680px;
+
+    /* ── 页面标题 ── */
+    .page-header {
+        margin-bottom: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
     }
-    .systitle{
-        font-weight: bold;
+
+    /* ── 通用卡片 ── */
+    .setting-card {
+        margin-bottom: 14px;
+        border-radius: 8px;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+        transition: box-shadow 0.2s;
+
+        &:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
+        }
+
+        .ant-card-head {
+            min-height: 42px;
+            padding: 0 16px;
+            border-bottom: 1px solid #f0f0f0;
+
+            .ant-card-head-title {
+                padding: 10px 0;
+                font-size: 14px;
+                font-weight: 600;
+            }
+        }
+
+        .ant-card-body {
+            padding: 16px;
+        }
+    }
+
+    /* ── 设置行 ── */
+    .setting-row {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+
+        .setting-label {
+            flex-shrink: 0;
+            width: 72px;
+            font-weight: 500;
+            color: #333;
+            text-align: right;
+
+            &::after {
+                content: ':';
+                margin-left: 2px;
+            }
+        }
+    }
+
+    /* ── 复选框区域 ── */
+    .checkbox-area {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px;
+
+        .ant-checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .ant-tag {
+            margin: 0;
+            cursor: pointer;
+            user-select: none;
+        }
+    }
+
+    /* ── 折叠面板 ── */
+    .system-collapse {
+        background: transparent;
+        border: none;
+
+        .ant-collapse-item {
+            margin-bottom: 8px;
+            border: 1px solid #eee;
+            border-radius: 6px !important;
+            overflow: hidden;
+
+            &:last-child {
+                margin-bottom: 0;
+            }
+
+            .ant-collapse-header {
+                padding: 8px 16px !important;
+                background: #fafbfc;
+                align-items: center !important;
+                transition: background 0.2s;
+
+                &:hover {
+                    background: #f0f5ff;
+                }
+            }
+
+            .ant-collapse-content-box {
+                padding: 12px !important;
+            }
+        }
+    }
+
+    /* ── 参数表格 ── */
+    .param-table {
+        .ant-table-thead > tr > th {
+            background: #f7f9fc;
+            font-weight: 600;
+            font-size: 13px;
+            padding: 8px 12px;
+            color: #555;
+        }
+
+        .ant-table-tbody > tr > td {
+            padding: 6px 12px;
+        }
+
+        .ant-table-tbody > tr:hover > td {
+            background: #f0f5ff;
+        }
+
+        .ant-input-number {
+            border-radius: 4px;
+
+            &:hover {
+                border-color: #1677ff;
+            }
+
+            &:focus,
+            &.ant-input-number-focused {
+                border-color: #1677ff;
+                box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
+            }
+        }
+    }
+
+    /* ── 配置输出区域 ── */
+    .config-output {
+        background: #1e1e2e;
+        border-radius: 8px;
+        overflow: hidden;
+        max-height: 320px;
+        overflow-y: auto;
+
+        .config-output-header {
+            padding: 8px 16px;
+            background: #292a3c;
+            border-bottom: 1px solid #363748;
+        }
+
+        pre {
+            margin: 0;
+            padding: 14px 16px;
+            color: #cdd6f4;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+    }
+
+    /* ── Radio Button 样式增强 ── */
+    .ant-radio-group {
+        .ant-radio-button-wrapper {
+            border-radius: 4px;
+            margin-right: 6px;
+
+            &:first-child {
+                border-radius: 4px;
+            }
+
+            &:last-child {
+                border-radius: 4px;
+                margin-right: 0;
+            }
+        }
     }
 }
 
-.mb10px{
-    margin-bottom: 10px;
+/* ── 响应式 ── */
+@media (max-width: 768px) {
+    .sys-setting-container {
+        min-width: auto;
+        padding: 8px;
+
+        .setting-row {
+            flex-direction: column;
+            align-items: flex-start;
+
+            .setting-label {
+                text-align: left;
+                width: auto;
+            }
+        }
+    }
 }
