@@ -1,12 +1,12 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
     Checkbox, Radio, Input, Button, Card, Table, Tag,
-    Space, Divider, Typography, message, Collapse, Tooltip, InputNumber
+    Space, Divider, Typography, message, Collapse, Tooltip, InputNumber, Spin
 } from 'antd';
 import {
     SettingOutlined, SaveOutlined, AppstoreOutlined,
     ControlOutlined, FileTextOutlined,
-    CopyOutlined, InfoCircleOutlined
+    CopyOutlined, InfoCircleOutlined, LoadingOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import './index.scss'
 import axios from 'axios';
@@ -24,7 +24,6 @@ const systemOptions = [
 ];
 
 const plainOptions = ['bed', 'car', 'endi', 'bigHand', 'hand'];
-const defaultCheckedList = ['bed', 'car', 'endi', 'bigHand', 'hand'];
 
 const systemNameMap = {
     bed: '床垫',
@@ -51,32 +50,85 @@ const paramConfig = [
     { title: '响应速度', key: 'coherent', unit: '', desc: '帧间平滑度，数值越大响应越平缓' }
 ];
 
+/* ────── 前端硬编码的默认值（后端不可用时的兜底） ────── */
+const fallbackConfig = {
+    optimalObj: {
+        bed:     { gauss: 2.6, color: 355,  filter: 6,  height: 2.02, coherent: 1 },
+        car:     { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 },
+        endi:    { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 },
+        bigHand: { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 },
+        hand:    { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 }
+    },
+    maxObj: {
+        bed:     { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
+        car:     { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
+        endi:    { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
+        bigHand: { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
+        hand:    { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
+    }
+};
+
 const CheckboxGroup = Checkbox.Group;
 
 export default function SystemSetting() {
-    const [checkedList, setCheckedList] = useState(defaultCheckedList);
+    const [checkedList, setCheckedList] = useState(plainOptions);
     const checkAll = plainOptions.length === checkedList.length;
     const indeterminate = checkedList.length > 0 && checkedList.length < plainOptions.length;
     const [sysValue, setSysValue] = useState('bed');
     const [config, setConfig] = useState('');
     const [loading, setLoading] = useState(false);
+    const [pageLoading, setPageLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
 
-    const [inputValue, setInputValue] = useState({
-        optimalObj: {
-            bed:     { gauss: 2.6, color: 355,  filter: 6,  height: 2.02, coherent: 1 },
-            car:     { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 },
-            endi:    { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 },
-            bigHand: { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 },
-            hand:    { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 }
-        },
-        maxObj: {
-            bed:     { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
-            car:     { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
-            endi:    { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
-            bigHand: { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
-            hand:    { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
-        }
-    });
+    const [inputValue, setInputValue] = useState(fallbackConfig);
+
+    /* ────── 页面加载时从后端读取默认配置 ────── */
+    const loadConfigFromBackend = () => {
+        setPageLoading(true);
+        setLoadError(false);
+        axios.get(`${localAddress}/getSystem`)
+            .then((res) => {
+                const result = res.data.data;
+                if (result) {
+                    // 读取默认系统类型
+                    if (result.value) {
+                        setSysValue(result.value);
+                    }
+                    // 读取可选系统列表
+                    if (result.typeArr && Array.isArray(result.typeArr)) {
+                        setCheckedList(result.typeArr);
+                    }
+                    // 读取 optimalObj 和 maxObj
+                    const newInputValue = { optimalObj: {}, maxObj: {} };
+                    for (const sysKey of plainOptions) {
+                        // optimalObj: 后端数据优先，缺失则用 fallback
+                        newInputValue.optimalObj[sysKey] = {
+                            ...fallbackConfig.optimalObj[sysKey],
+                            ...(result.optimalObj && result.optimalObj[sysKey] ? result.optimalObj[sysKey] : {})
+                        };
+                        // maxObj: 后端数据优先，缺失则用 fallback
+                        newInputValue.maxObj[sysKey] = {
+                            ...fallbackConfig.maxObj[sysKey],
+                            ...(result.maxObj && result.maxObj[sysKey] ? result.maxObj[sysKey] : {})
+                        };
+                    }
+                    setInputValue(newInputValue);
+                    message.success('已从后端加载配置');
+                }
+            })
+            .catch((err) => {
+                console.warn('从后端加载配置失败，使用默认值:', err.message);
+                setLoadError(true);
+                message.warning('后端服务未连接，使用本地默认值');
+            })
+            .finally(() => {
+                setPageLoading(false);
+            });
+    };
+
+    useEffect(() => {
+        loadConfigFromBackend();
+    }, []);
 
     /* ────── 事件处理 ────── */
     const handleInputChange = (objType, system, paramKey, value) => {
@@ -213,117 +265,135 @@ export default function SystemSetting() {
                     <SettingOutlined style={{ fontSize: 20, color: '#1677ff' }} />
                     <Title level={4} style={{ margin: 0 }}>传感器系统配置</Title>
                 </Space>
-                <Text type="secondary" style={{ fontSize: 13, marginTop: 2 }}>
-                    在此页面可设置默认系统类型、下拉选项，以及各系统的可视化调节参数范围
-                </Text>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                    <Text type="secondary" style={{ fontSize: 13 }}>
+                        在此页面可设置默认系统类型、下拉选项，以及各系统的可视化调节参数范围
+                    </Text>
+                    {loadError && (
+                        <Tag color="warning" style={{ fontSize: 11 }}>离线模式</Tag>
+                    )}
+                    {!pageLoading && (
+                        <Tooltip title="重新从后端加载配置">
+                            <Button
+                                type="text"
+                                size="small"
+                                icon={<ReloadOutlined />}
+                                onClick={loadConfigFromBackend}
+                                style={{ color: '#1677ff' }}
+                            />
+                        </Tooltip>
+                    )}
+                </div>
             </div>
 
-            {/* 卡片 1：默认系统 & 下拉选项 */}
-            <Card
-                size="small"
-                title={<Space><AppstoreOutlined style={{ color: '#1677ff' }} /><span>系统选择</span></Space>}
-                className="setting-card"
-            >
-                {/* 默认系统 */}
-                <div className="setting-row">
-                    <Text className="setting-label">默认系统</Text>
-                    <Radio.Group
-                        onChange={(e) => setSysValue(e.target.value)}
-                        value={sysValue}
-                        optionType="button"
-                        buttonStyle="solid"
-                        size="middle"
-                    >
-                        {systemOptions.map(opt => (
-                            <Radio.Button key={opt.value} value={opt.value}>
-                                {opt.label}
-                            </Radio.Button>
-                        ))}
-                    </Radio.Group>
-                </div>
-
-                <Divider style={{ margin: '12px 0' }} />
-
-                {/* 下拉可选系统 */}
-                <div className="setting-row">
-                    <Text className="setting-label">可选系统</Text>
-                    <div className="checkbox-area">
-                        <Checkbox
-                            indeterminate={indeterminate}
-                            onChange={(e) => setCheckedList(e.target.checked ? plainOptions : [])}
-                            checked={checkAll}
+            <Spin spinning={pageLoading} tip="正在从后端加载配置..." indicator={<LoadingOutlined style={{ fontSize: 24 }} spin />}>
+                {/* 卡片 1：默认系统 & 下拉选项 */}
+                <Card
+                    size="small"
+                    title={<Space><AppstoreOutlined style={{ color: '#1677ff' }} /><span>系统选择</span></Space>}
+                    className="setting-card"
+                >
+                    {/* 默认系统 */}
+                    <div className="setting-row">
+                        <Text className="setting-label">默认系统</Text>
+                        <Radio.Group
+                            onChange={(e) => setSysValue(e.target.value)}
+                            value={sysValue}
+                            optionType="button"
+                            buttonStyle="solid"
+                            size="middle"
                         >
-                            全选
-                        </Checkbox>
-                        <Divider type="vertical" />
-                        <CheckboxGroup
-                            options={plainOptions.map(p => ({
-                                label: <Tag color={systemTagColor[p]}>{systemNameMap[p]}</Tag>,
-                                value: p
-                            }))}
-                            value={checkedList}
-                            onChange={setCheckedList}
-                        />
-                    </div>
-                </div>
-            </Card>
-
-            {/* 卡片 2：各系统调节参数 */}
-            <Card
-                size="small"
-                title={<Space><ControlOutlined style={{ color: '#1677ff' }} /><span>可视化调节参数</span></Space>}
-                extra={
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                        点击展开对应系统，编辑推荐值与上限值
-                    </Text>
-                }
-                className="setting-card"
-            >
-                <Collapse
-                    items={collapseItems}
-                    defaultActiveKey={['bed']}
-                    className="system-collapse"
-                />
-            </Card>
-
-            {/* 卡片 3：生成 & 输出 */}
-            <Card
-                size="small"
-                title={<Space><FileTextOutlined style={{ color: '#1677ff' }} /><span>生成配置文件</span></Space>}
-                className="setting-card"
-            >
-                <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <Button
-                            type="primary"
-                            icon={<SaveOutlined />}
-                            onClick={handleGenerate}
-                            loading={loading}
-                        >
-                            生成配置
-                        </Button>
-                        {config && (
-                            <Button icon={<CopyOutlined />} onClick={handleCopyConfig}>
-                                复制到剪贴板
-                            </Button>
-                        )}
-                        {!config && (
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                调整好参数后点击"生成配置"，将输出可用的配置内容
-                            </Text>
-                        )}
+                            {systemOptions.map(opt => (
+                                <Radio.Button key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                </Radio.Button>
+                            ))}
+                        </Radio.Group>
                     </div>
 
-                    {config && (
-                        <div className="config-output">
-                            <div className="config-output-header">
-                                <Text style={{ color: '#8caaee', fontSize: 12 }}>配置文件内容</Text>
-                            </div>
-                            <pre>{config}</pre>
+                    <Divider style={{ margin: '12px 0' }} />
+
+                    {/* 下拉可选系统 */}
+                    <div className="setting-row">
+                        <Text className="setting-label">可选系统</Text>
+                        <div className="checkbox-area">
+                            <Checkbox
+                                indeterminate={indeterminate}
+                                onChange={(e) => setCheckedList(e.target.checked ? plainOptions : [])}
+                                checked={checkAll}
+                            >
+                                全选
+                            </Checkbox>
+                            <Divider type="vertical" />
+                            <CheckboxGroup
+                                options={plainOptions.map(p => ({
+                                    label: <Tag color={systemTagColor[p]}>{systemNameMap[p]}</Tag>,
+                                    value: p
+                                }))}
+                                value={checkedList}
+                                onChange={setCheckedList}
+                            />
                         </div>
-                    )}
-                </Space>
-            </Card>
+                    </div>
+                </Card>
+
+                {/* 卡片 2：各系统调节参数 */}
+                <Card
+                    size="small"
+                    title={<Space><ControlOutlined style={{ color: '#1677ff' }} /><span>可视化调节参数</span></Space>}
+                    extra={
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            点击展开对应系统，编辑推荐值与上限值
+                        </Text>
+                    }
+                    className="setting-card"
+                >
+                    <Collapse
+                        items={collapseItems}
+                        defaultActiveKey={['bed']}
+                        className="system-collapse"
+                    />
+                </Card>
+
+                {/* 卡片 3：生成 & 输出 */}
+                <Card
+                    size="small"
+                    title={<Space><FileTextOutlined style={{ color: '#1677ff' }} /><span>生成配置文件</span></Space>}
+                    className="setting-card"
+                >
+                    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <Button
+                                type="primary"
+                                icon={<SaveOutlined />}
+                                onClick={handleGenerate}
+                                loading={loading}
+                            >
+                                生成配置
+                            </Button>
+                            {config && (
+                                <Button icon={<CopyOutlined />} onClick={handleCopyConfig}>
+                                    复制到剪贴板
+                                </Button>
+                            )}
+                            {!config && (
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    调整好参数后点击"生成配置"，将输出可用的配置内容
+                                </Text>
+                            )}
+                        </div>
+
+                        {config && (
+                            <div className="config-output">
+                                <div className="config-output-header">
+                                    <Text style={{ color: '#8caaee', fontSize: 12 }}>配置文件内容</Text>
+                                </div>
+                                <pre>{config}</pre>
+                            </div>
+                        )}
+                    </Space>
+                </Card>
+            </Spin>
         </div>
     )
 }
