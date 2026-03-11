@@ -63,6 +63,8 @@ export default function NumThree(props) {
   const gridRef = useRef({ width: 0, height: 0 });
   const invertYRef = useRef(false);
   const textureMaxRef = useRef(22);
+  const magnifierPosRef = useRef({ col: -1, row: -1 });
+  const drawMagnifierRef = useRef(null);
   // const pageRef = useRef(pageInfo)
 
   // useEffect(() => {
@@ -443,6 +445,11 @@ export default function NumThree(props) {
       renderer.render(scene, camera);
       oldTime = new Date().getTime()
 
+      // 放大镜实时更新：即使鼠标不动，数据变化时也重绘放大镜
+      if (magnifierEnabledRef.current && drawMagnifierRef.current && magnifierPosRef.current.col >= 0) {
+        drawMagnifierRef.current(magnifierPosRef.current.col, magnifierPosRef.current.row);
+      }
+
     }
 
     geometry.setAttribute('uvOffset', new THREE.InstancedBufferAttribute(uvOffsets, 2));
@@ -511,6 +518,7 @@ export default function NumThree(props) {
       ctx.strokeRect(2 * cellSize + 1, 2 * cellSize + 1, cellSize - 2, cellSize - 2);
       ctx.lineWidth = 1;
     };
+    drawMagnifierRef.current = drawMagnifier;
 
     const handleMouseMove = (event) => {
       if (!magnifierEnabledRef.current) return;
@@ -535,10 +543,12 @@ export default function NumThree(props) {
       if (invertYRef.current) {
         row = height - 1 - row;
       }
+      magnifierPosRef.current = { col, row };
       drawMagnifier(col, row);
     };
 
     const handleMouseLeave = () => {
+      magnifierPosRef.current = { col: -1, row: -1 };
       const ctx = magnifierCtxRef.current;
       const canvas = magnifierCanvasRef.current;
       if (ctx && canvas && magnifierEnabledRef.current) {
