@@ -76,9 +76,31 @@ class ruler {
         // 临时起点（正在绘制中的起点）
         this.tempStart = null
 
+        // 左键：负责绘制起点/终点 + 点击删除按钮
         this.onClick = (e) => {
-            // 如果正在绘制中（已有起点，等待终点），直接完成绘制，跳过命中检测
+            // 1. 先检查是否左键点击了某个选中量尺的删除按钮（最高优先级）
+            const deleteIndex = this._hitTestDeleteBtn(e)
+            if (deleteIndex >= 0) {
+                // 删除该量尺
+                this.rulerLines.splice(deleteIndex, 1)
+                // 更新selectedIndices：删除该索引，大于该索引的减1
+                const newSelected = new Set()
+                for (const idx of this.selectedIndices) {
+                    if (idx === deleteIndex) continue
+                    if (idx > deleteIndex) {
+                        newSelected.add(idx - 1)
+                    } else {
+                        newSelected.add(idx)
+                    }
+                }
+                this.selectedIndices = newSelected
+                this._redraw()
+                return
+            }
+
+            // 2. 绘制逻辑：左键只负责绘制，不做选中检测
             if (this.tempStart) {
+                // 正在绘制中（已有起点，等待终点），直接完成绘制
                 this.clickIndex++
                 this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
 
@@ -100,27 +122,18 @@ class ruler {
                 return
             }
 
-            // 1. 先检查是否点击了某个选中量尺的删除按钮
-            const deleteIndex = this._hitTestDeleteBtn(e)
-            if (deleteIndex >= 0) {
-                // 删除该量尺
-                this.rulerLines.splice(deleteIndex, 1)
-                // 更新selectedIndices：删除该索引，大于该索引的减1
-                const newSelected = new Set()
-                for (const idx of this.selectedIndices) {
-                    if (idx === deleteIndex) continue
-                    if (idx > deleteIndex) {
-                        newSelected.add(idx - 1)
-                    } else {
-                        newSelected.add(idx)
-                    }
-                }
-                this.selectedIndices = newSelected
-                this._redraw()
-                return
-            }
+            // 3. 没有正在绘制，开始新量尺的起点
+            this.clickIndex++
+            this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
+            this.tempStart = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
+            this._redraw()
+        }
 
-            // 2. 检查是否点击了已有量尺（线条或标签）
+        // 右键：负责选中/取消选中量尺
+        this.onContextMenu = (e) => {
+            e.preventDefault() // 阻止浏览器默认右键菜单
+
+            // 检查是否右键点击了已有量尺（线条或标签）
             const hitIndex = this._hitTest(e)
             if (hitIndex >= 0) {
                 // 切换选中状态（支持多选）
@@ -130,14 +143,7 @@ class ruler {
                     this.selectedIndices.add(hitIndex)
                 }
                 this._redraw()
-                return
             }
-
-            // 3. 没有点击到已有量尺，进入绘制起点逻辑
-            this.clickIndex++
-            this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
-            this.tempStart = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
-            this._redraw()
         }
     }
 
@@ -392,6 +398,7 @@ class ruler {
         if (document.querySelector('.canvasRuler')) {
             this.canvas = document.querySelector('.canvasRuler')
             this.canvas.addEventListener('click', this.onClick)
+            this.canvas.addEventListener('contextmenu', this.onContextMenu)
         } else {
             message.info('请在2D模式下使用')
         }
@@ -401,6 +408,7 @@ class ruler {
         this.clickIndex = 0
         if (this.canvas) {
             this.canvas.removeEventListener('click', this.onClick)
+            this.canvas.removeEventListener('contextmenu', this.onContextMenu)
             const ctx = this.canvas.getContext('2d');
             ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
         }
