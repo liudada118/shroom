@@ -33,11 +33,16 @@ const RECONNECT_INTERVAL = 3000
 const MIN_HZ_INTERVAL = 50
 const ONLINE_THRESHOLD = 1000
 const DATA_SEND_INTERVAL = 80
-const MAX_PORT_DATA_KEEP = 2  // 最多保留的端口数据数量
 
 /**
- * 记录端口连接历史并清理超出限制的旧端口数据
- * 只保留最新 MAX_PORT_DATA_KEEP 个端口的数据
+ * 记录端口连接历史（仅记录，不再主动关闭旧端口）
+ * 
+ * 修复说明：
+ *   旧逻辑 MAX_PORT_DATA_KEEP=2 会在连接第3个端口时关闭最旧的端口，
+ *   被关闭的端口随后被 startReconnectMonitor() 检测为"新端口"并重新连接，
+ *   导致无限循环：连接→关闭→重新检测→连接→关闭...
+ *   现在改为允许所有设备同时连接，不再限制端口数量。
+ *
  * @param {string} newPortPath 新连接的端口路径
  */
 function trackPortAndCleanup(newPortPath) {
@@ -45,30 +50,7 @@ function trackPortAndCleanup(newPortPath) {
   state.portHistory = state.portHistory.filter(p => p.path !== newPortPath)
   // 添加新端口到历史记录末尾
   state.portHistory.push({ path: newPortPath, connectedAt: Date.now() })
-  console.log(`[PortCleanup] Port history updated: [${state.portHistory.map(p => p.path).join(', ')}]`)
-
-  // 如果端口数超过限制，清理最旧的
-  while (state.portHistory.length > MAX_PORT_DATA_KEEP) {
-    const oldest = state.portHistory.shift()
-    if (oldest) {
-      const oldPath = oldest.path
-      // 关闭旧端口
-      if (state.parserArr[oldPath]?.port?.isOpen) {
-        try {
-          state.parserArr[oldPath].port.close()
-          console.log(`[PortCleanup] Closed old port: ${oldPath}`)
-        } catch (e) {
-          console.warn(`[PortCleanup] Failed to close old port ${oldPath}: ${e.message}`)
-        }
-      }
-      // 清理旧端口数据
-      delete state.parserArr[oldPath]
-      delete state.dataMap[oldPath]
-      delete state.macInfo[oldPath]
-      delete state.oldTimeObj[oldPath]
-      console.log(`[PortCleanup] Cleaned up old port data: ${oldPath}`)
-    }
-  }
+  console.log(`[PortTrack] Port history updated: [${state.portHistory.map(p => p.path).join(', ')}] (${state.portHistory.length} ports active)`)
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -862,14 +844,17 @@ async function stopPort() {
     if (item?.port?.isOpen) {
       item.port.close((err) => {
         if (!err) {
-          delete state.parserArr[portPath]
-          delete state.dataMap[portPath]
           console.log(`[Serial] Port closed: ${portPath}`)
         }
       })
     }
   })
 
+  // 完全清理所有端口状态
+  state.parserArr = {}
+  state.dataMap = {}
+  state.macInfo = {}
+  state.oldTimeObj = {}
   state.portHistory = []
   if (state.playtimer) clearInterval(state.playtimer)
   state.MaxHZ = undefined
@@ -903,7 +888,9 @@ function startReconnectMonitor() {
         let availablePorts = await SerialPort.list()
         availablePorts = getPort(availablePorts)
         const knownPaths = Object.keys(state.parserArr)
-        const brandNewPorts = availablePorts.filter(p => !knownPaths.includes(p.path))
+        // 同时检查 portHistory，避免将已知的活跃端口重复检测
+        const historyPaths = state.portHistory.map(p => p.path)
+        const brandNewPorts = availablePorts.filter(p => !knownPaths.includes(p.path) && !historyPaths.includes(p.path))
 
         if (brandNewPorts.length > 0) {
           _reconnectScanning = true
@@ -926,7 +913,7 @@ function startReconnectMonitor() {
                 state.dataMap[newPath].deviceClass = BAUD_DEVICE_MAP[detectedBaud] || 'unknown'
                 state.dataMap[newPath].baudRate = detectedBaud
 
-                // 记录新端口并清理超出限制的旧端口数据
+                // 记录新端口连接历史
                 trackPortAndCleanup(newPath)
 
                 // 绑定数据处理器
@@ -975,6 +962,11 @@ function startReconnectMonitor() {
               newPort.pipe(newParser)
               item.port = newPort
               item.parser = newParser
+
+              // 重新绑定数据处理器到新的 parser
+              const dataItem = state.dataMap[portPath] || {}
+              bindDataHandler(portPath, item, dataItem, _reconnectBroadcastFn || (() => {}), _reconnectOnTimerStart, [])
+
               console.log(`[Serial] Reconnected on same port: ${portPath} @ ${baudRate}`)
               if (_reconnectBroadcastFn) {
                 _reconnectBroadcastFn(JSON.stringify({ reconnected: { path: portPath, baudRate } }))
@@ -1014,8 +1006,10 @@ function startReconnectMonitor() {
                       delete state.dataMap[portPath]
                     }
                     delete state.parserArr[portPath]
+                    // 从 portHistory 中移除旧端口记录
+                    state.portHistory = state.portHistory.filter(p => p.path !== portPath)
 
-                    // 记录新端口连接顺序并清理超出限制的旧端口数据
+                    // 记录新端口连接历史
                     trackPortAndCleanup(newPath)
 
                     // 重新绑定数据处理器
