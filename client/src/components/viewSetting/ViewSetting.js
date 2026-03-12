@@ -1,4 +1,4 @@
-import React, { forwardRef, useContext, useEffect, useImperativeHandle, useMemo, useState } from 'react'
+import React, { forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import './index.scss'
 import { Dropdown, Input, Popover } from 'antd'
 import { pageContext } from '../../page/test/Test';
@@ -44,42 +44,76 @@ const ViewSetting = (props) => {
 
     const { showProp, setShowProp } = props
 
+    // ─── 长按连续缩放 ─────────────────────────────────
+    const longPressTimer = useRef(null)
+    const longPressInterval = useRef(null)
+    const isLongPressing = useRef(false)
 
-
-    // 动态步长计算：值越小步长越小，值越大步长越大，缩放更均匀
+    // 动态步长计算：更细腻的步长，使缩放更丝滑
     const getZoomStep = (value) => {
         if (value <= 20) return 2
-        if (value <= 50) return 5
-        if (value <= 100) return 10
-        if (value <= 200) return 20
-        if (value <= 500) return 50
-        return 100
+        if (value <= 50) return 3
+        if (value <= 100) return 5
+        if (value <= 200) return 10
+        if (value <= 500) return 20
+        return 50
     }
 
-    const subShow = () => {
-        if (display == 'point3D') {
-            const step = getZoomStep(showProp)
-            // 对齐到步长的整数倍，避免出现奇怪的数字
-            let newVal = Math.floor((showProp - 1) / step) * step
-            newVal = Math.max(10, newVal)
-            if (newVal !== showProp) {
-                setShowProp(newVal)
+    const doZoom = useCallback((direction) => {
+        if (display !== 'point3D') return
+        setShowProp(prev => {
+            const step = getZoomStep(prev)
+            let newVal
+            if (direction === 'sub') {
+                newVal = Math.floor((prev - 1) / step) * step
+                newVal = Math.max(10, newVal)
+            } else {
+                newVal = Math.ceil((prev + 1) / step) * step
+                newVal = Math.min(1000, newVal)
+            }
+            if (newVal !== prev) {
                 props.three?.current?.changeCamera(newVal)
             }
+            return newVal
+        })
+    }, [display, props.three])
+
+    const startLongPress = useCallback((direction) => {
+        isLongPressing.current = false
+        // 先执行一次点击
+        doZoom(direction)
+        // 300ms 后开始连续缩放
+        longPressTimer.current = setTimeout(() => {
+            isLongPressing.current = true
+            longPressInterval.current = setInterval(() => {
+                doZoom(direction)
+            }, 80) // 每 80ms 缩放一次，流畅且不过快
+        }, 300)
+    }, [doZoom])
+
+    const stopLongPress = useCallback(() => {
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current)
+            longPressTimer.current = null
         }
+        if (longPressInterval.current) {
+            clearInterval(longPressInterval.current)
+            longPressInterval.current = null
+        }
+        isLongPressing.current = false
+    }, [])
+
+    // 组件卸载时清理
+    useEffect(() => {
+        return () => stopLongPress()
+    }, [stopLongPress])
+
+    const subShow = () => {
+        // 单击由 startLongPress 处理
     }
 
     const addShow = () => {
-        if (display == 'point3D') {
-            const step = getZoomStep(showProp)
-            // 对齐到步长的整数倍
-            let newVal = Math.ceil((showProp + 1) / step) * step
-            newVal = Math.min(1000, newVal)
-            if (newVal !== showProp) {
-                setShowProp(newVal)
-                props.three?.current?.changeCamera(newVal)
-            }
-        }
+        // 单击由 startLongPress 处理
     }
 
 
@@ -321,7 +355,13 @@ const ViewSetting = (props) => {
                             </div>
                         } */}
 
-                        <i className='iconfont reduce cursor' onClick={subShow}>&#xe632;</i>
+                        <i className='iconfont reduce cursor'
+                            onMouseDown={() => startLongPress('sub')}
+                            onMouseUp={stopLongPress}
+                            onMouseLeave={stopLongPress}
+                            onTouchStart={() => startLongPress('sub')}
+                            onTouchEnd={stopLongPress}
+                        >&#xe632;</i>
                         {/* <Input value={`${showProp}%`} /> */}
                         <div style={{ padding: '0 0.75rem' }}>{showProp} %</div>
 
@@ -342,7 +382,13 @@ const ViewSetting = (props) => {
                             </div>
                         } */}
 
-                        <i className='iconfont add cursor' style={{ marginRight: '1.375rem' }} onClick={addShow}>&#xe631;</i>
+                        <i className='iconfont add cursor' style={{ marginRight: '1.375rem' }}
+                            onMouseDown={() => startLongPress('add')}
+                            onMouseUp={stopLongPress}
+                            onMouseLeave={stopLongPress}
+                            onTouchStart={() => startLongPress('add')}
+                            onTouchEnd={stopLongPress}
+                        >&#xe631;</i>
                     </div>
                     <Popover color='#32373E' className='set-popover' placement="top" content={<div style={{ color: '#E6EBF0' }} >{t('viewSwitch3D')}</div>} >
                         {display == 'point3D' ?

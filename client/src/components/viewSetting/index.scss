@@ -56,10 +56,26 @@
 
     .reduce {
         margin-right: 10px;
+        transition: transform 0.15s ease, color 0.15s ease;
+        &:hover {
+            color: #fff;
+        }
+        &:active {
+            transform: scale(0.85);
+            color: #0072EF;
+        }
     }
 
     .add {
         margin-left: 10px;
+        transition: transform 0.15s ease, color 0.15s ease;
+        &:hover {
+            color: #fff;
+        }
+        &:active {
+            transform: scale(0.85);
+            color: #0072EF;
+        }
     }
 
     .threeViewAdjust {

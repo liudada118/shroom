@@ -786,8 +786,27 @@ const Canvas = memo(React.forwardRef((props, refs) => {
     // actionAll()
   }
 
+  let zoomAnimId = null
   function changeCamera(value) {
-    if (camera) camera.position.z = -150 * 100 / value;
+    if (!camera) return
+    const targetZ = -150 * 100 / value
+    const startZ = camera.position.z
+    const duration = 200
+    const startTime = performance.now()
+    if (zoomAnimId) cancelAnimationFrame(zoomAnimId)
+    function animateZoom(now) {
+      const elapsed = now - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      // easeOutCubic 缓动函数，先快后慢更自然
+      const eased = 1 - Math.pow(1 - progress, 3)
+      camera.position.z = startZ + (targetZ - startZ) * eased
+      if (progress < 1) {
+        zoomAnimId = requestAnimationFrame(animateZoom)
+      } else {
+        zoomAnimId = null
+      }
+    }
+    zoomAnimId = requestAnimationFrame(animateZoom)
   }
 
   useImperativeHandle(refs, () => ({

@@ -1003,8 +1003,28 @@ const Canvas =
             // actionAll()
         }
 
+        let zoomAnimId = null
         function changeCamera(value) {
-            if (camera) camera.position.z = (-120 * 100 / value);
+            if (!camera) return
+            const clampedValue = Math.max(10, Math.min(1000, value))
+            const targetZ = -120 * 100 / clampedValue
+            const startZ = camera.position.z
+            const duration = 200
+            const startTime = performance.now()
+            if (zoomAnimId) cancelAnimationFrame(zoomAnimId)
+            function animateZoom(now) {
+                const elapsed = now - startTime
+                const progress = Math.min(elapsed / duration, 1)
+                // easeOutCubic 缓动函数，先快后慢更自然
+                const eased = 1 - Math.pow(1 - progress, 3)
+                camera.position.z = startZ + (targetZ - startZ) * eased
+                if (progress < 1) {
+                    zoomAnimId = requestAnimationFrame(animateZoom)
+                } else {
+                    zoomAnimId = null
+                }
+            }
+            zoomAnimId = requestAnimationFrame(animateZoom)
             // 放大缩小时回到初始位置（整体模式）
             actionSit('all');
         }
