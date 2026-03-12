@@ -1057,14 +1057,6 @@ const Canvas =
                 if (p1.rotationx) particles.rotation.x = p1.rotationx;
             });
 
-            // 动画完成后将控制器旋转中心更新到粒子最终位置
-            tween1.onComplete(() => {
-                if (controls) {
-                    controls.target.set(p1.x, p1.y, p1.z);
-                    controls.update();
-                }
-            });
-
             return tween1;
         }
 
