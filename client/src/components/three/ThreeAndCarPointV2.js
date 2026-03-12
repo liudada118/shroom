@@ -1165,14 +1165,6 @@ const Canvas =
                 }
             });
 
-            // 动画完成后将控制器旋转中心更新到粒子最终位置
-            tween1.onComplete(() => {
-                if (controls.current) {
-                    controls.current.target.set(p1.x, p1.y, p1.z);
-                    controls.current.update();
-                }
-            });
-
             return tween1;
         }
 
