@@ -76,74 +76,91 @@ class ruler {
         // 临时起点（正在绘制中的起点）
         this.tempStart = null
 
-        // 左键：负责绘制起点/终点 + 点击删除按钮
-        this.onClick = (e) => {
-            // 1. 先检查是否左键点击了某个选中量尺的删除按钮（最高优先级）
-            const deleteIndex = this._hitTestDeleteBtn(e)
-            if (deleteIndex >= 0) {
-                // 删除该量尺
-                this.rulerLines.splice(deleteIndex, 1)
-                // 更新selectedIndices：删除该索引，大于该索引的减1
-                const newSelected = new Set()
-                for (const idx of this.selectedIndices) {
-                    if (idx === deleteIndex) continue
-                    if (idx > deleteIndex) {
-                        newSelected.add(idx - 1)
-                    } else {
-                        newSelected.add(idx)
-                    }
-                }
-                this.selectedIndices = newSelected
-                this._redraw()
-                return
-            }
+        // 统一使用 mousedown 事件，通过 e.button 区分左右键
+        this.onMouseDown = (e) => {
+            if (e.button === 0) {
+                // ═══ 左键：负责绘制起点/终点 + 点击删除按钮 ═══
 
-            // 2. 绘制逻辑：左键只负责绘制，不做选中检测
-            if (this.tempStart) {
-                // 正在绘制中（已有起点，等待终点），直接完成绘制
+                // 1. 先检查是否左键点击了某个选中量尺的删除按钮（最高优先级）
+                const deleteIndex = this._hitTestDeleteBtn(e)
+                if (deleteIndex >= 0) {
+                    // 删除该量尺
+                    this.rulerLines.splice(deleteIndex, 1)
+                    // 更新selectedIndices：删除该索引，大于该索引的减1
+                    const newSelected = new Set()
+                    for (const idx of this.selectedIndices) {
+                        if (idx === deleteIndex) continue
+                        if (idx > deleteIndex) {
+                            newSelected.add(idx - 1)
+                        } else {
+                            newSelected.add(idx)
+                        }
+                    }
+                    this.selectedIndices = newSelected
+                    this._redraw()
+                    return
+                }
+
+                // 2. 绘制逻辑：左键只负责绘制，不做选中检测
+                if (this.tempStart) {
+                    // 正在绘制中（已有起点，等待终点），直接完成绘制
+                    this.clickIndex++
+                    this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
+
+                    const startPoint = this.listeners[this.listeners.length - 2]
+                    const endPoint = { pageX: e.pageX, pageY: e.pageY }
+                    const startGrid = this._toGrid(startPoint)
+                    const endGrid = this._toGrid(endPoint)
+                    const x = Math.abs(endGrid.x - startGrid.x) * this.distanceX
+                    const y = Math.abs(endGrid.y - startGrid.y) * this.distanceY
+                    const distance = (Math.sqrt(x * x + y * y)).toFixed(0)
+
+                    this.rulerLines.push({
+                        startGrid,
+                        endGrid,
+                        distance: `${distance}mm`
+                    })
+                    this.tempStart = null
+                    this._redraw()
+                    return
+                }
+
+                // 3. 没有正在绘制，开始新量尺的起点
                 this.clickIndex++
                 this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
-
-                const startPoint = this.listeners[this.listeners.length - 2]
-                const endPoint = { pageX: e.pageX, pageY: e.pageY }
-                const startGrid = this._toGrid(startPoint)
-                const endGrid = this._toGrid(endPoint)
-                const x = Math.abs(endGrid.x - startGrid.x) * this.distanceX
-                const y = Math.abs(endGrid.y - startGrid.y) * this.distanceY
-                const distance = (Math.sqrt(x * x + y * y)).toFixed(0)
-
-                this.rulerLines.push({
-                    startGrid,
-                    endGrid,
-                    distance: `${distance}mm`
-                })
-                this.tempStart = null
+                this.tempStart = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
                 this._redraw()
-                return
-            }
 
-            // 3. 没有正在绘制，开始新量尺的起点
-            this.clickIndex++
-            this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
-            this.tempStart = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
-            this._redraw()
+            } else if (e.button === 2) {
+                // ═══ 右键：负责选中/取消选中量尺（显示删除框） ═══
+                e.preventDefault()
+
+                // 如果正在绘制中，右键取消当前绘制
+                if (this.tempStart) {
+                    this.tempStart = null
+                    this.listeners.pop()
+                    this.clickIndex--
+                    this._redraw()
+                    return
+                }
+
+                // 检查是否右键点击了已有量尺（线条或标签）
+                const hitIndex = this._hitTest(e)
+                if (hitIndex >= 0) {
+                    // 切换选中状态（支持多选）
+                    if (this.selectedIndices.has(hitIndex)) {
+                        this.selectedIndices.delete(hitIndex)
+                    } else {
+                        this.selectedIndices.add(hitIndex)
+                    }
+                    this._redraw()
+                }
+            }
         }
 
-        // 右键：负责选中/取消选中量尺
+        // 阻止右键默认菜单
         this.onContextMenu = (e) => {
-            e.preventDefault() // 阻止浏览器默认右键菜单
-
-            // 检查是否右键点击了已有量尺（线条或标签）
-            const hitIndex = this._hitTest(e)
-            if (hitIndex >= 0) {
-                // 切换选中状态（支持多选）
-                if (this.selectedIndices.has(hitIndex)) {
-                    this.selectedIndices.delete(hitIndex)
-                } else {
-                    this.selectedIndices.add(hitIndex)
-                }
-                this._redraw()
-            }
+            e.preventDefault()
         }
     }
 
@@ -397,7 +414,7 @@ class ruler {
         this.rulersFlag = true
         if (document.querySelector('.canvasRuler')) {
             this.canvas = document.querySelector('.canvasRuler')
-            this.canvas.addEventListener('click', this.onClick)
+            this.canvas.addEventListener('mousedown', this.onMouseDown)
             this.canvas.addEventListener('contextmenu', this.onContextMenu)
         } else {
             message.info('请在2D模式下使用')
@@ -407,7 +424,7 @@ class ruler {
     stopRuler() {
         this.clickIndex = 0
         if (this.canvas) {
-            this.canvas.removeEventListener('click', this.onClick)
+            this.canvas.removeEventListener('mousedown', this.onMouseDown)
             this.canvas.removeEventListener('contextmenu', this.onContextMenu)
             const ctx = this.canvas.getContext('2d');
             ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
