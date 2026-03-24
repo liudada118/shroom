@@ -204,11 +204,11 @@ function Test() {
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 4, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
         />,
-        endi: <Endi1 sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
+        endi: <Endi1 key="endi" sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
             backConfig={{ sitnum1: 64, sitnum2: 50, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 46, sitnum2: 46, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
         />,
-        carY: <Endi1 sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
+        carY: <Endi1 key="carY" sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
         />
