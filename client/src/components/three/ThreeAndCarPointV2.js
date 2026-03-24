@@ -364,6 +364,10 @@ const Canvas =
         // const backConfig = { sitnum1: 32, sitnum2: 32, sitInterp: 4, sitInterp1: 2, sitOrder: 3 }
         // const sitConfig = { sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }
 
+        // 默认点位配置
+        const defaultBackPointConfig = { position: [2.5, -15, 0], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.002] }
+        const defaultSitPointConfig = { position: [0, -30, -5], rotation: [-Math.PI / 6 - Math.PI / 2 + Math.PI / 2, 0, 0], scale: [0.0018, 0.0018, 0.0018] }
+
         let allConfig = {
             // neck: {
             //     dataConfig: neckConfig,
@@ -373,13 +377,13 @@ const Canvas =
             back: {
                 dataConfig: backConfig,
                 name: 'back',
-                pointConfig: { position: [2.5, -15, 0], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.002] },
+                pointConfig: props.backPointConfig || defaultBackPointConfig,
                 // pointConfig: { position: [2.5, -28, -50], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.002] },
             },
             sit: {
                 dataConfig: sitConfig,
                 name: 'sit',
-                pointConfig: { position: [0, -30, -5], rotation: [-Math.PI / 6 - Math.PI / 2 + Math.PI / 2, 0, 0], scale: [0.0018, 0.0018, 0.0018] },
+                pointConfig: props.sitPointConfig || defaultSitPointConfig,
                 //  pointConfig: { position: [0, -28, -65], rotation: [ + Math.PI*11 / 24, 0, 0], scale: [0.0018, 0.0018, 0.0018] },
             },
             // handLeft: {

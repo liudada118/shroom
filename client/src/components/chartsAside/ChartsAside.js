@@ -489,12 +489,11 @@ function ChartsAside(props) {
         // }
 
 
-        const system = getSysType()
-
         let data = {}
 
 
         Scheduler.onUI(() => setData(() => {
+            const system = getSysType()
             const chartData = props.chartData.current
 
 
@@ -563,9 +562,11 @@ function ChartsAside(props) {
                     const key = keyArr[i]
                     if (!dataObj[key]) dataObj[key] = {}
 
-                    if (!pointConfig[system] || !pointConfig[system][key]) continue
-                    const widthDistance = pointConfig[system][key].pointWidthDistance
-                    const heightDistance = pointConfig[system][key].pointHeightDistance
+                    try {
+                    const sysConfig = pointConfig[system]
+                    if (!sysConfig || !sysConfig[key]) continue
+                    const widthDistance = sysConfig[key].pointWidthDistance || 1
+                    const heightDistance = sysConfig[key].pointHeightDistance || 1
                     dataObj[key].pointTotal = chartData[key].data.areaTotal
                     dataObj[key].areaTotal = chartData[key].data.areaTotal * widthDistance * heightDistance / 100
                     // dataObj[key].pressTotal = chartData[key].data.pressTotal
@@ -607,6 +608,7 @@ function ChartsAside(props) {
 
 
                     // allArr = allArr.concat(chartData[key].area)
+                    } catch (e) { continue }
                 }
                 // console.log(areaObj)
                 // const max = Math.max(...allArr)
