@@ -149,8 +149,8 @@ const Canvas =
         let totalArr = [],
             totalPointArr = [];
         let local
-        let pointGroup = new THREE.Group();
-        pointGroupRef.current = pointGroup;
+        let pointGroup = pointGroupRef.current || new THREE.Group();
+        if (!pointGroupRef.current) pointGroupRef.current = pointGroup;
         let particles,
             particles1,
             material,
