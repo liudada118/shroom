@@ -88,11 +88,13 @@ const Canvas =
                 position: props.backPointConfig?.position || [2.5, -15, 0],
                 rotation: props.backPointConfig?.rotation || [-Math.PI / 12 - Math.PI / 2, 0, 0],
                 scale: props.backPointConfig?.scale || [0.0015, 0.002, 0.002],
+                pointSize: props.backPointConfig?.pointSize || 1.0,
             },
             sit: {
                 position: props.sitPointConfig?.position || [0, -30, -5],
                 rotation: props.sitPointConfig?.rotation || [-Math.PI / 6 - Math.PI / 2 + Math.PI / 2, 0, 0],
                 scale: props.sitPointConfig?.scale || [0.0018, 0.0018, 0.0018],
+                pointSize: props.sitPointConfig?.pointSize || 1.0,
             }
         })
 
@@ -111,20 +113,35 @@ const Canvas =
             } else if (prop === 'scale') {
                 obj.scale[axis] = value
                 if (border) border.scale[axis] = value
+            } else if (prop === 'pointSize') {
+                // 更新 PointsMaterial 的 size 属性（pointSize * scale.x * 300）
+                if (obj.material) {
+                    obj.material.size = value * obj.scale.x * 300
+                    obj.material.needsUpdate = true
+                }
             }
         }, [])
 
         const handleConfigChange = useCallback((name, prop, axisIdx, value) => {
             if (value === null || value === undefined) return
             const axisMap = ['x', 'y', 'z']
-            setConfigValues(prev => {
-                const next = { ...prev }
-                next[name] = { ...next[name] }
-                next[name][prop] = [...next[name][prop]]
-                next[name][prop][axisIdx] = value
-                return next
-            })
-            updateThreeObject(name, prop, axisMap[axisIdx], value)
+            if (prop === 'pointSize') {
+                setConfigValues(prev => {
+                    const next = { ...prev }
+                    next[name] = { ...next[name], pointSize: value }
+                    return next
+                })
+                updateThreeObject(name, 'pointSize', null, value)
+            } else {
+                setConfigValues(prev => {
+                    const next = { ...prev }
+                    next[name] = { ...next[name] }
+                    next[name][prop] = [...next[name][prop]]
+                    next[name][prop][axisIdx] = value
+                    return next
+                })
+                updateThreeObject(name, prop, axisMap[axisIdx], value)
+            }
         }, [updateThreeObject])
 
         // let smoothBig = new Array(
@@ -449,7 +466,7 @@ const Canvas =
 
         const initPoint = (config, pointConfig, name, group) => {
             const { sitnum1, sitnum2, sitInterp, sitInterp1, sitOrder } = config
-            const { position, rotation, scale } = pointConfig
+            const { position, rotation, scale, pointSize } = pointConfig
             const AMOUNTX = sitnum1 * sitInterp + sitOrder * 2;
             const AMOUNTY = sitnum2 * sitInterp1 + sitOrder * 2;
             const numParticles = AMOUNTX * AMOUNTY;
@@ -490,7 +507,7 @@ const Canvas =
                 vertexColors: true,
                 transparent: true,
                 map: spite,
-                size: scale[0] * 300,
+                size: (pointSize != null ? pointSize : 1.0) * scale[0] * 300,
             });
             material.onBeforeCompile = (shader) => {
                 shader.vertexShader = shader.vertexShader
@@ -1385,7 +1402,7 @@ const Canvas =
                     position: 'absolute',
                     bottom: 10,
                     right: 10,
-                    zIndex: 100,
+                    zIndex: 9999,
                     background: 'rgba(30, 35, 42, 0.92)',
                     borderRadius: 8,
                     color: '#E6EBF0',
@@ -1447,6 +1464,37 @@ const Canvas =
                                             </div>
                                         </div>
                                     ))}
+                                    {/* 点大小控件 */}
+                                    <div style={{ marginBottom: 6 }}>
+                                        <div style={{ color: '#8899aa', marginBottom: 2 }}>pointSize</div>
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                            <input
+                                                type="range"
+                                                min={0.1}
+                                                max={5}
+                                                step={0.05}
+                                                value={configValues[name].pointSize}
+                                                onChange={e => handleConfigChange(name, 'pointSize', null, parseFloat(e.target.value))}
+                                                style={{ flex: 1, accentColor: '#00ccff' }}
+                                            />
+                                            <input
+                                                type="number"
+                                                step={0.05}
+                                                value={Number(configValues[name].pointSize.toFixed(2))}
+                                                onChange={e => handleConfigChange(name, 'pointSize', null, parseFloat(e.target.value) || 0.1)}
+                                                style={{
+                                                    width: 55,
+                                                    background: 'rgba(0,0,0,0.3)',
+                                                    border: '1px solid rgba(255,255,255,0.15)',
+                                                    borderRadius: 4,
+                                                    color: '#E6EBF0',
+                                                    padding: '2px 4px',
+                                                    fontSize: 11,
+                                                    outline: 'none',
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             ))}
 
@@ -1454,8 +1502,8 @@ const Canvas =
                             <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8, marginTop: 4 }}>
                                 <button
                                     onClick={() => {
-                                        const code = `backPointConfig={{ position: [${configValues.back.position.map(v => v.toFixed(4)).join(', ')}], rotation: [${configValues.back.rotation.map(v => v.toFixed(4)).join(', ')}], scale: [${configValues.back.scale.map(v => v.toFixed(4)).join(', ')}] }}
-sitPointConfig={{ position: [${configValues.sit.position.map(v => v.toFixed(4)).join(', ')}], rotation: [${configValues.sit.rotation.map(v => v.toFixed(4)).join(', ')}], scale: [${configValues.sit.scale.map(v => v.toFixed(4)).join(', ')}] }}`
+                                        const code = `backPointConfig={{ position: [${configValues.back.position.map(v => v.toFixed(4)).join(', ')}], rotation: [${configValues.back.rotation.map(v => v.toFixed(4)).join(', ')}], scale: [${configValues.back.scale.map(v => v.toFixed(4)).join(', ')}], pointSize: ${configValues.back.pointSize.toFixed(2)} }}
+sitPointConfig={{ position: [${configValues.sit.position.map(v => v.toFixed(4)).join(', ')}], rotation: [${configValues.sit.rotation.map(v => v.toFixed(4)).join(', ')}], scale: [${configValues.sit.scale.map(v => v.toFixed(4)).join(', ')}], pointSize: ${configValues.sit.pointSize.toFixed(2)} }}`
                                         navigator.clipboard?.writeText(code)
                                         console.log('\n点位配置:\n' + code)
                                     }}
