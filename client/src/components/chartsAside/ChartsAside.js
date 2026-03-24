@@ -668,7 +668,7 @@ function ChartsAside(props) {
                                             if (a != 't') {
                                                 return <div className='chartTypeItem'>
 
-                                                    <div className='cirlce' style={{ backgroundColor: pressColorArr[a] }}></div> <div style={{ width: '4rem' }}>{data[a][item]}{item == 'total' ? 'N' : 'Kpa'}</div> </div>
+                                                    <div className='cirlce' style={{ backgroundColor: pressColorArr[a] }}></div> <div style={{ width: '4rem', display: 'flex', justifyContent: 'flex-end' }}><span style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'monospace', minWidth: '2.8rem', textAlign: 'right', display: 'inline-block' }}>{data[a][item]}</span><span style={{ width: '1.6rem', textAlign: 'left', flexShrink: 0 }}>{item == 'total' ? 'N' : 'Kpa'}</span></div> </div>
                                             }
                                         })
                                     }</div>
@@ -727,7 +727,7 @@ function ChartsAside(props) {
                                             if (a != 't') {
                                                 return <div className='chartTypeItem'>
 
-                                                    <div className='cirlce' style={{ backgroundColor: areaColorArr[a] }}></div> <div style={{ width: '4rem' }}>{data[a][item]}{item == 'pointTotal' ? '个' : 'cm²'}</div> </div>
+                                                    <div className='cirlce' style={{ backgroundColor: areaColorArr[a] }}></div> <div style={{ width: '4rem', display: 'flex', justifyContent: 'flex-end' }}><span style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'monospace', minWidth: '2.4rem', textAlign: 'right', display: 'inline-block' }}>{data[a][item]}</span><span style={{ width: '1.6rem', textAlign: 'left', flexShrink: 0 }}>{item == 'pointTotal' ? '个' : 'cm²'}</span></div> </div>
                                             }
                                         })
                                     }</div>
@@ -773,7 +773,7 @@ function ChartsAside(props) {
                                             if (a != 't') {
                                                 return <div className='chartTypeItem' >
 
-                                                    <div className='cirlce' style={{ backgroundColor: areaColorArr[a] }}></div><div style={{ display: 'flex' }}> {`(${data[a][item][0]} , ${data[a][item][1]})`} </div>
+                                                    <div className='cirlce' style={{ backgroundColor: areaColorArr[a] }}></div><div style={{ display: 'flex', fontVariantNumeric: 'tabular-nums', fontFamily: 'monospace' }}> {`(${data[a][item][0]} , ${data[a][item][1]})`} </div>
                                                     {/* {data[a][item]} */}
                                                 </div>
                                             }
