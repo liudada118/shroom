@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import './index.scss'
 const dataMap = [
   {
@@ -17,6 +17,10 @@ export default function Select(props) {
   const [show, setShow] = useState(false)
   const [value, setValue] = useState(defaultValue)
 
+  // 当 defaultValue 变化时同步更新显示值
+  useEffect(() => {
+    setValue(defaultValue)
+  }, [defaultValue])
 
   return (
     <>
