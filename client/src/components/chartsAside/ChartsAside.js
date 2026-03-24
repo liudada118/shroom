@@ -563,6 +563,7 @@ function ChartsAside(props) {
                     const key = keyArr[i]
                     if (!dataObj[key]) dataObj[key] = {}
 
+                    if (!pointConfig[system] || !pointConfig[system][key]) continue
                     const widthDistance = pointConfig[system][key].pointWidthDistance
                     const heightDistance = pointConfig[system][key].pointHeightDistance
                     dataObj[key].pointTotal = chartData[key].data.areaTotal

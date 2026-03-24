@@ -6,6 +6,7 @@ import { useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 import { pageContext } from '../../page/test/Test';
 import DataPlayContrast from './DataPlayContrast';
+import { systemPointConfig } from '../../util/constant';
 
 export default function NumThresContrast(props) {
     const pageInfo = useContext(pageContext);
@@ -19,20 +20,32 @@ export default function NumThresContrast(props) {
     // const [sitData , setData] = useState([])
     const sitData = useRef({})
 
+    // 根据 systemType 和 displayType 动态获取 width/height
+    const getMatrixSize = (type) => {
+        const configKey = `${systemType}-${type}`
+        const config = systemPointConfig[configKey]
+        if (config) return { width: config.width, height: config.height }
+        // fallback to endi defaults
+        return type === 'back' ? { width: 50, height: 64 } : { width: 46, height: 46 }
+    }
+
+    const backSize = getMatrixSize('back')
+    const sitSize = getMatrixSize('sit')
+
     return (
         <>{isMoreMatrix(systemType) ?
             displayType.includes('back') ? <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }}>
 
                 <div style={{ display: 'flex', flexDirection: 'column', position: 'relative', alignItems: 'center' }}>
-                    <NumThree2 width={50} height={64} sitData={sitData} classIndex={1} />
+                    <NumThree2 key={`${systemType}-back-1`} width={backSize.width} height={backSize.height} sitData={sitData} classIndex={1} />
                     <DataPlayContrast dataLength={contrast.left.length} sitData={sitData} bottom={10} width='50%' />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', position: 'relative', alignItems: 'center' }}>
-                    <NumThree2 width={50} height={64} sitData={sitData} classIndex={2} />
+                    <NumThree2 key={`${systemType}-back-2`} width={backSize.width} height={backSize.height} sitData={sitData} classIndex={2} />
                     <DataPlayContrast dataLength={contrast.right.length} sitData={sitData} bottom={10} width='50%' />
                 </div>
             </div> :
-                <NumThree width={45} height={45} sitData={sitData} /> :
+                <NumThree key={`${systemType}-sit`} width={sitSize.width} height={sitSize.height} sitData={sitData} /> :
             <NumThree width={32} height={32} sitData={sitData} />}
         </>
     )
