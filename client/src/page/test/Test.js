@@ -207,6 +207,10 @@ function Test() {
         endi: <Endi1 sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
             backConfig={{ sitnum1: 64, sitnum2: 50, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 46, sitnum2: 46, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
+        />,
+        carY: <Endi1 sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
+            backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
+            sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
         />
     }
 
@@ -217,6 +221,7 @@ function Test() {
         foot: <NumThree size={32} sitData={disPlayDataRef} />,
         car: <NumThree size={32} sitData={disPlayDataRef} />,
         endi: <NumThree size={64} sitData={disPlayDataRef} />,
+        carY: <NumThree size={32} sitData={disPlayDataRef} />,
     }
 
     const num3DComponentObj = {
@@ -225,6 +230,7 @@ function Test() {
         hand: <Num3D sitData={disPlayDataRef} />,
         foot: <Num3D sitData={disPlayDataRef} />,
         car: <Num3D sitData={disPlayDataRef} />,
+        carY: <Num3D sitData={disPlayDataRef} />,
     }
 
     const [showProp, setShowProp] = useState(100)

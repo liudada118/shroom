@@ -22,12 +22,14 @@ const baseMax = {
 
 export const optimalObj = {
   bed: { gauss: 2.6, color: 355, filter: 6, height: 15, coherent: 1 },
-  car: { gauss: 2, color: 495, filter: 0, height: 15, coherent: 1 }
+  car: { gauss: 2, color: 495, filter: 0, height: 15, coherent: 1 },
+  carY: { gauss: 2, color: 495, filter: 0, height: 15, coherent: 1 }
 };
 
 export const maxObj = {
   bed: { gauss: 4, color: 2000, filter: 20, height: 50, coherent: 10 },
-  car: { gauss: 4, color: 2000, filter: 20, height: 50, coherent: 10 }
+  car: { gauss: 4, color: 2000, filter: 20, height: 50, coherent: 10 },
+  carY: { gauss: 4, color: 2000, filter: 20, height: 50, coherent: 10 }
 };
 
 export { lengthObj }

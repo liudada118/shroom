@@ -400,6 +400,24 @@ function sitYToX(y) {
     return Math.exp((y - 38.2932) / 15.76) - 0.088;
 }
 
+function carYLine(arr) {
+    let wsPointData = [...arr];
+    // 1-15行调换
+    for (let i = 0; i < 8; i++) {
+        for (let j = 0; j < 32; j++) {
+            [wsPointData[i * 32 + j], wsPointData[(14 - i) * 32 + j]] = [
+                wsPointData[(14 - i) * 32 + j],
+                wsPointData[i * 32 + j],
+            ];
+        }
+    }
+
+    let b = wsPointData.splice(0, 15 * 32);
+
+    wsPointData = wsPointData.concat(b);
+    return wsPointData
+}
+
 module.exports = {
     hand,
     jqbed,
@@ -408,5 +426,6 @@ module.exports = {
     endiSit1024,
     endiBack1024,
     backYToX,
-    sitYToX
+    sitYToX,
+    carYLine
 }

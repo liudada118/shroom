@@ -10,7 +10,7 @@ import './index.scss'
 dayjs.extend(customParseFormat)
 const dateFormat = 'YYYY-MM-DD'
 const CheckboxGroup = Checkbox.Group
-const plainOptions = ['hand', 'bed', 'car-back', 'car-sit', 'endi-back', 'endi-sit']
+const plainOptions = ['hand', 'bed', 'car-back', 'car-sit', 'endi-back', 'endi-sit', 'carY-back', 'carY-sit']
 
 // ─── Device class colors & labels ────────────────────────
 const DEVICE_COLORS = {

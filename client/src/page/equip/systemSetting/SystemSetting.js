@@ -19,16 +19,18 @@ const systemOptions = [
     { label: '床垫', value: 'bed' },
     { label: '汽车座椅', value: 'car' },
     { label: '汽车座椅(endi)', value: 'endi' },
+    { label: '汽车座椅Y', value: 'carY' },
     { label: '大矩阵(bigHand)', value: 'bigHand' },
     { label: '小矩阵(hand)', value: 'hand' },
 ];
 
-const plainOptions = ['bed', 'car', 'endi', 'bigHand', 'hand'];
+const plainOptions = ['bed', 'car', 'endi', 'carY', 'bigHand', 'hand'];
 
 const systemNameMap = {
     bed: '床垫',
     car: '汽车座椅',
     endi: '汽车座椅(endi)',
+    carY: '汽车座椅Y',
     bigHand: '大矩阵(bigHand)',
     hand: '小矩阵(hand)'
 };
@@ -37,6 +39,7 @@ const systemTagColor = {
     bed: 'blue',
     car: 'green',
     endi: 'orange',
+    carY: 'gold',
     bigHand: 'purple',
     hand: 'cyan'
 };
@@ -56,6 +59,7 @@ const fallbackConfig = {
         bed:     { gauss: 2.6, color: 355,  filter: 6,  height: 2.02, coherent: 1 },
         car:     { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 },
         endi:    { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 },
+        carY:    { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 },
         bigHand: { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 },
         hand:    { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 }
     },
@@ -63,6 +67,7 @@ const fallbackConfig = {
         bed:     { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
         car:     { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
         endi:    { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
+        carY:    { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
         bigHand: { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
         hand:    { gauss: 4, color: 2000, filter: 20, height: 8, coherent: 10 },
     }

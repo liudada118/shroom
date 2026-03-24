@@ -93,6 +93,8 @@ const typeConfig = {
   3: 'bed',
   4: 'endi-back',
   5: 'endi-sit',
+  6: 'carY-back',
+  7: 'carY-sit',
 }
 
 // ═══════════════════════════════════════════════════════════

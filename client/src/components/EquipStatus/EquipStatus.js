@@ -39,7 +39,7 @@ const EquipStatus = React.memo(function EquipStatus(props) {
                     return (
                         <div className='equipStatusContent'>
                             <div className='equipName'>{
-                                a.includes('car') ||a.includes('endi')   ? t(a.split('-')[1]) : a == 'hand' ? t('handEquip') : a == 'bed' ? t('bedEquip') : ''
+                                a.includes('car') ||a.includes('endi') ||a.includes('carY')   ? t(a.split('-')[1]) : a == 'hand' ? t('handEquip') : a == 'bed' ? t('bedEquip') : ''
                             }</div> <div className={equipStatus[a] == 'online' ? 'equipOnlineStatus' :  'equipOfflineStatus'}></div>
                         </div>
                     )

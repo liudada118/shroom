@@ -21,6 +21,18 @@ export const pointConfig = {
       pointWidthDistance: 10,
       pointHeightDistance: 10,
     },
+  },
+  carY: {
+    back: {
+      pointLength: 32,
+      pointWidthDistance: 10,
+      pointHeightDistance: 10,
+    },
+    sit: {
+      pointLength: 32,
+      pointWidthDistance: 10,
+      pointHeightDistance: 10,
+    },
   }
 }
 
@@ -55,17 +67,18 @@ export const systemPointConfig = {
 }
 
 // 32x32 矩阵系统统一配置
-const point32Systems = ['car-sit', 'car-back', 'hand', 'bed']
+const point32Systems = ['car-sit', 'car-back', 'hand', 'bed', 'carY-sit', 'carY-back']
 point32Systems.forEach((name) => {
   systemPointConfig[name] = {
-    width: 50,
-    height: 64
+    width: 32,
+    height: 32
   }
 })
 
 // ─── 系统名称映射 ────────────────────────────────────────
 export const systemConfig = {
   car: '汽车座椅',
+  carY: '汽车座椅Y',
   bed: '床垫',
   chair: '人体工学椅',
   hand: '压力点阵图',
