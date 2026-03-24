@@ -32,16 +32,20 @@ export default function NumThresContrast(props) {
     const backSize = getMatrixSize('back')
     const sitSize = getMatrixSize('sit')
 
+    // 判断靠背是否为正方形（如 carY 32×32），正方形靠背使用与坐垫相同的 NumThree 渲染
+    const isSquareBack = backSize.width === backSize.height
+    const BackComponent = isSquareBack ? NumThree : NumThree2
+
     return (
         <>{isMoreMatrix(systemType) ?
             displayType.includes('back') ? <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }}>
 
                 <div style={{ display: 'flex', flexDirection: 'column', position: 'relative', alignItems: 'center' }}>
-                    <NumThree2 key={`${systemType}-back-1`} width={backSize.width} height={backSize.height} sitData={sitData} classIndex={1} />
+                    <BackComponent key={`${systemType}-back-1`} width={backSize.width} height={backSize.height} sitData={sitData} classIndex={1} />
                     <DataPlayContrast dataLength={contrast.left.length} sitData={sitData} bottom={10} width='50%' />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', position: 'relative', alignItems: 'center' }}>
-                    <NumThree2 key={`${systemType}-back-2`} width={backSize.width} height={backSize.height} sitData={sitData} classIndex={2} />
+                    <BackComponent key={`${systemType}-back-2`} width={backSize.width} height={backSize.height} sitData={sitData} classIndex={2} />
                     <DataPlayContrast dataLength={contrast.right.length} sitData={sitData} bottom={10} width='50%' />
                 </div>
             </div> :

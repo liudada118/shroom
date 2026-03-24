@@ -27,10 +27,16 @@ export default function NumThres(props) {
     }
 
     const { width, height } = getMatrixSize()
-   
+
+    // 判断靠背是否为正方形（如 carY 32×32），正方形靠背使用与坐垫相同的 NumThree 渲染
+    const isSquareBack = width === height
+
     return (
         <>{isMoreMatrix(systemType) ?
-            displayType.includes('back') ? <NumThree2 key={`${systemType}-back`} width={width} height={height} sitData={sitData} /> :
+            displayType.includes('back') ?
+                (isSquareBack ?
+                    <NumThree key={`${systemType}-back`} width={width} height={height} sitData={sitData} /> :
+                    <NumThree2 key={`${systemType}-back`} width={width} height={height} sitData={sitData} />) :
                 <NumThree key={`${systemType}-sit`} width={width} height={height} sitData={sitData} /> :
             <NumThree width={32} height={32} sitData={sitData} />}
 
