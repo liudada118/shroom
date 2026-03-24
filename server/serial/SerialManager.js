@@ -20,7 +20,7 @@ const { SerialPort, DelimiterParser } = require('serialport')
 const { getPort } = require('../../util/serialport')
 const { bytes4ToInt10 } = require('../../util/parseData')
 const constantObj = require('../../util/config')
-const { hand, jqbed, endiSit, endiBack, endiSit1024, endiBack1024, carYLine } = require('../../util/line')
+const { hand, jqbed, endiSit, endiBack, endiSit1024, endiBack1024, carYLine, carYSitLine, carYBackLine } = require('../../util/line')
 const { default: axios } = require('axios')
 const { state } = require('../state')
 const { getTypeFromCache, setTypeToCache } = require('../../util/serialCache')
@@ -421,14 +421,16 @@ function processMatrixData(pointArr, dataItem) {
   if (t === 'bed' || t === 'car-back') return jqbed(pointArr)
   if (t === 'endi-sit') return endiSit1024(pointArr)
   if (t === 'endi-back') return endiBack1024(pointArr)
-  if (t === 'carY-sit' || t === 'carY-back') return carYLine(pointArr)
+  if (t === 'carY-sit') return carYSitLine(pointArr)
+  if (t === 'carY-back') return carYBackLine(pointArr)
   return pointArr
 }
 
 function processTypedMatrixData(pointArr, dataItem) {
   const t = dataItem.type
   if (t === 'car-back' || t === 'car-sit' || t === 'bed') return jqbed(pointArr)
-  if (t === 'carY-sit' || t === 'carY-back') return carYLine(pointArr)
+  if (t === 'carY-sit') return carYSitLine(pointArr)
+  if (t === 'carY-back') return carYBackLine(pointArr)
   return pointArr
 }
 
@@ -584,8 +586,10 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
         dataItem.arr = endiSit(pointArr)
       } else if (dataItem.type === 'endi-back') {
         dataItem.arr = endiBack(pointArr)
-      } else if (dataItem.type === 'carY-sit' || dataItem.type === 'carY-back') {
-        dataItem.arr = carYLine(pointArr)
+      } else if (dataItem.type === 'carY-sit') {
+        dataItem.arr = carYSitLine(pointArr)
+      } else if (dataItem.type === 'carY-back') {
+        dataItem.arr = carYBackLine(pointArr)
       } else {
         dataItem.arr = pointArr
       }
@@ -625,8 +629,10 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
         dataItem.arr = endiSit(matrixData)
       } else if (dataItem.type === 'endi-back') {
         dataItem.arr = endiBack(matrixData)
-      } else if (dataItem.type === 'carY-sit' || dataItem.type === 'carY-back') {
-        dataItem.arr = carYLine(matrixData)
+      } else if (dataItem.type === 'carY-sit') {
+        dataItem.arr = carYSitLine(matrixData)
+      } else if (dataItem.type === 'carY-back') {
+        dataItem.arr = carYBackLine(matrixData)
       } else {
         dataItem.arr = matrixData
       }

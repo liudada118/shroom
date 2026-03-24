@@ -418,6 +418,34 @@ function carYLine(arr) {
     return wsPointData
 }
 
+// carY 坐垫线序：基础线序 + 上下调换 + 左右调换
+function carYSitLine(arr) {
+    let wsPointData = carYLine(arr);
+    const W = 32, H = 32;
+    // 上下调换（行翻转）+ 左右调换（列翻转）
+    const result = new Array(W * H);
+    for (let row = 0; row < H; row++) {
+        for (let col = 0; col < W; col++) {
+            result[row * W + col] = wsPointData[(H - 1 - row) * W + (W - 1 - col)];
+        }
+    }
+    return result;
+}
+
+// carY 靠背线序：基础线序 + 上下调换
+function carYBackLine(arr) {
+    let wsPointData = carYLine(arr);
+    const W = 32, H = 32;
+    // 上下调换（行翻转）
+    const result = new Array(W * H);
+    for (let row = 0; row < H; row++) {
+        for (let col = 0; col < W; col++) {
+            result[row * W + col] = wsPointData[(H - 1 - row) * W + col];
+        }
+    }
+    return result;
+}
+
 module.exports = {
     hand,
     jqbed,
@@ -427,5 +455,7 @@ module.exports = {
     endiBack1024,
     backYToX,
     sitYToX,
-    carYLine
+    carYLine,
+    carYSitLine,
+    carYBackLine
 }
