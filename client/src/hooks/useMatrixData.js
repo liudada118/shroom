@@ -136,7 +136,7 @@ export function useMatrixData() {
     data[key].data.pressMax = Math.max(...selectedArr)
     data[key].data.total = press
     data[key].data.pressMin = min || 0
-    data[key].data.pressAver = press / (area || 1)
+    data[key].data.pressAver = (press / (area || 1)).toFixed(2)
 
     // endi 类型单位转换
     if (fullKey === 'endi-back') {
