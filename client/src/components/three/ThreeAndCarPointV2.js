@@ -2,7 +2,7 @@ import Stats from "three/examples/jsm/libs/stats.module.js";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { TrackballControls } from "three/examples/jsm/controls/TrackballControls";
-import React, { memo, useContext, useEffect, useImperativeHandle, useRef, useState } from "react";
+import React, { memo, useContext, useEffect, useImperativeHandle, useRef, useState, useCallback } from "react";
 import { cleanupThree } from '../../util/disposeThree'
 import { TextureLoader } from "three";
 import * as TWEEN from '@tweenjs/tween.js'
@@ -80,6 +80,53 @@ const Canvas =
 
         let controlsFlag = true;
 
+        // === 配置面板状态 ===
+        const pointGroupRef = useRef(null)
+        const [configPanelOpen, setConfigPanelOpen] = useState(false)
+        const [configValues, setConfigValues] = useState({
+            back: {
+                position: props.backPointConfig?.position || [2.5, -15, 0],
+                rotation: props.backPointConfig?.rotation || [-Math.PI / 12 - Math.PI / 2, 0, 0],
+                scale: props.backPointConfig?.scale || [0.0015, 0.002, 0.002],
+            },
+            sit: {
+                position: props.sitPointConfig?.position || [0, -30, -5],
+                rotation: props.sitPointConfig?.rotation || [-Math.PI / 6 - Math.PI / 2 + Math.PI / 2, 0, 0],
+                scale: props.sitPointConfig?.scale || [0.0018, 0.0018, 0.0018],
+            }
+        })
+
+        const updateThreeObject = useCallback((name, prop, axis, value) => {
+            const pg = pointGroupRef.current
+            if (!pg) return
+            const obj = pg.children.find(a => a.name === name)
+            const border = pg.children.find(a => a.name === name + '_border')
+            if (!obj) return
+            if (prop === 'position') {
+                obj.position[axis] = value
+                if (border) border.position[axis] = value
+            } else if (prop === 'rotation') {
+                obj.rotation[axis] = value
+                if (border) border.rotation[axis] = value
+            } else if (prop === 'scale') {
+                obj.scale[axis] = value
+                if (border) border.scale[axis] = value
+            }
+        }, [])
+
+        const handleConfigChange = useCallback((name, prop, axisIdx, value) => {
+            if (value === null || value === undefined) return
+            const axisMap = ['x', 'y', 'z']
+            setConfigValues(prev => {
+                const next = { ...prev }
+                next[name] = { ...next[name] }
+                next[name][prop] = [...next[name][prop]]
+                next[name][prop][axisIdx] = value
+                return next
+            })
+            updateThreeObject(name, prop, axisMap[axisIdx], value)
+        }, [updateThreeObject])
+
         // let smoothBig = new Array(
         //     (sitnum1 * sitInterp + sitOrder * 2) *
         //     (sitnum2 * sitInterp2 + sitOrder * 2)
@@ -103,6 +150,7 @@ const Canvas =
             totalPointArr = [];
         let local
         let pointGroup = new THREE.Group();
+        pointGroupRef.current = pointGroup;
         let particles,
             particles1,
             material,
@@ -1326,11 +1374,108 @@ const Canvas =
             };
         }, []);
         return (
-            <div>
+            <div style={{ position: 'relative' }}>
                 <div
                     // style={{ width: "100%", height: "100%" }}
                     id={`canvas`}
                 ></div>
+
+                {/* 点位配置面板 */}
+                <div style={{
+                    position: 'absolute',
+                    bottom: 10,
+                    right: 10,
+                    zIndex: 100,
+                    background: 'rgba(30, 35, 42, 0.92)',
+                    borderRadius: 8,
+                    color: '#E6EBF0',
+                    fontSize: 12,
+                    minWidth: configPanelOpen ? 320 : 'auto',
+                    maxHeight: '70vh',
+                    overflowY: 'auto',
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                }}>
+                    <div
+                        onClick={() => setConfigPanelOpen(!configPanelOpen)}
+                        style={{
+                            padding: '6px 12px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            borderBottom: configPanelOpen ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                            userSelect: 'none',
+                        }}
+                    >
+                        <span style={{ fontWeight: 'bold' }}>点位配置</span>
+                        <span style={{ transform: configPanelOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▲</span>
+                    </div>
+
+                    {configPanelOpen && (
+                        <div style={{ padding: '8px 12px' }}>
+                            {['back', 'sit'].map(name => (
+                                <div key={name} style={{ marginBottom: 12 }}>
+                                    <div style={{ fontWeight: 'bold', marginBottom: 4, color: '#00ccff', fontSize: 13 }}>
+                                        {name === 'back' ? '靠背 (back)' : '坐垫 (sit)'}
+                                    </div>
+                                    {['position', 'rotation', 'scale'].map(prop => (
+                                        <div key={prop} style={{ marginBottom: 6 }}>
+                                            <div style={{ color: '#8899aa', marginBottom: 2 }}>{prop}</div>
+                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                {['X', 'Y', 'Z'].map((axis, idx) => (
+                                                    <div key={axis} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                                        <span style={{ color: '#667788', fontSize: 11 }}>{axis}:</span>
+                                                        <input
+                                                            type="number"
+                                                            step={prop === 'scale' ? 0.0001 : prop === 'rotation' ? 0.01 : 0.5}
+                                                            value={Number(configValues[name][prop][idx].toFixed(4))}
+                                                            onChange={e => handleConfigChange(name, prop, idx, parseFloat(e.target.value) || 0)}
+                                                            style={{
+                                                                width: prop === 'scale' ? 70 : 60,
+                                                                background: 'rgba(0,0,0,0.3)',
+                                                                border: '1px solid rgba(255,255,255,0.15)',
+                                                                borderRadius: 4,
+                                                                color: '#E6EBF0',
+                                                                padding: '2px 4px',
+                                                                fontSize: 11,
+                                                                outline: 'none',
+                                                            }}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ))}
+
+                            {/* 复制配置按钮 */}
+                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8, marginTop: 4 }}>
+                                <button
+                                    onClick={() => {
+                                        const code = `backPointConfig={{ position: [${configValues.back.position.map(v => v.toFixed(4)).join(', ')}], rotation: [${configValues.back.rotation.map(v => v.toFixed(4)).join(', ')}], scale: [${configValues.back.scale.map(v => v.toFixed(4)).join(', ')}] }}
+sitPointConfig={{ position: [${configValues.sit.position.map(v => v.toFixed(4)).join(', ')}], rotation: [${configValues.sit.rotation.map(v => v.toFixed(4)).join(', ')}], scale: [${configValues.sit.scale.map(v => v.toFixed(4)).join(', ')}] }}`
+                                        navigator.clipboard?.writeText(code)
+                                        console.log('\n点位配置:\n' + code)
+                                    }}
+                                    style={{
+                                        width: '100%',
+                                        padding: '4px 8px',
+                                        background: 'rgba(0, 204, 255, 0.15)',
+                                        border: '1px solid rgba(0, 204, 255, 0.3)',
+                                        borderRadius: 4,
+                                        color: '#00ccff',
+                                        cursor: 'pointer',
+                                        fontSize: 11,
+                                    }}
+                                >
+                                    复制配置代码
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         );
     }));
