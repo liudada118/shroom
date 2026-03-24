@@ -1014,21 +1014,29 @@ const Canvas =
 
             // const {back , sit} = props.sitData.current
 
+            const sitW = sitConfig.sitnum1
+            const sitH = sitConfig.sitnum2
+            const backW = backConfig.sitnum2
+            const backH = backConfig.sitnum1
+            const defaultSitLen = sitW * sitH
+            const defaultBackLen = backW * backH
+
             const data = {
-                back: props.sitData.current.back || new Array(4096).fill(0), sit: props.sitData.current.sit || new Array(4096).fill(0),
+                back: props.sitData.current.back || new Array(defaultBackLen).fill(0),
+                sit: props.sitData.current.sit || new Array(defaultSitLen).fill(0),
             }
 
             {
                 const yArr = []
-                for (let i = 0; i < 46; i++) {
-                    yArr.push(45 - i)
+                for (let i = 0; i < sitH; i++) {
+                    yArr.push(sitH - 1 - i)
                 }
 
                 const newArr = []
-                for (let i = 0; i < 46; i++) {
-                    for (let j = 0; j < 46; j++) {
+                for (let i = 0; i < sitH; i++) {
+                    for (let j = 0; j < sitW; j++) {
                         const width = yArr[i]
-                        newArr.push(data.sit[width * 46 + 45 - j])
+                        newArr.push(data.sit[width * sitW + sitW - 1 - j])
                     }
                 }
                 data.sit = newArr
@@ -1036,15 +1044,15 @@ const Canvas =
 
             {
                 const yArr = []
-                for (let i = 0; i < 64; i++) {
-                    yArr.push(63 - i)
+                for (let i = 0; i < backH; i++) {
+                    yArr.push(backH - 1 - i)
                 }
 
                 const newArr = []
-                for (let i = 0; i < 64; i++) {
-                    for (let j = 0; j < 50; j++) {
+                for (let i = 0; i < backH; i++) {
+                    for (let j = 0; j < backW; j++) {
                         const width = yArr[i]
-                        newArr.push(data.back[width * 50 + 49 - j])
+                        newArr.push(data.back[width * backW + backW - 1 - j])
                     }
                 }
                 data.back = newArr
