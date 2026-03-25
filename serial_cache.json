@@ -1,17 +1,23 @@
 {
   "devices": {
-    "344637301550321429": {
-      "type": "endi-sit",
+    "344637300C50322F96": {
+      "type": "carY-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-03-11T03:18:16.458Z",
+      "lastSeen": "2026-03-24T09:49:55.107Z",
       "alias": ""
     },
-    "344637301550321218": {
+    "34463730155032142D": {
+      "type": "carY-back",
+      "deviceClass": "foot",
+      "lastSeen": "2026-03-24T11:30:50.880Z",
+      "alias": ""
+    },
+    "344637301050325155": {
       "type": "endi-back",
       "deviceClass": "foot",
-      "lastSeen": "2026-03-11T03:18:16.459Z",
+      "lastSeen": "2026-03-24T11:26:19.253Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-03-11T03:18:16.459Z"
+  "updatedAt": "2026-03-24T11:30:50.880Z"
 }

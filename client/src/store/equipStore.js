@@ -25,7 +25,7 @@ export const useEquipStore = create((set) => ({
   cop: {},
 
   // 系统配置
-  systemType: 'endi',
+  systemType: '',
   systemTypeArr: [],
   displayType: 'all',
   display: 'point3D',
