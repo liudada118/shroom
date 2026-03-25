@@ -122,11 +122,13 @@ export function useMatrixData() {
       data[key].areaArr.shift()
       data[key].areaArr.push(area)
     }
+    // carY 类型曲线数据也需要转换
+    const pressForChart = (fullKey === 'carY-back' || fullKey === 'carY-sit') ? press / (100 / 3) : press
     if (data[key].pressArr.length < 20) {
-      data[key].pressArr.push(press)
+      data[key].pressArr.push(pressForChart)
     } else {
       data[key].pressArr.shift()
-      data[key].pressArr.push(press)
+      data[key].pressArr.push(pressForChart)
     }
 
     data[key].data.pressTotal = press.toFixed(1)
@@ -147,6 +149,15 @@ export function useMatrixData() {
       data[key].data.pressMax = sitYToX(Math.max(...selectedArr)).toFixed(2)
       data[key].data.pressMin = sitYToX(min || 0).toFixed(2)
       data[key].data.pressAver = sitYToX(press / (area || 1)).toFixed(2)
+    }
+
+    // carY 类型压力转换：ADC值除以(100/3)
+    if (fullKey === 'carY-back' || fullKey === 'carY-sit') {
+      const divisor = 100 / 3
+      const pressTotal = press / divisor
+      data[key].data.pressMax = (Math.max(...selectedArr) / divisor).toFixed(2)
+      data[key].data.pressTotal = pressTotal.toFixed(2)
+      data[key].data.pressAver = (pressTotal / (area || 1)).toFixed(2)
     }
   }
 

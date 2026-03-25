@@ -573,6 +573,7 @@ function ChartsAside(props) {
                     dataObj[key].pressAver = chartData[key].data.pressAver
                     dataObj[key].pressMax = chartData[key].data.pressMax
                     dataObj[key].pressMin = chartData[key].data.pressMin
+                    dataObj[key].pressTotal = chartData[key].data.pressTotal
 
                     dataObj[key].total = (dataObj[key].areaTotal * dataObj[key].pressAver/10).toFixed(2) //chartData[key].data.total
 
@@ -625,8 +626,9 @@ function ChartsAside(props) {
     const { t, i18n } = useTranslation()
 
 
-    // const pressDataArr = ['pressAver', 'pressMax', 'pressTotal']
-    const pressDataArr = ['pressAver', 'pressMax', 'pressMin', 'total']
+    // 根据系统类型决定展示内容
+    const system = getSysType()
+    const pressDataArr = system === 'carY' ? ['pressAver', 'pressMax', 'pressTotal'] : ['pressAver', 'pressMax', 'pressMin', 'total']
     const areaDataArr = ['pointTotal', 'areaTotal',]
 
     const centerDataArr = ['pressureCenter']
@@ -668,7 +670,7 @@ function ChartsAside(props) {
                                             if (a != 't') {
                                                 return <div className='chartTypeItem'>
 
-                                                    <div className='cirlce' style={{ backgroundColor: pressColorArr[a] }}></div> <div style={{ width: '4rem', display: 'flex', justifyContent: 'flex-end' }}><span style={{ fontVariantNumeric: 'tabular-nums', minWidth: '2.8rem', textAlign: 'right', display: 'inline-block' }}>{data[a][item]}</span><span style={{ width: '1.6rem', textAlign: 'left', flexShrink: 0 }}>{item == 'total' ? 'N' : 'Kpa'}</span></div> </div>
+                                                    <div className='cirlce' style={{ backgroundColor: pressColorArr[a] }}></div> <div style={{ width: '4rem', display: 'flex', justifyContent: 'flex-end' }}><span style={{ fontVariantNumeric: 'tabular-nums', minWidth: '2.8rem', textAlign: 'right', display: 'inline-block' }}>{data[a][item]}</span><span style={{ width: '1.6rem', textAlign: 'left', flexShrink: 0 }}>{system === 'carY' ? '' : (item == 'total' ? 'N' : 'Kpa')}</span></div> </div>
                                             }
                                         })
                                     }</div>
