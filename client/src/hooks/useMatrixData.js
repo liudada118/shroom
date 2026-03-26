@@ -11,6 +11,9 @@ import { isMoreMatrix } from '../assets/util/util'
  * 封装传感器数据的预处理、框选、翻转、统计计算逻辑
  * 从 Test.js 中抽取，消除 sitData / sitDataPlay 之间的重复代码
  */
+
+const divisor = 100 / 3
+
 export function useMatrixData() {
   const sitDataRef = useRef({})
   const disPlayDataRef = useRef({})
@@ -102,7 +105,7 @@ export function useMatrixData() {
     const ku = kurtosis(arr, mu, sigma)
     const xData = Array.from({ length: 256 }, (_, i) => i)
     const yData = xData.map(x => normalPDF(x, mu, sigma))
-
+    
     const area = selectedArr.filter(a => a > 0).length
     const press = selectedArr.reduce((a, b) => a + b, 0)
 
@@ -123,7 +126,7 @@ export function useMatrixData() {
       data[key].areaArr.push(area)
     }
     // carY 类型曲线数据也需要转换
-    const pressForChart = (fullKey === 'carY-back' || fullKey === 'carY-sit') ? press / (100 / 3) : press
+    const pressForChart = (fullKey === 'carY-back' || fullKey === 'carY-sit') ? press / (divisor) : press
     if (data[key].pressArr.length < 20) {
       data[key].pressArr.push(pressForChart)
     } else {
@@ -153,7 +156,7 @@ export function useMatrixData() {
 
     // carY 类型压力转换：ADC值除以(100/3)
     if (fullKey === 'carY-back' || fullKey === 'carY-sit') {
-      const divisor = 100 / 3
+
       const pressTotal = press / divisor
       data[key].data.pressMax = (Math.max(...selectedArr) / divisor).toFixed(2)
       data[key].data.pressTotal = pressTotal.toFixed(2)

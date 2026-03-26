@@ -11,7 +11,19 @@
       "deviceClass": "foot",
       "lastSeen": "2026-03-11T03:18:16.459Z",
       "alias": ""
+    },
+    "344637300C50322F96": {
+      "type": "carY-sit",
+      "deviceClass": "foot",
+      "lastSeen": "2026-03-26T03:08:40.032Z",
+      "alias": ""
+    },
+    "34463730155032142D": {
+      "type": "carY-back",
+      "deviceClass": "foot",
+      "lastSeen": "2026-03-26T03:07:49.675Z",
+      "alias": ""
     }
   },
-  "updatedAt": "2026-03-11T03:18:16.459Z"
+  "updatedAt": "2026-03-26T03:08:40.032Z"
 }

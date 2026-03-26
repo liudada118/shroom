@@ -568,14 +568,15 @@ function ChartsAside(props) {
                     const widthDistance = sysConfig[key].pointWidthDistance || 1
                     const heightDistance = sysConfig[key].pointHeightDistance || 1
                     dataObj[key].pointTotal = chartData[key].data.areaTotal
-                    dataObj[key].areaTotal = chartData[key].data.areaTotal * widthDistance * heightDistance / 100
+                    const preciseAreaTotal = chartData[key].data.areaTotal * widthDistance * heightDistance / 100
+                    dataObj[key].areaTotal = Math.round(preciseAreaTotal)
                     // dataObj[key].pressTotal = chartData[key].data.pressTotal
-                    dataObj[key].pressAver = chartData[key].data.pressAver
+                    dataObj[key].pressAver = Number(chartData[key].data.pressAver || 0).toFixed(2)
                     dataObj[key].pressMax = chartData[key].data.pressMax
                     dataObj[key].pressMin = chartData[key].data.pressMin
                     dataObj[key].pressTotal = chartData[key].data.pressTotal
 
-                    dataObj[key].total = (dataObj[key].areaTotal * dataObj[key].pressAver/10).toFixed(2) //chartData[key].data.total
+                    dataObj[key].total = (preciseAreaTotal * dataObj[key].pressAver / 10).toFixed(2) //chartData[key].data.total
 
 
 
