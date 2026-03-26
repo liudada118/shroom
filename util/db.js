@@ -146,7 +146,7 @@ async function dbGetData({ db, params }) {
       const arr = item.arr
       const press = arr.reduce((a, b) => a + b, 0)
       const normalizedPress = (key === 'carY-back' || key === 'carY-sit')
-        ? press / (170 / 3)
+        ? press / (100 / 3)
         : press
       pressValue[key].push(normalizedPress)
       areaValue[key].push(arr.filter((a) => a > 0).length)
