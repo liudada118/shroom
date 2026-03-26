@@ -513,6 +513,10 @@ router.get('/getDownloadPath', (req, res) => {
     defaultPath = path.resolve(__dirname, '../../data')
   }
   const currentPath = state.downloadPath || defaultPath
+  // 同步默认路径到 state，确保下载时使用同一路径
+  if (!state.downloadPath) {
+    state.downloadPath = defaultPath
+  }
   res.json(new HttpResult(0, { path: currentPath, isDefault: !state.downloadPath }, 'success'))
 })
 
