@@ -16,7 +16,7 @@ import {
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
 import { jetWhite3, lineInterp } from "../../assets/util/line";
-import { getDisplayType, getSettingValue, getStatus } from "../../store/equipStore";
+import { getDisplayType, getSettingValue, getStatus, getSysType } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
 
 // function rotate90(arr, height, width) {
@@ -968,7 +968,9 @@ const Canvas =
 
                     position[k] = iy * SEPARATION - (AMOUNTX * SEPARATION) / 2; // x
 
-                    position[k + 1] = smoothBig[l] * height * 0.1; // y (乘以0.1缩放因子使高度调节更合理)
+                    // carY 靠背增加高度放大因子，使3D视觉效果更明显
+                    const heightScale = (getSysType() === 'carY' && name === 'back') ? 0.3 : 0.1;
+                    position[k + 1] = smoothBig[l] * height * heightScale; // y
 
                     position[k + 2] = ix * SEPARATION - (AMOUNTY * SEPARATION) / 2; // z 
 

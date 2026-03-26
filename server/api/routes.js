@@ -533,6 +533,15 @@ router.post('/setDownloadPath', asyncHandler(async (req, res) => {
     }
   }
   state.downloadPath = newPath
+
+  // 持久化下载路径到文件
+  try {
+    const downloadPathFile = require('path').join(state._dbPath, 'downloadPath.json')
+    fs.writeFileSync(downloadPathFile, JSON.stringify({ path: newPath }), 'utf-8')
+  } catch (e) {
+    console.warn('[Server] Failed to persist download path:', e.message)
+  }
+
   res.json(new HttpResult(0, { path: newPath }, 'success'))
 }))
 

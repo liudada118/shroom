@@ -58,6 +58,20 @@ state.file = result.value
 state._dbPath = dbPath
 state._isPackaged = isPackaged
 
+// ─── 恢复持久化的下载路径 ─────────────────────────────────
+const downloadPathFile = path.join(dbPath, 'downloadPath.json')
+try {
+  if (fs.existsSync(downloadPathFile)) {
+    const savedPath = JSON.parse(fs.readFileSync(downloadPathFile, 'utf-8')).path
+    if (savedPath && fs.existsSync(savedPath)) {
+      state.downloadPath = savedPath
+      console.log('[Server] Restored download path:', savedPath)
+    }
+  }
+} catch (e) {
+  console.warn('[Server] Failed to restore download path:', e.message)
+}
+
 const { db } = initDb(state.file, dbPath)
 state.currentDb = db
 console.log('[Server] Database initialized:', dbPath)
