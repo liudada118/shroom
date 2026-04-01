@@ -918,11 +918,7 @@ const ColAndHistory = memo((props) => {
                                                     <img style={{ transform: selectArr.includes(dbInfo.date) ? 'scale(1.1)' : 'scale(0)' }} src={selected} alt="" />
                                                 </div> : ''}
 
-                                                {currentPlaybackKey === historyItemKey ?
-                                                    <div className='fs14' style={{ right: 5, top: 5, position: 'absolute', color: '#1890ff', }}>  
-                                                        <i className='iconfont fs14' style={{ zIndex: 2, color: '#1890ff' }}>&#xe60e;</i>
-                                                    </div>
-                                                    : ''}
+
 
                                                 {dbInfo.selected ?
                                                     <div className='fs14' style={{ left: 5, bottom: 5, position: 'absolute', color: '#5CDBD3', }}>

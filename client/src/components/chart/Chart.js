@@ -119,9 +119,7 @@ const FootTrack = React.forwardRef((props, refs) => {
         ctx.moveTo((150 * width) / 300, (1 * width) / 300);
         ctx.lineTo((150 * width) / 300, (299 * width) / 300);
         ctx.stroke();
-
-        ctx.strokeStyle = "#01F1E3";
-        ctx.moveTo((150 * width) / 300, (150 * width) / 300);
+        ctx.closePath();
     }
 
     const canvasInit = () => {
@@ -153,7 +151,7 @@ const FootTrack = React.forwardRef((props, refs) => {
             2 * Math.PI
         );
         ctxCircle.fill();
-        ctxCircle.closePath()
+        ctxCircle.closePath();
 
         ctxCircle.beginPath();
         ctxCircle.fillStyle = "#8AC287";
@@ -165,6 +163,7 @@ const FootTrack = React.forwardRef((props, refs) => {
             2 * Math.PI
         );
         ctxCircle.fill();
+        ctxCircle.closePath();
 
         if (!arrSmooth1) return
 
@@ -178,7 +177,7 @@ const FootTrack = React.forwardRef((props, refs) => {
             2 * Math.PI
         );
         ctxCircle.fill();
-
+        ctxCircle.closePath();
 
         ctxCircle.beginPath();
         ctxCircle.fillStyle = "#5D65FF";
@@ -190,6 +189,7 @@ const FootTrack = React.forwardRef((props, refs) => {
             2 * Math.PI
         );
         ctxCircle.fill();
+        ctxCircle.closePath();
         // canvasText2({ ctx: ctxCircle, width: canvasWidth, htmlWidth: window.innerWidth, rightTopPropSmooth, leftTopPropSmooth, leftBottomPropSmooth, rightPropSmooth, leftPropSmooth, rightBottomPropSmooth });
     }
 
