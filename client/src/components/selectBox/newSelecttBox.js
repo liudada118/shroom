@@ -298,14 +298,20 @@ export class BrushManager {
         if (this.pointBottomRight.x - this.pointTopLeft.x > 5 && this.pointBottomRight.y - this.pointTopLeft.y > 5) {
             this.selectIndex += 10
             console.log(this.range)
+            // 将 DOM 引用保存到 range 对象上
+            this.range._element = this.element;
             this.rangeArr.push(this.range)
             this.isBrushing = false
             this.pointTopLeft = { x: 0, y: 0 }
             this.pointBottomRight = { x: 0, y: 0 }
 
+            // 如果已有旧框，先删除旧框
             if (this.rangeArr.length > 1) {
-                const element = document.querySelector(`.selectBox${20}`)
-                document.body.removeChild(element)
+                const oldRange = this.rangeArr[0]
+                const oldElement = oldRange._element
+                if (oldElement && oldElement.parentNode) {
+                    oldElement.parentNode.removeChild(oldElement)
+                }
                 this.rangeArr.splice(0, 1)
             }
             this.selectIndex = 20
@@ -315,15 +321,18 @@ export class BrushManager {
 
             this.notify(this.rangeArr);
         } else {
-            document.body.removeChild(this.element);
+            if (this.element && this.element.parentNode) {
+                document.body.removeChild(this.element);
+            }
         }
         this.start = undefined
 
     };
 
     deleteSelect = (index) => {
-        const elementIndex = this.rangeArr[index].index
-        const element = document.querySelector(`.selectBox${elementIndex}`)
+        const rangeItem = this.rangeArr[index]
+        if (!rangeItem) return
+        const element = rangeItem._element
         this.rangeArr.splice(index, 1)
         if (element && element.parentNode) {
             element.parentNode.removeChild(element)
