@@ -15,15 +15,15 @@
     "344637300C50322F96": {
       "type": "carY-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-04-01T02:41:11.668Z",
+      "lastSeen": "2026-04-01T11:24:21.379Z",
       "alias": ""
     },
     "34463730155032142D": {
       "type": "carY-back",
       "deviceClass": "foot",
-      "lastSeen": "2026-04-01T02:41:11.666Z",
+      "lastSeen": "2026-04-01T11:24:21.376Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-04-01T02:41:11.668Z"
+  "updatedAt": "2026-04-01T11:24:21.379Z"
 }

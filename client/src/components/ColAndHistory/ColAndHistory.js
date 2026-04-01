@@ -38,6 +38,28 @@ const getApiErrorMessage = (result, fallback) => {
     return fallback
 }
 
+const normalizeFolderSelection = (value) => {
+    if (!value) {
+        return ''
+    }
+    if (typeof value === 'string') {
+        return value
+    }
+    if (Array.isArray(value)) {
+        return normalizeFolderSelection(value[0])
+    }
+    if (typeof value === 'object') {
+        return normalizeFolderSelection(
+            value.path ||
+            value.filePath ||
+            value.folderPath ||
+            value.selectedPath ||
+            value.filePaths
+        )
+    }
+    return ''
+}
+
 const ColAndHistory = memo((props) => {
 
     const pageInfo = useContext(pageContext);
@@ -88,6 +110,44 @@ const ColAndHistory = memo((props) => {
     const [uploadFileShow, setUploadFileShow] = useState(false)
 
     const [uploadLoading, setUploadLoading] = useState(false)
+
+    const syncDownloadPathState = (nextPath) => {
+        const normalizedPath = nextPath == null ? '' : String(nextPath)
+        setDownloadPath(normalizedPath)
+        setEditPathValue(normalizedPath)
+        return normalizedPath
+    }
+
+    const persistDownloadPath = async (rawPath, options = {}) => {
+        const { showSuccess = false } = options
+        const nextPath = rawPath == null ? '' : String(rawPath).trim()
+        if (!nextPath) {
+            return ''
+        }
+
+        const res = await axios.post(`${localAddress}/setDownloadPath`, { path: nextPath }, {
+            params: {
+                path: nextPath,
+            },
+            headers: {
+                'X-Download-Path': nextPath,
+                'X-Path': nextPath,
+            }
+        })
+        if (res.data?.code !== 0) {
+            throw new Error(getApiErrorMessage(res.data, t('downloadFailed')))
+        }
+
+        const actualPath = res.data?.data?.path || nextPath
+        syncDownloadPathState(actualPath)
+        setIsEditingPath(false)
+
+        if (showSuccess) {
+            message.success(t('pathUpdated') || '路径已更新')
+        }
+
+        return actualPath
+    }
 
     const handleUpload = () => {
         if (!uploadFileRef.current) {
@@ -162,7 +222,7 @@ const ColAndHistory = memo((props) => {
     useEffect(() => {
         axios.get(`${localAddress}/getDownloadPath`).then((res) => {
             if (res.data?.code === 0) {
-                setDownloadPath(res.data.data.path)
+                syncDownloadPathState(res.data.data.path)
             }
         }).catch(() => {})
     }, [])
@@ -177,10 +237,16 @@ const ColAndHistory = memo((props) => {
         }
     }, [downloadToast])
 
-    const handleSelectFolder = async () => {
+    useEffect(() => {
+        if (showDownloadPathModal) {
+            setEditPathValue(downloadPath || '')
+        }
+    }, [showDownloadPathModal])
+
+    const handleSelectFolderLegacy = async () => {
         // 优先使用 Electron 文件夹选择对话框
         if (window.electronAPI?.selectFolder) {
-            const folder = await window.electronAPI.selectFolder()
+            const folder = normalizeFolderSelection(await window.electronAPI.selectFolder())
             if (folder) {
                 try {
                     const res = await axios.post(`${localAddress}/setDownloadPath`, { path: folder })
@@ -203,7 +269,7 @@ const ColAndHistory = memo((props) => {
         }
     }
 
-    const handleSavePath = () => {
+    const handleSavePathLegacy = () => {
         if (!editPathValue.trim()) return
         axios.post(`${localAddress}/setDownloadPath`, { path: editPathValue.trim() }).then((res) => {
             if (res.data?.code === 0) {
@@ -214,6 +280,33 @@ const ColAndHistory = memo((props) => {
                 message.error(res.data?.message || t('downloadFailed'))
             }
         })
+    }
+
+    const handleSelectFolder = async () => {
+        if (window.electronAPI?.selectFolder) {
+            const folder = normalizeFolderSelection(await window.electronAPI.selectFolder())
+            if (folder) {
+                try {
+                    await persistDownloadPath(folder, { showSuccess: true })
+                } catch (err) {
+                    syncDownloadPathState(folder)
+                    message.error(err.message || t('downloadFailed'))
+                }
+            }
+            return
+        }
+
+        setIsEditingPath(true)
+        setEditPathValue(downloadPath || '')
+    }
+
+    const handleSavePath = async () => {
+        if (!editPathValue.trim()) return
+        try {
+            await persistDownloadPath(editPathValue, { showSuccess: true })
+        } catch (err) {
+            message.error(err.message || t('downloadFailed'))
+        }
     }
 
     const handleOpenFolder = (folderPathOverride) => {
@@ -269,11 +362,12 @@ const ColAndHistory = memo((props) => {
             message.info(t('selectDataFirst'))
             return
         }
+        setEditPathValue(downloadPath || '')
         setShowDownloadPathModal(true)
     }
 
     // 确认下载：关闭路径对话框，显示进度弹窗，执行下载
-    const confirmDownload = () => {
+    const confirmDownload = async () => {
         const selectedFiles = Array.isArray(selectArr)
             ? selectArr.map((item) => item == null ? '' : String(item).trim()).filter(Boolean)
             : []
@@ -282,6 +376,16 @@ const ColAndHistory = memo((props) => {
             setShowDownloadPathModal(false)
             message.info(t('selectDataFirst'))
             return
+        }
+
+        const pendingPath = String(editPathValue || downloadPath || '').trim()
+        if (pendingPath) {
+            try {
+                await persistDownloadPath(pendingPath)
+            } catch (err) {
+                message.error(err.message || t('downloadFailed'))
+                return
+            }
         }
 
         setShowDownloadPathModal(false)
@@ -600,19 +704,23 @@ const ColAndHistory = memo((props) => {
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <Input
-                        value={downloadPath}
-                        onChange={(e) => setDownloadPath(e.target.value)}
-                        onBlur={(e) => {
+                        value={editPathValue}
+                        onChange={(e) => setEditPathValue(e.target.value)}
+                        onBlur={async (e) => {
                             const val = e.target.value.trim()
                             if (val) {
-                                axios.post(`${localAddress}/setDownloadPath`, { path: val }).catch(() => {})
+                                try {
+                                    await persistDownloadPath(val)
+                                } catch (err) {
+                                    message.error(err.message || t('downloadFailed'))
+                                }
                             }
                         }}
                         style={{ flex: 1 }}
                         placeholder={t('inputPath') || '输入存储路径...'}
                     />
                     <Button onClick={handleSelectFolder}>{t('browse') || '浏览'}</Button>
-                    <Button onClick={() => handleOpenFolder()}>{t('open')}</Button>
+                    <Button onClick={() => handleOpenFolder(editPathValue || downloadPath)}>{t('open')}</Button>
                 </div>
                 <div style={{ marginTop: '12px', color: '#999', fontSize: '0.8rem' }}>
                     {t('selectedCount') || '已选择'}: {selectArr.length} {t('items') || '项'}

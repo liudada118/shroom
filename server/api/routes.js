@@ -122,6 +122,68 @@ function resolveDownloadRequest(req) {
   }
 }
 
+function extractPathCandidate(source, depth = 0) {
+  if (depth > 3 || source === undefined || source === null) {
+    return ''
+  }
+
+  const parsedSource = tryParseRequestJson(source)
+
+  if (typeof parsedSource === 'string' || typeof parsedSource === 'number') {
+    return normalizeRequestString(parsedSource)
+  }
+
+  if (Array.isArray(parsedSource)) {
+    for (const item of parsedSource.slice(0, 8)) {
+      const candidate = extractPathCandidate(item, depth + 1)
+      if (candidate) {
+        return candidate
+      }
+    }
+    return ''
+  }
+
+  if (typeof parsedSource !== 'object') {
+    return ''
+  }
+
+  const directKeys = [
+    'path',
+    'folderPath',
+    'selectedPath',
+    'filePath',
+    'value',
+    'x-download-path',
+    'x-path'
+  ]
+
+  for (const key of directKeys) {
+    const candidate = extractPathCandidate(parsedSource[key], depth + 1)
+    if (candidate) {
+      return candidate
+    }
+  }
+
+  for (const key of ['data', 'payload', 'params', 'body', 'query', 'headers']) {
+    const candidate = extractPathCandidate(parsedSource[key], depth + 1)
+    if (candidate) {
+      return candidate
+    }
+  }
+
+  return ''
+}
+
+function resolveDownloadPathRequest(req) {
+  for (const source of [req.body, req.query, req.headers]) {
+    const candidate = extractPathCandidate(source)
+    if (candidate) {
+      return candidate
+    }
+  }
+  return ''
+}
+
 function pushPlaybackCandidate(target, value) {
   const normalized = normalizePlaybackField(value)
   if (!normalized || target.includes(normalized)) {
@@ -856,8 +918,14 @@ router.get('/getDownloadPath', (req, res) => {
 })
 
 router.post('/setDownloadPath', asyncHandler(async (req, res) => {
-  const { path: newPath } = req.body || {}
+  const newPath = resolveDownloadPathRequest(req)
   if (!newPath) {
+    console.warn('[Server] Download path missing', {
+      bodyType: Array.isArray(req.body) ? 'array' : typeof req.body,
+      bodyKeys: req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? Object.keys(req.body) : [],
+      queryKeys: Object.keys(req.query || {}),
+      headerKeys: Object.keys(req.headers || {}).filter((key) => key.startsWith('x-download') || key === 'x-path')
+    })
     res.json(new HttpResult(1, {}, 'path required'))
     return
   }
