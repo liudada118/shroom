@@ -421,7 +421,9 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const pointValue = pointInfo ? area : null
           const pressureAreaValue = pointInfo ? area * pointArea : area
 
-          if (file.includes('endi')) newData.sec = (i / 12).toFixed(2)
+          // 使用 timestamp 计算真实秒数，从0开始
+          const baseTimestamp = rows[0].timestamp || 0
+          newData.sec = ((rows[i].timestamp - baseTimestamp) / 1000).toFixed(2)
           newData[`${key}pressureArea`] = pressureAreaValue
           newData[`${key}pressure`] = press
           newData[`${key}max`] = max
@@ -537,7 +539,7 @@ function buildCsvHeaders(keyArr, file) {
   for (let j = 0; j < keyArr.length; j++) {
     const key = keyArr[j]
     if (j === 0) {
-      if (file.includes('endi')) handArr.push({ id: "sec", title: "sec（s）" })
+      handArr.push({ id: "sec", title: "sec（s）" })
       handArr.push({ id: "time", title: "time" })
     }
 
