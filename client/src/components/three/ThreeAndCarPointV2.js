@@ -1400,8 +1400,9 @@ const Canvas =
                     id={`canvas`}
                 ></div>
 
-                {/* 点位配置面板 */}
+                {/* 点位配置面板（已隐藏） */}
                 <div style={{
+                    display: 'none',
                     position: 'absolute',
                     bottom: 10,
                     right: 10,

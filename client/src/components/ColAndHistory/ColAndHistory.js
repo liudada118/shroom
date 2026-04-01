@@ -182,13 +182,19 @@ const ColAndHistory = memo((props) => {
         if (window.electronAPI?.selectFolder) {
             const folder = await window.electronAPI.selectFolder()
             if (folder) {
-                axios.post(`${localAddress}/setDownloadPath`, { path: folder }).then((res) => {
+                try {
+                    const res = await axios.post(`${localAddress}/setDownloadPath`, { path: folder })
                     if (res.data?.code === 0) {
-                        setDownloadPath(folder)
+                        // 使用后端返回的实际路径更新输入框
+                        const actualPath = res.data?.data?.path || folder
+                        setDownloadPath(actualPath)
                         setIsEditingPath(false)
-                        message.success(t('pathUpdated'))
+                        message.success(t('pathUpdated') || '路径已更新')
                     }
-                })
+                } catch (e) {
+                    // 即使后端请求失败，也更新前端显示
+                    setDownloadPath(folder)
+                }
             }
         } else {
             // 非 Electron 环境，显示编辑框
