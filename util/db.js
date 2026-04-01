@@ -362,11 +362,23 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         try { selectOverride = JSON.parse(selectOverride) } catch { selectOverride = null }
       }
 
+      // 如果没有外部传入的 selectJson，从 remarks 表读取该批次的框选信息
+      if (!selectOverride) {
+        try {
+          const remarkRow = await dbGet(db, 'SELECT select_json FROM remarks WHERE date = ?', [param])
+          if (remarkRow && remarkRow.select_json) {
+            try { selectOverride = JSON.parse(remarkRow.select_json) } catch { selectOverride = null }
+          }
+        } catch (e) {
+          // remarks 表可能不存在，忽略错误
+        }
+      }
+
       for (let i = 0; i < rows.length; i++) {
         const newData = {}
         // 每行只解析一次 JSON
         const rowData = JSON.parse(rows[i].data)
-        const rowSelect = rows[i].select ? JSON.parse(rows[i].select) : null
+        const rowSelect = null // select 信息已通过 selectOverride 统一处理
 
         for (let j = 0; j < keyArr.length; j++) {
           const key = keyArr[j]
