@@ -479,7 +479,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         fs.mkdirSync(csvPath, { recursive: true })
       }
 
-      const csvName = file === 'endi' ? 'car' : file
+      const csvName = file === 'endi' ? 'car' : (file === 'carY' ? 'carcushion' : file)
       const csvFilePath = path.join(csvPath, `${csvName}${safeName}.csv`)
 
       const csvWriter = createCsvWriter({ path: csvFilePath, header: handArr })
@@ -529,7 +529,7 @@ function buildCsvHeaders(keyArr, file) {
       handArr.push({ id: "time", title: "time" })
     }
 
-    const res = key.replace(/endi/g, "car")
+    const res = key.replace(/endi/g, "car").replace(/carY/g, "carcushion")
     handArr.push(
       { id: `${key}max`, title: `${res} Max（Kpa）` },
       { id: `${key}min`, title: `${res} Min（Kpa）` },

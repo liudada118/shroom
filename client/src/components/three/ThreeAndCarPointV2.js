@@ -991,7 +991,8 @@ const Canvas =
                     //     }
                     // }
 
-                    const isHidden = value < color * 0.3;
+                    // carY 不隐藏小值点
+                    const isHidden = getSysType() === 'carY' ? false : value < color * 0.3;
                     scales[j] = isHidden ? 0 : 1;
 
 
