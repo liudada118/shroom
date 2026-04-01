@@ -301,9 +301,7 @@ const ColAndHistory = memo((props) => {
             params: {
                 fileArr: JSON.stringify(selectedFiles),
             },
-            headers: {
-                'X-Download-Selection': JSON.stringify(selectedFiles),
-            },
+
             data: {
                 fileArr: selectedFiles,
             }
@@ -862,11 +860,7 @@ const ColAndHistory = memo((props) => {
                                                         method: 'post',
                                                         url: `${localAddress}/getDbHistory`,
                                                         params: playbackRequest,
-                                                        headers: {
-                                                            'X-Playback-Time': playbackTime || '',
-                                                            'X-Playback-Date': playbackTime || '',
-                                                            'X-Playback-Timestamp': playbackTimestamp || '',
-                                                        },
+
                                                         data: playbackRequest
                                                     }).then((res) => {
                                                         console.log(res)
