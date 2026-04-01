@@ -7,9 +7,9 @@
     "start": "electron .",
     "dev": "electron .",
     "dev:static": "cross-env USE_STATIC=1 electron .",
-    "build:client": "cd client && npm install && npm run build",
-    "build:win": "npm run build:client && electron-builder -w",
-    "build:mac": "npm run build:client && electron-builder -m",
+    "build:client": "pnpm --dir client build && node scripts/sync-client-build.js",
+    "build:win": "pnpm run build:client && electron-builder -w",
+    "build:mac": "pnpm run build:client && electron-builder -m",
     "install:all": "npm install && cd client && npm install",
     "postinstall": "electron-builder install-app-deps || echo [postinstall] skip native rebuild",
     "rebuild:native": "electron-builder install-app-deps"

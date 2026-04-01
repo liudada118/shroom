@@ -35,6 +35,8 @@ function startApiChild() {
         ...process.env,
         isPackaged: String(isPackaged),
         appPath: app.getAppPath(),
+        RESOURCES_PATH: process.resourcesPath,
+        DEFAULT_DOWNLOAD_PATH: app.getPath('downloads'),
         API_PORT: String(PORTS.api),
         WS_PORT: String(PORTS.ws)
       }
@@ -189,10 +191,15 @@ function startStaticServer() {
       '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2',
       '.ttf': 'font/ttf', '.map': 'application/json'
     }
+    const noCacheHeaders = {
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0'
+    }
 
     // 开发模式和生产模式的 build 目录不同
     const buildDir = isPackaged
-      ? path.join(__dirname, '..', 'build')
+      ? path.join(__dirname, 'build')
       : path.join(__dirname, 'client', 'build')
 
     // 检查 build 目录是否存在
@@ -216,11 +223,11 @@ function startStaticServer() {
           // SPA fallback
           fs.readFile(path.join(buildDir, 'index.html'), (err2, indexData) => {
             if (err2) {
-              res.writeHead(404, { 'Content-Type': 'text/plain' })
+              res.writeHead(404, { 'Content-Type': 'text/plain', ...noCacheHeaders })
               res.end('Not Found')
             } else {
               const html = indexData.toString().replace('<head>', `<head>${portInjectionScript}`)
-              res.writeHead(200, { 'Content-Type': 'text/html' })
+              res.writeHead(200, { 'Content-Type': 'text/html', ...noCacheHeaders })
               res.end(html)
             }
           })
@@ -229,10 +236,10 @@ function startStaticServer() {
           const contentType = MIME_TYPES[ext] || 'application/octet-stream'
           if (ext === '.html') {
             const html = data.toString().replace('<head>', `<head>${portInjectionScript}`)
-            res.writeHead(200, { 'Content-Type': contentType })
+            res.writeHead(200, { 'Content-Type': contentType, ...noCacheHeaders })
             res.end(html)
           } else {
-            res.writeHead(200, { 'Content-Type': contentType })
+            res.writeHead(200, { 'Content-Type': contentType, ...noCacheHeaders })
             res.end(data)
           }
         }
@@ -256,7 +263,7 @@ function startStaticServer() {
 //  创建主窗口
 // ═══════════════════════════════════════════════════════════
 
-function createWindow(port) {
+async function createWindow(port) {
   mainWindow = new BrowserWindow({
     webPreferences: {
       contextIsolation: true,
@@ -270,7 +277,16 @@ function createWindow(port) {
 
   mainWindow.maximize()
 
-  const url = `http://127.0.0.1:${port}`
+  if (isPackaged) {
+    try {
+      await mainWindow.webContents.session.clearCache()
+    } catch (err) {
+      console.warn('[Main] Failed to clear browser cache:', err.message)
+    }
+  }
+
+  const cacheBuster = isPackaged ? `?t=${Date.now()}` : ''
+  const url = `http://127.0.0.1:${port}/${cacheBuster}`
   console.log(`[Main] Loading page: ${url}`)
   mainWindow.loadURL(url)
 
@@ -383,7 +399,7 @@ app.whenReady().then(async () => {
     console.log(`[Main] All services ready (${Date.now() - startTime}ms)`)
 
     // 3. 创建窗口
-    createWindow(frontendPort)
+    await createWindow(frontendPort)
 
     // 4. 隐藏菜单栏
     Menu.setApplicationMenu(null)
@@ -407,7 +423,7 @@ app.on('window-all-closed', () => {
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     const port = useReactDevServer ? PORTS.frontend : PORTS.frontendProd
-    createWindow(port)
+    await createWindow(port)
   }
 })
 

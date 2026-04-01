@@ -18,6 +18,26 @@ import { pageContext } from '../../page/test/Test'
 
 const arr = new Array(9).fill(0)
 
+const getApiErrorMessage = (result, fallback) => {
+    const data = result?.data
+    if (typeof data === 'string' && data.trim()) {
+        return data.trim()
+    }
+    if (data && typeof data === 'object') {
+        if (typeof data.message === 'string' && data.message.trim()) {
+            return data.message.trim()
+        }
+        if (typeof data.error === 'string' && data.error.trim()) {
+            return data.error.trim()
+        }
+    }
+    const apiMessage = result?.message
+    if (typeof apiMessage === 'string' && apiMessage.trim() && apiMessage.trim().toLowerCase() !== 'error') {
+        return apiMessage.trim()
+    }
+    return fallback
+}
+
 const ColAndHistory = memo((props) => {
 
     const pageInfo = useContext(pageContext);
@@ -248,6 +268,16 @@ const ColAndHistory = memo((props) => {
 
     // 确认下载：关闭路径对话框，显示进度弹窗，执行下载
     const confirmDownload = () => {
+        const selectedFiles = Array.isArray(selectArr)
+            ? selectArr.map((item) => item == null ? '' : String(item).trim()).filter(Boolean)
+            : []
+
+        if (!selectedFiles.length) {
+            setShowDownloadPathModal(false)
+            message.info(t('selectDataFirst'))
+            return
+        }
+
         setShowDownloadPathModal(false)
         setDownloadProgress({ percent: 0, status: 'downloading', files: [] })
 
@@ -262,19 +292,26 @@ const ColAndHistory = memo((props) => {
         axios({
             method: 'post',
             url: `${localAddress}/downlaod`,
+            params: {
+                fileArr: JSON.stringify(selectedFiles),
+            },
+            headers: {
+                'X-Download-Selection': JSON.stringify(selectedFiles),
+            },
             data: {
-                fileArr: selectArr,
+                fileArr: selectedFiles,
             }
         }).then((res) => {
             clearInterval(progressTimer)
             console.log(res)
-            if (res.data.message == 'error') {
+            const result = res.data || {}
+            if (result.code !== 0) {
                 setDownloadProgress({ percent: 100, status: 'error', files: [] })
-                message.info(res.data.data)
+                message.error(getApiErrorMessage(result, t('downloadFailed')))
                 setTimeout(() => setDownloadProgress(null), 2000)
             } else {
                 // 提取所有文件路径
-                const results = res.data.data
+                const results = Array.isArray(result.data) ? result.data : []
                 const downloadedFiles = []
                 if (Array.isArray(results)) {
                     for (const item of results) {
@@ -291,12 +328,18 @@ const ColAndHistory = memo((props) => {
                         }
                     }
                 }
+                if (!downloadedFiles.length) {
+                    setDownloadProgress({ percent: 100, status: 'error', files: [] })
+                    message.error(getApiErrorMessage(result, t('downloadFailed')))
+                    setTimeout(() => setDownloadProgress(null), 2000)
+                    return
+                }
                 setDownloadProgress({ percent: 100, status: 'done', files: downloadedFiles })
             }
         }).catch((err) => {
             clearInterval(progressTimer)
             setDownloadProgress({ percent: 100, status: 'error', files: [] })
-            message.error(t('downloadFailed'))
+            message.error(getApiErrorMessage(err?.response?.data, err.message || t('downloadFailed')))
             setTimeout(() => setDownloadProgress(null), 2000)
         })
     }
@@ -351,6 +394,20 @@ const ColAndHistory = memo((props) => {
 
     const [dataLength, setDataLength] = useState(10)
     const [currentName, setCurrentName] = useState()
+    const [currentPlaybackKey, setCurrentPlaybackKey] = useState('')
+
+    const getHistoryItemKey = (item) => {
+        if (!item || typeof item !== 'object') return ''
+        if (item.date != null && String(item.date).trim()) return String(item.date).trim()
+        if (item.time != null && String(item.time).trim()) return String(item.time).trim()
+        if (item.name != null && String(item.name).trim()) return String(item.name).trim()
+        return ''
+    }
+
+    const getLocalItemKey = (item) => {
+        if (item == null) return ''
+        return String(item)
+    }
 
     const close = () => {
         axios({
@@ -364,6 +421,7 @@ const ColAndHistory = memo((props) => {
         useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
         useEquipStore.getState().setDataStatus('realtime')
         setCurrentName('')
+        setCurrentPlaybackKey('')
         setOperateStatus('')
         //  const history = useEquipStore.getState().history
         useEquipStore.getState().setHistoryStatus({
@@ -729,9 +787,10 @@ const ColAndHistory = memo((props) => {
                         <div className="playbackItems">
                             {
                                 Onindex == 0 && displayHistoryArr ? displayHistoryArr.map((dbInfo, index) => {
+                                    const historyItemKey = getHistoryItemKey(dbInfo)
 
                                     return (
-                                        <div className={`playbackItem cursor ${currentName === dbInfo.name ? 'playbackItemActive' : ''}`}
+                                        <div key={historyItemKey || `history-${index}`} className={`playbackItem cursor ${currentPlaybackKey === historyItemKey ? 'playbackItemActive' : ''}`}
 
                                             onClick={() => {
                                                 if (operateStatus == 'contrast') {
@@ -779,28 +838,64 @@ const ColAndHistory = memo((props) => {
                                                     }
                                                     setSelectArr(arr)
                                                 } else {
+                                                    const playbackTime = dbInfo && dbInfo.date != null ? String(dbInfo.date).trim() : ''
+                                                    const playbackTimestamp = dbInfo && dbInfo.time != null ? String(dbInfo.time).trim() : ''
+
+                                                    if (!playbackTime && !playbackTimestamp) {
+                                                        message.error('No playback identifier found for the selected item')
+                                                        return
+                                                    }
+
+                                                    const playbackRequest = {
+                                                        time: playbackTime || undefined,
+                                                        date: playbackTime || undefined,
+                                                        timestamp: playbackTimestamp || undefined,
+                                                    }
+
                                                     axios({
                                                         method: 'post',
                                                         url: `${localAddress}/getDbHistory`,
-                                                        data: {
-                                                            time: dbInfo.date,
-                                                        }
+                                                        params: playbackRequest,
+                                                        headers: {
+                                                            'X-Playback-Time': playbackTime || '',
+                                                            'X-Playback-Date': playbackTime || '',
+                                                            'X-Playback-Timestamp': playbackTimestamp || '',
+                                                        },
+                                                        data: playbackRequest
                                                     }).then((res) => {
                                                         console.log(res)
-                                                        setCurrentName(dbInfo.name)
-                                                        if (res.status == 200) {
-                                                            const { length, areaArr, pressArr } = res.data.data
-                                                            useEquipStore.getState().setDataStatus('replay')
-                                                            setDataLength(length)
-                                                            if (areaArr || pressArr) {
-                                                                useEquipStore.getState().setHistoryChart({
-                                                                    areaArr: areaArr || {},
-                                                                    pressArr: pressArr || {}
-                                                                })
-                                                            }
-                                                            useEquipStore.getState().setStatus(new Array(4096).fill(0))
-                                                            useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
+                                                        const result = res.data || {}
+                                                        const payload = result.data || {}
+                                                        const length = Number(payload.length) || 0
+
+                                                        if (result.code !== 0) {
+                                                            message.error(result.message || 'Load playback failed')
+                                                            return
                                                         }
+
+                                                        if (length <= 0) {
+                                                            message.error(result.message || 'No playback data found for the selected time')
+                                                            return
+                                                        }
+
+                                                        setCurrentName(dbInfo.name)
+                                                        setCurrentPlaybackKey(historyItemKey)
+                                                        useEquipStore.getState().setDataStatus('replay')
+                                                        setDataLength(length)
+                                                        useEquipStore.getState().setHistoryStatus({
+                                                            index: Number(payload.initialIndex) || 0,
+                                                            timestamp: payload.initialTimestamp || ''
+                                                        })
+                                                        if (payload.areaArr || payload.pressArr) {
+                                                            useEquipStore.getState().setHistoryChart({
+                                                                areaArr: payload.areaArr || {},
+                                                                pressArr: payload.pressArr || {}
+                                                            })
+                                                        }
+                                                        useEquipStore.getState().setStatus(new Array(4096).fill(0))
+                                                        useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
+                                                    }).catch((err) => {
+                                                        message.error(err.message || 'Load playback failed')
                                                     })
                                                 }
 
@@ -823,7 +918,7 @@ const ColAndHistory = memo((props) => {
                                                     <img style={{ transform: selectArr.includes(dbInfo.date) ? 'scale(1.1)' : 'scale(0)' }} src={selected} alt="" />
                                                 </div> : ''}
 
-                                                {currentName === dbInfo.name ?
+                                                {currentPlaybackKey === historyItemKey ?
                                                     <div className='fs14' style={{ right: 5, top: 5, position: 'absolute', color: '#1890ff', }}>  
                                                         <i className='iconfont fs14' style={{ zIndex: 2, color: '#1890ff' }}>&#xe60e;</i>
                                                     </div>
@@ -846,8 +941,9 @@ const ColAndHistory = memo((props) => {
                                         </div>
                                     )
                                 }) : Onindex == 1 && localArr ? localArr.map((a, index) => {
+                                    const localItemKey = getLocalItemKey(a)
                                     return (
-                                        <div className="playbackItem cursor" onClick={() => {
+                                        <div key={localItemKey || `local-${index}`} className={`playbackItem cursor ${currentPlaybackKey === localItemKey ? 'playbackItemActive' : ''}`} onClick={() => {
                                             if (selectDataArrType.includes(operateStatus)) {
                                                 let arr = [...selectArr]
                                                 if (arr.includes(a)) {
@@ -865,6 +961,7 @@ const ColAndHistory = memo((props) => {
                                                     }
                                                 }).then((res) => {
                                                     setCurrentName(a)
+                                                    setCurrentPlaybackKey(localItemKey)
                                                     console.log(res)
                                                 })
                                             }

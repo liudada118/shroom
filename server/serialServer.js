@@ -31,32 +31,38 @@ let WS_PORT = parseInt(process.env.WS_PORT, 10) || DEFAULT_PORTS.ws
 // ─── 环境变量 ────────────────────────────────────────────
 let { isPackaged, appPath } = process.env
 isPackaged = isPackaged === 'true'
+const resourcesRoot = isPackaged
+  ? (process.env.RESOURCES_PATH || (appPath ? path.resolve(appPath, '..') : path.resolve('resources')))
+  : path.join(__dirname, '..')
 
 // ─── 路径配置 ────────────────────────────────────────────
 let dbPath = path.join(__dirname, '..', 'db')
-let csvPath, nameTxt
+let csvPath
 
 if (isPackaged) {
   if (os.platform() === 'darwin') {
     dbPath = path.join(__dirname, '../../db')
     csvPath = path.join(__dirname, '../../data')
-    nameTxt = path.join(__dirname, '../../config.txt')
   } else {
-    dbPath = 'resources/db'
-    csvPath = 'resources/data'
-    nameTxt = 'resources/config.txt'
+    dbPath = path.join(resourcesRoot, 'db')
+    csvPath = path.join(resourcesRoot, 'data')
   }
+} else {
+  csvPath = path.join(__dirname, '..', 'data')
 }
 
 // ─── 配置文件读取 ─────────────────────────────────────────
-const config = fs.readFileSync('./config.txt', 'utf-8')
+const configPath = path.join(__dirname, '..', 'config.txt')
+const config = fs.readFileSync(configPath, 'utf-8')
 const result = JSON.parse(decryptStr(config))
 console.log('[Server] Config loaded:', Object.keys(result))
 
 // ─── 初始化全局状态 ──────────────────────────────────────
 state.file = result.value
 state._dbPath = dbPath
+state._dataPath = csvPath
 state._isPackaged = isPackaged
+state._defaultDownloadPath = process.env.DEFAULT_DOWNLOAD_PATH || null
 
 // ─── 恢复持久化的下载路径 ─────────────────────────────────
 const downloadPathFile = path.join(dbPath, 'downloadPath.json')
@@ -72,9 +78,16 @@ try {
   console.warn('[Server] Failed to restore download path:', e.message)
 }
 
-const { db } = initDb(state.file, dbPath)
-state.currentDb = db
-console.log('[Server] Database initialized:', dbPath)
+async function initializeCurrentDb() {
+  const result = await initDb(state.file, dbPath)
+  state.currentDb = result.db
+
+  if (result.recovered) {
+    console.warn(`[Server] Rebuilt corrupted database for ${state.file}. Backups: ${result.backupDir}`)
+  }
+
+  console.log('[Server] Database initialized:', dbPath)
+}
 
 // ─── Express 应用配置 ─────────────────────────────────────
 const app = express()
@@ -93,6 +106,8 @@ createWsServer()
 async function startServer() {
   try {
     // 1. 启动 WebSocket HTTP 服务器
+    await initializeCurrentDb()
+
     const wsHttpServer = getHttpServer()
     const actualWsPort = await listenWithRetry(wsHttpServer, WS_PORT, '0.0.0.0')
     if (actualWsPort !== WS_PORT) {

@@ -4,27 +4,282 @@
  */
 const express = require('express')
 const fs = require('fs')
+const path = require('path')
 const HttpResult = require('../HttpResult')
 const constantObj = require('../../util/config')
-const { initDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, changeDbName, changeDbDataName, upsertRemark, getRemark } = require('../../util/db')
+const { initDb, closeDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir } = require('../../util/db')
 const { decryptStr } = require('../../util/aes_ecb')
 const module2 = require('../../util/aes_ecb')
 const { state } = require('../state')
 const { broadcast } = require('../websocket')
 const { connectPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
-const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed } = require('../services/DataService')
+const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot } = require('../services/DataService')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 
 const router = express.Router()
+const configPath = path.join(__dirname, '..', '..', 'config.txt')
+
+function readSystemConfig() {
+  const config = fs.readFileSync(configPath, 'utf-8')
+  return JSON.parse(decryptStr(config))
+}
+
+function normalizePlaybackField(value) {
+  if (value === undefined || value === null) return ''
+  return String(value).trim()
+}
+
+function normalizeRequestString(value) {
+  if (value === undefined || value === null) return ''
+  return String(value).trim()
+}
+
+function tryParseRequestJson(value) {
+  if (typeof value !== 'string') {
+    return value
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  if (!/^[\[{"]/.test(trimmed)) {
+    return value
+  }
+
+  try {
+    return JSON.parse(trimmed)
+  } catch (err) {
+    return value
+  }
+}
+
+function pushDownloadCandidate(target, value) {
+  const normalized = normalizeRequestString(value)
+  if (!normalized || target.includes(normalized)) {
+    return
+  }
+  target.push(normalized)
+}
+
+function collectDownloadCandidates(source, target = [], depth = 0) {
+  if (depth > 3 || source === undefined || source === null) {
+    return target
+  }
+
+  const parsedSource = tryParseRequestJson(source)
+
+  if (typeof parsedSource === 'string' || typeof parsedSource === 'number') {
+    pushDownloadCandidate(target, parsedSource)
+    return target
+  }
+
+  if (Array.isArray(parsedSource)) {
+    parsedSource.slice(0, 500).forEach((item) => collectDownloadCandidates(item, target, depth + 1))
+    return target
+  }
+
+  if (typeof parsedSource !== 'object') {
+    return target
+  }
+
+  ;[
+    parsedSource.fileArr,
+    parsedSource.files,
+    parsedSource.selection,
+    parsedSource.selected,
+    parsedSource.value,
+    parsedSource['x-download-selection'],
+    parsedSource['x-file-arr']
+  ].forEach((value) => collectDownloadCandidates(value, target, depth + 1))
+
+  ;['data', 'payload', 'params', 'body', 'query', 'headers'].forEach((key) => {
+    if (parsedSource[key] !== undefined && parsedSource[key] !== parsedSource) {
+      collectDownloadCandidates(parsedSource[key], target, depth + 1)
+    }
+  })
+
+  return target
+}
+
+function resolveDownloadRequest(req) {
+  const fileArr = []
+  ;[req.body, req.query, req.headers].forEach((source) => collectDownloadCandidates(source, fileArr))
+
+  let selectJson = req.body && req.body.selectJson
+  if (selectJson === undefined) {
+    selectJson = req.query && req.query.selectJson
+  }
+  if (selectJson === undefined) {
+    selectJson = req.headers && (req.headers['x-select-json'] || req.headers.selectjson)
+  }
+  selectJson = tryParseRequestJson(selectJson)
+
+  return {
+    fileArr,
+    selectJson
+  }
+}
+
+function pushPlaybackCandidate(target, value) {
+  const normalized = normalizePlaybackField(value)
+  if (!normalized || target.includes(normalized)) {
+    return
+  }
+  target.push(normalized)
+}
+
+function collectPlaybackCandidates(source, target = [], depth = 0) {
+  if (depth > 3 || source === undefined || source === null) {
+    return target
+  }
+
+  if (typeof source === 'string' || typeof source === 'number') {
+    pushPlaybackCandidate(target, source)
+    return target
+  }
+
+  if (Array.isArray(source)) {
+    source.slice(0, 8).forEach((item) => collectPlaybackCandidates(item, target, depth + 1))
+    return target
+  }
+
+  if (typeof source !== 'object') {
+    return target
+  }
+
+  ;[
+    source.time,
+    source.date,
+    source.timestamp,
+    source.playbackTime,
+    source.playbackDate,
+    source.playbackTimestamp,
+    source.value,
+    source.key,
+    source.id,
+    source['x-playback-time'],
+    source['x-playback-date'],
+    source['x-playback-timestamp']
+  ].forEach((value) => pushPlaybackCandidate(target, value))
+
+  ;['data', 'payload', 'params', 'body', 'query', 'headers'].forEach((key) => {
+    if (source[key] !== undefined && source[key] !== source) {
+      collectPlaybackCandidates(source[key], target, depth + 1)
+    }
+  })
+
+  if (depth === 0) {
+    Object.keys(source).forEach((key) => {
+      if (/(time|date|stamp|playback)/i.test(key)) {
+        collectPlaybackCandidates(source[key], target, depth + 1)
+      }
+    })
+  }
+
+  return target
+}
+
+function queryCurrentDb(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    if (!state.currentDb) {
+      resolve(null)
+      return
+    }
+
+    state.currentDb.get(sql, params, (err, row) => {
+      if (err) reject(err)
+      else resolve(row || null)
+    })
+  })
+}
+
+async function resolvePlaybackCandidate(candidate) {
+  const normalized = normalizePlaybackField(candidate)
+  if (!normalized || !state.currentDb) {
+    return ''
+  }
+
+  const dateRow = await queryCurrentDb(
+    'SELECT date FROM matrix WHERE date = ? LIMIT 1',
+    [normalized]
+  )
+  if (dateRow && dateRow.date) {
+    return normalizePlaybackField(dateRow.date)
+  }
+
+  const timestampRow = await queryCurrentDb(
+    'SELECT date FROM matrix WHERE timestamp = ? LIMIT 1',
+    [normalized]
+  )
+  return normalizePlaybackField(timestampRow && timestampRow.date)
+}
+
+async function resolvePlaybackTimeKey(...sources) {
+  const candidates = []
+  sources.forEach((source) => collectPlaybackCandidates(source, candidates))
+
+  for (const candidate of candidates) {
+    const matchedDate = await resolvePlaybackCandidate(candidate)
+    if (matchedDate) {
+      return matchedDate
+    }
+  }
+
+  if (Array.isArray(state.historyListCache) && state.historyListCache.length === 1) {
+    return normalizePlaybackField(state.historyListCache[0] && state.historyListCache[0].date)
+  }
+
+  return ''
+}
+
+function getSafePlaybackHz(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) {
+    return 1
+  }
+
+  const firstTimestamp = Number(rows[0] && rows[0].timestamp)
+  const secondTimestamp = Number(rows[1] && rows[1].timestamp)
+  const delta = Math.abs(secondTimestamp - firstTimestamp)
+
+  if (!Number.isFinite(delta) || delta <= 0) {
+    return 1
+  }
+
+  return 1000 / delta
+}
 
 // ─── 通用错误处理包装器 ──────────────────────────────────
 function asyncHandler(fn) {
   return (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch((err) => {
       console.error('[Server] Route error:', err)
-      res.json(new HttpResult(1, {}, err.message || 'Internal server error'))
+      const message = err.code === 'SQLITE_CORRUPT'
+        ? 'Local database is corrupted. Restart the app to rebuild it from the template backup.'
+        : (err.message || 'Internal server error')
+      res.json(new HttpResult(1, {}, message))
     })
   }
+}
+
+async function reopenCurrentDb() {
+  if (state.currentDb) {
+    try {
+      await closeDb(state.currentDb)
+    } catch (err) {
+      console.warn('[Server] Failed to close current DB before reopen:', err.message)
+    }
+  }
+
+  const result = await initDb(state.file, state._dbPath)
+  state.currentDb = result.db
+
+  if (result.recovered) {
+    console.warn(`[Server] Rebuilt corrupted database for ${state.file}. Backups: ${result.backupDir}`)
+  }
+
+  return result
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -38,34 +293,30 @@ router.get('/', (req, res) => {
 // ─── 系统管理 ────────────────────────────────────────────
 
 router.get('/getSystem', asyncHandler(async (req, res) => {
-  const config = fs.readFileSync('./config.txt', 'utf-8')
-  const configResult = JSON.parse(decryptStr(config))
+  const configResult = readSystemConfig()
   configResult.value = state.file
 
   state.baudRate = constantObj.baudRateObj[configResult.value] || 1000000
 
-  const { db } = initDb(state.file, state._dbPath)
-  state.currentDb = db
+  await reopenCurrentDb()
 
   res.json(new HttpResult(0, configResult, 'Get device list success'))
 }))
 
 router.post('/selectSystem', asyncHandler(async (req, res) => {
   state.file = req.query.file
-  const { db } = initDb(state.file, state._dbPath)
-  state.currentDb = db
+  await reopenCurrentDb()
   state.baudRate = constantObj.blue.includes(state.file) ? 921600 : 1000000
   res.json(new HttpResult(0, {}, 'Switch success'))
 }))
 
 router.post('/changeSystemType', asyncHandler(async (req, res) => {
-  const { system } = req.body
+  const { system } = req.body || {}
   state.file = system
   state.baudRate = constantObj.baudRateObj[system] || 1000000
-  const { db } = initDb(state.file, state._dbPath)
-  state.currentDb = db
+  await reopenCurrentDb()
   broadcast(JSON.stringify({ sitData: {} }))
-  const result = JSON.parse(decryptStr(fs.readFileSync('./config.txt', 'utf-8')))
+  const result = readSystemConfig()
   res.json(new HttpResult(0, { optimalObj: result.optimalObj[state.file], maxObj: result.maxObj[state.file] }, 'success'))
 }))
 
@@ -288,8 +539,8 @@ router.get('/readMacOnly', asyncHandler(async (req, res) => {
 // ─── 数据采集 ────────────────────────────────────────────
 
 router.post('/startCol', asyncHandler(async (req, res) => {
-  const { fileName, select } = req.body
-  state.selectArr = select
+  const { fileName, select } = req.body || {}
+  state.selectArr = select || []
   state.historySelectCache = null
 
   const sensorArr = Object.keys(state.dataMap).map((a) => state.dataMap[a].type)
@@ -297,7 +548,7 @@ router.post('/startCol', asyncHandler(async (req, res) => {
 
   if (matchCount > 0) {
     state.colFlag = true
-    state.colName = String(fileName)
+    state.colName = String(fileName ?? Date.now())
     res.json(new HttpResult(0, {}, 'Collection started'))
   } else {
     res.json(new HttpResult(0, 'Please select correct sensor type', 'error'))
@@ -335,23 +586,66 @@ router.get('/getColHistory', asyncHandler(async (req, res) => {
     })
   })
 
+  state.historyListCache = Array.isArray(rows)
+    ? rows.map((row) => ({
+      date: normalizePlaybackField(row && row.date),
+      timestamp: normalizePlaybackField(row && row.timestamp)
+    }))
+    : []
+
   res.json(new HttpResult(0, rows, 'success'))
   broadcast(JSON.stringify({ sitData: {} }))
 }))
 
 router.post('/getDbHistory', asyncHandler(async (req, res) => {
-  const { time } = req.body
+  const playbackTime = await resolvePlaybackTimeKey(req.body, req.query, req.headers)
   state.historySelectCache = null
 
-  const { length, pressArr, areaArr, rows } = await dbGetData({ db: state.currentDb, params: [time] })
+  if (!playbackTime) {
+    console.warn('[Server] Playback identifier missing', {
+      bodyType: Array.isArray(req.body) ? 'array' : typeof req.body,
+      bodyKeys: req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? Object.keys(req.body) : [],
+      queryKeys: Object.keys(req.query || {}),
+      headerKeys: Object.keys(req.headers || {}).filter((key) => key.startsWith('x-playback')),
+      cachedHistoryCount: Array.isArray(state.historyListCache) ? state.historyListCache.length : 0
+    })
+    state.historyPlayFlag = false
+    clearPlayTimer()
+    state.historyDbArr = null
+    state.historyFlag = false
+    state.playIndex = 0
+    res.json(new HttpResult(1, {}, 'playback time required'))
+    return
+  }
 
-  state.historyDbArr = rows
-  state.colMaxHZ = 1000 / (state.historyDbArr[1].timestamp - state.historyDbArr[0].timestamp)
+  const { length, pressArr, areaArr, rows } = await dbGetData({ db: state.currentDb, params: [playbackTime] })
+
+  state.historyPlayFlag = false
+  clearPlayTimer()
+  state.historyDbArr = Array.isArray(rows) ? rows : []
+  state.colMaxHZ = getSafePlaybackHz(state.historyDbArr)
   state.colplayHZ = state.colMaxHZ
-  state.historyFlag = true
   state.playIndex = 0
 
-  res.json(new HttpResult(0, { length, pressArr, areaArr }, 'success'))
+  if (!state.historyDbArr.length) {
+    state.historyFlag = false
+    res.json(new HttpResult(1, {}, 'No playback data found for the selected time'))
+    return
+  }
+
+  state.historyFlag = true
+  const initialSnapshot = getPlaybackSnapshot(0)
+  if (initialSnapshot) {
+    broadcast(JSON.stringify(initialSnapshot.payload))
+  }
+
+  res.json(new HttpResult(0, {
+    length,
+    pressArr,
+    areaArr,
+    initialIndex: initialSnapshot ? initialSnapshot.payload.index : 0,
+    initialTimestamp: initialSnapshot ? initialSnapshot.payload.timestamp : null
+  }, 'success'))
 }))
 
 router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
@@ -414,7 +708,7 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getContrastData', asyncHandler(async (req, res) => {
-  const { left, right } = req.body
+  const { left, right } = req.body || {}
 
   const [leftResult, rightResult] = await Promise.all([
     dbGetData({ db: state.currentDb, params: [left] }),
@@ -426,8 +720,8 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
 
   broadcast(JSON.stringify({
     contrastData: {
-      left: JSON.parse(state.leftDbArr[0].data),
-      right: JSON.parse(state.rightDbArr[0].data)
+      left: state.leftDbArr[0] ? JSON.parse(state.leftDbArr[0].data || '{}') : {},
+      right: state.rightDbArr[0] ? JSON.parse(state.rightDbArr[0].data || '{}') : {}
     }
   }))
 
@@ -444,7 +738,14 @@ router.post('/getDbHistoryPlay', asyncHandler(async (req, res) => {
     res.json(new HttpResult(1, 'Please select playback time range', 'error'))
     return
   }
-  startPlayback()
+  if (!state.historyDbArr.length) {
+    res.json(new HttpResult(1, {}, 'No playback data found for the selected time'))
+    return
+  }
+  if (!startPlayback()) {
+    res.json(new HttpResult(1, {}, 'history not loaded'))
+    return
+  }
   res.json(new HttpResult(0, {}, 'success'))
 }))
 
@@ -462,44 +763,78 @@ router.post('/cancalDbPlay', (req, res) => {
 })
 
 router.post('/changeDbplaySpeed', asyncHandler(async (req, res) => {
-  const { speed } = req.body
+  const { speed } = req.body || {}
   changePlaySpeed(speed)
   res.json(new HttpResult(0, {}, 'success'))
 }))
 
 router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
-  const { index } = req.body
+  const { index } = req.body || {}
 
   if (!state.historyDbArr) {
     res.json(new HttpResult(555, 'Please select playback time range', 'error'))
     return
   }
+  if (!state.historyDbArr.length) {
+    res.json(new HttpResult(555, {}, 'No playback data found for the selected time'))
+    return
+  }
 
-  state.playIndex = index
-  broadcast(JSON.stringify({
-    sitDataPlay: JSON.parse(state.historyDbArr[state.playIndex].data),
-    index: state.playIndex,
-    timestamp: JSON.parse(state.historyDbArr[state.playIndex].timestamp)
-  }))
-  res.json(new HttpResult(0, state.historyDbArr[index], 'success'))
+  const snapshot = getPlaybackSnapshot(index)
+  if (!snapshot) {
+    res.json(new HttpResult(555, {}, 'history frame not found'))
+    return
+  }
+
+  broadcast(JSON.stringify(snapshot.payload))
+  res.json(new HttpResult(0, snapshot.row, 'success'))
 }))
 
 // ─── 数据操作 ────────────────────────────────────────────
 
 router.post('/downlaod', asyncHandler(async (req, res) => {
-  const { fileArr, selectJson } = req.body || {}
+  const { fileArr, selectJson } = resolveDownloadRequest(req)
   if (!fileArr || !fileArr.length) {
-    res.json(new HttpResult(555, 'Please select data first', 'error'))
+    console.warn('[Server] Download selection missing', {
+      bodyType: Array.isArray(req.body) ? 'array' : typeof req.body,
+      bodyKeys: req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? Object.keys(req.body) : [],
+      queryKeys: Object.keys(req.query || {}),
+      headerKeys: Object.keys(req.headers || {}).filter((key) => key.startsWith('x-download') || key.startsWith('x-file')),
+    })
+    res.json(new HttpResult(1, {}, 'Please select data first'))
     return
   }
   const selectOverride = selectJson && typeof selectJson === 'object' ? selectJson : state.historySelectCache
-  const data = await dbLoadCsv({ db: state.currentDb, params: fileArr, file: state.file, isPackaged: state._isPackaged, selectJson: selectOverride, customDownloadPath: state.downloadPath })
+  const resolvedDownloadPath = resolveWritableDownloadDir({
+    customDownloadPath: state.downloadPath || state._defaultDownloadPath,
+    dataPath: state._dataPath,
+    isPackaged: state._isPackaged
+  })
+  state.downloadPath = resolvedDownloadPath
+  const data = await dbLoadCsv({
+    db: state.currentDb,
+    params: fileArr,
+    file: state.file,
+    isPackaged: state._isPackaged,
+    selectJson: selectOverride,
+    customDownloadPath: resolvedDownloadPath,
+    dataPath: state._dataPath
+  })
   res.json(new HttpResult(0, data, 'Download'))
 }))
 
 // ─── 下载路径管理 ─────────────────────────────────────
 
 router.get('/getDownloadPath', (req, res) => {
+  const wasDefault = !state.downloadPath
+  const resolvedPath = resolveWritableDownloadDir({
+    customDownloadPath: state.downloadPath || state._defaultDownloadPath,
+    dataPath: state._dataPath,
+    isPackaged: state._isPackaged
+  })
+  state.downloadPath = resolvedPath
+  res.json(new HttpResult(0, { path: resolvedPath, isDefault: wasDefault }, 'success'))
+  return
   const path = require('path')
   const os = require('os')
   let defaultPath
@@ -508,7 +843,7 @@ router.get('/getDownloadPath', (req, res) => {
   if (fs.existsSync(desktopPath)) {
     defaultPath = desktopPath
   } else if (state._isPackaged) {
-    defaultPath = path.resolve('resources/data')
+    defaultPath = state._dataPath || path.resolve('resources/data')
   } else {
     defaultPath = path.resolve(__dirname, '../../data')
   }
@@ -521,11 +856,23 @@ router.get('/getDownloadPath', (req, res) => {
 })
 
 router.post('/setDownloadPath', asyncHandler(async (req, res) => {
-  const { path: newPath } = req.body
+  const { path: newPath } = req.body || {}
   if (!newPath) {
     res.json(new HttpResult(1, {}, 'path required'))
     return
   }
+  const writablePath = ensureWritableDir(newPath)
+  state.downloadPath = writablePath
+
+  try {
+    const downloadPathFile = require('path').join(state._dbPath, 'downloadPath.json')
+    fs.writeFileSync(downloadPathFile, JSON.stringify({ path: writablePath }), 'utf-8')
+  } catch (e) {
+    console.warn('[Server] Failed to persist download path:', e.message)
+  }
+
+  res.json(new HttpResult(0, { path: writablePath }, 'success'))
+  return
   const fs = require('fs')
   // 确保目录存在
   if (!fs.existsSync(newPath)) {
@@ -550,7 +897,7 @@ router.post('/setDownloadPath', asyncHandler(async (req, res) => {
 }))
 
 router.post('/openFile', asyncHandler(async (req, res) => {
-  const { filePath } = req.body
+  const { filePath } = req.body || {}
   if (!filePath) {
     res.json(new HttpResult(1, {}, 'filePath required'))
     return
@@ -585,7 +932,7 @@ router.post('/openFile', asyncHandler(async (req, res) => {
 }))
 
 router.post('/openFolder', asyncHandler(async (req, res) => {
-  const { folderPath } = req.body
+  const { folderPath } = req.body || {}
   if (!folderPath) {
     res.json(new HttpResult(1, {}, 'folderPath required'))
     return
@@ -621,19 +968,19 @@ router.post('/openFolder', asyncHandler(async (req, res) => {
 }))
 
 router.post('/delete', asyncHandler(async (req, res) => {
-  const { fileArr } = req.body
+  const { fileArr } = req.body || {}
   const data = await deleteDbData({ db: state.currentDb, params: fileArr })
   res.json(new HttpResult(0, data, 'Delete success'))
 }))
 
 router.post('/changeDbName', asyncHandler(async (req, res) => {
-  const { newDate, oldDate } = req.body
+  const { newDate, oldDate } = req.body || {}
   const data = await changeDbName({ db: state.currentDb, params: [newDate, oldDate] })
   res.json(new HttpResult(0, data, 'Update success'))
 }))
 
 router.post('/changeDbDataName', asyncHandler(async (req, res) => {
-  const { oldName, newName } = req.body
+  const { oldName, newName } = req.body || {}
   await changeDbDataName({ db: state.currentDb, params: [oldName, newName] })
   res.json(new HttpResult(0, {}, 'success'))
 }))
@@ -671,7 +1018,7 @@ router.get('/cache/devices', asyncHandler(async (req, res) => {
 
 // 添加/更新Device缓存
 router.post('/cache/devices', asyncHandler(async (req, res) => {
-  const { mac, type, deviceClass, alias } = req.body
+  const { mac, type, deviceClass, alias } = req.body || {}
   if (!mac || !type) {
     res.json(new HttpResult(1, {}, 'mac and type are required'))
     return
@@ -682,7 +1029,7 @@ router.post('/cache/devices', asyncHandler(async (req, res) => {
 
 // 删除单个Device缓存
 router.delete('/cache/devices', asyncHandler(async (req, res) => {
-  const { mac } = req.body
+  const { mac } = req.body || {}
   if (!mac) {
     res.json(new HttpResult(1, {}, 'mac is required'))
     return
@@ -706,7 +1053,7 @@ router.get('/auth/mode', (req, res) => {
 
 // 切换授权模式（online / local）
 router.post('/auth/mode', asyncHandler(async (req, res) => {
-  const { mode } = req.body
+  const { mode } = req.body || {}
   if (!['online', 'local'].includes(mode)) {
     res.json(new HttpResult(1, {}, 'Mode must be online or local'))
     return
@@ -720,7 +1067,7 @@ router.post('/auth/mode', asyncHandler(async (req, res) => {
 
 router.post('/bindKey', (req, res) => {
   try {
-    const { key } = req.body
+    const { key } = req.body || {}
     res.json(new HttpResult(0, {}, 'Bindkey success'))
   } catch {
     res.json(new HttpResult(1, {}, 'Bindkey failed'))
@@ -734,7 +1081,7 @@ const csvUploadStorage = multer.diskStorage({
     const path = require('path')
     let uploadDir
     if (state._isPackaged) {
-      uploadDir = path.resolve('resources/data/csv')
+      uploadDir = path.join(state._dataPath || path.resolve('resources/data'), 'csv')
     } else {
       uploadDir = path.resolve(__dirname, '../../data/csv')
     }
@@ -773,13 +1120,13 @@ router.post('/uploadCsv', csvUpload.single('file'), asyncHandler(async (req, res
 }))
 
 router.post('/getCsvData', asyncHandler(async (req, res) => {
-  const { fileName } = req.body
+  const { fileName } = req.body || {}
   const data = getCsvData(fileName)
   res.json(new HttpResult(0, data, 'success'))
 }))
 
 router.post('/getSysconfig', (req, res) => {
-  const { config } = req.body
+  const { config } = req.body || {}
   const str = module2.encStr(JSON.stringify(config))
   res.json(new HttpResult(0, str, 'success'))
 })

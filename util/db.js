@@ -2,6 +2,8 @@ const sqlite3 = require("sqlite3").verbose();
 const csv = require("csv-parser");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { timeStampTo_Date } = require("./time");
 const constantObj = require("./config");
 const { backYToX, sitYToX } = require("./line");
@@ -39,6 +41,65 @@ function normalizeSelectJson(select) {
   try { return JSON.stringify(select); } catch { return String(select); }
 }
 
+function uniquePaths(paths) {
+  const seen = new Set()
+  const result = []
+
+  for (const value of paths) {
+    if (!value) continue
+    const normalized = path.resolve(String(value))
+    if (seen.has(normalized)) continue
+    seen.add(normalized)
+    result.push(normalized)
+  }
+
+  return result
+}
+
+function ensureWritableDir(dirPath) {
+  if (!dirPath) {
+    throw new Error('Download directory is empty')
+  }
+
+  fs.mkdirSync(dirPath, { recursive: true })
+  const probeFile = path.join(dirPath, `.write-test-${process.pid}-${Date.now()}.tmp`)
+  fs.writeFileSync(probeFile, 'ok')
+  fs.rmSync(probeFile, { force: true })
+  return dirPath
+}
+
+function resolveWritableDownloadDir({ customDownloadPath, dataPath, isPackaged }) {
+  const homeDir = os.homedir()
+  const candidates = uniquePaths([
+    customDownloadPath,
+    path.join(homeDir, 'Desktop'),
+    path.join(homeDir, 'Downloads'),
+    path.join(homeDir, 'Documents'),
+    isPackaged ? (dataPath || path.resolve('resources/data')) : path.join(__dirname, '..', 'data')
+  ])
+
+  let lastError = null
+  for (const candidate of candidates) {
+    try {
+      return ensureWritableDir(candidate)
+    } catch (err) {
+      lastError = err
+    }
+  }
+
+  throw new Error(`No writable download directory available${lastError ? `: ${lastError.message}` : ''}`)
+}
+
+function sanitizeFileNameSegment(value) {
+  const normalized = String(value ?? '').trim()
+  const sanitized = normalized
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return sanitized || 'export'
+}
+
 // ─── Promise 包装的 DB 操作 ──────────────────────────────
 
 function dbRun(db, sql, params = []) {
@@ -70,8 +131,9 @@ function dbGet(db, sql, params = []) {
 
 // ─── 数据库初始化 ────────────────────────────────────────
 
-function ensureRemarksTable(db) {
-  db.run(
+async function ensureRemarksTable(db) {
+  await dbRun(
+    db,
     `CREATE TABLE IF NOT EXISTS remarks (
       date TEXT PRIMARY KEY,
       alias TEXT,
@@ -79,10 +141,10 @@ function ensureRemarksTable(db) {
       select_json TEXT,
       updated_at INTEGER
     )`
-  );
+  )
 }
 
-function genDb(file, filePath) {
+function legacyGenDb(file, filePath) {
   let db
   if (fs.existsSync(file)) {
     db = new sqlite3.Database(file);
@@ -99,16 +161,136 @@ function genDb(file, filePath) {
   return db;
 }
 
+function openDb(file) {
+  return new Promise((resolve, reject) => {
+    const db = new sqlite3.Database(file, (err) => {
+      if (err) reject(err)
+      else resolve(db)
+    })
+  })
+}
+
+function closeDb(db) {
+  return new Promise((resolve, reject) => {
+    if (!db) {
+      resolve()
+      return
+    }
+    db.close((err) => {
+      if (err) reject(err)
+      else resolve()
+    })
+  })
+}
+
+function makeCorruptDbError(message) {
+  const err = new Error(message)
+  err.code = 'SQLITE_CORRUPT'
+  return err
+}
+
+async function validateDb(db, file) {
+  const rows = await dbAll(db, 'PRAGMA quick_check;')
+  const issues = rows
+    .map((row) => row.quick_check || row.integrity_check || Object.values(row)[0])
+    .filter(Boolean)
+
+  if (!issues.length || (issues.length === 1 && issues[0] === 'ok')) {
+    return
+  }
+
+  throw makeCorruptDbError(`Database integrity check failed for ${path.basename(file)}: ${issues[0]}`)
+}
+
+async function configureDb(db) {
+  await dbRun(db, 'PRAGMA journal_mode = WAL;')
+  await dbRun(db, 'PRAGMA synchronous = NORMAL;')
+  await ensureRemarksTable(db)
+}
+
+function removeSidecarFiles(file) {
+  for (const suffix of ['-wal', '-shm']) {
+    const sidecar = `${file}${suffix}`
+    if (fs.existsSync(sidecar)) {
+      fs.rmSync(sidecar, { force: true })
+    }
+  }
+}
+
+function createDbFromTemplate(file, filePath) {
+  const templateFile = path.join(filePath, 'init.db')
+  if (!fs.existsSync(templateFile)) {
+    throw new Error(`Database template not found: ${templateFile}`)
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  removeSidecarFiles(file)
+  fs.copyFileSync(templateFile, file)
+}
+
+function backupCorruptDb(file, filePath) {
+  const backupDir = path.join(filePath, 'corrupt-backups')
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const movedFiles = []
+
+  fs.mkdirSync(backupDir, { recursive: true })
+
+  for (const suffix of ['', '-wal', '-shm']) {
+    const source = `${file}${suffix}`
+    if (!fs.existsSync(source)) continue
+
+    const target = path.join(backupDir, `${path.basename(file)}.${stamp}${suffix}`)
+    fs.renameSync(source, target)
+    movedFiles.push(target)
+  }
+
+  return { backupDir, movedFiles }
+}
+
+async function genDb(file, filePath) {
+  if (!fs.existsSync(file)) {
+    console.log(`[DB] Database not found, creating from template: ${file}`)
+    createDbFromTemplate(file, filePath)
+  }
+
+  try {
+    const db = await openDb(file)
+    try {
+      await validateDb(db, file)
+      await configureDb(db)
+      return { db, recovered: false }
+    } catch (err) {
+      await closeDb(db).catch(() => {})
+      throw err
+    }
+  } catch (err) {
+    if (err.code !== 'SQLITE_CORRUPT') {
+      throw err
+    }
+
+    console.warn(`[DB] Corruption detected in ${file}, recreating from template`)
+    const recovery = backupCorruptDb(file, filePath)
+    createDbFromTemplate(file, filePath)
+
+    const db = await openDb(file)
+    try {
+      await configureDb(db)
+      return { db, recovered: true, ...recovery }
+    } catch (recoveryErr) {
+      await closeDb(db).catch(() => {})
+      throw recoveryErr
+    }
+  }
+}
+
 /**
  * 初始化数据库
  * @param {string} fileStr - 当前系统名
  * @param {string} filePath - 数据库目录路径
  * @returns {{ db: sqlite3.Database, db1: sqlite3.Database|undefined }}
  */
-const initDb = (fileStr, filePath) => {
+const initDb = async (fileStr, filePath) => {
   console.log(`${filePath}/${fileStr}.db`)
-  const db = genDb(`${filePath}/${fileStr}.db`, filePath)
-  return { db }
+  return genDb(`${filePath}/${fileStr}.db`, filePath)
 }
 
 // ─── 数据查询 ────────────────────────────────────────────
@@ -162,7 +344,7 @@ async function dbGetData({ db, params }) {
  * 单条记录导出为 CSV
  * 核心优化：每行只解析一次 JSON，消除内层循环中的重复 JSON.parse
  */
-function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
+function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath) {
   return new Promise((resolve, reject) => {
     dbAll(db, "SELECT * FROM matrix WHERE date=?", [param]).then(async (rows) => {
       if (!rows.length) {
@@ -278,6 +460,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
       } else if (isAllDigits(str)) {
         str = timeStampTo_Date(Number(str))
       }
+      const safeName = sanitizeFileNameSegment(str)
 
       // 构建 CSV 表头
       const handArr = buildCsvHeaders(keyArr, file)
@@ -287,7 +470,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
       if (customDownloadPath) {
         csvPath = customDownloadPath
       } else if (isPackaged) {
-        csvPath = 'resources/data'
+        csvPath = dataPath || path.resolve('resources/data')
       } else {
         csvPath = __dirname + "/../data"
       }
@@ -297,7 +480,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
       }
 
       const csvName = file === 'endi' ? 'car' : file
-      const csvFilePath = `${csvPath}/${csvName}${str}.csv`
+      const csvFilePath = path.join(csvPath, `${csvName}${safeName}.csv`)
 
       const csvWriter = createCsvWriter({ path: csvFilePath, header: handArr })
 
@@ -318,10 +501,20 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
         resolve({ [param]: 'success', filePath: csvFilePath })
       } catch (err) {
         console.error("[DB] CSV export failed:", err)
-        reject({ [param]: err })
+        reject(err)
       }
     }).catch(reject)
   })
+}
+
+function dbloadSafe(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath) {
+  const writablePath = resolveWritableDownloadDir({
+    customDownloadPath,
+    dataPath,
+    isPackaged
+  })
+
+  return dbload(db, param, file, isPackaged, selectJson, writablePath, dataPath)
 }
 
 /**
@@ -364,8 +557,8 @@ function buildCsvHeaders(keyArr, file) {
 /**
  * 批量导出 CSV
  */
-async function dbLoadCsv({ db, params, file, isPackaged, selectJson, customDownloadPath }) {
-  const promises = params.map((param) => dbload(db, param, file, isPackaged, selectJson, customDownloadPath))
+async function dbLoadCsv({ db, params, file, isPackaged, selectJson, customDownloadPath, dataPath }) {
+  const promises = params.map((param) => dbloadSafe(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath))
   const results = await Promise.all(promises)
   return results
 }
@@ -439,7 +632,9 @@ async function getCsvData(file) {
 
 module.exports = {
   initDb,
+  closeDb,
   dbLoadCsv,
+  ensureWritableDir,
   deleteDbData,
   dbGetData,
   getCsvData,
@@ -448,4 +643,5 @@ module.exports = {
   upsertRemark,
   getRemark,
   deleteRemarkByDate,
+  resolveWritableDownloadDir,
 }

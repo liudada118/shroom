@@ -30,5 +30,11 @@
     "@vitejs/plugin-react": "^4.3.4",
     "sass": "^1.89.2",
     "vite": "^5.4.21"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild"
+    ]
   }
 }

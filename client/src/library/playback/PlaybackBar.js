@@ -35,6 +35,11 @@ export default function PlaybackBar(props) {
     const maxIndex = Math.max(0, (Number(dataLength) || 0) - 1);
 
     const handleSliderChange = (index) => {
+        if ((Number(dataLength) || 0) <= 0) {
+            message.error('No playback data found for the selected time');
+            return;
+        }
+
         axios({
             method: 'post',
             url: `${localAddress}/getDbHistoryIndex`,
@@ -43,8 +48,8 @@ export default function PlaybackBar(props) {
             },
         })
             .then((res) => {
-                if (res.data.message == 'error') {
-                    message.error(res.data.data);
+                if (res.data?.code !== 0) {
+                    message.error(res.data?.message || 'Load playback frame failed');
                 } else {
                     const history = useEquipStore.getState().history;
                     const obj = { ...history, index };
@@ -55,13 +60,18 @@ export default function PlaybackBar(props) {
     };
 
     const handlePlay = () => {
+        if ((Number(dataLength) || 0) <= 0) {
+            message.error('No playback data found for the selected time');
+            return;
+        }
+
         axios({
             method: 'post',
             url: `${localAddress}/getDbHistoryPlay`,
         })
             .then((res) => {
-                if (res.data.message == 'error') {
-                    message.error(res.data.data);
+                if (res.data?.code !== 0) {
+                    message.error(res.data?.message || 'Playback start failed');
                     return;
                 }
                 setDataPlay(false);

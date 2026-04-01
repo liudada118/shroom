@@ -35,14 +35,17 @@ const state = {
   colMaxHZ: undefined,      // 采集最大频率
   colplayHZ: undefined,     // 回放频率
   historyDbArr: null,       // 历史回放数据
+  historyListCache: [],     // 历史列表缓存
   historySelectCache: null, // 框选缓存
   leftDbArr: null,          // 对比数据-左
   rightDbArr: null,         // 对比数据-右
 
   // ─── 下载路径 ────────────────────────────────────────
+  _defaultDownloadPath: null,
   downloadPath: null,         // 自定义下载路径 (null 则使用默认)
 
   // ─── 数据库 ──────────────────────────────────────────
+  _dataPath: null,
   currentDb: null,
 }
 

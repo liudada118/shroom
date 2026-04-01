@@ -8,6 +8,7 @@ const { state, resetPlaybackState } = require('../state')
 const { broadcast } = require('../websocket')
 
 const { blue } = constantObj
+const DEFAULT_PLAYBACK_HZ = 1
 
 /**
  * 解析串口数据为前端格式
@@ -127,13 +128,112 @@ function clearPlayTimer() {
   }
 }
 
+function getPlaybackRows() {
+  return Array.isArray(state.historyDbArr) ? state.historyDbArr : []
+}
+
+function parsePlaybackData(value) {
+  if (!value) return {}
+  if (typeof value === 'object') return value
+
+  try {
+    return JSON.parse(value)
+  } catch {
+    return {}
+  }
+}
+
+function parsePlaybackTimestamp(value) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value === 'number') return value
+
+  try {
+    return JSON.parse(value)
+  } catch {
+    const numericValue = Number(value)
+    return Number.isFinite(numericValue) ? numericValue : value
+  }
+}
+
+function normalizePlayIndex(index = state.playIndex, rows = getPlaybackRows()) {
+  if (!rows.length) {
+    state.playIndex = 0
+    return -1
+  }
+
+  const rawIndex = Number(index)
+  const nextIndex = Number.isFinite(rawIndex) ? Math.trunc(rawIndex) : 0
+  state.playIndex = Math.min(rows.length - 1, Math.max(0, nextIndex))
+  return state.playIndex
+}
+
+function getPlaybackSnapshot(index = state.playIndex) {
+  const rows = getPlaybackRows()
+  const normalizedIndex = normalizePlayIndex(index, rows)
+
+  if (normalizedIndex < 0) {
+    return null
+  }
+
+  const row = rows[normalizedIndex]
+  if (!row) {
+    return null
+  }
+
+  return {
+    row,
+    payload: {
+      sitDataPlay: parsePlaybackData(row.data),
+      index: normalizedIndex,
+      timestamp: parsePlaybackTimestamp(row.timestamp)
+    }
+  }
+}
+
+function finishPlayback() {
+  state.historyPlayFlag = false
+  broadcast(JSON.stringify({ playEnd: false }))
+  clearPlayTimer()
+}
+
+function getPlaybackIntervalMs() {
+  const hz = Number(state.colplayHZ)
+  const safeHz = Number.isFinite(hz) && hz > 0 ? hz : DEFAULT_PLAYBACK_HZ
+  return 1000 / safeHz
+}
+
+function runPlaybackTick() {
+  if (!state.historyPlayFlag) return
+
+  const snapshot = getPlaybackSnapshot()
+  if (!snapshot) {
+    finishPlayback()
+    return
+  }
+
+  broadcast(JSON.stringify(snapshot.payload))
+
+  const rows = getPlaybackRows()
+  if (state.playIndex < rows.length - 1) {
+    state.playIndex++
+    return
+  }
+
+  finishPlayback()
+}
+
 /**
  * 开始历史数据回放
  */
 function startPlayback() {
-  if (!state.historyDbArr) return false
+  const rows = getPlaybackRows()
+  if (!rows.length) {
+    state.historyPlayFlag = false
+    clearPlayTimer()
+    return false
+  }
 
-  if (state.playIndex >= state.historyDbArr.length - 1) {
+  if (state.playIndex >= rows.length - 1 || state.playIndex < 0) {
     state.playIndex = 0
   }
   state.historyPlayFlag = true
@@ -141,23 +241,7 @@ function startPlayback() {
   clearPlayTimer()
   broadcast(JSON.stringify({ playEnd: true }))
 
-  state.colTimer = setInterval(() => {
-    if (!state.historyPlayFlag || !state.historyDbArr) return
-
-    broadcast(JSON.stringify({
-      sitDataPlay: JSON.parse(state.historyDbArr[state.playIndex].data),
-      index: state.playIndex,
-      timestamp: JSON.parse(state.historyDbArr[state.playIndex].timestamp)
-    }))
-
-    if (state.playIndex < state.historyDbArr.length - 1) {
-      state.playIndex++
-    } else {
-      state.historyPlayFlag = false
-      broadcast(JSON.stringify({ playEnd: false }))
-      clearPlayTimer()
-    }
-  }, 1000 / state.colplayHZ)
+  state.colTimer = setInterval(runPlaybackTick, getPlaybackIntervalMs())
 
   return true
 }
@@ -166,27 +250,21 @@ function startPlayback() {
  * 修改播放速度
  */
 function changePlaySpeed(speed) {
-  state.colplayHZ = state.colMaxHZ * speed
+  const baseHz = Number(state.colMaxHZ)
+  const safeBaseHz = Number.isFinite(baseHz) && baseHz > 0 ? baseHz : DEFAULT_PLAYBACK_HZ
+  const speedValue = Number(speed)
+  const safeSpeed = Number.isFinite(speedValue) && speedValue > 0 ? speedValue : 1
+
+  state.colplayHZ = safeBaseHz * safeSpeed
 
   if (state.historyPlayFlag) {
+    if (!getPlaybackRows().length) {
+      finishPlayback()
+      return
+    }
+
     clearPlayTimer()
-    state.colTimer = setInterval(() => {
-      if (!state.historyPlayFlag) return
-
-      broadcast(JSON.stringify({
-        sitDataPlay: JSON.parse(state.historyDbArr[state.playIndex].data),
-        index: state.playIndex,
-        timestamp: JSON.parse(state.historyDbArr[state.playIndex].timestamp)
-      }))
-
-      if (state.playIndex < state.historyDbArr.length - 1) {
-        state.playIndex++
-      } else {
-        broadcast(JSON.stringify({ playEnd: false }))
-        state.historyPlayFlag = false
-        clearPlayTimer()
-      }
-    }, 1000 / state.colplayHZ)
+    state.colTimer = setInterval(runPlaybackTick, getPlaybackIntervalMs())
   }
 }
 
@@ -197,5 +275,6 @@ module.exports = {
   clearPlayTimer,
   startPlayback,
   changePlaySpeed,
+  getPlaybackSnapshot,
   parseData,
 }
