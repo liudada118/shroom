@@ -16,6 +16,7 @@ export class BrushManager {
         this.selectIndex = 20
         this._resizing = false   // 是否正在拖拽调整大小
         this._dragging = false   // 是否正在拖动框
+        this._isDrawing = false  // 是否正在绘制新框（区分绘制和交互状态）
     }
 
     subscribe(cb) {
@@ -38,33 +39,35 @@ export class BrushManager {
     }
 
     onKeyDown = (e) => {
-        console.log(e.key, (this.range))
         let obj = this.rangeArr[0]
         if (!obj) return
+        const el = obj._element
+        if (!el) return
+
         switch (e.key) {
             case 'ArrowUp':
                 obj.y1 -= 1
                 obj.y2 -= 1
+                el.style.top = obj.y1 + 'px';
                 this.notify(this.rangeArr);
-                this.element.style.top = obj.y1 + 'px';
                 break;
             case 'ArrowDown':
                 obj.y1 += 1
                 obj.y2 += 1
-                this.element.style.top = obj.y1 + 'px';
+                el.style.top = obj.y1 + 'px';
                 this.notify(this.rangeArr);
                 break;
             case 'ArrowLeft':
                 obj.x1 -= 1
                 obj.x2 -= 1
+                el.style.left = obj.x1 + 'px';
                 this.notify(this.rangeArr);
-                this.element.style.left = obj.x1 + 'px';
                 break;
             case 'ArrowRight':
                 obj.x1 += 1
                 obj.x2 += 1
+                el.style.left = obj.x1 + 'px';
                 this.notify(this.rangeArr);
-                this.element.style.left = obj.x1 + 'px';
                 break;
             default:
                 return
@@ -84,7 +87,9 @@ export class BrushManager {
     removeChild() {
         const selectBoxList = document.querySelectorAll('.selectBox')
         for (let i = 0; i < selectBoxList.length; i++) {
-            document.body.removeChild(selectBoxList[i])
+            if (selectBoxList[i].parentNode) {
+                selectBoxList[i].parentNode.removeChild(selectBoxList[i])
+            }
         }
         this.rangeArr = []
     }
@@ -94,10 +99,12 @@ export class BrushManager {
         // 让框本身可点击（绘制完成后启用）
         el.style.pointerEvents = 'auto';
         el.style.cursor = 'move';
+        el.style.overflow = 'visible';
 
         // 删除按钮
         const closeBtn = document.createElement('div');
         closeBtn.textContent = '×';
+        closeBtn.classList.add('selectBox-control');
         Object.assign(closeBtn.style, {
             position: 'absolute', top: '-12px', right: '-12px',
             width: '22px', height: '22px', lineHeight: '20px', textAlign: 'center',
@@ -108,9 +115,11 @@ export class BrushManager {
         });
         closeBtn.addEventListener('mousedown', (e) => {
             e.stopPropagation();
+            e.preventDefault();
         });
         closeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
+            e.preventDefault();
             this.deleteSelect(0);
         });
         el.appendChild(closeBtn);
@@ -129,6 +138,7 @@ export class BrushManager {
 
         handles.forEach(({ cursor, pos, dir }) => {
             const h = document.createElement('div');
+            h.classList.add('selectBox-control');
             Object.assign(h.style, {
                 position: 'absolute', width: '10px', height: '10px',
                 background: '#fff', border: '1px solid #ff4444', borderRadius: '2px',
@@ -137,22 +147,24 @@ export class BrushManager {
             });
             h.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 this._startResize(e, el, rangeObj, dir);
             });
             el.appendChild(h);
         });
 
-        // 拖动整个框
+        // 拖动整个框（点击框本身，非子控件）
         el.addEventListener('mousedown', (e) => {
+            // 只有点击框本身时才拖动，点击子控件不触发
             if (e.target !== el) return;
             e.stopPropagation();
+            e.preventDefault();
             this._startDrag(e, el, rangeObj);
         });
     }
 
     // ─── 拖拽调整大小 ──────────────────────────────────────
     _startResize(e, el, rangeObj, dir) {
-        e.preventDefault();
         this._resizing = true;
         const startX = e.clientX;
         const startY = e.clientY;
@@ -163,6 +175,7 @@ export class BrushManager {
 
         const onMove = (ev) => {
             if (!this._resizing) return;
+            ev.preventDefault();
             const dx = ev.clientX - startX;
             const dy = ev.clientY - startY;
 
@@ -188,20 +201,21 @@ export class BrushManager {
             el.style.height = (newY2 - newY1) + 'px';
         };
 
-        const onUp = () => {
+        const onUp = (ev) => {
+            ev.stopPropagation();
             this._resizing = false;
             window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('mouseup', onUp, true);
             this.notify(this.rangeArr);
         };
 
         window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
+        // 使用捕获阶段，确保在 onMouseUp 之前处理
+        window.addEventListener('mouseup', onUp, true);
     }
 
     // ─── 拖动整个框 ────────────────────────────────────────
     _startDrag(e, el, rangeObj) {
-        e.preventDefault();
         this._dragging = true;
         const startX = e.clientX;
         const startY = e.clientY;
@@ -212,6 +226,7 @@ export class BrushManager {
 
         const onMove = (ev) => {
             if (!this._dragging) return;
+            ev.preventDefault();
             const dx = ev.clientX - startX;
             const dy = ev.clientY - startY;
 
@@ -224,24 +239,27 @@ export class BrushManager {
             el.style.top = rangeObj.y1 + 'px';
         };
 
-        const onUp = () => {
+        const onUp = (ev) => {
+            ev.stopPropagation();
             this._dragging = false;
             window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('mouseup', onUp, true);
             this.notify(this.rangeArr);
         };
 
         window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
+        // 使用捕获阶段，确保在 onMouseUp 之前处理
+        window.addEventListener('mouseup', onUp, true);
     }
 
     onMouseDown = (e) => {
-        // 如果点击的是已有的框选区域或其子元素，不创建新框
+        // 如果点击的是已有的框选区域或其子控件，不创建新框
         if (e.target.closest && e.target.closest('.selectBox')) return;
         // 如果正在拖拽或调整大小，不创建新框
         if (this._resizing || this._dragging) return;
 
         console.log('dowm')
+        this._isDrawing = true;
         this.isBrushing = true;
         this.start = { x: e.clientX, y: e.clientY };
         window.addEventListener('mousemove', this.onMouseMove);
@@ -258,7 +276,7 @@ export class BrushManager {
     };
 
     onMouseMove = (e) => {
-        if (this.isBrushing && this.start) {
+        if (this._isDrawing && this.start) {
             if (Math.abs(this.start.x - e.clientX) > 5 && Math.abs(this.start.y - e.clientY) > 5) {
                 console.log('range')
                 const bgc = jet(0, 200, this.selectIndex)
@@ -294,8 +312,18 @@ export class BrushManager {
     };
 
     onMouseUp = () => {
-        console.log(this.pointBottomRight.x - this.pointTopLeft.x, this.pointBottomRight.y - this.pointTopLeft.y)
-        if (this.pointBottomRight.x - this.pointTopLeft.x > 5 && this.pointBottomRight.y - this.pointTopLeft.y > 5) {
+        // 只有在绘制模式下才处理
+        if (!this._isDrawing) return;
+        this._isDrawing = false;
+
+        window.removeEventListener('mousemove', this.onMouseMove);
+        window.removeEventListener('mouseup', this.onMouseUp);
+
+        const w = this.pointBottomRight.x - this.pointTopLeft.x;
+        const h = this.pointBottomRight.y - this.pointTopLeft.y;
+
+        console.log(w, h)
+        if (w > 5 && h > 5) {
             this.selectIndex += 10
             console.log(this.range)
             // 将 DOM 引用保存到 range 对象上
@@ -322,11 +350,10 @@ export class BrushManager {
             this.notify(this.rangeArr);
         } else {
             if (this.element && this.element.parentNode) {
-                document.body.removeChild(this.element);
+                this.element.parentNode.removeChild(this.element);
             }
         }
         this.start = undefined
-
     };
 
     deleteSelect = (index) => {
