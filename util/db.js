@@ -374,6 +374,18 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         }
       }
 
+      // 根据前几帧 timestamp 自动推算帧率
+      let detectedHz = 12 // 默认帧率
+      if (rows.length >= 2) {
+        // 取前10帧（或全部）的平均间隔来计算帧率
+        const sampleCount = Math.min(rows.length, 10)
+        const totalMs = rows[sampleCount - 1].timestamp - rows[0].timestamp
+        if (totalMs > 0) {
+          detectedHz = Math.round((sampleCount - 1) * 1000 / totalMs)
+          if (detectedHz < 1) detectedHz = 1
+        }
+      }
+
       for (let i = 0; i < rows.length; i++) {
         const newData = {}
         // 每行只解析一次 JSON
@@ -421,9 +433,8 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const pointValue = pointInfo ? area : null
           const pressureAreaValue = pointInfo ? area * pointArea : area
 
-          // 使用 timestamp 计算真实秒数，从0开始，整数秒
-          const baseTimestamp = rows[0].timestamp || 0
-          newData.sec = Math.floor((rows[i].timestamp - baseTimestamp) / 1000)
+          // 用帧序号/帧率计算sec，保证每秒整除
+          newData.sec = (i / detectedHz).toFixed(2)
           newData[`${key}pressureArea`] = pressureAreaValue
           newData[`${key}pressure`] = press
           newData[`${key}max`] = max
