@@ -421,9 +421,9 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const pointValue = pointInfo ? area : null
           const pressureAreaValue = pointInfo ? area * pointArea : area
 
-          // 使用 timestamp 计算真实秒数，从0开始
+          // 使用 timestamp 计算真实秒数，从0开始，整数秒
           const baseTimestamp = rows[0].timestamp || 0
-          newData.sec = ((rows[i].timestamp - baseTimestamp) / 1000).toFixed(2)
+          newData.sec = Math.floor((rows[i].timestamp - baseTimestamp) / 1000)
           newData[`${key}pressureArea`] = pressureAreaValue
           newData[`${key}pressure`] = press
           newData[`${key}max`] = max
