@@ -17,19 +17,23 @@ export default function Col(props) {
         const system = getSysType()
         const displayType = getDisplayType()
         const selectObj = {}
-        if (select.length) {
+        if (select.length && select[0]) {
+            // 去掉DOM引用，只保留坐标数据
+            const range = { x1: select[0].x1, y1: select[0].y1, x2: select[0].x2, y2: select[0].y2 }
             if (displayType.includes('back')) {
-                const matrix = colSelectMatrix('canvasThree', select[0], systemPointConfig[`${system}-back`])
-                const { xStart, xEnd, yStart, yEnd } = matrix
-                matrix.width = systemPointConfig[`${system}-back`].width
-                matrix.height = systemPointConfig[`${system}-back`].height
-                selectObj[`${system}-back`] = matrix
+                const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[`${system}-back`])
+                if (matrix) {
+                    matrix.width = systemPointConfig[`${system}-back`].width
+                    matrix.height = systemPointConfig[`${system}-back`].height
+                    selectObj[`${system}-back`] = matrix
+                }
             } else {
-                const matrix = colSelectMatrix('canvasThree', select[0], systemPointConfig[`${system}-sit`])
-                const { xStart, xEnd, yStart, yEnd } = matrix
-                matrix.width = systemPointConfig[`${system}-sit`].width
-                matrix.height = systemPointConfig[`${system}-sit`].height
-                selectObj[`${system}-sit`] = matrix
+                const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[`${system}-sit`])
+                if (matrix) {
+                    matrix.width = systemPointConfig[`${system}-sit`].width
+                    matrix.height = systemPointConfig[`${system}-sit`].height
+                    selectObj[`${system}-sit`] = matrix
+                }
             }
         }
 

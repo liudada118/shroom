@@ -77,7 +77,9 @@ export default function SelectSet(props) {
             setRect((prev) => {
                 // 基于上一次状态更新
                 console.log(range[0])
+                if (!range[0]) return prev || {}
                 const matrix = colSelectMatrix('canvasThree', range[0], systemPointConfig[type])
+                if (!matrix) return prev || {}
                 const obj = {}
                 obj.xStart = matrix.xStart
                 obj.xEnd = matrix.xEnd
