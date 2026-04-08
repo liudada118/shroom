@@ -66,7 +66,7 @@ export function useMatrixData() {
             canvasY1: canvasInfo.top, canvasY2: canvasInfo.bottom
           }
           const max = Math.max(width, height)
-          matrixGenBox(matrixObj, canvasObj, max)
+          matrixGenBox(matrixObj, canvasObj, max, config)
         }
       } else {
         removeHistoryBox()

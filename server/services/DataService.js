@@ -180,10 +180,22 @@ function getPlaybackSnapshot(index = state.playIndex) {
     return null
   }
 
+  const sitDataPlay = parsePlaybackData(row.data)
+
+  // 将缓存的框选信息注入到每帧数据中，供前端渲染框选框
+  const selectCache = state.historySelectCache
+  if (selectCache && typeof selectCache === 'object') {
+    for (const key of Object.keys(selectCache)) {
+      if (sitDataPlay[key]) {
+        sitDataPlay[key].select = selectCache[key]
+      }
+    }
+  }
+
   return {
     row,
     payload: {
-      sitDataPlay: parsePlaybackData(row.data),
+      sitDataPlay,
       index: normalizedIndex,
       timestamp: parsePlaybackTimestamp(row.timestamp)
     }

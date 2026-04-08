@@ -682,6 +682,19 @@ router.post('/getDbHistory', asyncHandler(async (req, res) => {
 
   const { length, pressArr, areaArr, rows } = await dbGetData({ db: state.currentDb, params: [playbackTime] })
 
+  // 从 remarks 表读取该批次的框选信息并缓存，用于回放时渲染框选框
+  try {
+    const remarkRow = await getRemark({ db: state.currentDb, params: [playbackTime] })
+    if (remarkRow && remarkRow.select) {
+      const parsed = typeof remarkRow.select === 'string' ? JSON.parse(remarkRow.select) : remarkRow.select
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        state.historySelectCache = parsed
+      }
+    }
+  } catch (e) {
+    console.warn('[Server] Failed to load select_json for playback:', e.message)
+  }
+
   state.historyPlayFlag = false
   clearPlayTimer()
   state.historyDbArr = Array.isArray(rows) ? rows : []
