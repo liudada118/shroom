@@ -128,10 +128,6 @@ const ColAndHistory = memo((props) => {
         const res = await axios.post(`${localAddress}/setDownloadPath`, { path: nextPath }, {
             params: {
                 path: nextPath,
-            },
-            headers: {
-                'X-Download-Path': nextPath,
-                'X-Path': nextPath,
             }
         })
         if (res.data?.code !== 0) {

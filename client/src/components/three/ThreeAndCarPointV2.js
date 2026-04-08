@@ -1402,7 +1402,7 @@ const Canvas =
 
                 {/* 点位配置面板（已隐藏） */}
                 <div style={{
-                    display: 'none',
+                    // display: 'none',
                     position: 'absolute',
                     bottom: 10,
                     right: 10,
