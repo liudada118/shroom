@@ -438,81 +438,67 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           // 用帧序号/帧率计算sec，保证每秒整除
           newData.sec = (i / detectedHz).toFixed(2)
 
-          // 判断是否有框选
-          const hasSelectData = selectOverride && typeof selectOverride === 'object' && Object.keys(selectOverride).length > 0
+          // 判断是否有框选数据
+          const hasSelectData = selectOverride && typeof selectOverride === 'object' && Object.keys(selectOverride).length > 0 && selectArr.length > 0
 
-          if (hasSelectData && selectArr.length > 0) {
-            // 有框选：只输出框选区域的 Area / Max / Pressure_Sum / data
+          if (hasSelectData) {
+            // 有框选：使用框选区域数据
             const selectPointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : 1
             const selectAreaCount = selectArr.filter(v => v > 0).length
-            const selectAreaMm2 = selectAreaCount * selectPointArea
+            const areaVal = selectAreaCount * selectPointArea
 
-            let selectMaxVal = selectMax
-            let selectPressSum = selectArr.reduce((a, b) => a + b, 0)
+            let maxVal = selectMax
+            let pressSumVal = selectArr.reduce((a, b) => a + b, 0)
 
             // carY 类型需要除以 100/3
             if (key.startsWith('carY')) {
               const divisor = 100 / 3
-              selectMaxVal = selectMax / divisor
-              selectPressSum = selectPressSum / divisor
+              maxVal = selectMax / divisor
+              pressSumVal = pressSumVal / divisor
             }
             // endi 类型需要做单位转换
             if (key === 'endi-back') {
-              selectMaxVal = backYToX(selectMax)
-              selectPressSum = backYToX(selectArr.reduce((a, b) => a + b, 0))
+              maxVal = backYToX(selectMax)
+              pressSumVal = backYToX(selectArr.reduce((a, b) => a + b, 0))
             }
             if (key === 'endi-sit') {
-              selectMaxVal = sitYToX(selectMax)
-              selectPressSum = sitYToX(selectArr.reduce((a, b) => a + b, 0))
+              maxVal = sitYToX(selectMax)
+              pressSumVal = sitYToX(selectArr.reduce((a, b) => a + b, 0))
             }
 
-            newData[`${key}selectArea`] = selectAreaMm2
-            newData[`${key}selectMax`] = selectMaxVal
-            newData[`${key}selectPressSum`] = selectPressSum
-            newData[`${key}selectData`] = JSON.stringify(selectArr)
-          } else if (hasSelectData && selectArr.length === 0) {
-            // 有框选配置但当前key没有框选数据
-            newData[`${key}selectArea`] = 0
-            newData[`${key}selectMax`] = 0
-            newData[`${key}selectPressSum`] = 0
-            newData[`${key}selectData`] = '[]'
+            newData[`${key}Area`] = areaVal
+            newData[`${key}Max`] = maxVal
+            newData[`${key}PressSum`] = pressSumVal
+            newData[`${key}Data`] = JSON.stringify(selectArr)
           } else {
-            // 没有框选：输出全局数据
-            newData[`${key}pressureArea`] = pressureAreaValue
-            newData[`${key}pressure`] = press
-            newData[`${key}max`] = max
-            newData[`${key}min`] = min
-            newData[`${key}aver`] = aver
-            newData[`${key}selectMax`] = selectMax
-            newData[`${key}selectMin`] = selectMin
-            newData[`${key}selectAver`] = selectAver
-            newData[`${key}realData`] = JSON.stringify(data)
-            newData[`${key}selectData`] = JSON.stringify(selectArr)
-            newData[`${key}selectW&H`] = JSON.stringify([selectObj.width, selectObj.height])
+            // 没有框选：使用全局数据
+            const globalPointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : 1
+            const globalAreaCount = data.filter(v => v > 0).length
+            const areaVal = globalAreaCount * globalPointArea
 
+            let maxVal = max
+            let pressSumVal = press
+
+            // carY 类型需要除以 100/3
+            if (key.startsWith('carY')) {
+              const divisor = 100 / 3
+              maxVal = max / divisor
+              pressSumVal = press / divisor
+            }
             // endi 类型需要做单位转换
             if (key === 'endi-back') {
-              newData[`${key}max`] = backYToX(max)
-              newData[`${key}min`] = backYToX(min)
-              newData[`${key}aver`] = backYToX(aver)
-              newData[`${key}selectMax`] = backYToX(selectMax)
-              newData[`${key}selectMin`] = backYToX(selectMin)
-              newData[`${key}selectAver`] = backYToX(selectAver)
+              maxVal = backYToX(max)
+              pressSumVal = backYToX(press)
             }
             if (key === 'endi-sit') {
-              newData[`${key}max`] = sitYToX(max)
-              newData[`${key}min`] = sitYToX(min)
-              newData[`${key}aver`] = sitYToX(aver)
-              newData[`${key}selectMax`] = sitYToX(selectMax)
-              newData[`${key}selectMin`] = sitYToX(selectMin)
-              newData[`${key}selectAver`] = sitYToX(selectAver)
+              maxVal = sitYToX(max)
+              pressSumVal = sitYToX(press)
             }
 
-            if (pointInfo) {
-              const averValue = Number(newData[`${key}aver`]) || 0
-              newData[`${key}point`] = pointValue
-              newData[`${key}pressTotal`] = (averValue * pointArea * pointValue) / 1000
-            }
+            newData[`${key}Area`] = areaVal
+            newData[`${key}Max`] = maxVal
+            newData[`${key}PressSum`] = pressSumVal
+            newData[`${key}Data`] = JSON.stringify(data)
           }
         }
 
@@ -531,11 +517,8 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       }
       const safeName = sanitizeFileNameSegment(str)
 
-      // 判断是否有框选
-      const hasSelect = !!selectOverride && typeof selectOverride === 'object' && Object.keys(selectOverride).length > 0
-
-      // 构建 CSV 表头
-      const handArr = hasSelect ? buildCsvHeadersSelect(keyArr, file) : buildCsvHeaders(keyArr, file)
+      // 构建 CSV 表头（统一使用简化表头）
+      const handArr = buildCsvHeadersSimple(keyArr, file)
       handArr.push({ id: "remark", title: "remark" })
 
       let csvPath
@@ -590,46 +573,9 @@ function dbloadSafe(db, param, file, isPackaged, selectJson, customDownloadPath,
 }
 
 /**
- * 构建 CSV 表头
+ * 构建统一的简化 CSV 表头（无前缀，只保留 back/sit 区分）
  */
-function buildCsvHeaders(keyArr, file) {
-  const handArr = []
-  for (let j = 0; j < keyArr.length; j++) {
-    const key = keyArr[j]
-    if (j === 0) {
-      handArr.push({ id: "sec", title: "sec（s）" })
-      handArr.push({ id: "time", title: "time" })
-    }
-
-    const res = key.replace(/endi/g, "car").replace(/carY/g, "carcushion")
-    handArr.push(
-      { id: `${key}max`, title: `${res} Max（Kpa）` },
-      { id: `${key}min`, title: `${res} Min（Kpa）` },
-      { id: `${key}aver`, title: `${res} Aver（Kpa）` },
-      { id: `${key}pressureArea`, title: `${res} Area（cm²）` },
-    )
-    if (key === 'endi-back' || key === 'endi-sit') {
-      handArr.push(
-        { id: `${key}point`, title: `${res} Points` },
-        { id: `${key}pressTotal`, title: `${res} Pressure Sum（N）` },
-      )
-    }
-    handArr.push(
-      { id: `${key}realData`, title: `${res} Data` },
-      { id: `${key}selectData`, title: `${res}select Data` },
-      { id: `${key}selectMax`, title: `${res}select Max（Kpa）` },
-      { id: `${key}selectMin`, title: `${res}select Min（Kpa）` },
-      { id: `${key}selectAver`, title: `${res}select Aver（Kpa）` },
-      { id: `${key}selectW&H`, title: `${res}select W&H` },
-    )
-  }
-  return handArr
-}
-
-/**
- * 构建有框选时的简化 CSV 表头
- */
-function buildCsvHeadersSelect(keyArr, file) {
+function buildCsvHeadersSimple(keyArr, file) {
   const handArr = []
   for (let j = 0; j < keyArr.length; j++) {
     const key = keyArr[j]
@@ -638,12 +584,13 @@ function buildCsvHeadersSelect(keyArr, file) {
       handArr.push({ id: "time", title: "time" })
     }
 
-    const res = key.replace(/endi/g, "car").replace(/carY/g, "carcushion")
+    // 去掉前缀，只保留 back/sit
+    const part = key.includes('-') ? key.split('-').pop() : key
     handArr.push(
-      { id: `${key}selectArea`, title: `${res} Area(mm\u00B2)` },
-      { id: `${key}selectMax`, title: `${res} Max(N)` },
-      { id: `${key}selectPressSum`, title: `${res} Pressure_Sum(N)` },
-      { id: `${key}selectData`, title: `${res} data` },
+      { id: `${key}Area`, title: `${part} Area(mm\u00B2)` },
+      { id: `${key}Max`, title: `${part} Max(N)` },
+      { id: `${key}PressSum`, title: `${part} Pressure_Sum(N)` },
+      { id: `${key}Data`, title: `${part} data` },
     )
   }
   return handArr
