@@ -245,6 +245,12 @@ export function useMatrixData() {
     }
     useEquipStore.getState().setEquipStatus(newObj)
 
+    // 检测设备断开：如果有设备offline，将连接状态恢复为idle
+    const hasOffline = Object.values(newObj).some(s => s === 'offline')
+    if (hasOffline && useEquipStore.getState().connectState === 'connected') {
+      useEquipStore.getState().setConnectState('idle')
+    }
+
     const sysType = getSysType()
     if (!arr || !keyArr.some(a => a.includes(sysType))) return
 

@@ -140,8 +140,26 @@ export function matrixGenBox(matrixObj, canvasArea, max, matrixConfig) {
     if (!box) {
         box = document.createElement('div');
         box.classList.add('selectHistoryBox');
-        box.style.pointerEvents = 'none';
+        box.style.pointerEvents = 'auto';
         document.body.appendChild(box);
+
+        // 右上角叉号关闭按钮
+        const closeBtn = document.createElement('div');
+        closeBtn.textContent = '\u00D7';
+        Object.assign(closeBtn.style, {
+            position: 'absolute', top: '-12px', right: '-12px',
+            width: '22px', height: '22px', lineHeight: '20px', textAlign: 'center',
+            background: '#ff4444', color: '#fff', borderRadius: '50%',
+            fontSize: '14px', fontWeight: 'bold', cursor: 'pointer',
+            zIndex: '10001', border: '2px solid #fff',
+            pointerEvents: 'auto', userSelect: 'none',
+        });
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            removeHistoryBox();
+        });
+        box.appendChild(closeBtn);
     }
     box.style.opacity = 0.6
     box.style.left = boxX + 'px';

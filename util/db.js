@@ -445,7 +445,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             // 有框选：使用框选区域数据
             const selectPointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : 1
             const selectAreaCount = selectArr.filter(v => v > 0).length
-            const areaVal = selectAreaCount * selectPointArea
+            const areaVal = (selectAreaCount * selectPointArea / 100).toFixed(2)
 
             let maxVal = selectMax
             let pressSumVal = selectArr.reduce((a, b) => a + b, 0)
@@ -474,7 +474,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             // 没有框选：使用全局数据
             const globalPointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : 1
             const globalAreaCount = data.filter(v => v > 0).length
-            const areaVal = globalAreaCount * globalPointArea
+            const areaVal = (globalAreaCount * globalPointArea / 100).toFixed(2)
 
             let maxVal = max
             let pressSumVal = press
@@ -587,7 +587,7 @@ function buildCsvHeadersSimple(keyArr, file) {
     // 去掉前缀，只保留 back/sit
     const part = key.includes('-') ? key.split('-').pop() : key
     handArr.push(
-      { id: `${key}Area`, title: `${part} Area(mm\u00B2)` },
+      { id: `${key}Area`, title: `${part} Area(cm\u00B2)` },
       { id: `${key}Max`, title: `${part} Max(N)` },
       { id: `${key}PressSum`, title: `${part} Pressure_Sum(N)` },
       { id: `${key}Data`, title: `${part} data` },

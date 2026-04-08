@@ -32,6 +32,7 @@ export const useEquipStore = create((set) => ({
 
   // 设备状态
   equipStatus: {},
+  connectState: 'idle',  // 'idle' | 'connecting' | 'connected'
 
   // 可视化设置
   settingValue: initialSettings,
@@ -61,6 +62,7 @@ export const useEquipStore = create((set) => ({
   setDisplay: (s) => set({ display: s }),
 
   setEquipStatus: (s) => set({ equipStatus: s }),
+  setConnectState: (s) => set({ connectState: s }),
 
   setSettingValue: (s) => set({ settingValue: s }),
   setSettingValueMax: (s) => set({ settingValueMax: s }),

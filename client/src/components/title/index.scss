@@ -130,6 +130,8 @@
     border: 1px solid #55aaff;
     background-color: rgba(75, 160, 255, 0.3);
     position: fixed;
+    overflow: visible;
+    z-index: 10000;
 }
 
 .connectButton:active {
@@ -206,6 +208,30 @@
     background-color: #0072EF;
     color: #E6EBF0;
     border-radius: 5px;
+}
+
+.connectingPort {
+    padding: 2px 7px;
+    background-color: #E6A817;
+    color: #fff;
+    border-radius: 5px;
+    cursor: wait !important;
+    pointer-events: none;
+    animation: connectingPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes connectingPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.connectedPort {
+    padding: 2px 7px;
+    background-color: #52C41A;
+    color: #fff;
+    border-radius: 5px;
+    cursor: default !important;
+    pointer-events: none;
 }
 
 .unclickButton {

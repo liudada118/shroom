@@ -15,9 +15,21 @@ import { shallow } from 'zustand/shallow'
 
 const Title = memo((props) => {
   const { t, i18n } = props;
+
+  const connectState = useEquipStore(s => s.connectState, shallow);
+
   const connent = () => {
+    // 只有 idle 状态才能点击连接
+    if (connectState !== 'idle') return
+
+    useEquipStore.getState().setConnectState('connecting')
+
     axios.get(`${localAddress}/connPort`, {}).then((res) => {
       console.log(res)
+      // connPort 返回后设为已连接
+      useEquipStore.getState().setConnectState('connected')
+    }).catch(() => {
+      useEquipStore.getState().setConnectState('idle')
     })
     axios.get(`${localAddress}/sendMac`, {}).then((res) => {
       console.log(res)
@@ -62,7 +74,28 @@ const Title = memo((props) => {
 
   const equipStatus = useEquipStore(s => s.equipStatus, shallow);
 
+  // 根据 connectState 决定按钮样式和文本
+  const getButtonClass = () => {
+    switch (connectState) {
+      case 'connecting':
+        return 'connectingPort'
+      case 'connected':
+        return 'connectedPort'
+      default:
+        return 'connectPort'
+    }
+  }
 
+  const getButtonText = () => {
+    switch (connectState) {
+      case 'connecting':
+        return t('connecting')
+      case 'connected':
+        return t('connected')
+      default:
+        return t('connect')
+    }
+  }
 
   return (
 
@@ -76,8 +109,8 @@ const Title = memo((props) => {
             defaultValue={t(systemType)}
             onChange={changeSystemType}
           />
-          <div className={`${!Object.keys(equipStatus).length || Object.values(equipStatus).includes('offline') ? 'connectPort' : 'unclickButton'} cursor connectButton`} style={{ marginRight: '3.1rem' }} onClick={() => { connent() }}>
-            {t('connect')}
+          <div className={`${getButtonClass()} cursor connectButton`} style={{ marginRight: '3.1rem' }} onClick={() => { connent() }}>
+            {getButtonText()}
           </div>
           <EquipStatus fileName={systemType} />
         </div>

@@ -13,6 +13,8 @@ i18next.init({
     en: {
       translation: {
         connect: 'Connect',
+        connecting: 'Connecting',
+        connected: 'Connected',
         back: 'Back',
         sit: 'Seat',
         freq: 'Freq',
@@ -140,6 +142,8 @@ i18next.init({
     zh: {
       translation: {
         connect: '一键连接',
+        connecting: '连接中',
+        connected: '已连接',
         back: '靠背',
         sit: '坐垫',
         freq: '采集频率',
