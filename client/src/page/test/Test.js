@@ -32,6 +32,7 @@ import { isMoreMatrix } from '../../assets/util/util'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useMatrixData } from '../../hooks/useMatrixData'
 import NumThres from '../../components/three/NumThres'
+import { buildFallbackParams } from '../../util/request'
 
 export const pageContext = createContext(null)
 
@@ -50,10 +51,12 @@ function Test() {
     }
 
     const postKey = () => {
+        const payload = { key: value }
         axios({
             method: 'post',
             url: `${localAddress}/bindKey`,
-            data: { key: value }
+            params: buildFallbackParams(payload),
+            data: payload
         })
     }
 
@@ -127,6 +130,7 @@ function Test() {
             axios({
                 method: 'post',
                 url: `${localAddress}/getDbHistorySelect`,
+                params: { selectJson: JSON.stringify(selectJson) },
                 data: { selectJson }
             }).then((res) => {
                 const data = res.data?.data || {}

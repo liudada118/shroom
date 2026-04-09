@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { shallow } from 'zustand/shallow';
 import { useEquipStore } from '../../store/equipStore';
 import { localAddress } from '../../util/constant';
+import { buildFallbackParams } from '../../util/request';
 import PlaybackSpeedMenu from './PlaybackSpeedMenu';
 import PlaybackPlayToggle from './PlaybackPlayToggle';
 
@@ -40,12 +41,15 @@ export default function PlaybackBar(props) {
             return;
         }
 
+        const payload = {
+            index,
+        };
+
         axios({
             method: 'post',
             url: `${localAddress}/getDbHistoryIndex`,
-            data: {
-                index,
-            },
+            params: buildFallbackParams(payload),
+            data: payload,
         })
             .then((res) => {
                 if (res.data?.code !== 0) {
@@ -92,12 +96,15 @@ export default function PlaybackBar(props) {
 
     const handleSpeedChange = (nextSpeed) => {
         setSpeed(nextSpeed);
+        const payload = {
+            speed: Number(nextSpeed),
+        };
+
         axios({
             method: 'post',
             url: `${localAddress}/changeDbplaySpeed`,
-            data: {
-                speed: Number(nextSpeed),
-            },
+            params: buildFallbackParams(payload),
+            data: payload,
         }).catch(() => {});
     };
 

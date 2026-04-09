@@ -184,6 +184,43 @@ function resolveDownloadPathRequest(req) {
   return ''
 }
 
+function extractRequestValue(source, keys, depth = 0) {
+  if (depth > 3 || source === undefined || source === null) {
+    return undefined
+  }
+
+  const parsedSource = tryParseRequestJson(source)
+
+  if (typeof parsedSource !== 'object' || parsedSource === null) {
+    return undefined
+  }
+
+  for (const key of keys) {
+    if (parsedSource[key] !== undefined) {
+      return tryParseRequestJson(parsedSource[key])
+    }
+  }
+
+  for (const key of ['data', 'payload', 'params', 'body', 'query', 'headers']) {
+    const nestedValue = extractRequestValue(parsedSource[key], keys, depth + 1)
+    if (nestedValue !== undefined) {
+      return nestedValue
+    }
+  }
+
+  return undefined
+}
+
+function resolveRequestValue(req, keys) {
+  for (const source of [req.body, req.query, req.headers]) {
+    const value = extractRequestValue(source, keys)
+    if (value !== undefined) {
+      return value
+    }
+  }
+  return undefined
+}
+
 function pushPlaybackCandidate(target, value) {
   const normalized = normalizePlaybackField(value)
   if (!normalized || target.includes(normalized)) {
@@ -373,7 +410,7 @@ router.post('/selectSystem', asyncHandler(async (req, res) => {
 }))
 
 router.post('/changeSystemType', asyncHandler(async (req, res) => {
-  const { system } = req.body || {}
+  const system = resolveRequestValue(req, ['system'])
   state.file = system
   state.baudRate = constantObj.baudRateObj[system] || 1000000
   await reopenCurrentDb()
@@ -601,8 +638,9 @@ router.get('/readMacOnly', asyncHandler(async (req, res) => {
 // ─── 数据采集 ────────────────────────────────────────────
 
 router.post('/startCol', asyncHandler(async (req, res) => {
-  const { fileName, select } = req.body || {}
-  state.selectArr = select || []
+  const fileName = resolveRequestValue(req, ['fileName', 'filename'])
+  const select = resolveRequestValue(req, ['select', 'selectJson'])
+  state.selectArr = select && typeof select === 'object' ? select : []
   state.historySelectCache = null
 
   const sensorArr = Object.keys(state.dataMap).map((a) => state.dataMap[a].type)
@@ -724,7 +762,7 @@ router.post('/getDbHistory', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
-  const { selectJson } = req.body || {}
+  const selectJson = resolveRequestValue(req, ['selectJson', 'select'])
   if (!selectJson || typeof selectJson !== 'object') {
     res.json(new HttpResult(1, {}, 'selectJson required'))
     return
@@ -783,7 +821,8 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getContrastData', asyncHandler(async (req, res) => {
-  const { left, right } = req.body || {}
+  const left = resolveRequestValue(req, ['left'])
+  const right = resolveRequestValue(req, ['right'])
 
   const [leftResult, rightResult] = await Promise.all([
     dbGetData({ db: state.currentDb, params: [left] }),
@@ -838,13 +877,13 @@ router.post('/cancalDbPlay', (req, res) => {
 })
 
 router.post('/changeDbplaySpeed', asyncHandler(async (req, res) => {
-  const { speed } = req.body || {}
+  const speed = resolveRequestValue(req, ['speed'])
   changePlaySpeed(speed)
   res.json(new HttpResult(0, {}, 'success'))
 }))
 
 router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
-  const { index } = req.body || {}
+  const index = resolveRequestValue(req, ['index'])
 
   if (!state.historyDbArr) {
     res.json(new HttpResult(555, 'Please select playback time range', 'error'))
@@ -978,7 +1017,7 @@ router.post('/setDownloadPath', asyncHandler(async (req, res) => {
 }))
 
 router.post('/openFile', asyncHandler(async (req, res) => {
-  const { filePath } = req.body || {}
+  const filePath = resolveRequestValue(req, ['filePath', 'path'])
   if (!filePath) {
     res.json(new HttpResult(1, {}, 'filePath required'))
     return
@@ -1013,7 +1052,7 @@ router.post('/openFile', asyncHandler(async (req, res) => {
 }))
 
 router.post('/openFolder', asyncHandler(async (req, res) => {
-  const { folderPath } = req.body || {}
+  const folderPath = resolveRequestValue(req, ['folderPath', 'path'])
   if (!folderPath) {
     res.json(new HttpResult(1, {}, 'folderPath required'))
     return
@@ -1049,19 +1088,21 @@ router.post('/openFolder', asyncHandler(async (req, res) => {
 }))
 
 router.post('/delete', asyncHandler(async (req, res) => {
-  const { fileArr } = req.body || {}
+  const fileArr = resolveRequestValue(req, ['fileArr']) || []
   const data = await deleteDbData({ db: state.currentDb, params: fileArr })
   res.json(new HttpResult(0, data, 'Delete success'))
 }))
 
 router.post('/changeDbName', asyncHandler(async (req, res) => {
-  const { newDate, oldDate } = req.body || {}
+  const newDate = resolveRequestValue(req, ['newDate'])
+  const oldDate = resolveRequestValue(req, ['oldDate'])
   const data = await changeDbName({ db: state.currentDb, params: [newDate, oldDate] })
   res.json(new HttpResult(0, data, 'Update success'))
 }))
 
 router.post('/changeDbDataName', asyncHandler(async (req, res) => {
-  const { oldName, newName } = req.body || {}
+  const oldName = resolveRequestValue(req, ['oldName'])
+  const newName = resolveRequestValue(req, ['newName'])
   await changeDbDataName({ db: state.currentDb, params: [oldName, newName] })
   res.json(new HttpResult(0, {}, 'success'))
 }))
@@ -1069,7 +1110,10 @@ router.post('/changeDbDataName', asyncHandler(async (req, res) => {
 // ─── 备注管理 ────────────────────────────────────────────
 
 router.post('/upsertRemark', asyncHandler(async (req, res) => {
-  let { date, alias, remark, select } = req.body || {}
+  let date = resolveRequestValue(req, ['date'])
+  const alias = resolveRequestValue(req, ['alias'])
+  const remark = resolveRequestValue(req, ['remark'])
+  const select = resolveRequestValue(req, ['select', 'selectJson'])
   if (!date) {
     res.json(new HttpResult(1, {}, 'date required'))
     return
@@ -1080,7 +1124,7 @@ router.post('/upsertRemark', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getRemark', asyncHandler(async (req, res) => {
-  const { date } = req.body || {}
+  const date = resolveRequestValue(req, ['date'])
   if (!date) {
     res.json(new HttpResult(1, {}, 'date required'))
     return
@@ -1099,7 +1143,10 @@ router.get('/cache/devices', asyncHandler(async (req, res) => {
 
 // 添加/更新Device缓存
 router.post('/cache/devices', asyncHandler(async (req, res) => {
-  const { mac, type, deviceClass, alias } = req.body || {}
+  const mac = resolveRequestValue(req, ['mac'])
+  const type = resolveRequestValue(req, ['type'])
+  const deviceClass = resolveRequestValue(req, ['deviceClass'])
+  const alias = resolveRequestValue(req, ['alias'])
   if (!mac || !type) {
     res.json(new HttpResult(1, {}, 'mac and type are required'))
     return
@@ -1110,7 +1157,7 @@ router.post('/cache/devices', asyncHandler(async (req, res) => {
 
 // 删除单个Device缓存
 router.delete('/cache/devices', asyncHandler(async (req, res) => {
-  const { mac } = req.body || {}
+  const mac = resolveRequestValue(req, ['mac'])
   if (!mac) {
     res.json(new HttpResult(1, {}, 'mac is required'))
     return
@@ -1134,7 +1181,7 @@ router.get('/auth/mode', (req, res) => {
 
 // 切换授权模式（online / local）
 router.post('/auth/mode', asyncHandler(async (req, res) => {
-  const { mode } = req.body || {}
+  const mode = resolveRequestValue(req, ['mode'])
   if (!['online', 'local'].includes(mode)) {
     res.json(new HttpResult(1, {}, 'Mode must be online or local'))
     return
@@ -1148,7 +1195,7 @@ router.post('/auth/mode', asyncHandler(async (req, res) => {
 
 router.post('/bindKey', (req, res) => {
   try {
-    const { key } = req.body || {}
+    const key = resolveRequestValue(req, ['key'])
     res.json(new HttpResult(0, {}, 'Bindkey success'))
   } catch {
     res.json(new HttpResult(1, {}, 'Bindkey failed'))
@@ -1201,13 +1248,13 @@ router.post('/uploadCsv', csvUpload.single('file'), asyncHandler(async (req, res
 }))
 
 router.post('/getCsvData', asyncHandler(async (req, res) => {
-  const { fileName } = req.body || {}
+  const fileName = resolveRequestValue(req, ['fileName'])
   const data = getCsvData(fileName)
   res.json(new HttpResult(0, data, 'success'))
 }))
 
 router.post('/getSysconfig', (req, res) => {
-  const { config } = req.body || {}
+  const config = resolveRequestValue(req, ['config'])
   const str = module2.encStr(JSON.stringify(config))
   res.json(new HttpResult(0, str, 'success'))
 })

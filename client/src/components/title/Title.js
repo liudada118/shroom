@@ -9,6 +9,7 @@ import axios from 'axios'
 import { withTranslation } from "react-i18next";
 import { pageContext } from '../../page/test/Test'
 import { systemConfig, localAddress } from '../../util/constant'
+import { buildFallbackParams } from '../../util/request'
 import { useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 
@@ -49,12 +50,15 @@ const Title = memo((props) => {
     // useEquipStore.getState().setSystemType(e)
     // useEquipStore.getState().setStatus(new Array(4096).fill(0))
     // useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
+    const payload = {
+      system: e,
+    }
+
     axios({
       method: 'post',
       url: `${localAddress}/changeSystemType`,
-      data: {
-        system: e,
-      }
+      params: buildFallbackParams(payload),
+      data: payload,
     }).then((res) => {
       console.log(res)
       const optimalObj = res.data.data.optimalObj

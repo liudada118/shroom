@@ -73,6 +73,11 @@ export default function Col(props) {
             axios({
                 method: 'post',
                 url: `${localAddress}/startCol`,
+                params: {
+                    fileName: String(fileName),
+                    HZ: hz,
+                    select: hasSelect ? JSON.stringify(selectObj) : undefined,
+                },
                 data: {
                     fileName: fileName,
                     HZ: hz,
@@ -103,6 +108,12 @@ export default function Col(props) {
                         axios({
                             method: 'post',
                             url: `${localAddress}/upsertRemark`,
+                            params: {
+                                date: remarkData.date,
+                                alias: remarkData.alias,
+                                remark: remarkData.remark,
+                                select: remarkData.select ? JSON.stringify(remarkData.select) : undefined,
+                            },
                             data: remarkData
                         }).then((remarkRes) => {
                             if (remarkRes.data?.message == 'error') {

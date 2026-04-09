@@ -13,6 +13,7 @@ import { useDebounce } from '../../hooks/useDebounce'
 import { useEquipStore } from '../../store/equipStore'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import { localAddress } from '../../util/constant'
+import { buildFallbackParams } from '../../util/request'
 import dayjs from 'dayjs'
 import { pageContext } from '../../page/test/Test'
 
@@ -125,7 +126,10 @@ const ColAndHistory = memo((props) => {
             return ''
         }
 
-        const res = await axios.post(`${localAddress}/setDownloadPath`, { path: nextPath })
+        const payload = { path: nextPath }
+        const res = await axios.post(`${localAddress}/setDownloadPath`, payload, {
+            params: buildFallbackParams(payload)
+        })
         if (res.data?.code !== 0) {
             throw new Error(getApiErrorMessage(res.data, t('downloadFailed')))
         }
@@ -241,7 +245,10 @@ const ColAndHistory = memo((props) => {
             const folder = normalizeFolderSelection(await window.electronAPI.selectFolder())
             if (folder) {
                 try {
-                    const res = await axios.post(`${localAddress}/setDownloadPath`, { path: folder })
+                    const payload = { path: folder }
+                    const res = await axios.post(`${localAddress}/setDownloadPath`, payload, {
+                        params: buildFallbackParams(payload)
+                    })
                     if (res.data?.code === 0) {
                         // 使用后端返回的实际路径更新输入框
                         const actualPath = res.data?.data?.path || folder
@@ -263,7 +270,10 @@ const ColAndHistory = memo((props) => {
 
     const handleSavePathLegacy = () => {
         if (!editPathValue.trim()) return
-        axios.post(`${localAddress}/setDownloadPath`, { path: editPathValue.trim() }).then((res) => {
+        const payload = { path: editPathValue.trim() }
+        axios.post(`${localAddress}/setDownloadPath`, payload, {
+            params: buildFallbackParams(payload)
+        }).then((res) => {
             if (res.data?.code === 0) {
                 setDownloadPath(editPathValue.trim())
                 setIsEditingPath(false)
@@ -311,7 +321,10 @@ const ColAndHistory = memo((props) => {
         if (window.electronAPI?.openPath) {
             window.electronAPI.openPath(targetPath)
         } else {
-            axios.post(`${localAddress}/openFolder`, { folderPath: targetPath }).then((res) => {
+            const payload = { folderPath: targetPath }
+            axios.post(`${localAddress}/openFolder`, payload, {
+                params: buildFallbackParams(payload)
+            }).then((res) => {
                 if (res.data?.code !== 0) {
                     message.error(res.data?.message || '打开文件夹失败')
                 }
@@ -327,7 +340,10 @@ const ColAndHistory = memo((props) => {
         if (window.electronAPI?.openPath) {
             window.electronAPI.openPath(filePath)
         } else {
-            axios.post(`${localAddress}/openFile`, { filePath }).then((res) => {
+            const payload = { filePath }
+            axios.post(`${localAddress}/openFile`, payload, {
+                params: buildFallbackParams(payload)
+            }).then((res) => {
                 if (res.data?.code !== 0) {
                     // 如果打开文件失败，尝试打开所在文件夹
                     const folderPath = filePath.replace(/[\\/][^\\/]+$/, '')
@@ -391,12 +407,15 @@ const ColAndHistory = memo((props) => {
             setDownloadProgress(prev => prev ? { ...prev, percent: Math.round(fakePercent) } : prev)
         }, 300)
 
+        const payload = {
+            fileArr: selectedFiles,
+        }
+
         axios({
             method: 'post',
             url: `${localAddress}/downlaod`,
-            data: {
-                fileArr: selectedFiles,
-            }
+            params: buildFallbackParams(payload),
+            data: payload,
         }).then((res) => {
             clearInterval(progressTimer)
             console.log(res)
@@ -447,12 +466,15 @@ const ColAndHistory = memo((props) => {
             return
         }
         if (Onindex == 0) {
+            const payload = {
+                fileArr: selectArr,
+            }
+
             axios({
                 method: 'post',
                 url: `${localAddress}/delete`,
-                data: {
-                    fileArr: selectArr,
-                }
+                params: buildFallbackParams(payload),
+                data: payload,
             }).then((res) => {
                 // console.log(res)
                 let resArr = [...colHistoryArr]
@@ -563,6 +585,11 @@ const ColAndHistory = memo((props) => {
         axios({
             method: 'post',
             url: `${localAddress}/upsertRemark`,
+            params: {
+                date: selectedDbDate,
+                alias: changedAlias,
+                remark: changedRemark
+            },
             data: {
                 date: selectedDbDate,
                 alias: changedAlias,
@@ -955,6 +982,7 @@ const ColAndHistory = memo((props) => {
                                                     axios({
                                                         method: 'post',
                                                         url: `${localAddress}/getDbHistory`,
+                                                        params: playbackRequest,
                                                         data: playbackRequest
                                                     }).then((res) => {
                                                         console.log(res)
@@ -1043,12 +1071,15 @@ const ColAndHistory = memo((props) => {
                                                 }
                                                 setSelectArr(arr)
                                             } else {
+                                                const payload = {
+                                                    fileName: a,
+                                                }
+
                                                 axios({
                                                     method: 'post',
                                                     url: `${localAddress}/getCsvData`,
-                                                    data: {
-                                                        fileName: a,
-                                                    }
+                                                    params: buildFallbackParams(payload),
+                                                    data: payload,
                                                 }).then((res) => {
                                                     setCurrentName(a)
                                                     setCurrentPlaybackKey(localItemKey)
@@ -1156,13 +1187,16 @@ const ColAndHistory = memo((props) => {
                             }}>csv导入</div> </> :
                             <> <div className='playbackButton cursor' onClick={() => {
 
+                                const payload = {
+                                    left: contrastArr.left.date,
+                                    right: contrastArr.right.date,
+                                }
+
                                 axios({
                                     method: 'post',
                                     url: `${localAddress}/getContrastData`,
-                                    data: {
-                                        left: contrastArr.left.date,
-                                        right: contrastArr.right.date,
-                                    }
+                                    params: buildFallbackParams(payload),
+                                    data: payload,
                                 }).then((res) => {
                                     console.log(res)
                                     // setDisplayStatus()
@@ -1203,16 +1237,14 @@ const ColAndHistory = memo((props) => {
                             onBlur={(e) => {
                                 const val = e.target.value.trim()
                                 if (val) {
-                                    axios.post(`${localAddress}/setDownloadPath`, { path: val }).then((res) => {
-                                        if (res.data?.code === 0) {
-                                            setDownloadPath(val)
-                                        }
-                                    }).catch(() => {})
+                                    persistDownloadPath(val).catch(() => {})
                                 }
                             }}
                             onPressEnter={(e) => {
                                 const val = e.target.value.trim()
                                 if (val) {
+                                    persistDownloadPath(val, { showSuccess: true }).catch(() => {})
+                                    return
                                     axios.post(`${localAddress}/setDownloadPath`, { path: val }).then((res) => {
                                         if (res.data?.code === 0) {
                                             setDownloadPath(val)

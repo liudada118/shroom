@@ -11,6 +11,7 @@ import {
 import './index.scss'
 import axios from 'axios';
 import { localAddress } from '../../../util/constant';
+import { buildFallbackParams } from '../../../util/request';
 
 const { Title, Text } = Typography;
 
@@ -156,10 +157,13 @@ export default function SystemSetting() {
                 }
             }
         }
+        const payload = { config: newObj };
+
         axios({
             method: 'post',
             url: `${localAddress}/getSysconfig`,
-            data: { config: newObj }
+            params: buildFallbackParams(payload),
+            data: payload
         }).then((res) => {
             setConfig(res.data.data);
             message.success('配置文件已生成');
