@@ -19,14 +19,15 @@ const pointConfig = {
  */
 function colArrData(arr) {
   if (!arr.length) {
-    return { press: 0, area: 0, max: 0, min: 0, aver: 0 }
+    return { press: 0, area: 0, max: 0, min: 0, aver: 0, maxIndex: -1 }
   }
   const press = arr.reduce((a, b) => a + b, 0)
   const area = arr.filter((a) => a > 0).length
   const max = Math.max(...arr)
+  const maxIndex = arr.indexOf(max)
   const min = Math.min(...arr.filter((a) => a > 0))
   const aver = area > 0 ? (press / area).toFixed(1) : 0
-  return { press, area, max, min, aver }
+  return { press, area, max, min, aver, maxIndex }
 }
 
 function isAllDigits(str) {
@@ -215,42 +216,42 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
             selectObj.height = yEnd - yStart
           }
 
-          const { press, area, max, min, aver } = colArrData(data)
-          const { max: selectMax, min: selectMin, aver: selectAver } = colArrData(selectArr)
+          const { press, area, max, min, aver, maxIndex } = colArrData(data)
+          const { press: selectPress, area: selectArea, max: selectMax, min: selectMin, aver: selectAver, maxIndex: selectMaxIndex } = colArrData(selectArr)
 
           const pointInfo = pointConfig[key]
           const pointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : null
           const pointValue = pointInfo ? area : null
           const pressureAreaValue = pointInfo ? area * pointArea : area
 
+          // 计算框选区域受力面积
+          const selectAreaValue = pointInfo ? selectArea * pointArea : selectArea
+
           if (file.includes('endi')) newData.sec = (i / 12).toFixed(2)
-          newData[`${key}pressureArea`] = pressureAreaValue
-          newData[`${key}pressure`] = press
           newData[`${key}max`] = max
-          newData[`${key}min`] = min
+          newData[`${key}maxCoord`] = maxIndex
           newData[`${key}aver`] = aver
-          newData[`${key}selectMax`] = selectMax
-          newData[`${key}selectMin`] = selectMin
-          newData[`${key}selectAver`] = selectAver
+          newData[`${key}pressure`] = press
+          newData[`${key}pressureArea`] = pressureAreaValue
           newData[`${key}realData`] = JSON.stringify(data)
+          newData[`${key}selectMax`] = selectMax
+          newData[`${key}selectMaxCoord`] = selectMaxIndex
+          newData[`${key}selectAver`] = selectAver
+          newData[`${key}selectPress`] = selectPress
+          newData[`${key}selectArea`] = selectAreaValue
           newData[`${key}selectData`] = JSON.stringify(selectArr)
-          newData[`${key}selectW&H`] = JSON.stringify([selectObj.width, selectObj.height])
 
           // endi 类型需要做单位转换
           if (key === 'endi-back') {
             newData[`${key}max`] = backYToX(max)
-            newData[`${key}min`] = backYToX(min)
             newData[`${key}aver`] = backYToX(aver)
             newData[`${key}selectMax`] = backYToX(selectMax)
-            newData[`${key}selectMin`] = backYToX(selectMin)
             newData[`${key}selectAver`] = backYToX(selectAver)
           }
           if (key === 'endi-sit') {
             newData[`${key}max`] = sitYToX(max)
-            newData[`${key}min`] = sitYToX(min)
             newData[`${key}aver`] = sitYToX(aver)
             newData[`${key}selectMax`] = sitYToX(selectMax)
-            newData[`${key}selectMin`] = sitYToX(selectMin)
             newData[`${key}selectAver`] = sitYToX(selectAver)
           }
 
@@ -328,31 +329,31 @@ function buildCsvHeaders(keyArr, file) {
   for (let j = 0; j < keyArr.length; j++) {
     const key = keyArr[j]
     if (j === 0) {
-      if (file.includes('endi')) handArr.push({ id: "sec", title: "sec（s）" })
+      if (file.includes('endi')) handArr.push({ id: "sec", title: "sec (s)" })
       handArr.push({ id: "time", title: "time" })
     }
 
     const res = key.replace(/endi/g, "car")
     handArr.push(
-      { id: `${key}max`, title: `${res} Max（Kpa）` },
-      { id: `${key}min`, title: `${res} Min（Kpa）` },
-      { id: `${key}aver`, title: `${res} Aver（Kpa）` },
-      { id: `${key}pressureArea`, title: `${res} Area（cm²）` },
+      { id: `${key}max`, title: `${res} Original Max Pressure (Kpa)` },
+      { id: `${key}maxCoord`, title: `${res} Original Max Pressure Coordinate` },
+      { id: `${key}aver`, title: `${res} Original Average Pressure (Kpa)` },
+      { id: `${key}pressure`, title: `${res} Original Pressure Sum (Kpa)` },
+      { id: `${key}pressureArea`, title: `${res} Original Force Area (cm²)` },
+      { id: `${key}realData`, title: `${res} Original Data` },
+      { id: `${key}selectMax`, title: `${res} Select Area 1 Max Pressure` },
+      { id: `${key}selectMaxCoord`, title: `${res} Select Area 1 Max Pressure Coordinate` },
+      { id: `${key}selectAver`, title: `${res} Select Area 1 Average Pressure` },
+      { id: `${key}selectPress`, title: `${res} Select Area 1 Pressure Sum` },
+      { id: `${key}selectArea`, title: `${res} Select Area 1 Force Area` },
+      { id: `${key}selectData`, title: `${res} Select Area 1 Original Data` },
     )
     if (key === 'endi-back' || key === 'endi-sit') {
       handArr.push(
         { id: `${key}point`, title: `${res} Points` },
-        { id: `${key}pressTotal`, title: `${res} Pressure Sum（N）` },
+        { id: `${key}pressTotal`, title: `${res} Pressure Total (N)` },
       )
     }
-    handArr.push(
-      { id: `${key}realData`, title: `${res} Data` },
-      { id: `${key}selectData`, title: `${res}select Data` },
-      { id: `${key}selectMax`, title: `${res}select Max（Kpa）` },
-      { id: `${key}selectMin`, title: `${res}select Min（Kpa）` },
-      { id: `${key}selectAver`, title: `${res}select Aver（Kpa）` },
-      { id: `${key}selectW&H`, title: `${res}select W&H` },
-    )
   }
   return handArr
 }
