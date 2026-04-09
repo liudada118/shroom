@@ -565,10 +565,15 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           }
           resolve({ [param]: 'success', filePath: filePaths[0], filePaths })
         } else {
-          // 单矩阵系统：保持原来的单文件输出
+          // 单矩阵系统：根据矩阵类型区分文件名
+          // back → carback{name}.csv, sit → carcushion{name}.csv
+          const csvNameMap = {
+            'back': 'carback',
+            'sit': 'carcushion',
+          }
           const key = keyArr[0]
           const part = key.includes('-') ? key.split('-').pop() : key
-          const csvBaseName = file === 'endi' ? 'car' : (file === 'carY' ? 'carcushion' : file)
+          const csvBaseName = csvNameMap[part] || (file === 'endi' ? 'car' : file)
           const csvFilePath = path.join(csvPath, `${csvBaseName}${safeName}.csv`)
           const headers = buildSingleKeyHeaders(part)
           await writeSingleCsv(csvFilePath, headers, [...csvDataByKey[key]])
