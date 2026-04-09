@@ -345,6 +345,7 @@ async function dbGetData({ db, params }) {
 /**
  * 单条记录导出为 CSV
  * 核心优化：每行只解析一次 JSON，消除内层循环中的重复 JSON.parse
+ * 多矩阵系统（carY/endi）分别导出 back 和 sit 两个独立 CSV 文件
  */
 function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath) {
   return new Promise((resolve, reject) => {
@@ -354,7 +355,6 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         return
       }
 
-      const csvWriteBackData = []
       const firstData = JSON.parse(rows[0].data)
       const keyArr = Object.keys(firstData)
 
@@ -379,7 +379,6 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       // 根据前几帧 timestamp 自动推算帧率
       let detectedHz = 12 // 默认帧率
       if (rows.length >= 2) {
-        // 取前10帧（或全部）的平均间隔来计算帧率
         const sampleCount = Math.min(rows.length, 10)
         const totalMs = rows[sampleCount - 1].timestamp - rows[0].timestamp
         if (totalMs > 0) {
@@ -388,11 +387,17 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         }
       }
 
+      // 判断是否为多矩阵系统（有 back 和 sit 两个 key）
+      const isMultiMatrix = keyArr.length > 1 && keyArr.some(k => k.includes('-back')) && keyArr.some(k => k.includes('-sit'))
+
+      // 按 key 分组存储数据
+      const csvDataByKey = {}
+      for (const key of keyArr) {
+        csvDataByKey[key] = []
+      }
+
       for (let i = 0; i < rows.length; i++) {
-        const newData = {}
-        // 每行只解析一次 JSON
         const rowData = JSON.parse(rows[i].data)
-        const rowSelect = null // select 信息已通过 selectOverride 统一处理
 
         for (let j = 0; j < keyArr.length; j++) {
           const key = keyArr[j]
@@ -401,19 +406,15 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const data = item.arr
           if (!data) continue
 
-          if (j === 0) {
-            newData.time = timeStampTo_Date(rows[i].timestamp)
-          }
+          const rowEntry = {}
+          rowEntry.time = timeStampTo_Date(rows[i].timestamp)
+          rowEntry.sec = (i / detectedHz).toFixed(2)
 
           // 框选区域计算
           const selectArr = []
-          const selectObj = { width: 0, height: 0 }
-
           let obj = null
           if (selectOverride && typeof selectOverride === 'object') {
             obj = selectOverride[key]
-          } else if (rowSelect) {
-            obj = rowSelect[key]
           }
 
           if (obj && typeof obj === 'object') {
@@ -423,26 +424,16 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
                 selectArr.push(data[y * width + x])
               }
             }
-            selectObj.width = xEnd - xStart
-            selectObj.height = yEnd - yStart
           }
 
           const { press, area, max, min, aver } = colArrData(data)
-          const { max: selectMax, min: selectMin, aver: selectAver } = colArrData(selectArr)
-
+          const { max: selectMax } = colArrData(selectArr)
           const pointInfo = pointConfig[key]
-          const pointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : null
-          const pointValue = pointInfo ? area : null
-          const pressureAreaValue = pointInfo ? area * pointArea : area
-
-          // 用帧序号/帧率计算sec，保证每秒整除
-          newData.sec = (i / detectedHz).toFixed(2)
 
           // 判断是否有框选数据
           const hasSelectData = selectOverride && typeof selectOverride === 'object' && Object.keys(selectOverride).length > 0 && selectArr.length > 0
 
           if (hasSelectData) {
-            // 有框选：使用框选区域数据
             const selectPointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : 1
             const selectAreaCount = selectArr.filter(v => v > 0).length
             const areaVal = (selectAreaCount * selectPointArea / 100).toFixed(2)
@@ -450,13 +441,11 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             let maxVal = selectMax
             let pressSumVal = selectArr.reduce((a, b) => a + b, 0)
 
-            // carY 类型需要除以 100/3
             if (key.startsWith('carY')) {
               const divisor = 100 / 3
               maxVal = selectMax / divisor
               pressSumVal = pressSumVal / divisor
             }
-            // endi 类型需要做单位转换
             if (key === 'endi-back') {
               maxVal = backYToX(selectMax)
               pressSumVal = backYToX(selectArr.reduce((a, b) => a + b, 0))
@@ -466,12 +455,11 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
               pressSumVal = sitYToX(selectArr.reduce((a, b) => a + b, 0))
             }
 
-            newData[`${key}Area`] = areaVal
-            newData[`${key}Max`] = maxVal
-            newData[`${key}PressSum`] = pressSumVal
-            newData[`${key}Data`] = JSON.stringify(selectArr)
+            rowEntry.Area = areaVal
+            rowEntry.Max = maxVal
+            rowEntry.PressSum = pressSumVal
+            rowEntry.Data = JSON.stringify(selectArr)
           } else {
-            // 没有框选：使用全局数据
             const globalPointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : 1
             const globalAreaCount = data.filter(v => v > 0).length
             const areaVal = (globalAreaCount * globalPointArea / 100).toFixed(2)
@@ -479,13 +467,11 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             let maxVal = max
             let pressSumVal = press
 
-            // carY 类型需要除以 100/3
             if (key.startsWith('carY')) {
               const divisor = 100 / 3
               maxVal = max / divisor
               pressSumVal = press / divisor
             }
-            // endi 类型需要做单位转换
             if (key === 'endi-back') {
               maxVal = backYToX(max)
               pressSumVal = backYToX(press)
@@ -495,14 +481,14 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
               pressSumVal = sitYToX(press)
             }
 
-            newData[`${key}Area`] = areaVal
-            newData[`${key}Max`] = maxVal
-            newData[`${key}PressSum`] = pressSumVal
-            newData[`${key}Data`] = JSON.stringify(data)
+            rowEntry.Area = areaVal
+            rowEntry.Max = maxVal
+            rowEntry.PressSum = pressSumVal
+            rowEntry.Data = JSON.stringify(data)
           }
-        }
 
-        csvWriteBackData.push(newData)
+          csvDataByKey[key].push(rowEntry)
+        }
       }
 
       // 获取备注信息
@@ -517,10 +503,6 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       }
       const safeName = sanitizeFileNameSegment(str)
 
-      // 构建 CSV 表头（统一使用简化表头）
-      const handArr = buildCsvHeadersSimple(keyArr, file)
-      handArr.push({ id: "remark", title: "remark" })
-
       let csvPath
       if (customDownloadPath) {
         csvPath = customDownloadPath
@@ -529,33 +511,66 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       } else {
         csvPath = __dirname + "/../data"
       }
-      // 确保目录存在
       if (!fs.existsSync(csvPath)) {
         fs.mkdirSync(csvPath, { recursive: true })
       }
 
-      const csvName = file === 'endi' ? 'car' : (file === 'carY' ? 'carcushion' : file)
-      const csvFilePath = path.join(csvPath, `${csvName}${safeName}.csv`)
-
-      const csvWriter = createCsvWriter({ path: csvFilePath, header: handArr })
-
       const remarkText = remarkRow?.remark ?? ''
-      if (remarkText) {
-        csvWriteBackData.push({ remark: remarkText })
+
+      // 单个 key 的 CSV 表头
+      function buildSingleKeyHeaders(partName) {
+        return [
+          { id: 'sec', title: 'sec(s)' },
+          { id: 'time', title: 'time' },
+          { id: 'Area', title: `${partName} Area(cm\u00B2)` },
+          { id: 'Max', title: `${partName} Max(N)` },
+          { id: 'PressSum', title: `${partName} Pressure_Sum(N)` },
+          { id: 'Data', title: `${partName} data` },
+          { id: 'remark', title: 'remark' },
+        ]
+      }
+
+      // 写入单个 CSV 文件的辅助函数
+      async function writeSingleCsv(filePath, headers, records) {
+        const csvWriter = createCsvWriter({ path: filePath, header: headers })
+        if (remarkText) {
+          records.push({ remark: remarkText })
+        }
+        await csvWriter.writeRecords(records)
+        // 确保 UTF-8 BOM
+        const content = fs.readFileSync(filePath)
+        const hasBom = content.length >= 3 && content[0] === 0xef && content[1] === 0xbb && content[2] === 0xbf
+        if (!hasBom) {
+          fs.writeFileSync(filePath, Buffer.concat([Buffer.from('\ufeff'), content]))
+        }
+        console.log('[DB] CSV export success:', filePath)
       }
 
       try {
-        await csvWriter.writeRecords(csvWriteBackData)
-        // 确保 UTF-8 BOM 以便 Excel 正确打开中文
-        const content = fs.readFileSync(csvFilePath)
-        const hasBom = content.length >= 3 && content[0] === 0xef && content[1] === 0xbb && content[2] === 0xbf
-        if (!hasBom) {
-          fs.writeFileSync(csvFilePath, Buffer.concat([Buffer.from('\ufeff'), content]))
+        if (isMultiMatrix) {
+          // 多矩阵系统：分别导出 back 和 sit
+          const filePaths = []
+          for (const key of keyArr) {
+            const part = key.includes('-') ? key.split('-').pop() : key
+            const csvBaseName = file === 'endi' ? 'car' : (file === 'carY' ? 'carcushion' : file)
+            const csvFilePath = path.join(csvPath, `${csvBaseName}${part}${safeName}.csv`)
+            const headers = buildSingleKeyHeaders(part)
+            await writeSingleCsv(csvFilePath, headers, [...csvDataByKey[key]])
+            filePaths.push(csvFilePath)
+          }
+          resolve({ [param]: 'success', filePath: filePaths[0], filePaths })
+        } else {
+          // 单矩阵系统：保持原来的单文件输出
+          const key = keyArr[0]
+          const part = key.includes('-') ? key.split('-').pop() : key
+          const csvBaseName = file === 'endi' ? 'car' : (file === 'carY' ? 'carcushion' : file)
+          const csvFilePath = path.join(csvPath, `${csvBaseName}${safeName}.csv`)
+          const headers = buildSingleKeyHeaders(part)
+          await writeSingleCsv(csvFilePath, headers, [...csvDataByKey[key]])
+          resolve({ [param]: 'success', filePath: csvFilePath, filePaths: [csvFilePath] })
         }
-        console.log("[DB] CSV export success:", csvFilePath)
-        resolve({ [param]: 'success', filePath: csvFilePath })
       } catch (err) {
-        console.error("[DB] CSV export failed:", err)
+        console.error('[DB] CSV export failed:', err)
         reject(err)
       }
     }).catch(reject)

@@ -425,20 +425,28 @@ const ColAndHistory = memo((props) => {
                 message.error(getApiErrorMessage(result, t('downloadFailed')))
                 setTimeout(() => setDownloadProgress(null), 2000)
             } else {
-                // 提取所有文件路径
+                // 提取所有文件路径（支持单文件 filePath 和多文件 filePaths）
                 const results = Array.isArray(result.data) ? result.data : []
                 const downloadedFiles = []
                 if (Array.isArray(results)) {
                     for (const item of results) {
                         if (item && typeof item === 'object') {
-                            const keys = Object.keys(item)
-                            for (const key of keys) {
-                                if (key === 'filePath' && item[key]) {
-                                    downloadedFiles.push({
-                                        filePath: item[key],
-                                        fileName: item[key].split('/').pop().split('\\').pop()
-                                    })
+                            // 优先处理 filePaths 数组（多矩阵系统分文件导出）
+                            if (Array.isArray(item.filePaths)) {
+                                for (const fp of item.filePaths) {
+                                    if (fp) {
+                                        downloadedFiles.push({
+                                            filePath: fp,
+                                            fileName: fp.split('/').pop().split('\\').pop()
+                                        })
+                                    }
                                 }
+                            } else if (item.filePath) {
+                                // 兼容单文件 filePath
+                                downloadedFiles.push({
+                                    filePath: item.filePath,
+                                    fileName: item.filePath.split('/').pop().split('\\').pop()
+                                })
                             }
                         }
                     }
@@ -762,6 +770,11 @@ const ColAndHistory = memo((props) => {
                     <Button key="close" onClick={() => setDownloadProgress(null)}>{t('close') || '关闭'}</Button>
                 ] : []}
                 closable={downloadProgress?.status !== 'downloading'}
+                onCancel={() => {
+                    setDownloadProgress(null)
+                    setSelectArr([])
+                    setOperateStatus('')
+                }}
                 maskClosable={false}
                 width={480}
             >
