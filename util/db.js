@@ -549,11 +549,16 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       try {
         if (isMultiMatrix) {
           // 多矩阵系统：分别导出 back 和 sit
+          // back → carback{name}.csv, sit → carcushion{name}.csv
+          const csvNameMap = {
+            'back': 'carback',
+            'sit': 'carcushion',
+          }
           const filePaths = []
           for (const key of keyArr) {
             const part = key.includes('-') ? key.split('-').pop() : key
-            const csvBaseName = file === 'endi' ? 'car' : (file === 'carY' ? 'carcushion' : file)
-            const csvFilePath = path.join(csvPath, `${csvBaseName}${part}${safeName}.csv`)
+            const csvBaseName = csvNameMap[part] || part
+            const csvFilePath = path.join(csvPath, `${csvBaseName}${safeName}.csv`)
             const headers = buildSingleKeyHeaders(part)
             await writeSingleCsv(csvFilePath, headers, [...csvDataByKey[key]])
             filePaths.push(csvFilePath)
