@@ -879,6 +879,45 @@ async function stopPort() {
  *   - 先尝试在原端口重连
  *   - 如果原端口重连失败，扫描所有CH340端口并尝试连接新端口
  */
+/**
+ * Re-read MAC address and resolve device type after reconnect.
+ * Mirrors the logic in connectPort Phase 5.
+ */
+async function resolveDeviceAfterReconnect(portPath, broadcastFn) {
+  const item = state.parserArr[portPath]
+  const dataItem = state.dataMap[portPath]
+  if (!item?.port?.isOpen || !dataItem) return
+
+  const deviceClass = dataItem.deviceClass
+  console.log(`[Reconnect] Re-reading MAC for ${portPath} (${deviceClass})...`)
+
+  try {
+    const { uniqueId, version } = await sendMacCommand(item.port)
+    if (uniqueId) {
+      state.macInfo[portPath] = { uniqueId, version }
+      console.log(`[Reconnect] ${portPath} MAC: ${uniqueId}, version: ${version}`)
+
+      if (deviceClass === 'sit' || deviceClass === 'foot') {
+        const { type: deviceType, premission } = await resolveDeviceType(uniqueId)
+        if (deviceType) {
+          dataItem.type = deviceType
+          dataItem.premission = premission
+          console.log(`[Reconnect] ${portPath} type resolved: ${deviceType}, auth: ${premission}`)
+          if (broadcastFn) {
+            broadcastFn(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission } }))
+          }
+        } else {
+          console.warn(`[Reconnect] ${portPath} MAC ${uniqueId} type not resolved, keeping: ${dataItem.type}`)
+        }
+      }
+    } else {
+      console.warn(`[Reconnect] ${portPath} failed to get MAC`)
+    }
+  } catch (err) {
+    console.error(`[Reconnect] ${portPath} MAC resolution error:`, err.message)
+  }
+}
+
 let _reconnectBroadcastFn = null
 let _reconnectOnTimerStart = null
 let _reconnectScanning = false
@@ -937,6 +976,9 @@ function startReconnectMonitor() {
                     reconnected: { newPath, baudRate: detectedBaud, reason: 'new_port_detected' }
                   }))
                 }
+
+                // Re-read MAC address after reconnect
+                resolveDeviceAfterReconnect(newPath, _reconnectBroadcastFn).catch(() => {})
               }
             } catch (connErr) {
               console.warn(`[Serial] Auto-connect new port ${newPath} failed: ${connErr.message}`)
@@ -983,6 +1025,9 @@ function startReconnectMonitor() {
               if (_reconnectBroadcastFn) {
                 _reconnectBroadcastFn(JSON.stringify({ reconnected: { path: portPath, baudRate } }))
               }
+
+              // Re-read MAC address after reconnect
+              resolveDeviceAfterReconnect(portPath, _reconnectBroadcastFn).catch(() => {})
               resolve()
             })
           })
@@ -1028,12 +1073,21 @@ function startReconnectMonitor() {
                     const dataItem = state.dataMap[newPath] || {}
                     bindDataHandler(newPath, state.parserArr[newPath], dataItem, _reconnectBroadcastFn || (() => {}), _reconnectOnTimerStart, ports)
 
+                    // 迁移旧端口的 macInfo 到新端口
+                    if (state.macInfo[portPath]) {
+                      state.macInfo[newPath] = state.macInfo[portPath]
+                      delete state.macInfo[portPath]
+                    }
+
                     console.log(`[Serial] Reconnected on new port: ${newPath} @ ${detectedBaud} (was ${portPath})`)
                     if (_reconnectBroadcastFn) {
                       _reconnectBroadcastFn(JSON.stringify({
                         reconnected: { oldPath: portPath, newPath, baudRate: detectedBaud }
                       }))
                     }
+
+                    // Re-read MAC address after reconnect on new port
+                    resolveDeviceAfterReconnect(newPath, _reconnectBroadcastFn).catch(() => {})
                     break // 成功连接一个就跳出
                   } catch (connErr) {
                     console.warn(`[Serial] New port ${newPath} connection failed: ${connErr.message}`)
