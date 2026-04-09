@@ -125,11 +125,7 @@ const ColAndHistory = memo((props) => {
             return ''
         }
 
-        const res = await axios.post(`${localAddress}/setDownloadPath`, { path: nextPath }, {
-            params: {
-                path: nextPath,
-            }
-        })
+        const res = await axios.post(`${localAddress}/setDownloadPath`, { path: nextPath })
         if (res.data?.code !== 0) {
             throw new Error(getApiErrorMessage(res.data, t('downloadFailed')))
         }
@@ -398,10 +394,6 @@ const ColAndHistory = memo((props) => {
         axios({
             method: 'post',
             url: `${localAddress}/downlaod`,
-            params: {
-                fileArr: JSON.stringify(selectedFiles),
-            },
-
             data: {
                 fileArr: selectedFiles,
             }
@@ -963,8 +955,6 @@ const ColAndHistory = memo((props) => {
                                                     axios({
                                                         method: 'post',
                                                         url: `${localAddress}/getDbHistory`,
-                                                        params: playbackRequest,
-
                                                         data: playbackRequest
                                                     }).then((res) => {
                                                         console.log(res)
