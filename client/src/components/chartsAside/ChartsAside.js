@@ -57,9 +57,11 @@ function ChartsAside(props) {
         for (let i = 0; i < keyArr.length; i++) {
             const key = keyArr[i]
 
+            // 根据 key 名称匹配颜色，而非索引（修复回放只有单个 key 时颜色不一致）
+            const colorKey = key.includes('back') ? 'back' : key.includes('sit') ? 'sit' : key
             if (props.type == 'press') {
-                color = Object.values(pressColorArr)[i]
-                if (i == 1) {
+                color = pressColorArr[colorKey] || Object.values(pressColorArr)[i]
+                if (colorKey == 'sit') {
 
                     areaStyle = {
                         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
@@ -83,9 +85,9 @@ function ChartsAside(props) {
                     // color = '#2DBCC1'
                 }
             } else {
-                color = Object.values(areaColorArr)[i]
+                color = areaColorArr[colorKey] || Object.values(areaColorArr)[i]
 
-                if (i == 1) {
+                if (colorKey == 'sit') {
 
                     areaStyle = {
                         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [

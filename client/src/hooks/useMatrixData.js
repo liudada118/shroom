@@ -236,9 +236,14 @@ export function useMatrixData() {
     sitDataRef.current = arr
     disPlayDataRef.current = arr
 
-    // 2. 设备状态更新
-    const stamp = sitData[keyArr[0]]?.stamp
-    const cop = sitData[keyArr[0]]?.cop
+    // 2. 设备状态更新（遍历找到第一个有效的 stamp，避免 offline 设备无 stamp 导致 NaN）
+    let stamp, cop
+    for (const k of keyArr) {
+      if (sitData[k]?.stamp != null) { stamp = sitData[k].stamp; break }
+    }
+    for (const k of keyArr) {
+      if (sitData[k]?.cop != null) { cop = sitData[k].cop; break }
+    }
     const newObj = {}
     for (const fullKey of keyArr) {
       newObj[fullKey] = sitData[fullKey]?.status

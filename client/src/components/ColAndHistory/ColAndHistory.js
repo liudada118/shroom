@@ -1029,6 +1029,25 @@ const ColAndHistory = memo((props) => {
                                                         }
                                                         useEquipStore.getState().setStatus(new Array(4096).fill(0))
                                                         useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
+
+                                                        // 如果历史数据有保存的框选信息，自动设置框选缓存供回放时展示
+                                                        if (dbInfo.selected && dbInfo.select && Object.keys(dbInfo.select).length > 0) {
+                                                            axios({
+                                                                method: 'post',
+                                                                url: `${localAddress}/getDbHistorySelect`,
+                                                                params: { selectJson: JSON.stringify(dbInfo.select) },
+                                                                data: { selectJson: dbInfo.select }
+                                                            }).then((selectRes) => {
+                                                                const selectData = selectRes.data?.data || {}
+                                                                const { areaArr: selAreaArr, pressArr: selPressArr } = selectData
+                                                                if (selAreaArr || selPressArr) {
+                                                                    useEquipStore.getState().setHistoryChart({
+                                                                        areaArr: selAreaArr || {},
+                                                                        pressArr: selPressArr || {}
+                                                                    })
+                                                                }
+                                                            })
+                                                        }
                                                     }).catch((err) => {
                                                         message.error(err.message || 'Load playback failed')
                                                     })
