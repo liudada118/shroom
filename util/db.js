@@ -222,22 +222,20 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
           const pointInfo = pointConfig[key]
           const pointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : null
           const pointValue = pointInfo ? area : null
-          const pressureAreaValue = pointInfo ? area * pointArea : area
+          const pressureAreaValue = pointInfo ? (area * pointArea / 100) : area
 
           // 计算框选区域受力面积
-          const selectAreaValue = pointInfo ? selectArea * pointArea : selectArea
+          const selectAreaValue = pointInfo ? (selectArea * pointArea / 100) : selectArea
 
           if (file.includes('endi')) newData.sec = (i / 12).toFixed(2)
           newData[`${key}max`] = max
           newData[`${key}maxCoord`] = maxIndex
           newData[`${key}aver`] = aver
-          newData[`${key}pressure`] = press
           newData[`${key}pressureArea`] = pressureAreaValue
           newData[`${key}realData`] = JSON.stringify(data)
           newData[`${key}selectMax`] = selectMax
           newData[`${key}selectMaxCoord`] = selectMaxIndex
           newData[`${key}selectAver`] = selectAver
-          newData[`${key}selectPress`] = selectPress
           newData[`${key}selectArea`] = selectAreaValue
           newData[`${key}selectData`] = JSON.stringify(selectArr)
 
@@ -338,13 +336,11 @@ function buildCsvHeaders(keyArr, file) {
       { id: `${key}max`, title: `${res} ` + '\u539f\u59cb\u6700\u5927\u538b\u5f3a(Kpa)' },
       { id: `${key}maxCoord`, title: `${res} ` + '\u539f\u59cb\u6700\u5927\u538b\u5f3a\u5750\u6807' },
       { id: `${key}aver`, title: `${res} ` + '\u539f\u59cb\u5e73\u5747\u538b\u5f3a(Kpa)' },
-      { id: `${key}pressure`, title: `${res} ` + '\u539f\u59cb\u538b\u5f3a\u603b\u548c(Kpa)' },
       { id: `${key}pressureArea`, title: `${res} ` + '\u539f\u59cb\u53d7\u529b\u9762\u79ef(cm\u00b2)' },
       { id: `${key}realData`, title: `${res} ` + '\u539f\u59cb\u6570\u636e' },
       { id: `${key}selectMax`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u6700\u5927\u538b\u5f3a' },
       { id: `${key}selectMaxCoord`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u6700\u5927\u538b\u5f3a\u5750\u6807' },
       { id: `${key}selectAver`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u5e73\u5747\u538b\u5f3a' },
-      { id: `${key}selectPress`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u538b\u5f3a\u603b\u548c' },
       { id: `${key}selectArea`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u53d7\u529b\u9762\u79ef' },
       { id: `${key}selectData`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u539f\u59cb\u6570\u636e' },
     )
