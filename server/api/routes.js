@@ -7,7 +7,7 @@ const fs = require('fs')
 const path = require('path')
 const HttpResult = require('../HttpResult')
 const constantObj = require('../../util/config')
-const { initDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, changeDbName, changeDbDataName, upsertRemark, getRemark } = require('../../util/db')
+const { initDb, closeDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir } = require('../../util/db')
 const { decryptStr } = require('../../util/aes_ecb')
 const module2 = require('../../util/aes_ecb')
 const { state } = require('../state')
@@ -227,7 +227,7 @@ router.get('/getSystem', asyncHandler(async (req, res) => {
 
   state.baudRate = constantObj.baudRateObj[configResult.value] || 1000000
 
-  const { db } = initDb(state.file, state._dbPath)
+  const { db } = await initDb(state.file, state._dbPath)
   state.currentDb = db
 
   res.json(new HttpResult(0, configResult, 'Get device list success'))
@@ -235,7 +235,7 @@ router.get('/getSystem', asyncHandler(async (req, res) => {
 
 router.post('/selectSystem', asyncHandler(async (req, res) => {
   state.file = req.query.file
-  const { db } = initDb(state.file, state._dbPath)
+  const { db } = await initDb(state.file, state._dbPath)
   state.currentDb = db
   state.baudRate = constantObj.blue.includes(state.file) ? 921600 : 1000000
   res.json(new HttpResult(0, {}, 'Switch success'))
@@ -245,7 +245,7 @@ router.post('/changeSystemType', asyncHandler(async (req, res) => {
   const system = resolveRequestValue(req, ['system'])
   state.file = system
   state.baudRate = constantObj.baudRateObj[system] || 1000000
-  const { db } = initDb(state.file, state._dbPath)
+  const { db } = await initDb(state.file, state._dbPath)
   state.currentDb = db
   broadcast(JSON.stringify({ sitData: {} }))
   const result = readSystemConfig()
@@ -683,7 +683,21 @@ router.post('/downlaod', asyncHandler(async (req, res) => {
     return
   }
   const selectOverride = selectJson && typeof selectJson === 'object' ? selectJson : state.historySelectCache
-  const data = await dbLoadCsv({ db: state.currentDb, params: fileArr, file: state.file, isPackaged: state._isPackaged, selectJson: selectOverride, customDownloadPath: state.downloadPath })
+  const resolvedDownloadPath = resolveWritableDownloadDir({
+    customDownloadPath: state.downloadPath || state._defaultDownloadPath,
+    dataPath: state._dataPath,
+    isPackaged: state._isPackaged
+  })
+  state.downloadPath = resolvedDownloadPath
+  const data = await dbLoadCsv({
+    db: state.currentDb,
+    params: fileArr,
+    file: state.file,
+    isPackaged: state._isPackaged,
+    selectJson: selectOverride,
+    customDownloadPath: resolvedDownloadPath,
+    dataPath: state._dataPath
+  })
   res.json(new HttpResult(0, data, 'Download'))
 }))
 

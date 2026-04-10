@@ -63,9 +63,13 @@ state._isPackaged = isPackaged
 state._configPath = configPath
 state._defaultDownloadPath = process.env.DEFAULT_DOWNLOAD_PATH || null
 
-const { db } = initDb(state.file, dbPath)
-state.currentDb = db
-console.log('[Server] Database initialized:', dbPath)
+// initDb 是 async 函数，在 startServer 中 await 初始化
+const dbInitPromise = initDb(state.file, dbPath).then(({ db }) => {
+  state.currentDb = db
+  console.log('[Server] Database initialized:', dbPath)
+}).catch((err) => {
+  console.error('[Server] Database initialization failed:', err)
+})
 
 // ─── Express 应用配置 ─────────────────────────────────────
 const app = express()
@@ -83,6 +87,9 @@ createWsServer()
 
 async function startServer() {
   try {
+    // 0. 等待数据库初始化完成
+    await dbInitPromise
+
     // 1. 启动 WebSocket HTTP 服务器
     const wsHttpServer = getHttpServer()
     const actualWsPort = await listenWithRetry(wsHttpServer, WS_PORT, '0.0.0.0')
