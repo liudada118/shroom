@@ -30,7 +30,6 @@ export class BrushManager {
     }
 
     startBrush() {
-        // if (this.isBrushing) return;
         this.isBrushing = true;
         window.addEventListener('mousedown', this.onMouseDown);
         window.addEventListener('keydown', this.onKeyDown);
@@ -38,19 +37,17 @@ export class BrushManager {
 
     onKeyDown = (e) => {
         console.log(e.key, (this.range))
-        let obj = this.rangeArr[0]
+        const obj = this.rangeArr[0]
+        if (!obj || !this.element) return
+
         switch (e.key) {
-
             case 'ArrowUp':
-                // this.selectIndex--
-
                 obj.y1 -= 1
                 obj.y2 -= 1
                 this.notify(this.rangeArr);
                 this.element.style.top = obj.y1 + 'px';
                 break;
             case 'ArrowDown':
-
                 obj.y1 += 1
                 obj.y2 += 1
                 this.element.style.top = obj.y1 + 'px';
@@ -81,17 +78,16 @@ export class BrushManager {
         window.removeEventListener('mouseup', this.onMouseUp);
         window.removeEventListener('keydown', this.onKeyDown);
 
-
         this.removeChild()
-
-
     }
 
     removeChild() {
         const selectBoxList = document.querySelectorAll('.selectBox')
 
         for (let i = 0; i < selectBoxList.length; i++) {
-            document.body.removeChild(selectBoxList[i])
+            if (selectBoxList[i].parentNode) {
+                document.body.removeChild(selectBoxList[i])
+            }
         }
 
         this.rangeArr = []
@@ -99,14 +95,12 @@ export class BrushManager {
 
     onMouseDown = (e) => {
         console.log('dowm')
-        // this.removeChild()
         this.isBrushing = true;
         this.start = { x: e.clientX, y: e.clientY };
         window.addEventListener('mousemove', this.onMouseMove);
         window.addEventListener('mouseup', this.onMouseUp);
         this.element = document.createElement('div');
         this.element.classList.add('selectBox');
-        // this.elementArr.push(this.element)
         this.element.style.pointerEvents = 'none';
         document.body.appendChild(this.element);
 
@@ -114,20 +108,9 @@ export class BrushManager {
         this.element.style.top = e.clientY + 'px';
         this.element.style.width = '0px';
         this.element.style.height = '0px';
-
-        // this.start.x = e.clientX;
-        // this.start.y = e.clientY;
-
-
     };
 
     onMouseMove = (e) => {
-        // if (!this.isBrushing) return;
-
-
-        // this.start.x = e.clientX;
-        // this.start.y = e.clientY;    
-        // console.log(this.start.x - e.clientX, this.start.y - e.clientY, this.isBrushing)
         if (this.isBrushing && this.start) {
             if (Math.abs(this.start.x - e.clientX) > 5 && Math.abs(this.start.y - e.clientY) > 5) {
                 console.log('range')
@@ -136,8 +119,6 @@ export class BrushManager {
                 const r = bgc[0]
                 const g = bgc[1]
                 const b = bgc[2]
-
-                //    console.log(`#${toHex2(r)}${toHex2(g)}${toHex2(b)}`)
 
                 this.element.style.backgroundColor = `#${toHex2(r)}${toHex2(g)}${toHex2(b)}`
                 this.element.style.opacity = 0.6
@@ -163,8 +144,6 @@ export class BrushManager {
                 }
             }
         }
-
-
     };
 
     onMouseUp = () => {
@@ -173,39 +152,35 @@ export class BrushManager {
             this.selectIndex += 10
             console.log(this.range)
             this.rangeArr.push(this.range)
-            // this.stopBrush();
             this.isBrushing = false
             this.pointTopLeft = { x: 0, y: 0 }
             this.pointBottomRight = { x: 0, y: 0 }
 
             if (this.rangeArr.length > 1) {
                 const element = document.querySelector(`.selectBox${20}`)
-                document.body.removeChild(element)
+                if (element && element.parentNode) {
+                    document.body.removeChild(element)
+                }
                 this.rangeArr.splice(0, 1)
             }
             this.selectIndex = 20
             this.notify(this.rangeArr);
-        } else {
-            document.body.removeChild(this.element); 
-            // this.rangeArr = []
-            // this.notify(this.rangeArr);
-            // this.pointTopLeft = { x: 0, y: 0 }
-            // this.pointBottomRight = { x: 0, y: 0 }
-            // this.start = { x: 0, y: 0 }
-            // this.stopBrush();
+        } else if (this.element && this.element.parentNode) {
+            document.body.removeChild(this.element);
         }
         this.start = undefined
-
     };
 
     deleteSelect = (index) => {
-        const elementIndex = this.rangeArr[index].index
-        const element = document.querySelector(`.selectBox${elementIndex}`)
+        const rangeItem = this.rangeArr[index]
+        if (!rangeItem) return
+        const element = document.querySelector(`.selectBox${rangeItem.index}`)
         this.rangeArr.splice(index, 1)
-        document.body.removeChild(element)
+        if (element && element.parentNode) {
+            document.body.removeChild(element)
+        }
         this.notify(this.rangeArr);
     }
 }
 
-// export const BrushContext = React.createContext(null);
 export const brushInstance = new BrushManager();

@@ -24,6 +24,183 @@ function readSystemConfig() {
   return JSON.parse(decryptStr(config))
 }
 
+function normalizeRequestString(value) {
+  if (value === undefined || value === null) return ''
+  return String(value).trim()
+}
+
+function tryParseRequestJson(value) {
+  if (typeof value !== 'string') {
+    return value
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  if (!/^[\[{"]/.test(trimmed)) {
+    return value
+  }
+
+  try {
+    return JSON.parse(trimmed)
+  } catch (err) {
+    return value
+  }
+}
+
+function pushDownloadCandidate(target, value) {
+  const normalized = normalizeRequestString(value)
+  if (!normalized || target.includes(normalized)) {
+    return
+  }
+  target.push(normalized)
+}
+
+function collectDownloadCandidates(source, target = [], depth = 0) {
+  if (depth > 3 || source === undefined || source === null) {
+    return target
+  }
+
+  const parsedSource = tryParseRequestJson(source)
+
+  if (typeof parsedSource === 'string' || typeof parsedSource === 'number') {
+    pushDownloadCandidate(target, parsedSource)
+    return target
+  }
+
+  if (Array.isArray(parsedSource)) {
+    parsedSource.slice(0, 500).forEach((item) => collectDownloadCandidates(item, target, depth + 1))
+    return target
+  }
+
+  if (typeof parsedSource !== 'object') {
+    return target
+  }
+
+  ;[
+    parsedSource.fileArr,
+    parsedSource.files,
+    parsedSource.selection,
+    parsedSource.selected,
+    parsedSource.value,
+  ].forEach((value) => collectDownloadCandidates(value, target, depth + 1))
+
+  ;['data', 'payload', 'params', 'body', 'query'].forEach((key) => {
+    if (parsedSource[key] !== undefined && parsedSource[key] !== parsedSource) {
+      collectDownloadCandidates(parsedSource[key], target, depth + 1)
+    }
+  })
+
+  return target
+}
+
+function resolveDownloadRequest(req) {
+  const fileArr = []
+  ;[req.body, req.query, req.headers].forEach((source) => collectDownloadCandidates(source, fileArr))
+
+  let selectJson = req.body && req.body.selectJson
+  if (selectJson === undefined) {
+    selectJson = req.query && req.query.selectJson
+  }
+  if (selectJson === undefined) {
+    selectJson = req.headers && (req.headers['x-select-json'] || req.headers.selectjson)
+  }
+  selectJson = tryParseRequestJson(selectJson)
+
+  return { fileArr, selectJson }
+}
+
+function extractPathCandidate(source, depth = 0) {
+  if (depth > 3 || source === undefined || source === null) {
+    return ''
+  }
+
+  const parsedSource = tryParseRequestJson(source)
+
+  if (typeof parsedSource === 'string' || typeof parsedSource === 'number') {
+    return normalizeRequestString(parsedSource)
+  }
+
+  if (Array.isArray(parsedSource)) {
+    for (const item of parsedSource.slice(0, 8)) {
+      const candidate = extractPathCandidate(item, depth + 1)
+      if (candidate) {
+        return candidate
+      }
+    }
+    return ''
+  }
+
+  if (typeof parsedSource !== 'object') {
+    return ''
+  }
+
+  for (const key of ['path', 'folderPath', 'selectedPath', 'filePath', 'value']) {
+    const candidate = extractPathCandidate(parsedSource[key], depth + 1)
+    if (candidate) {
+      return candidate
+    }
+  }
+
+  for (const key of ['data', 'payload', 'params', 'body', 'query']) {
+    const candidate = extractPathCandidate(parsedSource[key], depth + 1)
+    if (candidate) {
+      return candidate
+    }
+  }
+
+  return ''
+}
+
+function resolveDownloadPathRequest(req) {
+  for (const source of [req.body, req.query, req.headers]) {
+    const candidate = extractPathCandidate(source)
+    if (candidate) {
+      return candidate
+    }
+  }
+  return ''
+}
+
+function extractRequestValue(source, keys, depth = 0) {
+  if (depth > 3 || source === undefined || source === null) {
+    return undefined
+  }
+
+  const parsedSource = tryParseRequestJson(source)
+
+  if (typeof parsedSource !== 'object' || parsedSource === null) {
+    return undefined
+  }
+
+  for (const key of keys) {
+    if (parsedSource[key] !== undefined) {
+      return tryParseRequestJson(parsedSource[key])
+    }
+  }
+
+  for (const key of ['data', 'payload', 'params', 'body', 'query']) {
+    const nestedValue = extractRequestValue(parsedSource[key], keys, depth + 1)
+    if (nestedValue !== undefined) {
+      return nestedValue
+    }
+  }
+
+  return undefined
+}
+
+function resolveRequestValue(req, keys) {
+  for (const source of [req.body, req.query, req.headers]) {
+    const value = extractRequestValue(source, keys)
+    if (value !== undefined) {
+      return value
+    }
+  }
+  return undefined
+}
+
 // ─── 通用错误处理包装器 ──────────────────────────────────
 function asyncHandler(fn) {
   return (req, res, next) => {
@@ -65,7 +242,7 @@ router.post('/selectSystem', asyncHandler(async (req, res) => {
 }))
 
 router.post('/changeSystemType', asyncHandler(async (req, res) => {
-  const { system } = req.body
+  const system = resolveRequestValue(req, ['system'])
   state.file = system
   state.baudRate = constantObj.baudRateObj[system] || 1000000
   const { db } = initDb(state.file, state._dbPath)
@@ -294,8 +471,9 @@ router.get('/readMacOnly', asyncHandler(async (req, res) => {
 // ─── 数据采集 ────────────────────────────────────────────
 
 router.post('/startCol', asyncHandler(async (req, res) => {
-  const { fileName, select } = req.body
-  state.selectArr = select
+  const fileName = resolveRequestValue(req, ['fileName', 'filename'])
+  const select = resolveRequestValue(req, ['select', 'selectJson'])
+  state.selectArr = select && typeof select === 'object' ? select : []
   state.historySelectCache = null
 
   const sensorArr = Object.keys(state.dataMap).map((a) => state.dataMap[a].type)
@@ -346,8 +524,13 @@ router.get('/getColHistory', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getDbHistory', asyncHandler(async (req, res) => {
-  const { time } = req.body
+  const time = resolveRequestValue(req, ['time', 'date', 'timestamp'])
   state.historySelectCache = null
+
+  if (!time) {
+    res.json(new HttpResult(1, {}, 'playback time required'))
+    return
+  }
 
   const { length, pressArr, areaArr, rows } = await dbGetData({ db: state.currentDb, params: [time] })
 
@@ -361,7 +544,7 @@ router.post('/getDbHistory', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
-  const { selectJson } = req.body || {}
+  const selectJson = resolveRequestValue(req, ['selectJson', 'select'])
   if (!selectJson || typeof selectJson !== 'object') {
     res.json(new HttpResult(1, {}, 'selectJson required'))
     return
@@ -420,7 +603,8 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getContrastData', asyncHandler(async (req, res) => {
-  const { left, right } = req.body
+  const left = resolveRequestValue(req, ['left'])
+  const right = resolveRequestValue(req, ['right'])
 
   const [leftResult, rightResult] = await Promise.all([
     dbGetData({ db: state.currentDb, params: [left] }),
@@ -468,13 +652,13 @@ router.post('/cancalDbPlay', (req, res) => {
 })
 
 router.post('/changeDbplaySpeed', asyncHandler(async (req, res) => {
-  const { speed } = req.body
+  const speed = resolveRequestValue(req, ['speed'])
   changePlaySpeed(speed)
   res.json(new HttpResult(0, {}, 'success'))
 }))
 
 router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
-  const { index } = req.body
+  const index = resolveRequestValue(req, ['index'])
 
   if (!state.historyDbArr) {
     res.json(new HttpResult(555, 'Please select playback time range', 'error'))
@@ -493,9 +677,9 @@ router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
 // ─── 数据操作 ────────────────────────────────────────────
 
 router.post('/downlaod', asyncHandler(async (req, res) => {
-  const { fileArr, selectJson } = req.body || {}
+  const { fileArr, selectJson } = resolveDownloadRequest(req)
   if (!fileArr || !fileArr.length) {
-    res.json(new HttpResult(555, 'Please select data first', 'error'))
+    res.json(new HttpResult(1, {}, 'Please select data first'))
     return
   }
   const selectOverride = selectJson && typeof selectJson === 'object' ? selectJson : state.historySelectCache
@@ -523,7 +707,7 @@ router.get('/getDownloadPath', (req, res) => {
 })
 
 router.post('/setDownloadPath', asyncHandler(async (req, res) => {
-  const { path: newPath } = req.body
+  const newPath = resolveDownloadPathRequest(req)
   if (!newPath) {
     res.json(new HttpResult(1, {}, 'path required'))
     return
@@ -543,7 +727,7 @@ router.post('/setDownloadPath', asyncHandler(async (req, res) => {
 }))
 
 router.post('/openFile', asyncHandler(async (req, res) => {
-  const { filePath } = req.body
+  const filePath = resolveRequestValue(req, ['filePath', 'path'])
   if (!filePath) {
     res.json(new HttpResult(1, {}, 'filePath required'))
     return
@@ -578,7 +762,7 @@ router.post('/openFile', asyncHandler(async (req, res) => {
 }))
 
 router.post('/openFolder', asyncHandler(async (req, res) => {
-  const { folderPath } = req.body
+  const folderPath = resolveRequestValue(req, ['folderPath', 'path'])
   if (!folderPath) {
     res.json(new HttpResult(1, {}, 'folderPath required'))
     return
@@ -614,19 +798,21 @@ router.post('/openFolder', asyncHandler(async (req, res) => {
 }))
 
 router.post('/delete', asyncHandler(async (req, res) => {
-  const { fileArr } = req.body
+  const fileArr = resolveRequestValue(req, ['fileArr']) || []
   const data = await deleteDbData({ db: state.currentDb, params: fileArr })
   res.json(new HttpResult(0, data, 'Delete success'))
 }))
 
 router.post('/changeDbName', asyncHandler(async (req, res) => {
-  const { newDate, oldDate } = req.body
+  const newDate = resolveRequestValue(req, ['newDate'])
+  const oldDate = resolveRequestValue(req, ['oldDate'])
   const data = await changeDbName({ db: state.currentDb, params: [newDate, oldDate] })
   res.json(new HttpResult(0, data, 'Update success'))
 }))
 
 router.post('/changeDbDataName', asyncHandler(async (req, res) => {
-  const { oldName, newName } = req.body
+  const oldName = resolveRequestValue(req, ['oldName'])
+  const newName = resolveRequestValue(req, ['newName'])
   await changeDbDataName({ db: state.currentDb, params: [oldName, newName] })
   res.json(new HttpResult(0, {}, 'success'))
 }))
@@ -634,7 +820,10 @@ router.post('/changeDbDataName', asyncHandler(async (req, res) => {
 // ─── 备注管理 ────────────────────────────────────────────
 
 router.post('/upsertRemark', asyncHandler(async (req, res) => {
-  let { date, alias, remark, select } = req.body || {}
+  let date = resolveRequestValue(req, ['date'])
+  const alias = resolveRequestValue(req, ['alias'])
+  const remark = resolveRequestValue(req, ['remark'])
+  const select = resolveRequestValue(req, ['select', 'selectJson'])
   if (!date) {
     res.json(new HttpResult(1, {}, 'date required'))
     return
@@ -645,7 +834,7 @@ router.post('/upsertRemark', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getRemark', asyncHandler(async (req, res) => {
-  const { date } = req.body || {}
+  const date = resolveRequestValue(req, ['date'])
   if (!date) {
     res.json(new HttpResult(1, {}, 'date required'))
     return
@@ -713,7 +902,7 @@ router.post('/auth/mode', asyncHandler(async (req, res) => {
 
 router.post('/bindKey', (req, res) => {
   try {
-    const { key } = req.body
+    const key = resolveRequestValue(req, ['key'])
     res.json(new HttpResult(0, {}, 'Bindkey success'))
   } catch {
     res.json(new HttpResult(1, {}, 'Bindkey failed'))
@@ -766,13 +955,13 @@ router.post('/uploadCsv', csvUpload.single('file'), asyncHandler(async (req, res
 }))
 
 router.post('/getCsvData', asyncHandler(async (req, res) => {
-  const { fileName } = req.body
+  const fileName = resolveRequestValue(req, ['fileName'])
   const data = getCsvData(fileName)
   res.json(new HttpResult(0, data, 'success'))
 }))
 
 router.post('/getSysconfig', (req, res) => {
-  const { config } = req.body
+  const config = resolveRequestValue(req, ['config'])
   const str = module2.encStr(JSON.stringify(config))
   res.json(new HttpResult(0, str, 'success'))
 })

@@ -13,6 +13,7 @@ import { useDebounce } from '../../hooks/useDebounce'
 import { useEquipStore } from '../../store/equipStore'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import { localAddress } from '../../util/constant'
+import { buildFallbackParams } from '../../util/request'
 import dayjs from 'dayjs'
 import { pageContext } from '../../page/test/Test'
 
@@ -162,7 +163,10 @@ const ColAndHistory = memo((props) => {
         if (window.electronAPI?.selectFolder) {
             const folder = await window.electronAPI.selectFolder()
             if (folder) {
-                axios.post(`${localAddress}/setDownloadPath`, { path: folder }).then((res) => {
+                const payload = { path: folder }
+                axios.post(`${localAddress}/setDownloadPath`, payload, {
+                    params: buildFallbackParams(payload)
+                }).then((res) => {
                     if (res.data?.code === 0) {
                         setDownloadPath(folder)
                         setIsEditingPath(false)
@@ -179,7 +183,10 @@ const ColAndHistory = memo((props) => {
 
     const handleSavePath = () => {
         if (!editPathValue.trim()) return
-        axios.post(`${localAddress}/setDownloadPath`, { path: editPathValue.trim() }).then((res) => {
+        const payload = { path: editPathValue.trim() }
+        axios.post(`${localAddress}/setDownloadPath`, payload, {
+            params: buildFallbackParams(payload)
+        }).then((res) => {
             if (res.data?.code === 0) {
                 setDownloadPath(editPathValue.trim())
                 setIsEditingPath(false)
@@ -200,7 +207,10 @@ const ColAndHistory = memo((props) => {
         if (window.electronAPI?.openPath) {
             window.electronAPI.openPath(targetPath)
         } else {
-            axios.post(`${localAddress}/openFolder`, { folderPath: targetPath }).then((res) => {
+            const payload = { folderPath: targetPath }
+            axios.post(`${localAddress}/openFolder`, payload, {
+                params: buildFallbackParams(payload)
+            }).then((res) => {
                 if (res.data?.code !== 0) {
                     message.error(res.data?.message || '打开文件夹失败')
                 }
@@ -216,7 +226,10 @@ const ColAndHistory = memo((props) => {
         if (window.electronAPI?.openPath) {
             window.electronAPI.openPath(filePath)
         } else {
-            axios.post(`${localAddress}/openFile`, { filePath }).then((res) => {
+            const payload = { filePath }
+            axios.post(`${localAddress}/openFile`, payload, {
+                params: buildFallbackParams(payload)
+            }).then((res) => {
                 if (res.data?.code !== 0) {
                     // 如果打开文件失败，尝试打开所在文件夹
                     const folderPath = filePath.replace(/[\\/][^\\/]+$/, '')
@@ -259,12 +272,15 @@ const ColAndHistory = memo((props) => {
             setDownloadProgress(prev => prev ? { ...prev, percent: Math.round(fakePercent) } : prev)
         }, 300)
 
+        const payload = {
+            fileArr: selectArr,
+        }
+
         axios({
             method: 'post',
             url: `${localAddress}/downlaod`,
-            data: {
-                fileArr: selectArr,
-            }
+            params: buildFallbackParams(payload),
+            data: payload
         }).then((res) => {
             clearInterval(progressTimer)
             console.log(res)
@@ -301,6 +317,17 @@ const ColAndHistory = memo((props) => {
         })
     }
 
+    const closeDownloadProgress = () => {
+        if (downloadProgress?.status === 'downloading') {
+            return
+        }
+        setDownloadProgress(null)
+        if (downloadProgress?.status === 'done') {
+            setSelectArr([])
+            setOperateStatus('')
+        }
+    }
+
     const deleteData = () => {
 
         if (!selectArr.length) {
@@ -308,12 +335,14 @@ const ColAndHistory = memo((props) => {
             return
         }
         if (Onindex == 0) {
+            const payload = {
+                fileArr: selectArr,
+            }
             axios({
                 method: 'post',
                 url: `${localAddress}/delete`,
-                data: {
-                    fileArr: selectArr,
-                }
+                params: buildFallbackParams(payload),
+                data: payload
             }).then((res) => {
                 // console.log(res)
                 let resArr = [...colHistoryArr]
@@ -406,14 +435,16 @@ const ColAndHistory = memo((props) => {
             setChangedRemark('')
             return
         }
+        const payload = {
+            date: selectedDbDate,
+            alias: changedAlias,
+            remark: changedRemark
+        }
         axios({
             method: 'post',
             url: `${localAddress}/upsertRemark`,
-            data: {
-                date: selectedDbDate,
-                alias: changedAlias,
-                remark: changedRemark
-            }
+            params: buildFallbackParams(payload),
+            data: payload
         }).then((res) => {
             if (res.data?.message == 'error') {
                 message.error(res.data.data)
@@ -543,14 +574,17 @@ const ColAndHistory = memo((props) => {
                         onBlur={(e) => {
                             const val = e.target.value.trim()
                             if (val) {
-                                axios.post(`${localAddress}/setDownloadPath`, { path: val }).catch(() => {})
+                                const payload = { path: val }
+                                axios.post(`${localAddress}/setDownloadPath`, payload, {
+                                    params: buildFallbackParams(payload)
+                                }).catch(() => {})
                             }
                         }}
                         style={{ flex: 1 }}
                         placeholder={t('inputPath') || '输入存储路径...'}
                     />
                     <Button onClick={handleSelectFolder}>{t('browse') || '浏览'}</Button>
-                    <Button onClick={() => handleOpenFolder()}>{t('open')}</Button>
+                    <Button onClick={() => handleOpenFolder(downloadPath)}>{t('open')}</Button>
                 </div>
                 <div style={{ marginTop: '12px', color: '#999', fontSize: '0.8rem' }}>
                     {t('selectedCount') || '已选择'}: {selectArr.length} {t('items') || '项'}
@@ -779,12 +813,14 @@ const ColAndHistory = memo((props) => {
                                                     }
                                                     setSelectArr(arr)
                                                 } else {
+                                                    const payload = {
+                                                        time: dbInfo.date,
+                                                    }
                                                     axios({
                                                         method: 'post',
                                                         url: `${localAddress}/getDbHistory`,
-                                                        data: {
-                                                            time: dbInfo.date,
-                                                        }
+                                                        params: buildFallbackParams(payload),
+                                                        data: payload
                                                     }).then((res) => {
                                                         console.log(res)
                                                         setCurrentName(dbInfo.name)
@@ -857,12 +893,14 @@ const ColAndHistory = memo((props) => {
                                                 }
                                                 setSelectArr(arr)
                                             } else {
+                                                const payload = {
+                                                    fileName: a,
+                                                }
                                                 axios({
                                                     method: 'post',
                                                     url: `${localAddress}/getCsvData`,
-                                                    data: {
-                                                        fileName: a,
-                                                    }
+                                                    params: buildFallbackParams(payload),
+                                                    data: payload
                                                 }).then((res) => {
                                                     setCurrentName(a)
                                                     console.log(res)
@@ -1016,7 +1054,10 @@ const ColAndHistory = memo((props) => {
                             onBlur={(e) => {
                                 const val = e.target.value.trim()
                                 if (val) {
-                                    axios.post(`${localAddress}/setDownloadPath`, { path: val }).then((res) => {
+                                    const payload = { path: val }
+                                    axios.post(`${localAddress}/setDownloadPath`, payload, {
+                                        params: buildFallbackParams(payload)
+                                    }).then((res) => {
                                         if (res.data?.code === 0) {
                                             setDownloadPath(val)
                                         }
@@ -1026,7 +1067,10 @@ const ColAndHistory = memo((props) => {
                             onPressEnter={(e) => {
                                 const val = e.target.value.trim()
                                 if (val) {
-                                    axios.post(`${localAddress}/setDownloadPath`, { path: val }).then((res) => {
+                                    const payload = { path: val }
+                                    axios.post(`${localAddress}/setDownloadPath`, payload, {
+                                        params: buildFallbackParams(payload)
+                                    }).then((res) => {
                                         if (res.data?.code === 0) {
                                             setDownloadPath(val)
                                             message.success(t('pathUpdated') || '路径已更新')

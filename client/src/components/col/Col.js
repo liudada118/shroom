@@ -1,55 +1,83 @@
-import React, { useState } from 'react'
+import React from 'react'
 import './index.scss'
 import axios from 'axios'
 import { message } from 'antd'
-import { getDisplayType, getSelectArr, getSysType, useEquipStore } from '../../store/equipStore'
-import { shallow } from 'zustand/shallow'
+import { getDisplayType, getSysType, useEquipStore } from '../../store/equipStore'
 import { systemPointConfig, localAddress } from '../../util/constant'
 import { colSelectMatrix } from '../../util/util'
+import { isMoreMatrix } from '../../assets/util/util'
 
 export default function Col(props) {
     const { colName, remark, HZ, setStartTime, col, setCol } = props
-    // const count = useEquipStore((s) => s.count);
-    // const selectArr = useEquipStore(s => s.select, shallow);
+
     const colButtonClick = () => {
-        // const select = getSelectArr()
-        const select = useEquipStore.getState().selectArr;
+        const select = useEquipStore.getState().selectArr
         const system = getSysType()
         const displayType = getDisplayType()
         const selectObj = {}
-        if (select.length) {
-            if (displayType.includes('back')) {
-                const matrix = colSelectMatrix('canvasThree', select[0], systemPointConfig[`${system}-back`])
-                const { xStart, xEnd, yStart, yEnd } = matrix
-                matrix.width = systemPointConfig[`${system}-back`].width
-                matrix.height = systemPointConfig[`${system}-back`].height
-                selectObj[`${system}-back`] = matrix
+
+        if (select.length && select[0]) {
+            const range = { x1: select[0].x1, y1: select[0].y1, x2: select[0].x2, y2: select[0].y2 }
+
+            if (isMoreMatrix(system)) {
+                if (displayType === 'all' || displayType.includes('back')) {
+                    try {
+                        const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[`${system}-back`])
+                        if (matrix) {
+                            matrix.width = systemPointConfig[`${system}-back`].width
+                            matrix.height = systemPointConfig[`${system}-back`].height
+                            selectObj[`${system}-back`] = matrix
+                        }
+                    } catch (e) {
+                        console.warn('[Col] Failed to compute back select matrix:', e.message)
+                    }
+                }
+                if (displayType === 'all' || displayType.includes('sit')) {
+                    try {
+                        const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[`${system}-sit`])
+                        if (matrix) {
+                            matrix.width = systemPointConfig[`${system}-sit`].width
+                            matrix.height = systemPointConfig[`${system}-sit`].height
+                            selectObj[`${system}-sit`] = matrix
+                        }
+                    } catch (e) {
+                        console.warn('[Col] Failed to compute sit select matrix:', e.message)
+                    }
+                }
             } else {
-                const matrix = colSelectMatrix('canvasThree', select[0], systemPointConfig[`${system}-sit`])
-                const { xStart, xEnd, yStart, yEnd } = matrix
-                matrix.width = systemPointConfig[`${system}-sit`].width
-                matrix.height = systemPointConfig[`${system}-sit`].height
-                selectObj[`${system}-sit`] = matrix
+                try {
+                    const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[system])
+                    if (matrix) {
+                        matrix.width = systemPointConfig[system].width
+                        matrix.height = systemPointConfig[system].height
+                        selectObj[system] = matrix
+                    }
+                } catch (e) {
+                    console.warn('[Col] Failed to compute select matrix:', e.message)
+                }
             }
         }
 
-
-
-
-        console.log(select)
         if (!col) {
             const startStamp = Date.now()
             const fileName = startStamp
             const hz = HZ ? HZ : 30
+            const hasSelect = Object.keys(selectObj).length > 0
+
             axios({
                 method: 'post',
                 url: `${localAddress}/startCol`,
-                data: {
-                    fileName: fileName,
+                params: {
+                    fileName: String(fileName),
                     HZ: hz,
+                    select: hasSelect ? JSON.stringify(selectObj) : undefined,
+                },
+                data: {
+                    fileName,
+                    HZ: hz,
+                    select: hasSelect ? selectObj : undefined,
                 }
             }).then((res) => {
-
                 if (res.data.message == 'error') {
                     message.error(res.data.data)
                 } else {
@@ -59,33 +87,38 @@ export default function Col(props) {
 
                     const alias = colName ? colName.trim() : ''
                     const remarkText = remark ? remark.trim().slice(0, 400) : ''
-                    const hasSelect = Object.keys(selectObj).length > 0
-                    if (alias || remarkText || hasSelect) {
-                        const data = {
-                            date: String(startStamp),
-                        }
-                        if (alias) data.alias = alias
-                        if (remarkText) data.remark = remarkText
-                        if (hasSelect) data.select = selectObj
+                    const remarkData = {
+                        date: String(startStamp),
+                    }
+                    if (alias) remarkData.alias = alias
+                    if (remarkText) remarkData.remark = remarkText
+                    if (hasSelect) remarkData.select = selectObj
 
+                    if (alias || remarkText || hasSelect) {
                         axios({
                             method: 'post',
                             url: `${localAddress}/upsertRemark`,
-                            data
+                            params: {
+                                date: remarkData.date,
+                                alias: remarkData.alias,
+                                remark: remarkData.remark,
+                                select: remarkData.select ? JSON.stringify(remarkData.select) : undefined,
+                            },
+                            data: remarkData
                         }).then((remarkRes) => {
                             if (remarkRes.data?.message == 'error') {
                                 message.error(remarkRes.data.data)
                             }
-                        }).catch(() => {
+                        }).catch((err) => {
+                            console.error('[Col] upsertRemark failed:', err)
                             message.error('upsertRemark failed')
                         })
                     }
                 }
-
             }).catch((err) => {
+                console.error('[Col] startCol failed:', err)
                 message.error('采集失败')
             })
-
         } else {
             axios({
                 method: 'get',
@@ -105,7 +138,7 @@ export default function Col(props) {
 
     return (
         <div className='colContent' onClick={colButtonClick}>
-            <div className={`${col ? "colIngIcon" : 'colInitIcon'} colIcon`}></div>
+            <div className={`${col ? 'colIngIcon' : 'colInitIcon'} colIcon`}></div>
         </div>
     )
 }

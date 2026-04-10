@@ -231,6 +231,11 @@ export function useMatrixData() {
     }
     useEquipStore.getState().setEquipStatus(newObj)
 
+    const hasOffline = Object.values(newObj).some((s) => s === 'offline')
+    if (hasOffline && useEquipStore.getState().connectState === 'connected') {
+      useEquipStore.getState().setConnectState('idle')
+    }
+
     const sysType = getSysType()
     if (!arr || !keyArr.some(a => a.includes(sysType))) return
 
