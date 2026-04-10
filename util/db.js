@@ -26,7 +26,7 @@ function colArrData(arr) {
   const max = Math.max(...arr)
   const maxIndex = arr.indexOf(max)
   const min = Math.min(...arr.filter((a) => a > 0))
-  const aver = area > 0 ? (press / area).toFixed(1) : 0
+  const aver = area > 0 ? Number((press / area).toFixed(1)) : 0
   return { press, area, max, min, aver, maxIndex }
 }
 
