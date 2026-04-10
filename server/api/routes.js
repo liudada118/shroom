@@ -7,13 +7,13 @@ const fs = require('fs')
 const path = require('path')
 const HttpResult = require('../HttpResult')
 const constantObj = require('../../util/config')
-const { initDb, closeDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir } = require('../../util/db')
+const { initDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir } = require('../../util/db')
 const { decryptStr } = require('../../util/aes_ecb')
 const module2 = require('../../util/aes_ecb')
 const { state } = require('../state')
 const { broadcast } = require('../websocket')
 const { connectPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
-const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot } = require('../services/DataService')
+const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed } = require('../services/DataService')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 
 const router = express.Router()
@@ -22,6 +22,42 @@ function readSystemConfig() {
   const configPath = state._configPath || path.join(__dirname, '..', '..', 'config.txt')
   const config = fs.readFileSync(configPath, 'utf-8')
   return JSON.parse(decryptStr(config))
+}
+
+function resolveCurrentSystemFile() {
+  const currentFile = normalizeRequestString(state.file)
+  if (currentFile) {
+    return currentFile
+  }
+
+  try {
+    const configResult = readSystemConfig()
+    const configFile = normalizeRequestString(configResult.value)
+    if (configFile) {
+      state.file = configFile
+      state.baudRate = constantObj.baudRateObj[configFile] || 1000000
+      return configFile
+    }
+  } catch (err) {
+    console.warn('[Server] Failed to resolve current system file:', err.message)
+  }
+
+  return ''
+}
+
+async function ensureCurrentDb() {
+  if (state.currentDb) {
+    return state.currentDb
+  }
+
+  const systemFile = resolveCurrentSystemFile()
+  if (!systemFile || !state._dbPath) {
+    return null
+  }
+
+  const { db } = await initDb(systemFile, state._dbPath)
+  state.currentDb = db
+  return db
 }
 
 function normalizeRequestString(value) {
@@ -223,18 +259,28 @@ router.get('/', (req, res) => {
 
 router.get('/getSystem', asyncHandler(async (req, res) => {
   const configResult = readSystemConfig()
-  configResult.value = state.file
+  const systemFile = resolveCurrentSystemFile()
+  if (!systemFile) {
+    res.json(new HttpResult(1, {}, 'system type not configured'))
+    return
+  }
+  configResult.value = systemFile
 
   state.baudRate = constantObj.baudRateObj[configResult.value] || 1000000
 
-  const { db } = await initDb(state.file, state._dbPath)
+  const { db } = await initDb(systemFile, state._dbPath)
   state.currentDb = db
 
   res.json(new HttpResult(0, configResult, 'Get device list success'))
 }))
 
 router.post('/selectSystem', asyncHandler(async (req, res) => {
-  state.file = req.query.file
+  const systemFile = resolveRequestValue(req, ['file'])
+  if (!systemFile) {
+    res.json(new HttpResult(1, {}, 'system file required'))
+    return
+  }
+  state.file = systemFile
   const { db } = await initDb(state.file, state._dbPath)
   state.currentDb = db
   state.baudRate = constantObj.blue.includes(state.file) ? 921600 : 1000000
@@ -243,6 +289,10 @@ router.post('/selectSystem', asyncHandler(async (req, res) => {
 
 router.post('/changeSystemType', asyncHandler(async (req, res) => {
   const system = resolveRequestValue(req, ['system'])
+  if (!system) {
+    res.json(new HttpResult(1, {}, 'system required'))
+    return
+  }
   state.file = system
   state.baudRate = constantObj.baudRateObj[system] || 1000000
   const { db } = await initDb(state.file, state._dbPath)
@@ -475,13 +525,20 @@ router.post('/startCol', asyncHandler(async (req, res) => {
   const select = resolveRequestValue(req, ['select', 'selectJson'])
   state.selectArr = select && typeof select === 'object' ? select : []
   state.historySelectCache = null
+  const currentFile = resolveCurrentSystemFile()
+  const db = await ensureCurrentDb()
+
+  if (!currentFile || !db) {
+    res.json(new HttpResult(1, {}, 'System or database not initialized'))
+    return
+  }
 
   const sensorArr = Object.keys(state.dataMap).map((a) => state.dataMap[a].type)
-  const matchCount = sensorArr.filter((a) => typeof state.file === 'string' && a.includes(state.file)).length
+  const matchCount = sensorArr.filter((a) => typeof a === 'string' && a.includes(currentFile)).length
 
   if (matchCount > 0) {
     state.colFlag = true
-    state.colName = String(fileName)
+    state.colName = String(fileName ?? Date.now())
     res.json(new HttpResult(0, {}, 'Collection started'))
   } else {
     res.json(new HttpResult(0, 'Please select correct sensor type', 'error'))
@@ -496,6 +553,11 @@ router.get('/endCol', (req, res) => {
 // ─── 历史数据管理 ─────────────────────────────────────────
 
 router.get('/getColHistory', asyncHandler(async (req, res) => {
+  const db = await ensureCurrentDb()
+  if (!db) {
+    res.json(new HttpResult(1, {}, 'Database not initialized'))
+    return
+  }
   const selectQuery = `
     SELECT 
       m.date, m.timestamp,
@@ -513,7 +575,7 @@ router.get('/getColHistory', asyncHandler(async (req, res) => {
   state.historyFlag = true
 
   const rows = await new Promise((resolve, reject) => {
-    state.currentDb.all(selectQuery, [0, 500], (err, rows) => {
+    db.all(selectQuery, [0, 500], (err, rows) => {
       if (err) reject(err)
       else resolve(rows)
     })
@@ -526,16 +588,23 @@ router.get('/getColHistory', asyncHandler(async (req, res) => {
 router.post('/getDbHistory', asyncHandler(async (req, res) => {
   const time = resolveRequestValue(req, ['time', 'date', 'timestamp'])
   state.historySelectCache = null
+  const db = await ensureCurrentDb()
 
   if (!time) {
     res.json(new HttpResult(1, {}, 'playback time required'))
     return
   }
+  if (!db) {
+    res.json(new HttpResult(1, {}, 'Database not initialized'))
+    return
+  }
 
-  const { length, pressArr, areaArr, rows } = await dbGetData({ db: state.currentDb, params: [time] })
+  const { length, pressArr, areaArr, rows } = await dbGetData({ db, params: [time] })
 
   state.historyDbArr = rows
-  state.colMaxHZ = 1000 / (state.historyDbArr[1].timestamp - state.historyDbArr[0].timestamp)
+  state.colMaxHZ = state.historyDbArr.length > 1
+    ? 1000 / (state.historyDbArr[1].timestamp - state.historyDbArr[0].timestamp)
+    : 1
   state.colplayHZ = state.colMaxHZ
   state.historyFlag = true
   state.playIndex = 0
@@ -605,10 +674,16 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
 router.post('/getContrastData', asyncHandler(async (req, res) => {
   const left = resolveRequestValue(req, ['left'])
   const right = resolveRequestValue(req, ['right'])
+  const db = await ensureCurrentDb()
+
+  if (!db) {
+    res.json(new HttpResult(1, {}, 'Database not initialized'))
+    return
+  }
 
   const [leftResult, rightResult] = await Promise.all([
-    dbGetData({ db: state.currentDb, params: [left] }),
-    dbGetData({ db: state.currentDb, params: [right] })
+    dbGetData({ db, params: [left] }),
+    dbGetData({ db, params: [right] })
   ])
 
   state.leftDbArr = leftResult.rows
@@ -664,27 +739,28 @@ router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
     res.json(new HttpResult(555, 'Please select playback time range', 'error'))
     return
   }
-  if (!state.historyDbArr.length) {
-    res.json(new HttpResult(555, {}, 'No playback data found for the selected time'))
-    return
-  }
 
-  const snapshot = getPlaybackSnapshot(index)
-  if (!snapshot) {
-    res.json(new HttpResult(555, {}, 'history frame not found'))
-    return
-  }
-
-  broadcast(JSON.stringify(snapshot.payload))
-  res.json(new HttpResult(0, snapshot.row, 'success'))
+  state.playIndex = index
+  broadcast(JSON.stringify({
+    sitDataPlay: JSON.parse(state.historyDbArr[state.playIndex].data),
+    index: state.playIndex,
+    timestamp: JSON.parse(state.historyDbArr[state.playIndex].timestamp)
+  }))
+  res.json(new HttpResult(0, state.historyDbArr[index], 'success'))
 }))
 
 // ─── 数据操作 ────────────────────────────────────────────
 
 router.post('/downlaod', asyncHandler(async (req, res) => {
   const { fileArr, selectJson } = resolveDownloadRequest(req)
+  const db = await ensureCurrentDb()
+  const currentFile = resolveCurrentSystemFile()
   if (!fileArr || !fileArr.length) {
     res.json(new HttpResult(1, {}, 'Please select data first'))
+    return
+  }
+  if (!db || !currentFile) {
+    res.json(new HttpResult(1, {}, 'Database not initialized'))
     return
   }
   const selectOverride = selectJson && typeof selectJson === 'object' ? selectJson : state.historySelectCache
@@ -695,9 +771,9 @@ router.post('/downlaod', asyncHandler(async (req, res) => {
   })
   state.downloadPath = resolvedDownloadPath
   const data = await dbLoadCsv({
-    db: state.currentDb,
+    db,
     params: fileArr,
-    file: state.file,
+    file: currentFile,
     isPackaged: state._isPackaged,
     selectJson: selectOverride,
     customDownloadPath: resolvedDownloadPath,
@@ -741,8 +817,15 @@ router.post('/setDownloadPath', asyncHandler(async (req, res) => {
       return
     }
   }
-  state.downloadPath = newPath
-  res.json(new HttpResult(0, { path: newPath }, 'success'))
+  const writablePath = ensureWritableDir(newPath)
+  state.downloadPath = writablePath
+  try {
+    const downloadPathFile = require('path').join(state._dbPath, 'downloadPath.json')
+    fs.writeFileSync(downloadPathFile, JSON.stringify({ path: writablePath }), 'utf-8')
+  } catch (e) {
+    console.warn('[Server] Failed to persist download path:', e.message)
+  }
+  res.json(new HttpResult(0, { path: writablePath }, 'success'))
 }))
 
 router.post('/openFile', asyncHandler(async (req, res) => {
@@ -818,21 +901,36 @@ router.post('/openFolder', asyncHandler(async (req, res) => {
 
 router.post('/delete', asyncHandler(async (req, res) => {
   const fileArr = resolveRequestValue(req, ['fileArr']) || []
-  const data = await deleteDbData({ db: state.currentDb, params: fileArr })
+  const db = await ensureCurrentDb()
+  if (!db) {
+    res.json(new HttpResult(1, {}, 'Database not initialized'))
+    return
+  }
+  const data = await deleteDbData({ db, params: fileArr })
   res.json(new HttpResult(0, data, 'Delete success'))
 }))
 
 router.post('/changeDbName', asyncHandler(async (req, res) => {
   const newDate = resolveRequestValue(req, ['newDate'])
   const oldDate = resolveRequestValue(req, ['oldDate'])
-  const data = await changeDbName({ db: state.currentDb, params: [newDate, oldDate] })
+  const db = await ensureCurrentDb()
+  if (!db) {
+    res.json(new HttpResult(1, {}, 'Database not initialized'))
+    return
+  }
+  const data = await changeDbName({ db, params: [newDate, oldDate] })
   res.json(new HttpResult(0, data, 'Update success'))
 }))
 
 router.post('/changeDbDataName', asyncHandler(async (req, res) => {
   const oldName = resolveRequestValue(req, ['oldName'])
   const newName = resolveRequestValue(req, ['newName'])
-  await changeDbDataName({ db: state.currentDb, params: [oldName, newName] })
+  const db = await ensureCurrentDb()
+  if (!db) {
+    res.json(new HttpResult(1, {}, 'Database not initialized'))
+    return
+  }
+  await changeDbDataName({ db, params: [oldName, newName] })
   res.json(new HttpResult(0, {}, 'success'))
 }))
 
@@ -843,22 +941,32 @@ router.post('/upsertRemark', asyncHandler(async (req, res) => {
   const alias = resolveRequestValue(req, ['alias'])
   const remark = resolveRequestValue(req, ['remark'])
   const select = resolveRequestValue(req, ['select', 'selectJson'])
+  const db = await ensureCurrentDb()
   if (!date) {
     res.json(new HttpResult(1, {}, 'date required'))
     return
   }
+  if (!db) {
+    res.json(new HttpResult(1, {}, 'Database not initialized'))
+    return
+  }
   date = String(date)
-  const data = await upsertRemark({ db: state.currentDb, params: { date, alias, remark, select } })
+  const data = await upsertRemark({ db, params: { date, alias, remark, select } })
   res.json(new HttpResult(0, data, 'success'))
 }))
 
 router.post('/getRemark', asyncHandler(async (req, res) => {
   const date = resolveRequestValue(req, ['date'])
+  const db = await ensureCurrentDb()
   if (!date) {
     res.json(new HttpResult(1, {}, 'date required'))
     return
   }
-  const data = await getRemark({ db: state.currentDb, params: [date] })
+  if (!db) {
+    res.json(new HttpResult(1, {}, 'Database not initialized'))
+    return
+  }
+  const data = await getRemark({ db, params: [date] })
   res.json(new HttpResult(0, data, 'success'))
 }))
 
