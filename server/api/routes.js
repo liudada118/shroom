@@ -13,7 +13,7 @@ const module2 = require('../../util/aes_ecb')
 const { state } = require('../state')
 const { broadcast } = require('../websocket')
 const { connectPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
-const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed } = require('../services/DataService')
+const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot } = require('../services/DataService')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 
 const router = express.Router()
@@ -664,14 +664,19 @@ router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
     res.json(new HttpResult(555, 'Please select playback time range', 'error'))
     return
   }
+  if (!state.historyDbArr.length) {
+    res.json(new HttpResult(555, {}, 'No playback data found for the selected time'))
+    return
+  }
 
-  state.playIndex = index
-  broadcast(JSON.stringify({
-    sitDataPlay: JSON.parse(state.historyDbArr[state.playIndex].data),
-    index: state.playIndex,
-    timestamp: JSON.parse(state.historyDbArr[state.playIndex].timestamp)
-  }))
-  res.json(new HttpResult(0, state.historyDbArr[index], 'success'))
+  const snapshot = getPlaybackSnapshot(index)
+  if (!snapshot) {
+    res.json(new HttpResult(555, {}, 'history frame not found'))
+    return
+  }
+
+  broadcast(JSON.stringify(snapshot.payload))
+  res.json(new HttpResult(0, snapshot.row, 'success'))
 }))
 
 // ─── 数据操作 ────────────────────────────────────────────
