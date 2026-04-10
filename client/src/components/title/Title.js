@@ -1,43 +1,55 @@
-import React, { memo, useContext } from 'react'
+import React, { memo, useContext, useState } from 'react'
 import './index.scss'
 import EquipStatus from '../EquipStatus/EquipStatus'
 import Select from '../select/Select'
+import IconAndText from '../iconAndText/IconAndText'
 import SecondTitle from './SecondTitle'
 import logo from '../../assets/image/logo.png'
 import axios from 'axios'
-import { withTranslation } from 'react-i18next'
+import { withTranslation } from "react-i18next";
 import { pageContext } from '../../page/test/Test'
-import { localAddress } from '../../util/constant'
+import { systemConfig, localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import { useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 
+
 const Title = memo((props) => {
-  const { t, i18n } = props
-  const connectState = useEquipStore((s) => s.connectState, shallow)
-  const systemType = useEquipStore((s) => s.systemType, shallow)
-  const systemTypeArr = useEquipStore((s) => s.systemTypeArr, shallow)
+  const { t, i18n } = props;
+
+  const connectState = useEquipStore(s => s.connectState, shallow);
 
   const connent = () => {
+    // 只有 idle 状态才能点击连接
     if (connectState !== 'idle') return
 
     useEquipStore.getState().setConnectState('connecting')
 
     axios.get(`${localAddress}/connPort`, {}).then((res) => {
       console.log(res)
+      // connPort 返回后设为已连接
       useEquipStore.getState().setConnectState('connected')
     }).catch(() => {
       useEquipStore.getState().setConnectState('idle')
     })
-
     axios.get(`${localAddress}/sendMac`, {}).then((res) => {
       console.log(res)
     })
   }
 
-  useContext(pageContext)
+  const pageInfo = useContext(pageContext);
+ 
+  // const {systemTypeArr , systemType ,setSystemType} = pageInfo
+
+  const systemType = useEquipStore(s => s.systemType, shallow);
+  const systemTypeArr = useEquipStore(s => s.systemTypeArr, shallow);
+
+  
 
   const changeSystemType = (e) => {
+    // useEquipStore.getState().setSystemType(e)
+    // useEquipStore.getState().setStatus(new Array(4096).fill(0))
+    // useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
     const payload = {
       system: e,
     }
@@ -58,11 +70,15 @@ const Title = memo((props) => {
       useEquipStore.getState().setSettingValue(optimalObj)
       useEquipStore.getState().setSettingValueMax(maxObj)
       useEquipStore.getState().setSettingValueOptimal(optimalObj)
-    }).catch(() => {})
+    }).catch((err) => {
+    })
   }
 
-  useEquipStore((s) => s.equipStatus, shallow)
+  const [language, setLanguage] = useState('中文')
 
+  const equipStatus = useEquipStore(s => s.equipStatus, shallow);
+
+  // 根据 connectState 决定按钮样式和文本
   const getButtonClass = () => {
     switch (connectState) {
       case 'connecting':
@@ -86,6 +102,7 @@ const Title = memo((props) => {
   }
 
   return (
+
     <div className='titleContent'>
       <div className="firstTitle">
         <div className="titleLeft">
@@ -103,6 +120,9 @@ const Title = memo((props) => {
         </div>
 
         <div className="titleRight">
+          {/* <div className="systemSelect cursor">
+          中文
+        </div> */}
           <Select defaultValue='中文' options={[
             {
               label: '中文',
@@ -113,16 +133,27 @@ const Title = memo((props) => {
               value: 'en'
             },
           ]}
+
             icon={<i className='iconfont' style={{ marginRight: '0.625rem', fontSize: '0.875rem', color: '#E6EBF0' }}>&#xe642;</i>}
             onChange={(value) => {
               i18n.changeLanguage(value)
             }}
+
           />
+          {/* <div className="loginOut">
+            <div className="loginOutText">
+              退出
+            </div>
+            <div className="loginOutImg">
+
+            </div>
+          </div> */}
         </div>
       </div>
 
       <SecondTitle />
     </div>
+
   )
 })
 

@@ -2,6 +2,8 @@ const sqlite3 = require("sqlite3").verbose();
 const csv = require("csv-parser");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { timeStampTo_Date } = require("./time");
 const constantObj = require("./config");
 const { backYToX, sitYToX } = require("./line");
@@ -10,6 +12,8 @@ const { backYToX, sitYToX } = require("./line");
 const pointConfig = {
   'endi-back': { pointWidthDistance: 13, pointHeightDistance: 10 },
   'endi-sit': { pointWidthDistance: 10, pointHeightDistance: 10 },
+  'carY-back': { pointWidthDistance: 10, pointHeightDistance: 19 },
+  'carY-sit': { pointWidthDistance: 15, pointHeightDistance: 15 },
 };
 
 // ─── 工具函数 ────────────────────────────────────────────
@@ -38,6 +42,65 @@ function normalizeSelectJson(select) {
   if (select === undefined || select === null) return null;
   if (typeof select === 'string') return select;
   try { return JSON.stringify(select); } catch { return String(select); }
+}
+
+function uniquePaths(paths) {
+  const seen = new Set()
+  const result = []
+
+  for (const value of paths) {
+    if (!value) continue
+    const normalized = path.resolve(String(value))
+    if (seen.has(normalized)) continue
+    seen.add(normalized)
+    result.push(normalized)
+  }
+
+  return result
+}
+
+function ensureWritableDir(dirPath) {
+  if (!dirPath) {
+    throw new Error('Download directory is empty')
+  }
+
+  fs.mkdirSync(dirPath, { recursive: true })
+  const probeFile = path.join(dirPath, `.write-test-${process.pid}-${Date.now()}.tmp`)
+  fs.writeFileSync(probeFile, 'ok')
+  fs.rmSync(probeFile, { force: true })
+  return dirPath
+}
+
+function resolveWritableDownloadDir({ customDownloadPath, dataPath, isPackaged }) {
+  const homeDir = os.homedir()
+  const candidates = uniquePaths([
+    customDownloadPath,
+    path.join(homeDir, 'Desktop'),
+    path.join(homeDir, 'Downloads'),
+    path.join(homeDir, 'Documents'),
+    isPackaged ? (dataPath || path.resolve('resources/data')) : path.join(__dirname, '..', 'data')
+  ])
+
+  let lastError = null
+  for (const candidate of candidates) {
+    try {
+      return ensureWritableDir(candidate)
+    } catch (err) {
+      lastError = err
+    }
+  }
+
+  throw new Error(`No writable download directory available${lastError ? `: ${lastError.message}` : ''}`)
+}
+
+function sanitizeFileNameSegment(value) {
+  const normalized = String(value ?? '').trim()
+  const sanitized = normalized
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return sanitized || 'export'
 }
 
 // ─── Promise 包装的 DB 操作 ──────────────────────────────
@@ -71,8 +134,9 @@ function dbGet(db, sql, params = []) {
 
 // ─── 数据库初始化 ────────────────────────────────────────
 
-function ensureRemarksTable(db) {
-  db.run(
+async function ensureRemarksTable(db) {
+  await dbRun(
+    db,
     `CREATE TABLE IF NOT EXISTS remarks (
       date TEXT PRIMARY KEY,
       alias TEXT,
@@ -80,10 +144,10 @@ function ensureRemarksTable(db) {
       select_json TEXT,
       updated_at INTEGER
     )`
-  );
+  )
 }
 
-function genDb(file, filePath) {
+function legacyGenDb(file, filePath) {
   let db
   if (fs.existsSync(file)) {
     db = new sqlite3.Database(file);
@@ -100,16 +164,136 @@ function genDb(file, filePath) {
   return db;
 }
 
+function openDb(file) {
+  return new Promise((resolve, reject) => {
+    const db = new sqlite3.Database(file, (err) => {
+      if (err) reject(err)
+      else resolve(db)
+    })
+  })
+}
+
+function closeDb(db) {
+  return new Promise((resolve, reject) => {
+    if (!db) {
+      resolve()
+      return
+    }
+    db.close((err) => {
+      if (err) reject(err)
+      else resolve()
+    })
+  })
+}
+
+function makeCorruptDbError(message) {
+  const err = new Error(message)
+  err.code = 'SQLITE_CORRUPT'
+  return err
+}
+
+async function validateDb(db, file) {
+  const rows = await dbAll(db, 'PRAGMA quick_check;')
+  const issues = rows
+    .map((row) => row.quick_check || row.integrity_check || Object.values(row)[0])
+    .filter(Boolean)
+
+  if (!issues.length || (issues.length === 1 && issues[0] === 'ok')) {
+    return
+  }
+
+  throw makeCorruptDbError(`Database integrity check failed for ${path.basename(file)}: ${issues[0]}`)
+}
+
+async function configureDb(db) {
+  await dbRun(db, 'PRAGMA journal_mode = WAL;')
+  await dbRun(db, 'PRAGMA synchronous = NORMAL;')
+  await ensureRemarksTable(db)
+}
+
+function removeSidecarFiles(file) {
+  for (const suffix of ['-wal', '-shm']) {
+    const sidecar = `${file}${suffix}`
+    if (fs.existsSync(sidecar)) {
+      fs.rmSync(sidecar, { force: true })
+    }
+  }
+}
+
+function createDbFromTemplate(file, filePath) {
+  const templateFile = path.join(filePath, 'init.db')
+  if (!fs.existsSync(templateFile)) {
+    throw new Error(`Database template not found: ${templateFile}`)
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  removeSidecarFiles(file)
+  fs.copyFileSync(templateFile, file)
+}
+
+function backupCorruptDb(file, filePath) {
+  const backupDir = path.join(filePath, 'corrupt-backups')
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const movedFiles = []
+
+  fs.mkdirSync(backupDir, { recursive: true })
+
+  for (const suffix of ['', '-wal', '-shm']) {
+    const source = `${file}${suffix}`
+    if (!fs.existsSync(source)) continue
+
+    const target = path.join(backupDir, `${path.basename(file)}.${stamp}${suffix}`)
+    fs.renameSync(source, target)
+    movedFiles.push(target)
+  }
+
+  return { backupDir, movedFiles }
+}
+
+async function genDb(file, filePath) {
+  if (!fs.existsSync(file)) {
+    console.log(`[DB] Database not found, creating from template: ${file}`)
+    createDbFromTemplate(file, filePath)
+  }
+
+  try {
+    const db = await openDb(file)
+    try {
+      await validateDb(db, file)
+      await configureDb(db)
+      return { db, recovered: false }
+    } catch (err) {
+      await closeDb(db).catch(() => {})
+      throw err
+    }
+  } catch (err) {
+    if (err.code !== 'SQLITE_CORRUPT') {
+      throw err
+    }
+
+    console.warn(`[DB] Corruption detected in ${file}, recreating from template`)
+    const recovery = backupCorruptDb(file, filePath)
+    createDbFromTemplate(file, filePath)
+
+    const db = await openDb(file)
+    try {
+      await configureDb(db)
+      return { db, recovered: true, ...recovery }
+    } catch (recoveryErr) {
+      await closeDb(db).catch(() => {})
+      throw recoveryErr
+    }
+  }
+}
+
 /**
  * 初始化数据库
  * @param {string} fileStr - 当前系统名
  * @param {string} filePath - 数据库目录路径
  * @returns {{ db: sqlite3.Database, db1: sqlite3.Database|undefined }}
  */
-const initDb = (fileStr, filePath) => {
+const initDb = async (fileStr, filePath) => {
   console.log(`${filePath}/${fileStr}.db`)
-  const db = genDb(`${filePath}/${fileStr}.db`, filePath)
-  return { db }
+  return genDb(`${filePath}/${fileStr}.db`, filePath)
 }
 
 // ─── 数据查询 ────────────────────────────────────────────
@@ -145,7 +329,11 @@ async function dbGetData({ db, params }) {
       const item = dataObj[key]
       if (!item || !item.arr) continue
       const arr = item.arr
-      pressValue[key].push(arr.reduce((a, b) => a + b, 0))
+      const press = arr.reduce((a, b) => a + b, 0)
+      const normalizedPress = (key === 'carY-back' || key === 'carY-sit')
+        ? press / (100 / 3)
+        : press
+      pressValue[key].push(normalizedPress)
       areaValue[key].push(arr.filter((a) => a > 0).length)
     }
   }
@@ -158,8 +346,9 @@ async function dbGetData({ db, params }) {
 /**
  * 单条记录导出为 CSV
  * 核心优化：每行只解析一次 JSON，消除内层循环中的重复 JSON.parse
+ * 多矩阵系统（carY/endi）分别导出 back 和 sit 两个独立 CSV 文件
  */
-function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
+function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath) {
   return new Promise((resolve, reject) => {
     dbAll(db, "SELECT * FROM matrix WHERE date=?", [param]).then(async (rows) => {
       if (!rows.length) {
@@ -167,7 +356,6 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
         return
       }
 
-      const csvWriteBackData = []
       const firstData = JSON.parse(rows[0].data)
       const keyArr = Object.keys(firstData)
 
@@ -177,11 +365,40 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
         try { selectOverride = JSON.parse(selectOverride) } catch { selectOverride = null }
       }
 
+      // 如果没有外部传入的 selectJson，从 remarks 表读取该批次的框选信息
+      if (!selectOverride) {
+        try {
+          const remarkRow = await dbGet(db, 'SELECT select_json FROM remarks WHERE date = ?', [param])
+          if (remarkRow && remarkRow.select_json) {
+            try { selectOverride = JSON.parse(remarkRow.select_json) } catch { selectOverride = null }
+          }
+        } catch (e) {
+          // remarks 表可能不存在，忽略错误
+        }
+      }
+
+      // 根据前几帧 timestamp 自动推算帧率
+      let detectedHz = 12 // 默认帧率
+      if (rows.length >= 2) {
+        const sampleCount = Math.min(rows.length, 10)
+        const totalMs = rows[sampleCount - 1].timestamp - rows[0].timestamp
+        if (totalMs > 0) {
+          detectedHz = Math.round((sampleCount - 1) * 1000 / totalMs)
+          if (detectedHz < 1) detectedHz = 1
+        }
+      }
+
+      // 判断是否为多矩阵系统（有 back 和 sit 两个 key）
+      const isMultiMatrix = keyArr.length > 1 && keyArr.some(k => k.includes('-back')) && keyArr.some(k => k.includes('-sit'))
+
+      // 按 key 分组存储数据
+      const csvDataByKey = {}
+      for (const key of keyArr) {
+        csvDataByKey[key] = []
+      }
+
       for (let i = 0; i < rows.length; i++) {
-        const newData = {}
-        // 每行只解析一次 JSON
         const rowData = JSON.parse(rows[i].data)
-        const rowSelect = rows[i].select ? JSON.parse(rows[i].select) : null
 
         for (let j = 0; j < keyArr.length; j++) {
           const key = keyArr[j]
@@ -190,19 +407,15 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
           const data = item.arr
           if (!data) continue
 
-          if (j === 0) {
-            newData.time = timeStampTo_Date(rows[i].timestamp)
-          }
+          const rowEntry = {}
+          rowEntry.time = timeStampTo_Date(rows[i].timestamp)
+          rowEntry.sec = (i / detectedHz).toFixed(2)
 
           // 框选区域计算
           const selectArr = []
-          const selectObj = { width: 0, height: 0 }
-
           let obj = null
           if (selectOverride && typeof selectOverride === 'object') {
             obj = selectOverride[key]
-          } else if (rowSelect) {
-            obj = rowSelect[key]
           }
 
           if (obj && typeof obj === 'object') {
@@ -212,8 +425,6 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
                 selectArr.push(data[y * width + x])
               }
             }
-            selectObj.width = xEnd - xStart
-            selectObj.height = yEnd - yStart
           }
 
           const { press, area, max, min, aver, maxIndex } = colArrData(data)
@@ -221,46 +432,45 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
 
           const pointInfo = pointConfig[key]
           const pointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : null
-          const pointValue = pointInfo ? area : null
           const pressureAreaValue = pointInfo ? (area * pointArea / 100) : area
 
           // 计算框选区域受力面积
           const selectAreaValue = pointInfo ? (selectArea * pointArea / 100) : selectArea
 
-          if (file.includes('endi')) newData.sec = (i / 12).toFixed(2)
-          newData[`${key}max`] = max
-          newData[`${key}maxCoord`] = maxIndex
-          newData[`${key}aver`] = aver
-          newData[`${key}pressureArea`] = pressureAreaValue
-          newData[`${key}realData`] = JSON.stringify(data)
-          newData[`${key}selectMax`] = selectMax
-          newData[`${key}selectMaxCoord`] = selectMaxIndex
-          newData[`${key}selectAver`] = selectAver
-          newData[`${key}selectArea`] = selectAreaValue
-          newData[`${key}selectData`] = JSON.stringify(selectArr)
+          rowEntry[`${key}max`] = max
+          rowEntry[`${key}maxCoord`] = maxIndex
+          rowEntry[`${key}aver`] = aver
+          rowEntry[`${key}pressureArea`] = pressureAreaValue
+          rowEntry[`${key}realData`] = JSON.stringify(data)
+          rowEntry[`${key}selectMax`] = selectMax
+          rowEntry[`${key}selectMaxCoord`] = selectMaxIndex
+          rowEntry[`${key}selectAver`] = selectAver
+          rowEntry[`${key}selectArea`] = selectAreaValue
+          rowEntry[`${key}selectData`] = JSON.stringify(selectArr)
 
           // endi 类型需要做单位转换
           if (key === 'endi-back') {
-            newData[`${key}max`] = backYToX(max)
-            newData[`${key}aver`] = backYToX(aver)
-            newData[`${key}selectMax`] = backYToX(selectMax)
-            newData[`${key}selectAver`] = backYToX(selectAver)
+            rowEntry[`${key}max`] = backYToX(max)
+            rowEntry[`${key}aver`] = backYToX(aver)
+            rowEntry[`${key}selectMax`] = backYToX(selectMax)
+            rowEntry[`${key}selectAver`] = backYToX(selectAver)
           }
           if (key === 'endi-sit') {
-            newData[`${key}max`] = sitYToX(max)
-            newData[`${key}aver`] = sitYToX(aver)
-            newData[`${key}selectMax`] = sitYToX(selectMax)
-            newData[`${key}selectAver`] = sitYToX(selectAver)
+            rowEntry[`${key}max`] = sitYToX(max)
+            rowEntry[`${key}aver`] = sitYToX(aver)
+            rowEntry[`${key}selectMax`] = sitYToX(selectMax)
+            rowEntry[`${key}selectAver`] = sitYToX(selectAver)
           }
 
           if (pointInfo) {
-            const averValue = Number(newData[`${key}aver`]) || 0
-            newData[`${key}point`] = pointValue
-            newData[`${key}pressTotal`] = (averValue * pointArea * pointValue) / 1000
+            const averValue = Number(rowEntry[`${key}aver`]) || 0
+            const pointValue = area
+            rowEntry[`${key}point`] = pointValue
+            rowEntry[`${key}pressTotal`] = (averValue * pointArea * pointValue) / 1000
           }
-        }
 
-        csvWriteBackData.push(newData)
+          csvDataByKey[key].push(rowEntry)
+        }
       }
 
       // 获取备注信息
@@ -273,61 +483,124 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath) {
       } else if (isAllDigits(str)) {
         str = timeStampTo_Date(Number(str))
       }
-
-      // 构建 CSV 表头
-      const handArr = buildCsvHeaders(keyArr, file)
-      handArr.push({ id: "remark", title: "remark" })
+      const safeName = sanitizeFileNameSegment(str)
 
       let csvPath
       if (customDownloadPath) {
         csvPath = customDownloadPath
       } else if (isPackaged) {
-        csvPath = 'resources/data'
+        csvPath = dataPath || path.resolve('resources/data')
       } else {
         csvPath = __dirname + "/../data"
       }
-      // 确保目录存在
       if (!fs.existsSync(csvPath)) {
         fs.mkdirSync(csvPath, { recursive: true })
       }
 
-      const csvName = file === 'endi' ? 'car' : file
-      const csvFilePath = `${csvPath}/${csvName}${str}.csv`
-
-      const csvWriter = createCsvWriter({ path: csvFilePath, header: handArr })
-
       const remarkText = remarkRow?.remark ?? ''
-      if (remarkText) {
-        csvWriteBackData.push({ remark: remarkText })
+
+      // 单个 key 的 CSV 表头（保留 ld 分支的中文表头）
+      function buildSingleKeyHeaders(key) {
+        const res = key.replace(/endi/g, "car")
+        const headers = [
+          { id: 'sec', title: 'sec(s)' },
+          { id: 'time', title: 'time' },
+          { id: `${key}max`, title: `${res} ` + '\u539f\u59cb\u6700\u5927\u538b\u5f3a(Kpa)' },
+          { id: `${key}maxCoord`, title: `${res} ` + '\u539f\u59cb\u6700\u5927\u538b\u5f3a\u5750\u6807' },
+          { id: `${key}aver`, title: `${res} ` + '\u539f\u59cb\u5e73\u5747\u538b\u5f3a(Kpa)' },
+          { id: `${key}pressureArea`, title: `${res} ` + '\u539f\u59cb\u53d7\u529b\u9762\u79ef(cm\u00b2)' },
+          { id: `${key}realData`, title: `${res} ` + '\u539f\u59cb\u6570\u636e' },
+          { id: `${key}selectMax`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u6700\u5927\u538b\u5f3a' },
+          { id: `${key}selectMaxCoord`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u6700\u5927\u538b\u5f3a\u5750\u6807' },
+          { id: `${key}selectAver`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u5e73\u5747\u538b\u5f3a' },
+          { id: `${key}selectArea`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u53d7\u529b\u9762\u79ef' },
+          { id: `${key}selectData`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u539f\u59cb\u6570\u636e' },
+        ]
+        if (key === 'endi-back' || key === 'endi-sit') {
+          headers.push(
+            { id: `${key}point`, title: `${res} Points` },
+            { id: `${key}pressTotal`, title: `${res} Pressure Total (N)` },
+          )
+        }
+        headers.push({ id: 'remark', title: 'remark' })
+        return headers
+      }
+
+      // 写入单个 CSV 文件的辅助函数
+      async function writeSingleCsv(filePath, headers, records) {
+        const csvWriter = createCsvWriter({ path: filePath, header: headers })
+        if (remarkText) {
+          records.push({ remark: remarkText })
+        }
+        await csvWriter.writeRecords(records)
+        // 确保 UTF-8 BOM
+        const content = fs.readFileSync(filePath)
+        const hasBom = content.length >= 3 && content[0] === 0xef && content[1] === 0xbb && content[2] === 0xbf
+        if (!hasBom) {
+          fs.writeFileSync(filePath, Buffer.concat([Buffer.from('\ufeff'), content]))
+        }
+        console.log('[DB] CSV export success:', filePath)
       }
 
       try {
-        await csvWriter.writeRecords(csvWriteBackData)
-        // 确保 UTF-8 BOM 以便 Excel 正确打开中文
-        const content = fs.readFileSync(csvFilePath)
-        const hasBom = content.length >= 3 && content[0] === 0xef && content[1] === 0xbb && content[2] === 0xbf
-        if (!hasBom) {
-          fs.writeFileSync(csvFilePath, Buffer.concat([Buffer.from('\ufeff'), content]))
+        if (isMultiMatrix) {
+          // 多矩阵系统：分别导出 back 和 sit
+          // back → carback{name}.csv, sit → carcushion{name}.csv
+          const csvNameMap = {
+            'back': 'carback',
+            'sit': 'carcushion',
+          }
+          const filePaths = []
+          for (const key of keyArr) {
+            const part = key.includes('-') ? key.split('-').pop() : key
+            const csvBaseName = csvNameMap[part] || part
+            const csvFilePath = path.join(csvPath, `${csvBaseName}${safeName}.csv`)
+            const headers = buildSingleKeyHeaders(key)
+            await writeSingleCsv(csvFilePath, headers, [...csvDataByKey[key]])
+            filePaths.push(csvFilePath)
+          }
+          resolve({ [param]: 'success', filePath: filePaths[0], filePaths })
+        } else {
+          // 单矩阵系统：根据矩阵类型区分文件名
+          const csvNameMap = {
+            'back': 'carback',
+            'sit': 'carcushion',
+          }
+          const key = keyArr[0]
+          const part = key.includes('-') ? key.split('-').pop() : key
+          const csvBaseName = csvNameMap[part] || (file === 'endi' ? 'car' : file)
+          const csvFilePath = path.join(csvPath, `${csvBaseName}${safeName}.csv`)
+          const headers = buildSingleKeyHeaders(key)
+          await writeSingleCsv(csvFilePath, headers, [...csvDataByKey[key]])
+          resolve({ [param]: 'success', filePath: csvFilePath, filePaths: [csvFilePath] })
         }
-        console.log("[DB] CSV export success:", csvFilePath)
-        resolve({ [param]: 'success', filePath: csvFilePath })
       } catch (err) {
-        console.error("[DB] CSV export failed:", err)
-        reject({ [param]: err })
+        console.error('[DB] CSV export failed:', err)
+        reject(err)
       }
     }).catch(reject)
   })
 }
 
+function dbloadSafe(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath) {
+  const writablePath = resolveWritableDownloadDir({
+    customDownloadPath,
+    dataPath,
+    isPackaged
+  })
+
+  return dbload(db, param, file, isPackaged, selectJson, writablePath, dataPath)
+}
+
 /**
- * 构建 CSV 表头
+ * 构建 CSV 表头（保留中文表头）
  */
 function buildCsvHeaders(keyArr, file) {
   const handArr = []
   for (let j = 0; j < keyArr.length; j++) {
     const key = keyArr[j]
     if (j === 0) {
-      if (file.includes('endi')) handArr.push({ id: "sec", title: "sec (s)" })
+      handArr.push({ id: "sec", title: "sec(s)" })
       handArr.push({ id: "time", title: "time" })
     }
 
@@ -357,8 +630,8 @@ function buildCsvHeaders(keyArr, file) {
 /**
  * 批量导出 CSV
  */
-async function dbLoadCsv({ db, params, file, isPackaged, selectJson, customDownloadPath }) {
-  const promises = params.map((param) => dbload(db, param, file, isPackaged, selectJson, customDownloadPath))
+async function dbLoadCsv({ db, params, file, isPackaged, selectJson, customDownloadPath, dataPath }) {
+  const promises = params.map((param) => dbloadSafe(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath))
   const results = await Promise.all(promises)
   return results
 }
@@ -432,7 +705,9 @@ async function getCsvData(file) {
 
 module.exports = {
   initDb,
+  closeDb,
   dbLoadCsv,
+  ensureWritableDir,
   deleteDbData,
   dbGetData,
   getCsvData,
@@ -441,4 +716,5 @@ module.exports = {
   upsertRemark,
   getRemark,
   deleteRemarkByDate,
+  resolveWritableDownloadDir,
 }

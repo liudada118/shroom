@@ -32,7 +32,7 @@ export const useEquipStore = create((set) => ({
 
   // 设备状态
   equipStatus: {},
-  connectState: 'idle',
+  connectState: 'idle',  // 'idle' | 'connecting' | 'connected'
 
   // 可视化设置
   settingValue: initialSettings,

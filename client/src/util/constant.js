@@ -26,12 +26,12 @@ export const pointConfig = {
     back: {
       pointLength: 32,
       pointWidthDistance: 10,
-      pointHeightDistance: 10,
+      pointHeightDistance: 19,
     },
     sit: {
       pointLength: 32,
-      pointWidthDistance: 10,
-      pointHeightDistance: 10,
+      pointWidthDistance: 15,
+      pointHeightDistance: 15,
     },
   }
 }

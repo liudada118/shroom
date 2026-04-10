@@ -215,8 +215,8 @@ function Test() {
         carY: <Endi1 key="carY" sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
-            backPointConfig={{ position: [0.1500, -12.5000, -1.0000], rotation: [-1.8326, 0.0000, 0.0000], scale: [0.0023, 0.0030, 0.0040], pointSize: 1.10 }}
-            sitPointConfig={{ position: [0.0000, -30.0000, -5.0000], rotation: [-0.5236, 0.0000, 0.0000], scale: [0.0025, 0.0025, 0.0025], pointSize: 0.75 }}
+            backPointConfig={{ position: [0.0000, -14.0000, -1.5000], rotation: [-1.8326, 0.0000, 0.0000], scale: [0.0021, 0.0030, 0.0037], pointSize: 1.10 }}
+            sitPointConfig={{ position: [0.0000, -30.5000, -6.0000], rotation: [-0.5236, 0.0000, 0.0000], scale: [0.0022, 0.0025, 0.0022], pointSize: 0.75 }}
         />
     }
 

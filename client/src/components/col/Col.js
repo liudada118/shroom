@@ -1,8 +1,9 @@
-import React from 'react'
+import React, { useState } from 'react'
 import './index.scss'
 import axios from 'axios'
 import { message } from 'antd'
-import { getDisplayType, getSysType, useEquipStore } from '../../store/equipStore'
+import { getDisplayType, getSelectArr, getSysType, useEquipStore } from '../../store/equipStore'
+import { shallow } from 'zustand/shallow'
 import { systemPointConfig, localAddress } from '../../util/constant'
 import { colSelectMatrix } from '../../util/util'
 import { isMoreMatrix } from '../../assets/util/util'
@@ -11,15 +12,17 @@ export default function Col(props) {
     const { colName, remark, HZ, setStartTime, col, setCol } = props
 
     const colButtonClick = () => {
-        const select = useEquipStore.getState().selectArr
+        const select = useEquipStore.getState().selectArr;
         const system = getSysType()
         const displayType = getDisplayType()
         const selectObj = {}
 
         if (select.length && select[0]) {
+            // 去掉DOM引用，只保留坐标数据
             const range = { x1: select[0].x1, y1: select[0].y1, x2: select[0].x2, y2: select[0].y2 }
 
             if (isMoreMatrix(system)) {
+                // 多矩阵系统（如 carY）：根据 displayType 决定保存哪个
                 if (displayType === 'all' || displayType.includes('back')) {
                     try {
                         const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[`${system}-back`])
@@ -45,6 +48,7 @@ export default function Col(props) {
                     }
                 }
             } else {
+                // 单矩阵系统
                 try {
                     const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[system])
                     if (matrix) {
@@ -57,6 +61,8 @@ export default function Col(props) {
                 }
             }
         }
+
+        console.log('[Col] selectObj:', selectObj)
 
         if (!col) {
             const startStamp = Date.now()
@@ -73,11 +79,12 @@ export default function Col(props) {
                     select: hasSelect ? JSON.stringify(selectObj) : undefined,
                 },
                 data: {
-                    fileName,
+                    fileName: fileName,
                     HZ: hz,
                     select: hasSelect ? selectObj : undefined,
                 }
             }).then((res) => {
+
                 if (res.data.message == 'error') {
                     message.error(res.data.data)
                 } else {
@@ -85,8 +92,10 @@ export default function Col(props) {
                     setCol(!col)
                     setStartTime(startStamp)
 
+                    // 始终调用 upsertRemark 保存框选数据（即使没有 alias 和 remark）
                     const alias = colName ? colName.trim() : ''
                     const remarkText = remark ? remark.trim().slice(0, 400) : ''
+
                     const remarkData = {
                         date: String(startStamp),
                     }
@@ -94,6 +103,7 @@ export default function Col(props) {
                     if (remarkText) remarkData.remark = remarkText
                     if (hasSelect) remarkData.select = selectObj
 
+                    // 只要有任何需要保存的信息就调用
                     if (alias || remarkText || hasSelect) {
                         axios({
                             method: 'post',
@@ -115,10 +125,12 @@ export default function Col(props) {
                         })
                     }
                 }
+
             }).catch((err) => {
                 console.error('[Col] startCol failed:', err)
                 message.error('采集失败')
             })
+
         } else {
             axios({
                 method: 'get',
@@ -138,7 +150,7 @@ export default function Col(props) {
 
     return (
         <div className='colContent' onClick={colButtonClick}>
-            <div className={`${col ? 'colIngIcon' : 'colInitIcon'} colIcon`}></div>
+            <div className={`${col ? "colIngIcon" : 'colInitIcon'} colIcon`}></div>
         </div>
     )
 }

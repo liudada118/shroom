@@ -106,36 +106,66 @@ export function calMatrixToSelect(className, selectConfig, matrixConfig) {
 }
 
 
-export function matrixGenBox(matrixObj, canvasArea, max) {
+export function matrixGenBox(matrixObj, canvasArea, max, matrixConfig) {
     const { xStart, xEnd, yStart, yEnd } = matrixObj
     const { canvasX1, canvasX2, canvasY1, canvasY2 } = canvasArea
 
-    const width = xEnd - xStart
-    const height = yEnd - yStart
+    const selectWidth = xEnd - xStart
+    const selectHeight = yEnd - yStart
 
     const canvasWidth = canvasX2 - canvasX1
     const canvasHeight = canvasY2 - canvasY1
     const widthUtil = canvasWidth / max
     const heightUtil = canvasHeight / max
 
-    const boxX = canvasX1 + xStart * widthUtil + 1
-    const boxY = canvasY1 + yStart * heightUtil+ 1
-    const boxWidth = width * widthUtil -2 
-    const boxHeight = height * widthUtil-2 
-
-    console.log(document.querySelector('.selectHistoryBox'))
-    if (!document.querySelector('.selectHistoryBox')) {
-        const box = document.createElement('div');
-        box.classList.add('selectHistoryBox');
-        // this.elementArr.push(this.element)
-        box.style.pointerEvents = 'none';
-        document.body.appendChild(box);
-        box.style.opacity = 0.6
-        box.style.left = boxX + 'px';
-        box.style.top = boxY + 'px';
-        box.style.width = `${boxWidth}px`;
-        box.style.height = `${boxHeight}px`;
+    // 处理非正方形矩阵的偏移
+    let offsetX = 0
+    let offsetY = 0
+    if (matrixConfig) {
+        const mw = matrixConfig.width || max
+        const mh = matrixConfig.height || max
+        if (mw < mh) {
+            offsetX = (mh - mw) / 2 * widthUtil
+        } else if (mh < mw) {
+            offsetY = (mw - mh) / 2 * heightUtil
+        }
     }
+
+    const boxX = canvasX1 + xStart * widthUtil + offsetX + 1
+    const boxY = canvasY1 + yStart * heightUtil + offsetY + 1
+    const boxWidth = selectWidth * widthUtil - 2
+    const boxHeight = selectHeight * heightUtil - 2
+
+    let box = document.querySelector('.selectHistoryBox')
+    if (!box) {
+        box = document.createElement('div');
+        box.classList.add('selectHistoryBox');
+        box.style.pointerEvents = 'auto';
+        document.body.appendChild(box);
+
+        // 右上角叉号关闭按钮
+        const closeBtn = document.createElement('div');
+        closeBtn.textContent = '\u00D7';
+        Object.assign(closeBtn.style, {
+            position: 'absolute', top: '-12px', right: '-12px',
+            width: '22px', height: '22px', lineHeight: '20px', textAlign: 'center',
+            background: '#ff4444', color: '#fff', borderRadius: '50%',
+            fontSize: '14px', fontWeight: 'bold', cursor: 'pointer',
+            zIndex: '10001', border: '2px solid #fff',
+            pointerEvents: 'auto', userSelect: 'none',
+        });
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            removeHistoryBox();
+        });
+        box.appendChild(closeBtn);
+    }
+    box.style.opacity = 0.6
+    box.style.left = boxX + 'px';
+    box.style.top = boxY + 'px';
+    box.style.width = `${boxWidth}px`;
+    box.style.height = `${boxHeight}px`;
 }
 
 export function removeHistoryBox() {

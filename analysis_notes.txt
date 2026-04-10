@@ -1,0 +1,25 @@
+NumThres.js 路由逻辑:
+- sit: 总是使用 NumThree (V3)
+- back: 如果 width === height (正方形，如 carY 32x32) 使用 NumThree (V3)
+       如果 width !== height (非正方形，如 endi 50x64) 使用 NumThree2 (V4)
+
+V3 (NumThreeColorV3.js) - 用于 sit 和正方形 back:
+- gridSize = numWidth (假设正方形)
+- count = gridSize * gridSize
+- geometry = 2.048 / gridSize
+- 颜色映射: jet() 函数
+- 位置: (x - (gridSize/2 - 0.5)) / (gridSize/2), (y - (gridSize/2 - 0.5)) / (gridSize/2)
+- 颜色: r = d/255, g = 0.2, b = 1.0 - r (简单线性映射)
+
+V4 (NumThreeColorV4.js) - 用于非正方形 back:
+- gridSize1 = numWidth, gridSize2 = numHeight, gridSize = max(w, h)
+- count = gridSize2 * gridSize1
+- geometry = 2.048 / gridSize (用最大边)
+- 颜色映射: jetWhite3() 函数 (与3D统一的颜色映射)
+- 位置: 有居中偏移 ((gridSize2 - gridSize1) / 2 + x - (gridSize2/2 - 0.5)) / (gridSize2/2)
+- 颜色: 使用 jetWhite3 映射
+
+关键差异:
+1. 颜色映射函数不同: V3 用 jet() + 简单线性, V4 用 jetWhite3()
+2. V4 的 createDigitSpriteSheetWithJet 也用 jetWhite3
+3. V4 有 canvasRef.current 而 V3 用 document.querySelector('.canvasNum')

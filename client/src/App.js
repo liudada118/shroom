@@ -13,6 +13,8 @@ i18next.init({
     en: {
       translation: {
         connect: 'Connect',
+        connecting: 'Connecting',
+        connected: 'Connected',
         back: 'Back',
         sit: 'Seat',
         freq: 'Freq',
@@ -132,7 +134,7 @@ i18next.init({
         pressAver: 'Avg Pressure',
         pressMax: 'Max Pressure',
         pressMin: 'Min Pressure',
-        pressTotal: 'Total Pressure',
+        pressTotal: 'Press Total',
         areaTotal: 'Area',
         pointTotal: 'Points'
       },
@@ -140,6 +142,8 @@ i18next.init({
     zh: {
       translation: {
         connect: '一键连接',
+        connecting: '连接中',
+        connected: '已连接',
         back: '靠背',
         sit: '坐垫',
         freq: '采集频率',
@@ -202,8 +206,8 @@ i18next.init({
         sizeAdj: '大小调节',
         viewAdj: '视图切换',
         angleAdj: '视角切换',
-        pressAver: '平均压强',
-        pressMax: '最大压强',
+        pressAver: '平均压力',
+        pressMax: '最大压力',
         pressMin: '最小压强',
         pressTotal: '压力总和',
         areaTotal: '面积',
