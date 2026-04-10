@@ -19,7 +19,7 @@ const pointConfig = {
  */
 function colArrData(arr) {
   if (!arr.length) {
-    return { press: 0, area: 0, max: 0, min: 0, aver: 0, maxIndex: -1 }
+    return { press: 0, area: 0, max: 0, min: 0, aver: 0, maxIndex: '' }
   }
   const press = arr.reduce((a, b) => a + b, 0)
   const area = arr.filter((a) => a > 0).length
@@ -335,18 +335,18 @@ function buildCsvHeaders(keyArr, file) {
 
     const res = key.replace(/endi/g, "car")
     handArr.push(
-      { id: `${key}max`, title: `${res} Original Max Pressure (Kpa)` },
-      { id: `${key}maxCoord`, title: `${res} Original Max Pressure Coordinate` },
-      { id: `${key}aver`, title: `${res} Original Average Pressure (Kpa)` },
-      { id: `${key}pressure`, title: `${res} Original Pressure Sum (Kpa)` },
-      { id: `${key}pressureArea`, title: `${res} Original Force Area (cm²)` },
-      { id: `${key}realData`, title: `${res} Original Data` },
-      { id: `${key}selectMax`, title: `${res} Select Area 1 Max Pressure` },
-      { id: `${key}selectMaxCoord`, title: `${res} Select Area 1 Max Pressure Coordinate` },
-      { id: `${key}selectAver`, title: `${res} Select Area 1 Average Pressure` },
-      { id: `${key}selectPress`, title: `${res} Select Area 1 Pressure Sum` },
-      { id: `${key}selectArea`, title: `${res} Select Area 1 Force Area` },
-      { id: `${key}selectData`, title: `${res} Select Area 1 Original Data` },
+      { id: `${key}max`, title: `${res} ` + '\u539f\u59cb\u6700\u5927\u538b\u5f3a(Kpa)' },
+      { id: `${key}maxCoord`, title: `${res} ` + '\u539f\u59cb\u6700\u5927\u538b\u5f3a\u5750\u6807' },
+      { id: `${key}aver`, title: `${res} ` + '\u539f\u59cb\u5e73\u5747\u538b\u5f3a(Kpa)' },
+      { id: `${key}pressure`, title: `${res} ` + '\u539f\u59cb\u538b\u5f3a\u603b\u548c(Kpa)' },
+      { id: `${key}pressureArea`, title: `${res} ` + '\u539f\u59cb\u53d7\u529b\u9762\u79ef(cm\u00b2)' },
+      { id: `${key}realData`, title: `${res} ` + '\u539f\u59cb\u6570\u636e' },
+      { id: `${key}selectMax`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u6700\u5927\u538b\u5f3a' },
+      { id: `${key}selectMaxCoord`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u6700\u5927\u538b\u5f3a\u5750\u6807' },
+      { id: `${key}selectAver`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u5e73\u5747\u538b\u5f3a' },
+      { id: `${key}selectPress`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u538b\u5f3a\u603b\u548c' },
+      { id: `${key}selectArea`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u53d7\u529b\u9762\u79ef' },
+      { id: `${key}selectData`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u539f\u59cb\u6570\u636e' },
     )
     if (key === 'endi-back' || key === 'endi-sit') {
       handArr.push(
