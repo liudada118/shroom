@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { shallow } from 'zustand/shallow';
 import { useEquipStore } from '../../store/equipStore';
 import { localAddress } from '../../util/constant';
+import { buildFallbackParams } from '../../util/request';
 import PlaybackSpeedMenu from './PlaybackSpeedMenu';
 import PlaybackPlayToggle from './PlaybackPlayToggle';
 
@@ -35,16 +36,24 @@ export default function PlaybackBar(props) {
     const maxIndex = Math.max(0, (Number(dataLength) || 0) - 1);
 
     const handleSliderChange = (index) => {
+        if ((Number(dataLength) || 0) <= 0) {
+            message.error('No playback data found for the selected time');
+            return;
+        }
+
+        const payload = {
+            index,
+        };
+
         axios({
             method: 'post',
             url: `${localAddress}/getDbHistoryIndex`,
-            data: {
-                index,
-            },
+            params: buildFallbackParams(payload),
+            data: payload,
         })
             .then((res) => {
-                if (res.data.message == 'error') {
-                    message.error(res.data.data);
+                if (res.data?.code !== 0) {
+                    message.error(res.data?.message || 'Load playback frame failed');
                 } else {
                     const history = useEquipStore.getState().history;
                     const obj = { ...history, index };
@@ -55,13 +64,18 @@ export default function PlaybackBar(props) {
     };
 
     const handlePlay = () => {
+        if ((Number(dataLength) || 0) <= 0) {
+            message.error('No playback data found for the selected time');
+            return;
+        }
+
         axios({
             method: 'post',
             url: `${localAddress}/getDbHistoryPlay`,
         })
             .then((res) => {
-                if (res.data.message == 'error') {
-                    message.error(res.data.data);
+                if (res.data?.code !== 0) {
+                    message.error(res.data?.message || 'Playback start failed');
                     return;
                 }
                 setDataPlay(false);
@@ -82,12 +96,15 @@ export default function PlaybackBar(props) {
 
     const handleSpeedChange = (nextSpeed) => {
         setSpeed(nextSpeed);
+        const payload = {
+            speed: Number(nextSpeed),
+        };
+
         axios({
             method: 'post',
             url: `${localAddress}/changeDbplaySpeed`,
-            data: {
-                speed: Number(nextSpeed),
-            },
+            params: buildFallbackParams(payload),
+            data: payload,
         }).catch(() => {});
     };
 

@@ -11,6 +11,9 @@ import { isMoreMatrix } from '../assets/util/util'
  * 封装传感器数据的预处理、框选、翻转、统计计算逻辑
  * 从 Test.js 中抽取，消除 sitData / sitDataPlay 之间的重复代码
  */
+
+const divisor = 100 / 3
+
 export function useMatrixData() {
   const sitDataRef = useRef({})
   const disPlayDataRef = useRef({})
@@ -63,7 +66,7 @@ export function useMatrixData() {
             canvasY1: canvasInfo.top, canvasY2: canvasInfo.bottom
           }
           const max = Math.max(width, height)
-          matrixGenBox(matrixObj, canvasObj, max)
+          matrixGenBox(matrixObj, canvasObj, max, config)
         }
       } else {
         removeHistoryBox()
@@ -102,7 +105,7 @@ export function useMatrixData() {
     const ku = kurtosis(arr, mu, sigma)
     const xData = Array.from({ length: 256 }, (_, i) => i)
     const yData = xData.map(x => normalPDF(x, mu, sigma))
-
+    
     const area = selectedArr.filter(a => a > 0).length
     const press = selectedArr.reduce((a, b) => a + b, 0)
 
@@ -122,11 +125,13 @@ export function useMatrixData() {
       data[key].areaArr.shift()
       data[key].areaArr.push(area)
     }
+    // carY 类型曲线数据也需要转换
+    const pressForChart = (fullKey === 'carY-back' || fullKey === 'carY-sit') ? press / (divisor) : press
     if (data[key].pressArr.length < 20) {
-      data[key].pressArr.push(press)
+      data[key].pressArr.push(pressForChart)
     } else {
       data[key].pressArr.shift()
-      data[key].pressArr.push(press)
+      data[key].pressArr.push(pressForChart)
     }
 
     data[key].data.pressTotal = press.toFixed(1)
@@ -147,6 +152,15 @@ export function useMatrixData() {
       data[key].data.pressMax = sitYToX(Math.max(...selectedArr)).toFixed(2)
       data[key].data.pressMin = sitYToX(min || 0).toFixed(2)
       data[key].data.pressAver = sitYToX(press / (area || 1)).toFixed(2)
+    }
+
+    // carY 类型压力转换：ADC值除以(100/3)
+    if (fullKey === 'carY-back' || fullKey === 'carY-sit') {
+
+      const pressTotal = press / divisor
+      data[key].data.pressMax = (Math.max(...selectedArr) / divisor).toFixed(2)
+      data[key].data.pressTotal = pressTotal.toFixed(2)
+      data[key].data.pressAver = (pressTotal / (area || 1)).toFixed(2)
     }
   }
 
@@ -230,6 +244,12 @@ export function useMatrixData() {
       newObj[fullKey] = sitData[fullKey]?.status
     }
     useEquipStore.getState().setEquipStatus(newObj)
+
+    // 检测设备断开：如果有设备offline，将连接状态恢复为idle
+    const hasOffline = Object.values(newObj).some(s => s === 'offline')
+    if (hasOffline && useEquipStore.getState().connectState === 'connected') {
+      useEquipStore.getState().setConnectState('idle')
+    }
 
     const sysType = getSysType()
     if (!arr || !keyArr.some(a => a.includes(sysType))) return

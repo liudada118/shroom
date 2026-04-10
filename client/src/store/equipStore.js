@@ -25,13 +25,14 @@ export const useEquipStore = create((set) => ({
   cop: {},
 
   // 系统配置
-  systemType: '',
+  systemType: 'endi',
   systemTypeArr: [],
   displayType: 'all',
   display: 'point3D',
 
   // 设备状态
   equipStatus: {},
+  connectState: 'idle',  // 'idle' | 'connecting' | 'connected'
 
   // 可视化设置
   settingValue: initialSettings,
@@ -61,6 +62,7 @@ export const useEquipStore = create((set) => ({
   setDisplay: (s) => set({ display: s }),
 
   setEquipStatus: (s) => set({ equipStatus: s }),
+  setConnectState: (s) => set({ connectState: s }),
 
   setSettingValue: (s) => set({ settingValue: s }),
   setSettingValueMax: (s) => set({ settingValueMax: s }),

@@ -13,10 +13,53 @@ import { useDebounce } from '../../hooks/useDebounce'
 import { useEquipStore } from '../../store/equipStore'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import { localAddress } from '../../util/constant'
+import { buildFallbackParams } from '../../util/request'
 import dayjs from 'dayjs'
 import { pageContext } from '../../page/test/Test'
 
 const arr = new Array(9).fill(0)
+
+const getApiErrorMessage = (result, fallback) => {
+    const data = result?.data
+    if (typeof data === 'string' && data.trim()) {
+        return data.trim()
+    }
+    if (data && typeof data === 'object') {
+        if (typeof data.message === 'string' && data.message.trim()) {
+            return data.message.trim()
+        }
+        if (typeof data.error === 'string' && data.error.trim()) {
+            return data.error.trim()
+        }
+    }
+    const apiMessage = result?.message
+    if (typeof apiMessage === 'string' && apiMessage.trim() && apiMessage.trim().toLowerCase() !== 'error') {
+        return apiMessage.trim()
+    }
+    return fallback
+}
+
+const normalizeFolderSelection = (value) => {
+    if (!value) {
+        return ''
+    }
+    if (typeof value === 'string') {
+        return value
+    }
+    if (Array.isArray(value)) {
+        return normalizeFolderSelection(value[0])
+    }
+    if (typeof value === 'object') {
+        return normalizeFolderSelection(
+            value.path ||
+            value.filePath ||
+            value.folderPath ||
+            value.selectedPath ||
+            value.filePaths
+        )
+    }
+    return ''
+}
 
 const ColAndHistory = memo((props) => {
 
@@ -68,6 +111,39 @@ const ColAndHistory = memo((props) => {
     const [uploadFileShow, setUploadFileShow] = useState(false)
 
     const [uploadLoading, setUploadLoading] = useState(false)
+
+    const syncDownloadPathState = (nextPath) => {
+        const normalizedPath = nextPath == null ? '' : String(nextPath)
+        setDownloadPath(normalizedPath)
+        setEditPathValue(normalizedPath)
+        return normalizedPath
+    }
+
+    const persistDownloadPath = async (rawPath, options = {}) => {
+        const { showSuccess = false } = options
+        const nextPath = rawPath == null ? '' : String(rawPath).trim()
+        if (!nextPath) {
+            return ''
+        }
+
+        const payload = { path: nextPath }
+        const res = await axios.post(`${localAddress}/setDownloadPath`, payload, {
+            params: buildFallbackParams(payload)
+        })
+        if (res.data?.code !== 0) {
+            throw new Error(getApiErrorMessage(res.data, t('downloadFailed')))
+        }
+
+        const actualPath = res.data?.data?.path || nextPath
+        syncDownloadPathState(actualPath)
+        setIsEditingPath(false)
+
+        if (showSuccess) {
+            message.success(t('pathUpdated') || '路径已更新')
+        }
+
+        return actualPath
+    }
 
     const handleUpload = () => {
         if (!uploadFileRef.current) {
@@ -142,7 +218,7 @@ const ColAndHistory = memo((props) => {
     useEffect(() => {
         axios.get(`${localAddress}/getDownloadPath`).then((res) => {
             if (res.data?.code === 0) {
-                setDownloadPath(res.data.data.path)
+                syncDownloadPathState(res.data.data.path)
             }
         }).catch(() => {})
     }, [])
@@ -157,18 +233,33 @@ const ColAndHistory = memo((props) => {
         }
     }, [downloadToast])
 
-    const handleSelectFolder = async () => {
+    useEffect(() => {
+        if (showDownloadPathModal) {
+            setEditPathValue(downloadPath || '')
+        }
+    }, [showDownloadPathModal])
+
+    const handleSelectFolderLegacy = async () => {
         // 优先使用 Electron 文件夹选择对话框
         if (window.electronAPI?.selectFolder) {
-            const folder = await window.electronAPI.selectFolder()
+            const folder = normalizeFolderSelection(await window.electronAPI.selectFolder())
             if (folder) {
-                axios.post(`${localAddress}/setDownloadPath`, { path: folder }).then((res) => {
+                try {
+                    const payload = { path: folder }
+                    const res = await axios.post(`${localAddress}/setDownloadPath`, payload, {
+                        params: buildFallbackParams(payload)
+                    })
                     if (res.data?.code === 0) {
-                        setDownloadPath(folder)
+                        // 使用后端返回的实际路径更新输入框
+                        const actualPath = res.data?.data?.path || folder
+                        setDownloadPath(actualPath)
                         setIsEditingPath(false)
-                        message.success(t('pathUpdated'))
+                        message.success(t('pathUpdated') || '路径已更新')
                     }
-                })
+                } catch (e) {
+                    // 即使后端请求失败，也更新前端显示
+                    setDownloadPath(folder)
+                }
             }
         } else {
             // 非 Electron 环境，显示编辑框
@@ -177,9 +268,12 @@ const ColAndHistory = memo((props) => {
         }
     }
 
-    const handleSavePath = () => {
+    const handleSavePathLegacy = () => {
         if (!editPathValue.trim()) return
-        axios.post(`${localAddress}/setDownloadPath`, { path: editPathValue.trim() }).then((res) => {
+        const payload = { path: editPathValue.trim() }
+        axios.post(`${localAddress}/setDownloadPath`, payload, {
+            params: buildFallbackParams(payload)
+        }).then((res) => {
             if (res.data?.code === 0) {
                 setDownloadPath(editPathValue.trim())
                 setIsEditingPath(false)
@@ -188,6 +282,33 @@ const ColAndHistory = memo((props) => {
                 message.error(res.data?.message || t('downloadFailed'))
             }
         })
+    }
+
+    const handleSelectFolder = async () => {
+        if (window.electronAPI?.selectFolder) {
+            const folder = normalizeFolderSelection(await window.electronAPI.selectFolder())
+            if (folder) {
+                try {
+                    await persistDownloadPath(folder, { showSuccess: true })
+                } catch (err) {
+                    syncDownloadPathState(folder)
+                    message.error(err.message || t('downloadFailed'))
+                }
+            }
+            return
+        }
+
+        setIsEditingPath(true)
+        setEditPathValue(downloadPath || '')
+    }
+
+    const handleSavePath = async () => {
+        if (!editPathValue.trim()) return
+        try {
+            await persistDownloadPath(editPathValue, { showSuccess: true })
+        } catch (err) {
+            message.error(err.message || t('downloadFailed'))
+        }
     }
 
     const handleOpenFolder = (folderPathOverride) => {
@@ -200,7 +321,10 @@ const ColAndHistory = memo((props) => {
         if (window.electronAPI?.openPath) {
             window.electronAPI.openPath(targetPath)
         } else {
-            axios.post(`${localAddress}/openFolder`, { folderPath: targetPath }).then((res) => {
+            const payload = { folderPath: targetPath }
+            axios.post(`${localAddress}/openFolder`, payload, {
+                params: buildFallbackParams(payload)
+            }).then((res) => {
                 if (res.data?.code !== 0) {
                     message.error(res.data?.message || '打开文件夹失败')
                 }
@@ -216,7 +340,10 @@ const ColAndHistory = memo((props) => {
         if (window.electronAPI?.openPath) {
             window.electronAPI.openPath(filePath)
         } else {
-            axios.post(`${localAddress}/openFile`, { filePath }).then((res) => {
+            const payload = { filePath }
+            axios.post(`${localAddress}/openFile`, payload, {
+                params: buildFallbackParams(payload)
+            }).then((res) => {
                 if (res.data?.code !== 0) {
                     // 如果打开文件失败，尝试打开所在文件夹
                     const folderPath = filePath.replace(/[\\/][^\\/]+$/, '')
@@ -243,11 +370,32 @@ const ColAndHistory = memo((props) => {
             message.info(t('selectDataFirst'))
             return
         }
+        setEditPathValue(downloadPath || '')
         setShowDownloadPathModal(true)
     }
 
     // 确认下载：关闭路径对话框，显示进度弹窗，执行下载
-    const confirmDownload = () => {
+    const confirmDownload = async () => {
+        const selectedFiles = Array.isArray(selectArr)
+            ? selectArr.map((item) => item == null ? '' : String(item).trim()).filter(Boolean)
+            : []
+
+        if (!selectedFiles.length) {
+            setShowDownloadPathModal(false)
+            message.info(t('selectDataFirst'))
+            return
+        }
+
+        const pendingPath = String(editPathValue || downloadPath || '').trim()
+        if (pendingPath) {
+            try {
+                await persistDownloadPath(pendingPath)
+            } catch (err) {
+                message.error(err.message || t('downloadFailed'))
+                return
+            }
+        }
+
         setShowDownloadPathModal(false)
         setDownloadProgress({ percent: 0, status: 'downloading', files: [] })
 
@@ -259,44 +407,62 @@ const ColAndHistory = memo((props) => {
             setDownloadProgress(prev => prev ? { ...prev, percent: Math.round(fakePercent) } : prev)
         }, 300)
 
+        const payload = {
+            fileArr: selectedFiles,
+        }
+
         axios({
             method: 'post',
             url: `${localAddress}/downlaod`,
-            data: {
-                fileArr: selectArr,
-            }
+            params: buildFallbackParams(payload),
+            data: payload,
         }).then((res) => {
             clearInterval(progressTimer)
             console.log(res)
-            if (res.data.message == 'error') {
+            const result = res.data || {}
+            if (result.code !== 0) {
                 setDownloadProgress({ percent: 100, status: 'error', files: [] })
-                message.info(res.data.data)
+                message.error(getApiErrorMessage(result, t('downloadFailed')))
                 setTimeout(() => setDownloadProgress(null), 2000)
             } else {
-                // 提取所有文件路径
-                const results = res.data.data
+                // 提取所有文件路径（支持单文件 filePath 和多文件 filePaths）
+                const results = Array.isArray(result.data) ? result.data : []
                 const downloadedFiles = []
                 if (Array.isArray(results)) {
                     for (const item of results) {
                         if (item && typeof item === 'object') {
-                            const keys = Object.keys(item)
-                            for (const key of keys) {
-                                if (key === 'filePath' && item[key]) {
-                                    downloadedFiles.push({
-                                        filePath: item[key],
-                                        fileName: item[key].split('/').pop().split('\\').pop()
-                                    })
+                            // 优先处理 filePaths 数组（多矩阵系统分文件导出）
+                            if (Array.isArray(item.filePaths)) {
+                                for (const fp of item.filePaths) {
+                                    if (fp) {
+                                        downloadedFiles.push({
+                                            filePath: fp,
+                                            fileName: fp.split('/').pop().split('\\').pop()
+                                        })
+                                    }
                                 }
+                            } else if (item.filePath) {
+                                // 兼容单文件 filePath
+                                downloadedFiles.push({
+                                    filePath: item.filePath,
+                                    fileName: item.filePath.split('/').pop().split('\\').pop()
+                                })
                             }
                         }
                     }
+                }
+                if (!downloadedFiles.length) {
+                    setDownloadProgress({ percent: 100, status: 'error', files: [] })
+                    message.error(getApiErrorMessage(result, t('downloadFailed')))
+                    setTimeout(() => setDownloadProgress(null), 2000)
+                    return
                 }
                 setDownloadProgress({ percent: 100, status: 'done', files: downloadedFiles })
             }
         }).catch((err) => {
             clearInterval(progressTimer)
             setDownloadProgress({ percent: 100, status: 'error', files: [] })
-            message.error(t('downloadFailed'))
+            message.error(getApiErrorMessage(err?.response?.data, err.message || t('downloadFailed')))
             setTimeout(() => setDownloadProgress(null), 2000)
         })
     }
@@ -308,12 +474,15 @@ const ColAndHistory = memo((props) => {
             return
         }
         if (Onindex == 0) {
+            const payload = {
+                fileArr: selectArr,
+            }
+
             axios({
                 method: 'post',
                 url: `${localAddress}/delete`,
-                data: {
-                    fileArr: selectArr,
-                }
+                params: buildFallbackParams(payload),
+                data: payload,
             }).then((res) => {
                 // console.log(res)
                 let resArr = [...colHistoryArr]
@@ -351,6 +520,20 @@ const ColAndHistory = memo((props) => {
 
     const [dataLength, setDataLength] = useState(10)
     const [currentName, setCurrentName] = useState()
+    const [currentPlaybackKey, setCurrentPlaybackKey] = useState('')
+
+    const getHistoryItemKey = (item) => {
+        if (!item || typeof item !== 'object') return ''
+        if (item.date != null && String(item.date).trim()) return String(item.date).trim()
+        if (item.time != null && String(item.time).trim()) return String(item.time).trim()
+        if (item.name != null && String(item.name).trim()) return String(item.name).trim()
+        return ''
+    }
+
+    const getLocalItemKey = (item) => {
+        if (item == null) return ''
+        return String(item)
+    }
 
     const close = () => {
         axios({
@@ -364,6 +547,7 @@ const ColAndHistory = memo((props) => {
         useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
         useEquipStore.getState().setDataStatus('realtime')
         setCurrentName('')
+        setCurrentPlaybackKey('')
         setOperateStatus('')
         //  const history = useEquipStore.getState().history
         useEquipStore.getState().setHistoryStatus({
@@ -409,6 +593,11 @@ const ColAndHistory = memo((props) => {
         axios({
             method: 'post',
             url: `${localAddress}/upsertRemark`,
+            params: {
+                date: selectedDbDate,
+                alias: changedAlias,
+                remark: changedRemark
+            },
             data: {
                 date: selectedDbDate,
                 alias: changedAlias,
@@ -538,19 +727,23 @@ const ColAndHistory = memo((props) => {
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <Input
-                        value={downloadPath}
-                        onChange={(e) => setDownloadPath(e.target.value)}
-                        onBlur={(e) => {
+                        value={editPathValue}
+                        onChange={(e) => setEditPathValue(e.target.value)}
+                        onBlur={async (e) => {
                             const val = e.target.value.trim()
                             if (val) {
-                                axios.post(`${localAddress}/setDownloadPath`, { path: val }).catch(() => {})
+                                try {
+                                    await persistDownloadPath(val)
+                                } catch (err) {
+                                    message.error(err.message || t('downloadFailed'))
+                                }
                             }
                         }}
                         style={{ flex: 1 }}
                         placeholder={t('inputPath') || '输入存储路径...'}
                     />
                     <Button onClick={handleSelectFolder}>{t('browse') || '浏览'}</Button>
-                    <Button onClick={() => handleOpenFolder()}>{t('open')}</Button>
+                    <Button onClick={() => handleOpenFolder(editPathValue || downloadPath)}>{t('open')}</Button>
                 </div>
                 <div style={{ marginTop: '12px', color: '#999', fontSize: '0.8rem' }}>
                     {t('selectedCount') || '已选择'}: {selectArr.length} {t('items') || '项'}
@@ -577,6 +770,11 @@ const ColAndHistory = memo((props) => {
                     <Button key="close" onClick={() => setDownloadProgress(null)}>{t('close') || '关闭'}</Button>
                 ] : []}
                 closable={downloadProgress?.status !== 'downloading'}
+                onCancel={() => {
+                    setDownloadProgress(null)
+                    setSelectArr([])
+                    setOperateStatus('')
+                }}
                 maskClosable={false}
                 width={480}
             >
@@ -729,9 +927,10 @@ const ColAndHistory = memo((props) => {
                         <div className="playbackItems">
                             {
                                 Onindex == 0 && displayHistoryArr ? displayHistoryArr.map((dbInfo, index) => {
+                                    const historyItemKey = getHistoryItemKey(dbInfo)
 
                                     return (
-                                        <div className={`playbackItem cursor ${currentName === dbInfo.name ? 'playbackItemActive' : ''}`}
+                                        <div key={historyItemKey || `history-${index}`} className={`playbackItem cursor ${currentPlaybackKey === historyItemKey ? 'playbackItemActive' : ''}`}
 
                                             onClick={() => {
                                                 if (operateStatus == 'contrast') {
@@ -779,28 +978,59 @@ const ColAndHistory = memo((props) => {
                                                     }
                                                     setSelectArr(arr)
                                                 } else {
+                                                    const playbackTime = dbInfo && dbInfo.date != null ? String(dbInfo.date).trim() : ''
+                                                    const playbackTimestamp = dbInfo && dbInfo.time != null ? String(dbInfo.time).trim() : ''
+
+                                                    if (!playbackTime && !playbackTimestamp) {
+                                                        message.error('No playback identifier found for the selected item')
+                                                        return
+                                                    }
+
+                                                    const playbackRequest = {
+                                                        time: playbackTime || undefined,
+                                                        date: playbackTime || undefined,
+                                                        timestamp: playbackTimestamp || undefined,
+                                                    }
+
                                                     axios({
                                                         method: 'post',
                                                         url: `${localAddress}/getDbHistory`,
-                                                        data: {
-                                                            time: dbInfo.date,
-                                                        }
+                                                        params: playbackRequest,
+                                                        data: playbackRequest
                                                     }).then((res) => {
                                                         console.log(res)
-                                                        setCurrentName(dbInfo.name)
-                                                        if (res.status == 200) {
-                                                            const { length, areaArr, pressArr } = res.data.data
-                                                            useEquipStore.getState().setDataStatus('replay')
-                                                            setDataLength(length)
-                                                            if (areaArr || pressArr) {
-                                                                useEquipStore.getState().setHistoryChart({
-                                                                    areaArr: areaArr || {},
-                                                                    pressArr: pressArr || {}
-                                                                })
-                                                            }
-                                                            useEquipStore.getState().setStatus(new Array(4096).fill(0))
-                                                            useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
+                                                        const result = res.data || {}
+                                                        const payload = result.data || {}
+                                                        const length = Number(payload.length) || 0
+
+                                                        if (result.code !== 0) {
+                                                            message.error(result.message || 'Load playback failed')
+                                                            return
                                                         }
+
+                                                        if (length <= 0) {
+                                                            message.error(result.message || 'No playback data found for the selected time')
+                                                            return
+                                                        }
+
+                                                        setCurrentName(dbInfo.name)
+                                                        setCurrentPlaybackKey(historyItemKey)
+                                                        useEquipStore.getState().setDataStatus('replay')
+                                                        setDataLength(length)
+                                                        useEquipStore.getState().setHistoryStatus({
+                                                            index: Number(payload.initialIndex) || 0,
+                                                            timestamp: payload.initialTimestamp || ''
+                                                        })
+                                                        if (payload.areaArr || payload.pressArr) {
+                                                            useEquipStore.getState().setHistoryChart({
+                                                                areaArr: payload.areaArr || {},
+                                                                pressArr: payload.pressArr || {}
+                                                            })
+                                                        }
+                                                        useEquipStore.getState().setStatus(new Array(4096).fill(0))
+                                                        useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
+                                                    }).catch((err) => {
+                                                        message.error(err.message || 'Load playback failed')
                                                     })
                                                 }
 
@@ -823,11 +1053,7 @@ const ColAndHistory = memo((props) => {
                                                     <img style={{ transform: selectArr.includes(dbInfo.date) ? 'scale(1.1)' : 'scale(0)' }} src={selected} alt="" />
                                                 </div> : ''}
 
-                                                {currentName === dbInfo.name ?
-                                                    <div className='fs14' style={{ right: 5, top: 5, position: 'absolute', color: '#1890ff', }}>  
-                                                        <i className='iconfont fs14' style={{ zIndex: 2, color: '#1890ff' }}>&#xe60e;</i>
-                                                    </div>
-                                                    : ''}
+
 
                                                 {dbInfo.selected ?
                                                     <div className='fs14' style={{ left: 5, bottom: 5, position: 'absolute', color: '#5CDBD3', }}>
@@ -846,8 +1072,9 @@ const ColAndHistory = memo((props) => {
                                         </div>
                                     )
                                 }) : Onindex == 1 && localArr ? localArr.map((a, index) => {
+                                    const localItemKey = getLocalItemKey(a)
                                     return (
-                                        <div className="playbackItem cursor" onClick={() => {
+                                        <div key={localItemKey || `local-${index}`} className={`playbackItem cursor ${currentPlaybackKey === localItemKey ? 'playbackItemActive' : ''}`} onClick={() => {
                                             if (selectDataArrType.includes(operateStatus)) {
                                                 let arr = [...selectArr]
                                                 if (arr.includes(a)) {
@@ -857,14 +1084,18 @@ const ColAndHistory = memo((props) => {
                                                 }
                                                 setSelectArr(arr)
                                             } else {
+                                                const payload = {
+                                                    fileName: a,
+                                                }
+
                                                 axios({
                                                     method: 'post',
                                                     url: `${localAddress}/getCsvData`,
-                                                    data: {
-                                                        fileName: a,
-                                                    }
+                                                    params: buildFallbackParams(payload),
+                                                    data: payload,
                                                 }).then((res) => {
                                                     setCurrentName(a)
+                                                    setCurrentPlaybackKey(localItemKey)
                                                     console.log(res)
                                                 })
                                             }
@@ -969,13 +1200,16 @@ const ColAndHistory = memo((props) => {
                             }}>csv导入</div> </> :
                             <> <div className='playbackButton cursor' onClick={() => {
 
+                                const payload = {
+                                    left: contrastArr.left.date,
+                                    right: contrastArr.right.date,
+                                }
+
                                 axios({
                                     method: 'post',
                                     url: `${localAddress}/getContrastData`,
-                                    data: {
-                                        left: contrastArr.left.date,
-                                        right: contrastArr.right.date,
-                                    }
+                                    params: buildFallbackParams(payload),
+                                    data: payload,
                                 }).then((res) => {
                                     console.log(res)
                                     // setDisplayStatus()
@@ -1016,16 +1250,14 @@ const ColAndHistory = memo((props) => {
                             onBlur={(e) => {
                                 const val = e.target.value.trim()
                                 if (val) {
-                                    axios.post(`${localAddress}/setDownloadPath`, { path: val }).then((res) => {
-                                        if (res.data?.code === 0) {
-                                            setDownloadPath(val)
-                                        }
-                                    }).catch(() => {})
+                                    persistDownloadPath(val).catch(() => {})
                                 }
                             }}
                             onPressEnter={(e) => {
                                 const val = e.target.value.trim()
                                 if (val) {
+                                    persistDownloadPath(val, { showSuccess: true }).catch(() => {})
+                                    return
                                     axios.post(`${localAddress}/setDownloadPath`, { path: val }).then((res) => {
                                         if (res.data?.code === 0) {
                                             setDownloadPath(val)
