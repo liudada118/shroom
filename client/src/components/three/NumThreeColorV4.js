@@ -5,7 +5,7 @@ import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
-import { jetWhite3 } from '../../assets/util/line';
+// jetWhite3 已统一为 jet 颜色方案，不再引用
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -112,8 +112,8 @@ export default function NumThree(props) {
       const cx = x * cellSize;
       const cy = y * cellSize;
 
-      // ✅ 计算背景颜色（使用与3D统一的颜色映射）
-      const [r, g, b] = jetWhite3(0, value, i);
+      // ✅ 计算背景颜色（与坐垫统一使用 jet 颜色映射）
+      const [r, g, b] = jet(0, value, i);
       ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
@@ -369,10 +369,11 @@ export default function NumThree(props) {
         gauss, color, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
 
-      console.log(color , oldColor)
       if(oldColor != color && oldColor){
+        const settingValueMax = useEquipStore.getState().settingValueMax
+        const max = settingValueMax.color
         console.log('colorChange')
-        const nextMax = Math.max(1, Math.round(color || 22))
+        const nextMax = parseInt(color / max * 255)
         const texture = createDigitSpriteSheetWithJet(nextMax)
         material.uniforms.map.value = texture
         textureMaxRef.current = nextMax
@@ -421,12 +422,14 @@ export default function NumThree(props) {
         uvOffsets[i * 2] = (d % 16) / 16;
         uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
 
-        // 使用与3D统一的颜色映射
-        const colorMax = textureMaxRef.current || 22;
-        const rgb = jetWhite3(0, colorMax, d);
-        colorArray[i * 3 + 0] = rgb[0] / 255;
-        colorArray[i * 3 + 1] = rgb[1] / 255;
-        colorArray[i * 3 + 2] = rgb[2] / 255;
+        // 与坐垫统一的颜色映射
+        const r = d / 255;
+        const g = 0.2;
+        const b = 1.0 - r;
+
+        colorArray[i * 3 + 0] = r;
+        colorArray[i * 3 + 1] = g;
+        colorArray[i * 3 + 2] = b;
 
         geometry.setAttribute("instanceColor", new THREE.InstancedBufferAttribute(colorArray, 3));
         geometry.attributes.instanceColor.needsUpdate = true;
