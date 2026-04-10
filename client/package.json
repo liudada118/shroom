@@ -19,6 +19,7 @@
     "echarts": "^5.6.0",
     "gsap": "^3.13.0",
     "i18next": "^25.2.1",
+    "jqtools2": "file:..",
     "react": "^18.1.0",
     "react-dom": "^18.1.0",
     "react-i18next": "^15.5.2",

@@ -35,6 +35,8 @@ function startApiChild() {
         ...process.env,
         isPackaged: String(isPackaged),
         appPath: app.getAppPath(),
+        RESOURCES_PATH: process.resourcesPath,
+        DEFAULT_DOWNLOAD_PATH: app.getPath('downloads'),
         API_PORT: String(PORTS.api),
         WS_PORT: String(PORTS.ws)
       }
@@ -192,7 +194,7 @@ function startStaticServer() {
 
     // 开发模式和生产模式的 build 目录不同
     const buildDir = isPackaged
-      ? path.join(__dirname, '..', 'build')
+      ? path.join(__dirname, 'build')
       : path.join(__dirname, 'client', 'build')
 
     // 检查 build 目录是否存在

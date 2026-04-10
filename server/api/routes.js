@@ -4,6 +4,7 @@
  */
 const express = require('express')
 const fs = require('fs')
+const path = require('path')
 const HttpResult = require('../HttpResult')
 const constantObj = require('../../util/config')
 const { initDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, changeDbName, changeDbDataName, upsertRemark, getRemark } = require('../../util/db')
@@ -16,6 +17,12 @@ const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed } = requi
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 
 const router = express.Router()
+
+function readSystemConfig() {
+  const configPath = state._configPath || path.join(__dirname, '..', '..', 'config.txt')
+  const config = fs.readFileSync(configPath, 'utf-8')
+  return JSON.parse(decryptStr(config))
+}
 
 // ─── 通用错误处理包装器 ──────────────────────────────────
 function asyncHandler(fn) {
@@ -38,8 +45,7 @@ router.get('/', (req, res) => {
 // ─── 系统管理 ────────────────────────────────────────────
 
 router.get('/getSystem', asyncHandler(async (req, res) => {
-  const config = fs.readFileSync('./config.txt', 'utf-8')
-  const configResult = JSON.parse(decryptStr(config))
+  const configResult = readSystemConfig()
   configResult.value = state.file
 
   state.baudRate = constantObj.baudRateObj[configResult.value] || 1000000
@@ -65,7 +71,7 @@ router.post('/changeSystemType', asyncHandler(async (req, res) => {
   const { db } = initDb(state.file, state._dbPath)
   state.currentDb = db
   broadcast(JSON.stringify({ sitData: {} }))
-  const result = JSON.parse(decryptStr(fs.readFileSync('./config.txt', 'utf-8')))
+  const result = readSystemConfig()
   res.json(new HttpResult(0, { optimalObj: result.optimalObj[state.file], maxObj: result.maxObj[state.file] }, 'success'))
 }))
 
@@ -508,7 +514,7 @@ router.get('/getDownloadPath', (req, res) => {
   if (fs.existsSync(desktopPath)) {
     defaultPath = desktopPath
   } else if (state._isPackaged) {
-    defaultPath = path.resolve('resources/data')
+    defaultPath = state._dataPath || path.resolve('resources/data')
   } else {
     defaultPath = path.resolve(__dirname, '../../data')
   }
@@ -721,7 +727,7 @@ const csvUploadStorage = multer.diskStorage({
     const path = require('path')
     let uploadDir
     if (state._isPackaged) {
-      uploadDir = path.resolve('resources/data/csv')
+      uploadDir = path.join(state._dataPath || path.resolve('resources/data'), 'csv')
     } else {
       uploadDir = path.resolve(__dirname, '../../data/csv')
     }

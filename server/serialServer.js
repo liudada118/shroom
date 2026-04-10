@@ -31,32 +31,37 @@ let WS_PORT = parseInt(process.env.WS_PORT, 10) || DEFAULT_PORTS.ws
 // ─── 环境变量 ────────────────────────────────────────────
 let { isPackaged, appPath } = process.env
 isPackaged = isPackaged === 'true'
+const resourcesRoot = isPackaged
+  ? (process.env.RESOURCES_PATH || (appPath ? path.resolve(appPath, '..') : path.resolve('resources')))
+  : path.join(__dirname, '..')
 
 // ─── 路径配置 ────────────────────────────────────────────
 let dbPath = path.join(__dirname, '..', 'db')
-let csvPath, nameTxt
+let csvPath = path.join(__dirname, '..', 'data')
+const configPath = path.join(__dirname, '..', 'config.txt')
 
 if (isPackaged) {
   if (os.platform() === 'darwin') {
     dbPath = path.join(__dirname, '../../db')
     csvPath = path.join(__dirname, '../../data')
-    nameTxt = path.join(__dirname, '../../config.txt')
   } else {
-    dbPath = 'resources/db'
-    csvPath = 'resources/data'
-    nameTxt = 'resources/config.txt'
+    dbPath = path.join(resourcesRoot, 'db')
+    csvPath = path.join(resourcesRoot, 'data')
   }
 }
 
 // ─── 配置文件读取 ─────────────────────────────────────────
-const config = fs.readFileSync('./config.txt', 'utf-8')
+const config = fs.readFileSync(configPath, 'utf-8')
 const result = JSON.parse(decryptStr(config))
 console.log('[Server] Config loaded:', Object.keys(result))
 
 // ─── 初始化全局状态 ──────────────────────────────────────
 state.file = result.value
 state._dbPath = dbPath
+state._dataPath = csvPath
 state._isPackaged = isPackaged
+state._configPath = configPath
+state._defaultDownloadPath = process.env.DEFAULT_DOWNLOAD_PATH || null
 
 const { db } = initDb(state.file, dbPath)
 state.currentDb = db
