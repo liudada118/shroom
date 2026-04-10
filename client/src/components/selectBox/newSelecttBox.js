@@ -110,7 +110,7 @@ export class BrushManager {
             width: '22px', height: '22px', lineHeight: '20px', textAlign: 'center',
             background: '#ff4444', color: '#fff', borderRadius: '50%',
             fontSize: '14px', fontWeight: 'bold', cursor: 'pointer',
-            zIndex: '10001', border: '2px solid #fff',
+            zIndex: '999', border: '2px solid #fff',
             pointerEvents: 'auto', userSelect: 'none',
         });
         closeBtn.addEventListener('mousedown', (e) => {
@@ -142,7 +142,7 @@ export class BrushManager {
             Object.assign(h.style, {
                 position: 'absolute', width: '10px', height: '10px',
                 background: '#fff', border: '1px solid #ff4444', borderRadius: '2px',
-                cursor, zIndex: '10001', pointerEvents: 'auto',
+                cursor, zIndex: '999', pointerEvents: 'auto',
                 ...pos,
             });
             h.addEventListener('mousedown', (e) => {

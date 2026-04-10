@@ -151,7 +151,7 @@ export function matrixGenBox(matrixObj, canvasArea, max, matrixConfig) {
             width: '22px', height: '22px', lineHeight: '20px', textAlign: 'center',
             background: '#ff4444', color: '#fff', borderRadius: '50%',
             fontSize: '14px', fontWeight: 'bold', cursor: 'pointer',
-            zIndex: '10001', border: '2px solid #fff',
+            zIndex: '999', border: '2px solid #fff',
             pointerEvents: 'auto', userSelect: 'none',
         });
         closeBtn.addEventListener('click', (e) => {
