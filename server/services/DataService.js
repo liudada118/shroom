@@ -21,10 +21,11 @@ function parseData(parserArr, objs, type) {
     const obj = parserArr[key]
     const data = objs[key]
 
+    // 跳过 type 为 null/undefined 的设备，避免产生无效 key
+    if (!data || !data.type) return
+
     if (!obj?.port?.isOpen) {
-      if (data.type) {
-        json[data.type] = { status: 'offline' }
-      }
+      json[data.type] = { status: 'offline' }
       return
     }
 

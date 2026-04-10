@@ -312,7 +312,7 @@ async function dbGetData({ db, params }) {
   const length = rows.length
   // 只解析第一行获取 key 列表
   const firstData = JSON.parse(rows[0].data)
-  const keyArr = Object.keys(firstData)
+  const keyArr = Object.keys(firstData).filter(k => k && k !== 'null' && k !== 'undefined')
 
   const pressValue = {}
   const areaValue = {}
@@ -357,7 +357,8 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       }
 
       const firstData = JSON.parse(rows[0].data)
-      const keyArr = Object.keys(firstData)
+      // 过滤掉无效 key（如 "null"、"undefined"）
+      const keyArr = Object.keys(firstData).filter(k => k && k !== 'null' && k !== 'undefined')
 
       // 预处理 selectJson
       let selectOverride = selectJson
