@@ -10,11 +10,41 @@ const { backYToX, sitYToX } = require("./line");
 
 // ─── 传感器点位配置 ──────────────────────────────────────
 const pointConfig = {
-  'endi-back': { pointWidthDistance: 13, pointHeightDistance: 10 },
-  'endi-sit': { pointWidthDistance: 10, pointHeightDistance: 10 },
-  'carY-back': { pointWidthDistance: 10, pointHeightDistance: 19 },
-  'carY-sit': { pointWidthDistance: 15, pointHeightDistance: 15 },
+  'endi-back': { pointWidthDistance: 13, pointHeightDistance: 10, width: 50, height: 64 },
+  'endi-sit': { pointWidthDistance: 10, pointHeightDistance: 10, width: 46, height: 46 },
+  'carY-back': { pointWidthDistance: 10, pointHeightDistance: 19, width: 32, height: 32 },
+  'carY-sit': { pointWidthDistance: 15, pointHeightDistance: 15, width: 32, height: 32 },
+  'car-back': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
+  'car-sit': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
 };
+
+/**
+ * 将一维数组索引转换为基于传感器真实尺寸的二维坐标字符串
+ * @param {number} index - 一维数组索引
+ * @param {string} key - 传感器 key
+ * @param {object} [selectInfo] - 框选区域信息 { xStart, yStart, selectWidth }
+ * @returns {string} 二维坐标字符串，如 "(130mm, 50mm)"
+ */
+function indexToCoord(index, key, selectInfo) {
+  if (index === '' || index === undefined || index === null || index < 0) return ''
+  const config = pointConfig[key]
+  if (!config) return String(index)
+  const { pointWidthDistance, pointHeightDistance } = config
+  let col, row
+  if (selectInfo) {
+    // 框选区域：索引是在子数组中的位置，需要加上偏移量
+    const { xStart, yStart, selectWidth } = selectInfo
+    col = (index % selectWidth) + xStart
+    row = Math.floor(index / selectWidth) + yStart
+  } else {
+    // 完整矩阵
+    col = index % config.width
+    row = Math.floor(index / config.width)
+  }
+  const x = col * pointWidthDistance
+  const y = row * pointHeightDistance
+  return `(${x}mm, ${y}mm)`
+}
 
 // ─── 工具函数 ────────────────────────────────────────────
 
@@ -439,12 +469,14 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const selectAreaValue = pointInfo ? (selectArea * pointArea / 100) : selectArea
 
           rowEntry[`${key}max`] = max
-          rowEntry[`${key}maxCoord`] = maxIndex
+          rowEntry[`${key}maxCoord`] = indexToCoord(maxIndex, key)
           rowEntry[`${key}aver`] = aver
           rowEntry[`${key}pressureArea`] = pressureAreaValue
           rowEntry[`${key}realData`] = JSON.stringify(data)
           rowEntry[`${key}selectMax`] = selectMax
-          rowEntry[`${key}selectMaxCoord`] = selectMaxIndex
+          const selectWidth = (obj && obj.xEnd && obj.xStart !== undefined) ? (obj.xEnd - obj.xStart) : 0
+          const selectCoordInfo = (obj && selectWidth > 0) ? { xStart: obj.xStart, yStart: obj.yStart, selectWidth } : null
+          rowEntry[`${key}selectMaxCoord`] = indexToCoord(selectMaxIndex, key, selectCoordInfo)
           rowEntry[`${key}selectAver`] = selectAver
           rowEntry[`${key}selectArea`] = selectAreaValue
           rowEntry[`${key}selectData`] = JSON.stringify(selectArr)
