@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { AppstoreOutlined, PlusCircleOutlined, UnorderedListOutlined, SettingOutlined } from '@ant-design/icons';
+import { PlusCircleOutlined, UnorderedListOutlined, SettingOutlined, FileTextOutlined } from '@ant-design/icons';
 import { Menu, Layout } from 'antd';
 import Addequip from './addEquip/Addequip';
 import EquipList from './equipList/EquipList';
 import SystemSetting from './systemSetting/SystemSetting';
+import ChangeLog from './changeLog/ChangeLog';
 
 const { Sider, Content } = Layout;
 
@@ -16,6 +17,7 @@ const items = [
             { key: '0', label: '设备添加', icon: <PlusCircleOutlined /> },
             { key: '1', label: '设备列表', icon: <UnorderedListOutlined /> },
             { key: '2', label: '配置系统', icon: <SettingOutlined /> },
+            { key: '3', label: '更新日志', icon: <FileTextOutlined /> },
         ],
     },
 ];
@@ -23,7 +25,8 @@ const items = [
 const componentArr = {
     0: <Addequip />,
     1: <EquipList />,
-    2: <SystemSetting />
+    2: <SystemSetting />,
+    3: <ChangeLog />
 }
 
 const App = () => {
