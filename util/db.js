@@ -19,17 +19,16 @@ const pointConfig = {
 };
 
 /**
- * 将一维数组索引转换为基于传感器真实尺寸的二维坐标字符串
+ * 将一维数组索引转换为矩阵中的二维点位置坐标
  * @param {number} index - 一维数组索引
  * @param {string} key - 传感器 key
  * @param {object} [selectInfo] - 框选区域信息 { xStart, yStart, selectWidth }
- * @returns {string} 二维坐标字符串，如 "(130mm, 50mm)"
+ * @returns {string} 二维点位置坐标字符串，如 "(2, 3)" 表示第2行第3列（从0开始）
  */
 function indexToCoord(index, key, selectInfo) {
   if (index === '' || index === undefined || index === null || index < 0) return ''
   const config = pointConfig[key]
   if (!config) return String(index)
-  const { pointWidthDistance, pointHeightDistance } = config
   let col, row
   if (selectInfo) {
     // 框选区域：索引是在子数组中的位置，需要加上偏移量
@@ -41,9 +40,7 @@ function indexToCoord(index, key, selectInfo) {
     col = index % config.width
     row = Math.floor(index / config.width)
   }
-  const x = col * pointWidthDistance
-  const y = row * pointHeightDistance
-  return `(${x}mm, ${y}mm)`
+  return `(${row}, ${col})`
 }
 
 // ─── 工具函数 ────────────────────────────────────────────
