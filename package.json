@@ -1,28 +1,27 @@
 {
   "name": "jqtools2",
   "version": "1.0.0",
-  "description": "JQ 压力传感器桌面工具",
+  "description": "JQ",
   "main": "index.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron .",
-    "dev:static": "cross-env USE_STATIC=1 electron .",
-    "build:client": "cd client && npm install && npm run build",
-    "build:win": "npm run build:client && electron-builder -w",
-    "build:mac": "npm run build:client && electron-builder -m",
-    "install:all": "npm install && cd client && npm install",
-    "postinstall": "electron-builder install-app-deps"
+    "start": "node scripts/start-electron.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:renderer": "npm --prefix ../../front-end run build",
+    "copy:renderer": "node scripts/copy-renderer.js",
+    "build": "npm run build:renderer && npm run copy:renderer && electron-builder -w",
+    "build:mac": "npm run build:renderer && npm run copy:renderer && electron-builder -m"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@msgpack/msgpack": "^3.0.0-beta.3",
     "axios": "^1.9.0",
     "cors": "^2.8.5",
     "crypto-js": "^4.2.0",
     "csv-parser": "^3.2.0",
     "csv-writer": "^1.6.0",
+    "electron-updater": "^6.8.3",
     "express": "^5.1.0",
+    "multer": "^2.0.2",
     "serialport": "^13.0.0",
     "sqlite3": "5.1.6",
     "systeminformation": "^5.27.1",
@@ -30,28 +29,46 @@
   },
   "build": {
     "asar": true,
-    "files": [
-      "index.js",
-      "preload.js",
-      "server/**/*",
-      "util/**/*",
-      "config.txt",
-      "logo.ico",
-      "build/**/*",
-      "node_modules/**/*"
+    "asarUnpack": [
+      "**/*.node",
+      "node_modules/sqlite3/**",
+      "node_modules/@mapbox/**",
+      "node_modules/@serialport/**",
+      "node_modules/node-gyp-build/**"
     ],
+    "npmRebuild": false,
     "extraResources": [
       {
-        "from": "db",
-        "to": "db"
+        "from": "python/venv",
+        "to": "python/venv",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
       },
       {
-        "from": "data",
-        "to": "data"
+        "from": "python/app",
+        "to": "python/app",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!**/_tmp_*/**"
+        ]
+      },
+      {
+        "from": "db/init.db",
+        "to": "db/init.db"
+      },
+      {
+        "from": "build",
+        "to": "build"
       }
     ],
     "win": {
       "icon": "./logo",
+      "forceCodeSigning": false,
       "target": [
         {
           "target": "nsis",
@@ -74,6 +91,14 @@
   },
   "devDependencies": {
     "electron": "^31.3.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "playwright": "^1.58.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sqlite3",
+      "@serialport/bindings-cpp",
+      "electron"
+    ]
   }
 }
