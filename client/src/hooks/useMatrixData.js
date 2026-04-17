@@ -250,10 +250,27 @@ export function useMatrixData() {
     }
     useEquipStore.getState().setEquipStatus(newObj)
 
-    // 检测设备断开：如果有设备offline，将连接状态恢复为idle
+    // 检测设备断开：5 秒防抖，持续 offline 才降级连接状态
+    // （避免短暂数据中断误触发断开）
     const hasOffline = Object.values(newObj).some(s => s === 'offline')
-    if (hasOffline && useEquipStore.getState().connectState === 'connected') {
-      useEquipStore.getState().setConnectState('idle')
+    const allOffline = Object.values(newObj).every(s => s === 'offline' || s === undefined)
+    if (allOffline && useEquipStore.getState().connectState === 'connected') {
+      // 所有设备都 offline 时，5 秒后检查是否仍然全部 offline
+      if (!window.__offlineDebounceTimer) {
+        window.__offlineDebounceTimer = setTimeout(() => {
+          const currentStatus = useEquipStore.getState().equipStatus
+          const stillAllOffline = Object.values(currentStatus).every(s => s === 'offline' || s === undefined)
+          if (stillAllOffline && useEquipStore.getState().connectState === 'connected') {
+            console.warn('[MatrixData] All devices offline for 5s, setting connectState to idle')
+            useEquipStore.getState().setConnectState('idle')
+          }
+          window.__offlineDebounceTimer = null
+        }, 5000)
+      }
+    } else if (!allOffline && window.__offlineDebounceTimer) {
+      // 有设备恢复在线，取消降级计时
+      clearTimeout(window.__offlineDebounceTimer)
+      window.__offlineDebounceTimer = null
     }
 
     const sysType = getSysType()

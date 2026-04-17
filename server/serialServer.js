@@ -21,7 +21,7 @@ const { initDb } = require('../util/db')
 // ─── 模块导入 ────────────────────────────────────────────
 const { state } = require('./state')
 const { createWsServer, getHttpServer } = require('./websocket')
-const { startReconnectMonitor, setReconnectCallbacks } = require('./serial/SerialManager')
+// SerialManager: no auto-reconnect, rescan is manual via /rescanPort
 const routes = require('./api/routes')
 
 // ─── Port配置 ────────────────────────────────────────────
@@ -114,7 +114,4 @@ async function startServer() {
 
 startServer()
 
-// ─── 串口断线重连监控 ─────────────────────────────────────
-const { broadcast } = require('./websocket')
-setReconnectCallbacks(broadcast, null)
-startReconnectMonitor()
+// ─── 串口管理（无自动重连，用户手动触发 /rescanPort）─────────

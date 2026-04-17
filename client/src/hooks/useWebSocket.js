@@ -3,16 +3,12 @@ import { wsAddress } from '../util/constant'
 import { decode as msgpackDecode } from '@msgpack/msgpack'
 
 // ─── WS 数据打印开关（通过浏览器控制台切换）────────────────
-// 使用方式：在浏览器控制台输入 window.__WS_DEBUG__ = true 开启打印
-//          输入 window.__WS_DEBUG__ = false 关闭打印
-//          输入 window.__WS_DEBUG_FILTER__ = 'sitData' 只打印指定类型
 if (typeof window !== 'undefined' && window.__WS_DEBUG__ === undefined) {
   window.__WS_DEBUG__ = false
-  window.__WS_DEBUG_FILTER__ = null   // null = 打印全部, 字符串 = 只打印匹配的 key
-  window.__WS_MSG_COUNT__ = 0         // 消息计数器
-  window.__WS_LAST_DATA__ = null      // 最近一条完整消息
+  window.__WS_DEBUG_FILTER__ = null
+  window.__WS_MSG_COUNT__ = 0
+  window.__WS_LAST_DATA__ = null
 
-  // 便捷方法：开启/关闭调试
   window.wsDebugOn = () => { window.__WS_DEBUG__ = true; console.log('[WS Debug] 已开启 WebSocket 数据打印') }
   window.wsDebugOff = () => { window.__WS_DEBUG__ = false; console.log('[WS Debug] 已关闭 WebSocket 数据打印') }
   window.wsDebugFilter = (key) => { window.__WS_DEBUG_FILTER__ = key || null; console.log(`[WS Debug] 过滤器: ${key || '全部'}`) }
@@ -34,29 +30,27 @@ if (typeof window !== 'undefined' && window.__WS_DEBUG__ === undefined) {
  * 解析 WebSocket 消息，自动适配 JSON 和 MessagePack 格式
  */
 function parseMessage(data) {
-  // 二进制数据 → MessagePack 解码
   if (data instanceof ArrayBuffer) {
     if (msgpackDecode) {
       return msgpackDecode(new Uint8Array(data))
     }
-    // 无解码器时尝试当 JSON 文本处理
     const text = new TextDecoder().decode(data)
     return JSON.parse(text)
   }
-  // Blob 不应出现（已设置 binaryType = arraybuffer），但做兜底
   if (data instanceof Blob) {
-    // 同步场景无法处理 Blob，返回空
     console.warn('[WS] 收到 Blob 类型消息，请检查 binaryType 设置')
     return {}
   }
-  // 字符串 → JSON
   return JSON.parse(data)
 }
+
+/** WebSocket 断线后固定 3 秒重连 */
+const WS_RECONNECT_DELAY = 3000
 
 /**
  * WebSocket 连接 Hook
  * 
- * 封装 WebSocket 连接管理、自动重连、消息分发
+ * 封装 WebSocket 连接管理、固定 3 秒自动重连、消息分发
  * 自动适配 JSON 和 MessagePack 两种传输格式
  * 
  * @param {Object} handlers - 消息处理回调
@@ -67,6 +61,12 @@ function parseMessage(data) {
  * @param {Function} handlers.onMacInfo - 设备信息回调 (macInfo)
  * @param {Function} handlers.onIndex - 帧索引回调
  * @param {Function} handlers.onTimestamp - 时间戳回调
+ * @param {Function} handlers.onConnectProgress - 连接进度回调 (connectProgress)
+ * @param {Function} handlers.onConnectResult - 连接结果回调 (connectResult)
+ * @param {Function} handlers.onDeviceUpdate - 设备更新回调 (deviceUpdate)
+ * @param {Function} handlers.onRescanProgress - 重扫进度回调 (rescanProgress)
+ * @param {Function} handlers.onWsOpen - WebSocket 连接成功回调
+ * @param {Function} handlers.onWsClose - WebSocket 断开回调
  */
 export function useWebSocket(handlers = {}) {
   const handlersRef = useRef(handlers)
@@ -75,25 +75,22 @@ export function useWebSocket(handlers = {}) {
   useEffect(() => {
     let ws
     let reconnectTimer
-    let reconnectAttempts = 0
     let shouldReconnect = true
 
     function scheduleReconnect() {
       if (!shouldReconnect) return
-      const delay = Math.min(1000 * (2 ** reconnectAttempts), 10000)
-      reconnectAttempts += 1
       if (reconnectTimer) clearTimeout(reconnectTimer)
-      reconnectTimer = setTimeout(connect, delay)
+      reconnectTimer = setTimeout(connect, WS_RECONNECT_DELAY)
     }
 
     function connect() {
       ws = new WebSocket(wsAddress)
-      // 设置为 arraybuffer 以支持二进制消息
       ws.binaryType = 'arraybuffer'
 
       ws.onopen = () => {
-        reconnectAttempts = 0
         console.info('[WS] 连接成功')
+        const h = handlersRef.current
+        if (h.onWsOpen) h.onWsOpen()
       }
 
       ws.onmessage = (e) => {
@@ -164,6 +161,26 @@ export function useWebSocket(handlers = {}) {
           if (jsonObj.timestamp !== undefined && jsonObj.timestamp !== null && h.onTimestamp) {
             h.onTimestamp(jsonObj.timestamp)
           }
+
+          // ─── 连接进度事件 ──────────────────────────────
+          if (jsonObj.connectProgress && h.onConnectProgress) {
+            h.onConnectProgress(jsonObj.connectProgress)
+          }
+
+          // 连接结果
+          if (jsonObj.connectResult && h.onConnectResult) {
+            h.onConnectResult(jsonObj.connectResult)
+          }
+
+          // 设备更新（MAC 解析后设备类型变更）
+          if (jsonObj.deviceUpdate && h.onDeviceUpdate) {
+            h.onDeviceUpdate(jsonObj.deviceUpdate)
+          }
+
+          // 重扫进度
+          if (jsonObj.rescanProgress && h.onRescanProgress) {
+            h.onRescanProgress(jsonObj.rescanProgress)
+          }
         } catch (err) {
           console.error('[WS] 消息解析失败:', err)
         }
@@ -176,6 +193,9 @@ export function useWebSocket(handlers = {}) {
       }
 
       ws.onclose = () => {
+        console.info('[WS] 连接断开，3 秒后重连...')
+        const h = handlersRef.current
+        if (h.onWsClose) h.onWsClose()
         scheduleReconnect()
       }
     }

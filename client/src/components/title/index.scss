@@ -254,6 +254,49 @@
     pointer-events: none;
 }
 
+.rescanBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 5px;
+    color: #E6A817;
+    border: 1px solid #E6A817;
+    margin-left: 0.5rem;
+    transition: all 0.2s;
+
+    &:hover {
+        background-color: rgba(230, 168, 23, 0.15);
+    }
+
+    &:active {
+        transform: scale(0.92);
+    }
+}
+
+.disconnectBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 5px;
+    color: #FF4D4F;
+    border: 1px solid #FF4D4F;
+    margin-left: 0.4rem;
+    margin-right: 1rem;
+    transition: all 0.2s;
+
+    &:hover {
+        background-color: rgba(255, 77, 79, 0.15);
+    }
+
+    &:active {
+        transform: scale(0.92);
+    }
+}
+
 .unclickButton {
     padding: 0.1rem 0.4rem;
     border: 1px solid #606A76;

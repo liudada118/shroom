@@ -13,7 +13,7 @@ import { buildFallbackParams } from '../../util/request'
 import { useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { Tooltip } from 'antd'
-import { SettingOutlined } from '@ant-design/icons'
+import { SettingOutlined, ReloadOutlined, DisconnectOutlined } from '@ant-design/icons'
 
 
 const Title = memo((props) => {
@@ -21,37 +21,60 @@ const Title = memo((props) => {
 
   const connectState = useEquipStore(s => s.connectState, shallow);
 
+  // ─── 一键连接 ──────────────────────────────────────────
+  // connPort 已合并 MAC 查询，不再需要单独调用 /sendMac
   const connent = () => {
-    // 只有 idle 状态才能点击连接
     if (connectState !== 'idle') return
 
     useEquipStore.getState().setConnectState('connecting')
 
     axios.get(`${localAddress}/connPort`, {}).then((res) => {
-      console.log(res)
-      // connPort 返回后设为已连接
+      console.log('[Connect] connPort result:', res.data)
       useEquipStore.getState().setConnectState('connected')
-    }).catch(() => {
+    }).catch((err) => {
+      console.error('[Connect] connPort failed:', err)
       useEquipStore.getState().setConnectState('idle')
-    })
-    axios.get(`${localAddress}/sendMac`, {}).then((res) => {
-      console.log(res)
     })
   }
 
+  // ─── 重新连接 ──────────────────────────────────────────
+  // 清理死端口 + 僵尸设备 → 重新连接
+  const rescan = () => {
+    if (connectState === 'connecting' || connectState === 'rescanning') return
+
+    useEquipStore.getState().setConnectState('rescanning')
+
+    axios.get(`${localAddress}/rescanPort`, {}).then((res) => {
+      console.log('[Rescan] result:', res.data)
+      useEquipStore.getState().setConnectState('connected')
+    }).catch((err) => {
+      console.error('[Rescan] failed:', err)
+      useEquipStore.getState().setConnectState('idle')
+    })
+  }
+
+  // ─── 断开连接 ──────────────────────────────────────────
+  // 调用后端 stopPort 关闭所有串口，并清空前端状态
+  const disconnect = () => {
+    if (connectState === 'idle') return
+
+    axios.get(`${localAddress}/stopPort`, {}).then((res) => {
+      console.log('[Disconnect] stopPort result:', res.data)
+    }).catch((err) => {
+      console.error('[Disconnect] stopPort failed:', err)
+    })
+
+    // 立即清空前端状态
+    useEquipStore.getState().setConnectState('idle')
+    useEquipStore.getState().setEquipStatus({})
+  }
+
   const pageInfo = useContext(pageContext);
- 
-  // const {systemTypeArr , systemType ,setSystemType} = pageInfo
 
   const systemType = useEquipStore(s => s.systemType, shallow);
   const systemTypeArr = useEquipStore(s => s.systemTypeArr, shallow);
 
-  
-
   const changeSystemType = (e) => {
-    // useEquipStore.getState().setSystemType(e)
-    // useEquipStore.getState().setStatus(new Array(4096).fill(0))
-    // useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
     const payload = {
       system: e,
     }
@@ -80,10 +103,11 @@ const Title = memo((props) => {
 
   const equipStatus = useEquipStore(s => s.equipStatus, shallow);
 
-  // 根据 connectState 决定按钮样式和文本
+  // 根据 connectState 决定主按钮样式和文本
   const getButtonClass = () => {
     switch (connectState) {
       case 'connecting':
+      case 'rescanning':
         return 'connectingPort'
       case 'connected':
         return 'connectedPort'
@@ -96,6 +120,8 @@ const Title = memo((props) => {
     switch (connectState) {
       case 'connecting':
         return t('connecting')
+      case 'rescanning':
+        return '重新连接中...'
       case 'connected':
         return t('connected')
       default:
@@ -109,7 +135,6 @@ const Title = memo((props) => {
   }
 
   return (
-
     <div className='titleContent'>
       <div className="firstTitle">
         <div className="titleLeft">
@@ -120,9 +145,29 @@ const Title = memo((props) => {
             defaultValue={t(systemType)}
             onChange={changeSystemType}
           />
-          <div className={`${getButtonClass()} cursor connectButton`} style={{ marginRight: '3.1rem' }} onClick={() => { connent() }}>
+          {/* 一键连接按钮 */}
+          <div className={`${getButtonClass()} cursor connectButton`} style={{ marginRight: '0.5rem' }} onClick={() => { connent() }}>
             {getButtonText()}
           </div>
+
+          {/* 重新连接按钮（仅在已连接状态显示） */}
+          {connectState === 'connected' && (
+            <Tooltip title="重新连接（清理死端口/僵尸设备后重连）">
+              <div className="rescanBtn cursor" onClick={rescan}>
+                <ReloadOutlined style={{ fontSize: '0.85rem' }} />
+              </div>
+            </Tooltip>
+          )}
+
+          {/* 断开连接按钮（仅在已连接/重扫状态显示） */}
+          {(connectState === 'connected' || connectState === 'rescanning') && (
+            <Tooltip title="断开所有串口连接">
+              <div className="disconnectBtn cursor" onClick={disconnect}>
+                <DisconnectOutlined style={{ fontSize: '0.85rem' }} />
+              </div>
+            </Tooltip>
+          )}
+
           <EquipStatus fileName={systemType} />
         </div>
 
@@ -154,7 +199,6 @@ const Title = memo((props) => {
 
       <SecondTitle />
     </div>
-
   )
 })
 

@@ -9,11 +9,12 @@ const state = {
   baudRate: 1000000,        // 当前波特率
 
   // ─── 串口相关 ────────────────────────────────────────
-  parserArr: {},            // 串口解析器集合 { portPath: { port, parser } }
+  parserArr: {},            // 串口解析器集合 { portPath: { port, parser, baudRate } }
   dataMap: {},              // 串口数据缓存 { portPath: { type, arr, stamp, ... } }
   macInfo: {},              // 设备 MAC 信息
   linkIngPort: [],
-  portHistory: [],            // 端口连接时间顺序 [{ path, connectedAt }]
+  portHistory: [],          // 端口连接时间顺序 [{ path, connectedAt }]
+  lastDataTime: {},         // 每个端口最后收到数据的时间戳 { portPath: timestamp }
 
   // ─── 帧率控制 ────────────────────────────────────────
   HZ: 30,                   // 发送频率
@@ -54,6 +55,7 @@ function resetSerialState() {
   state.dataMap = {}
   state.macInfo = {}
   state.portHistory = []
+  state.lastDataTime = {}
   state.HZ = 30
   state.MaxHZ = undefined
   state.sendDataLength = 0

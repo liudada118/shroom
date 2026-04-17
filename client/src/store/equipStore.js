@@ -32,7 +32,8 @@ export const useEquipStore = create((set) => ({
 
   // 设备状态
   equipStatus: {},
-  connectState: 'idle',  // 'idle' | 'connecting' | 'connected'
+  connectState: 'idle',  // 'idle' | 'connecting' | 'connected' | 'rescanning'
+  macInfo: {},              // 设备 MAC 信息 { portPath: { uniqueId, version } }
 
   // 可视化设置
   settingValue: initialSettings,
@@ -63,6 +64,7 @@ export const useEquipStore = create((set) => ({
 
   setEquipStatus: (s) => set({ equipStatus: s }),
   setConnectState: (s) => set({ connectState: s }),
+  setMacInfo: (s) => set({ macInfo: s }),
 
   setSettingValue: (s) => set({ settingValue: s }),
   setSettingValueMax: (s) => set({ settingValueMax: s }),

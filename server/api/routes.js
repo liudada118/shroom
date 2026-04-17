@@ -12,7 +12,7 @@ const { decryptStr } = require('../../util/aes_ecb')
 const module2 = require('../../util/aes_ecb')
 const { state } = require('../state')
 const { broadcast } = require('../websocket')
-const { connectPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
+const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
 const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed } = require('../services/DataService')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 
@@ -315,6 +315,16 @@ router.get('/getPort', asyncHandler(async (req, res) => {
 router.get('/connPort', asyncHandler(async (req, res) => {
   const port = await connectPort(broadcast, colAndSendData)
   res.json(new HttpResult(0, port, 'Connect success'))
+}))
+
+router.get('/rescanPort', asyncHandler(async (req, res) => {
+  const result = await rescanPort(broadcast, colAndSendData)
+  res.json(new HttpResult(0, result, 'Rescan complete'))
+}))
+
+router.get('/stopPort', asyncHandler(async (req, res) => {
+  await stopPort()
+  res.json(new HttpResult(0, {}, 'All ports stopped'))
 }))
 
 router.get('/sendMac', asyncHandler(async (req, res) => {
