@@ -1,34 +1,40 @@
 import React, { useState, useEffect } from 'react'
-import { Button, Input, Select, Card, message, Tag, Popconfirm, Empty, Tooltip } from 'antd'
-import { PlusOutlined, DeleteOutlined, SaveOutlined, ArrowLeftOutlined, InfoCircleOutlined } from '@ant-design/icons'
+import { Button, Input, message, Tag } from 'antd'
+import { SaveOutlined, ArrowLeftOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import { localAddress } from '../../../util/constant'
 import './MacConfig.scss'
 
 const STORAGE_KEY = 'shroom_mac_config'
 
-// 设备类型选项
-const DEVICE_TYPE_OPTIONS = [
-  { label: '汽车靠背', value: 'endi-back' },
-  { label: '汽车坐垫', value: 'endi-sit' },
-  { label: '汽车Y靠背', value: 'carY-back' },
-  { label: '汽车Y坐垫', value: 'carY-sit' },
-  { label: '手套', value: 'hand' },
-  { label: '床垫', value: 'bed' },
-  { label: '脚垫-靠背', value: 'car-back' },
-  { label: '脚垫-坐垫', value: 'car-sit' },
-]
+/**
+ * 解析输入字符串为设备配置数组
+ * 格式: mac地址:类型,mac地址:类型
+ * 例如: AA:BB:CC:DD:EE:FF:endi-back,11:22:33:44:55:66:endi-sit
+ */
+function parseConfigString(str) {
+  if (!str || !str.trim()) return []
+  const items = str.split(',').map(s => s.trim()).filter(Boolean)
+  const result = []
+  for (const item of items) {
+    // 从最后一个冒号分割（因为 MAC 地址本身含冒号）
+    const lastColon = item.lastIndexOf(':')
+    if (lastColon <= 0) continue
+    const mac = item.substring(0, lastColon).trim()
+    const type = item.substring(lastColon + 1).trim()
+    if (mac && type) {
+      result.push({ mac, type })
+    }
+  }
+  return result
+}
 
-// 设备类型颜色映射
-const TYPE_COLORS = {
-  'endi-back': '#1890ff',
-  'endi-sit': '#52c41a',
-  'carY-back': '#722ed1',
-  'carY-sit': '#eb2f96',
-  'hand': '#fa8c16',
-  'bed': '#13c2c2',
-  'car-back': '#2f54eb',
-  'car-sit': '#a0d911',
+/**
+ * 将设备配置数组转为字符串
+ */
+function configToString(config) {
+  if (!config || !Array.isArray(config) || config.length === 0) return ''
+  return config.map(d => `${d.mac}:${d.type}`).join(',')
 }
 
 /**
@@ -65,71 +71,44 @@ export function hasMacConfig() {
 }
 
 export default function MacConfig({ onBack }) {
-  const [devices, setDevices] = useState([])
+  const [inputValue, setInputValue] = useState('')
+  const [parsed, setParsed] = useState([])
   const [saving, setSaving] = useState(false)
 
   // 初始化：从 localStorage 加载已有配置
   useEffect(() => {
     const config = getMacConfig()
     if (config && config.length > 0) {
-      setDevices(config)
-    } else {
-      // 默认添加两行（靠背 + 坐垫）
-      setDevices([
-        { mac: '', type: 'endi-back', alias: '' },
-        { mac: '', type: 'endi-sit', alias: '' },
-      ])
+      const str = configToString(config)
+      setInputValue(str)
+      setParsed(config)
     }
   }, [])
 
-  // 添加设备
-  const addDevice = () => {
-    setDevices(prev => [...prev, { mac: '', type: 'endi-back', alias: '' }])
-  }
-
-  // 删除设备
-  const removeDevice = (index) => {
-    setDevices(prev => prev.filter((_, i) => i !== index))
-  }
-
-  // 更新设备字段
-  const updateDevice = (index, field, value) => {
-    setDevices(prev => {
-      const next = [...prev]
-      next[index] = { ...next[index], [field]: value }
-      return next
-    })
+  // 输入变化时实时解析
+  const handleInputChange = (e) => {
+    const val = e.target.value
+    setInputValue(val)
+    setParsed(parseConfigString(val))
   }
 
   // 保存配置
   const handleSave = async () => {
-    // 验证
-    const validDevices = devices.filter(d => d.mac.trim())
-    if (validDevices.length === 0) {
-      message.warning('请至少输入一个 MAC 地址')
+    const devices = parseConfigString(inputValue)
+    if (devices.length === 0) {
+      message.warning('请输入有效的 MAC 地址配置')
       return
-    }
-
-    // 检查 MAC 格式（宽松：允许冒号/横线/无分隔）
-    for (let i = 0; i < validDevices.length; i++) {
-      const mac = validDevices[i].mac.trim()
-      if (mac.length < 4) {
-        message.warning(`第 ${i + 1} 行 MAC 地址格式不正确`)
-        return
-      }
     }
 
     setSaving(true)
     try {
       // 1. 保存到 localStorage
-      saveMacConfig(validDevices)
+      saveMacConfig(devices)
 
-      // 2. 同步到后端 serial_cache.json（让后端 resolveDeviceTypeLocal 能用）
+      // 2. 同步到后端 serial_cache.json
       try {
-        // 先清空后端缓存
         await axios.post(`${localAddress}/cache/clear`)
-        // 逐个写入
-        for (const device of validDevices) {
+        for (const device of devices) {
           const deviceClass = device.type.includes('-')
             ? device.type.split('-')[0] === 'endi' ? 'foot' : device.type.split('-')[0]
             : device.type
@@ -137,18 +116,16 @@ export default function MacConfig({ onBack }) {
             mac: device.mac.trim().toUpperCase(),
             type: device.type,
             deviceClass: deviceClass,
-            alias: device.alias || '',
           })
         }
       } catch (err) {
         console.warn('同步到后端缓存失败（不影响本地配置）:', err.message)
       }
 
-      message.success('MAC 地址配置已保存')
+      message.success('配置已保存')
 
-      // 如果有 onBack 回调，保存后自动返回主页
       if (onBack) {
-        setTimeout(() => onBack(), 500)
+        setTimeout(() => onBack(), 400)
       }
     } catch (err) {
       message.error('保存失败: ' + err.message)
@@ -157,150 +134,69 @@ export default function MacConfig({ onBack }) {
     }
   }
 
-  // 获取设备类型的中文标签
-  const getTypeLabel = (type) => {
-    const opt = DEVICE_TYPE_OPTIONS.find(o => o.value === type)
-    return opt ? opt.label : type
-  }
-
   return (
-    <div className="mac-config-page">
-      <div className="mac-config-header">
-        <div className="header-left">
-          {onBack && (
-            <Button
-              type="text"
-              icon={<ArrowLeftOutlined />}
-              onClick={onBack}
-              className="back-btn"
-            >
-              返回
-            </Button>
-          )}
-          <h2>设备 MAC 地址配置</h2>
-        </div>
-        <div className="header-right">
-          <Tooltip title="MAC 地址用于识别传感器设备类型，配置保存在本地">
-            <InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 16, marginRight: 12 }} />
-          </Tooltip>
+    <div className="mac-config-dark">
+      <div className="mac-config-inner">
+        {/* 标题栏 */}
+        <div className="mac-header">
+          <div className="mac-header-left">
+            {onBack && (
+              <Button
+                type="text"
+                icon={<ArrowLeftOutlined style={{ color: '#aaa' }} />}
+                onClick={onBack}
+                className="back-btn"
+              />
+            )}
+            <h2>设备密钥配置</h2>
+          </div>
           <Button
             type="primary"
             icon={<SaveOutlined />}
             onClick={handleSave}
             loading={saving}
+            className="save-btn"
           >
-            保存配置
+            保存
           </Button>
         </div>
-      </div>
 
-      <div className="mac-config-tip">
-        <InfoCircleOutlined style={{ marginRight: 8 }} />
-        请输入传感器设备的 MAC 地址并选择对应的设备类型。配置将保存在本地，连接设备时自动识别。
-      </div>
+        {/* 格式提示 */}
+        <div className="mac-hint">
+          格式：<code>MAC地址:类型,MAC地址:类型</code>
+          <br />
+          示例：<code>AA:BB:CC:DD:EE:FF:endi-back,11:22:33:44:55:66:endi-sit</code>
+          <br />
+          <span className="mac-types">
+            可用类型：endi-back, endi-sit, carY-back, carY-sit, hand, bed, car-back, car-sit
+          </span>
+        </div>
 
-      <div className="mac-config-body">
-        {devices.length === 0 ? (
-          <Empty
-            description="暂无设备配置"
-            style={{ padding: '60px 0' }}
-          >
-            <Button type="primary" icon={<PlusOutlined />} onClick={addDevice}>
-              添加设备
-            </Button>
-          </Empty>
-        ) : (
-          <>
-            <div className="device-list">
-              {devices.map((device, index) => (
-                <Card
-                  key={index}
-                  size="small"
-                  className="device-card"
-                  style={{ borderLeft: `3px solid ${TYPE_COLORS[device.type] || '#d9d9d9'}` }}
-                >
-                  <div className="device-card-row">
-                    <div className="device-index">
-                      <Tag color={TYPE_COLORS[device.type] || '#d9d9d9'}>
-                        {index + 1}
-                      </Tag>
-                    </div>
+        {/* 单输入框 */}
+        <Input.TextArea
+          className="mac-input"
+          value={inputValue}
+          onChange={handleInputChange}
+          placeholder="请输入设备配置，格式：MAC地址:类型,MAC地址:类型"
+          autoSize={{ minRows: 3, maxRows: 8 }}
+          spellCheck={false}
+        />
 
-                    <div className="device-field">
-                      <span className="field-label">MAC 地址</span>
-                      <Input
-                        placeholder="如: AA:BB:CC:DD:EE:FF"
-                        value={device.mac}
-                        onChange={(e) => updateDevice(index, 'mac', e.target.value)}
-                        style={{ width: 220 }}
-                        allowClear
-                      />
-                    </div>
-
-                    <div className="device-field">
-                      <span className="field-label">设备类型</span>
-                      <Select
-                        value={device.type}
-                        onChange={(val) => updateDevice(index, 'type', val)}
-                        options={DEVICE_TYPE_OPTIONS}
-                        style={{ width: 150 }}
-                      />
-                    </div>
-
-                    <div className="device-field">
-                      <span className="field-label">备注</span>
-                      <Input
-                        placeholder="可选"
-                        value={device.alias}
-                        onChange={(e) => updateDevice(index, 'alias', e.target.value)}
-                        style={{ width: 150 }}
-                      />
-                    </div>
-
-                    <Popconfirm
-                      title="确定删除该设备？"
-                      onConfirm={() => removeDevice(index)}
-                      okText="确定"
-                      cancelText="取消"
-                    >
-                      <Button
-                        type="text"
-                        danger
-                        icon={<DeleteOutlined />}
-                        className="delete-btn"
-                      />
-                    </Popconfirm>
-                  </div>
-                </Card>
+        {/* 实时解析预览 */}
+        {parsed.length > 0 && (
+          <div className="mac-preview">
+            <span className="preview-label">已识别 {parsed.length} 个设备：</span>
+            <div className="preview-tags">
+              {parsed.map((d, i) => (
+                <Tag key={i} className="preview-tag">
+                  <span className="tag-type">{d.type}</span>
+                  <span className="tag-mac">{d.mac}</span>
+                </Tag>
               ))}
             </div>
-
-            <Button
-              type="dashed"
-              icon={<PlusOutlined />}
-              onClick={addDevice}
-              className="add-device-btn"
-              block
-            >
-              添加设备
-            </Button>
-          </>
+          </div>
         )}
       </div>
-
-      {/* 已配置设备摘要 */}
-      {devices.filter(d => d.mac.trim()).length > 0 && (
-        <div className="mac-config-summary">
-          <span className="summary-label">已配置 {devices.filter(d => d.mac.trim()).length} 个设备：</span>
-          <div className="summary-tags">
-            {devices.filter(d => d.mac.trim()).map((d, i) => (
-              <Tag key={i} color={TYPE_COLORS[d.type] || '#d9d9d9'}>
-                {getTypeLabel(d.type)} - {d.mac.trim().substring(0, 11)}...
-              </Tag>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

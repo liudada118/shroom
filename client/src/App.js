@@ -298,8 +298,8 @@ function MacConfigFullscreen() {
   return (
     <div className="mac-config-fullscreen">
       <div className="fullscreen-title">
-        <h1>欢迎使用传感器系统</h1>
-        <p>首次使用请先配置设备 MAC 地址</p>
+        <h1>传感器系统</h1>
+        <p>请输入设备密钥以继续</p>
       </div>
       <MacConfig onBack={handleBack} />
     </div>
