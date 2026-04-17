@@ -17,6 +17,7 @@ import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
 import { jetWhite3, lineInterp } from "../../assets/util/line";
 import { getSettingValue, getStatus } from "../../store/equipStore";
+import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -61,6 +62,7 @@ function rotateMatrix(matrix, m, n) {
     return rotatedArray;
 }
 let camera
+let baseCameraDistance = null
 const Canvas =
     memo(React.forwardRef((props, refs) => {
         console.log('renderCanvas')
@@ -96,6 +98,7 @@ const Canvas =
             backGeometry,
             sitGeometry
         let controls;
+        let cleanupZoomSync = () => {};
 
         console.log('Canvas')
 
@@ -217,7 +220,16 @@ const Canvas =
 
             //FlyControls
             controls = new TrackballControls(camera, renderer.domElement);
+            baseCameraDistance = camera.position.distanceTo(controls.target);
+            applyZoomBounds(controls, baseCameraDistance);
             controls.update();
+            cleanupZoomSync();
+            cleanupZoomSync = bindZoomValueSync({
+                camera,
+                controls,
+                baseDistance: baseCameraDistance,
+                onChange: props.changeViewProp,
+            });
             window.addEventListener("resize", onWindowResize);
 
 
@@ -768,7 +780,13 @@ const Canvas =
         }
 
         function changeCamera(value) {
-            if (camera) camera.position.z = -150 * 100 / value;
+            if (!camera || !controls || !baseCameraDistance) return;
+            animateCameraZoom({
+                camera,
+                controls,
+                baseDistance: baseCameraDistance,
+                zoomValue: value,
+            });
         }
 
         useImperativeHandle(refs, () => ({
@@ -790,7 +808,7 @@ const Canvas =
                 // 在这里执行滚动结束后的操作，例如加载更多内容
            
 
-                props.changeViewProp(Math.floor(-150 * 100 / camera.position.z))
+                props.changeViewProp(getZoomValueFromCamera(camera, controls, baseCameraDistance))
                 timer = null; // 重置 timer 变量
 
             }, 400); // 300毫秒为一个示例值
@@ -803,10 +821,9 @@ const Canvas =
             init();
             animate();
 
-            document.addEventListener("wheel", wheel);
             return () => {
                 renderer.setAnimationLoop(null);
-                document.removeEventListener("wheel", wheel)
+                cleanupZoomSync();
                 cleanupThree({ scene, renderer, controls })
             };
         }, []);

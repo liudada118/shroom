@@ -130,6 +130,55 @@ function sanitizeFileNameSegment(value) {
   return sanitized || 'export'
 }
 
+function buildExportRecordName(param) {
+  let value = String(param ?? '').trim()
+  if (isAllDigits(value)) {
+    value = timeStampTo_Date(Number(value))
+  }
+  return sanitizeFileNameSegment(value)
+}
+
+function buildExportFileStem(param, aliasFromDb) {
+  const recordName = buildExportRecordName(param)
+  const aliasName = aliasFromDb ? sanitizeFileNameSegment(aliasFromDb) : ''
+  if (aliasName && aliasName !== recordName) {
+    return `${aliasName}_${recordName}`
+  }
+  return recordName
+}
+
+function buildCsvBaseName(file, key) {
+  const keyText = String(key ?? '').trim()
+  const normalizedFile = sanitizeFileNameSegment(file || 'export')
+  const segments = keyText.split('-').filter(Boolean)
+  const part = segments[segments.length - 1]
+
+  if (part === 'back' || part === 'sit') {
+    const systemPrefix = segments.length > 1 ? segments.slice(0, -1).join('-') : normalizedFile
+    return sanitizeFileNameSegment(`${systemPrefix}-${part}`)
+  }
+
+  if (keyText) {
+    return sanitizeFileNameSegment(keyText)
+  }
+
+  return normalizedFile
+}
+
+function sortExportKeys(keys) {
+  const getRank = (key) => {
+    if (/-back$/.test(key) || key === 'back') return 0
+    if (/-sit$/.test(key) || key === 'sit') return 1
+    return 2
+  }
+
+  return [...keys].sort((a, b) => {
+    const rankDiff = getRank(a) - getRank(b)
+    if (rankDiff !== 0) return rankDiff
+    return String(a).localeCompare(String(b))
+  })
+}
+
 // ─── Promise 包装的 DB 操作 ──────────────────────────────
 
 function dbRun(db, sql, params = []) {
@@ -507,13 +556,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       const remarkRow = await getRemark({ db, params: [param] })
       const aliasFromDb = remarkRow?.alias
 
-      let str = param
-      if (aliasFromDb) {
-        str = String(aliasFromDb)
-      } else if (isAllDigits(str)) {
-        str = timeStampTo_Date(Number(str))
-      }
-      const safeName = sanitizeFileNameSegment(str)
+      const safeName = buildExportFileStem(param, aliasFromDb)
 
       let csvPath
       if (customDownloadPath) {
@@ -576,15 +619,10 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         if (isMultiMatrix) {
           // 多矩阵系统：分别导出 back 和 sit
           // back → carback{name}.csv, sit → carcushion{name}.csv
-          const csvNameMap = {
-            'back': 'carback',
-            'sit': 'carcushion',
-          }
           const filePaths = []
-          for (const key of keyArr) {
-            const part = key.includes('-') ? key.split('-').pop() : key
-            const csvBaseName = csvNameMap[part] || part
-            const csvFilePath = path.join(csvPath, `${csvBaseName}${safeName}.csv`)
+          for (const key of sortExportKeys(keyArr)) {
+            const csvBaseName = buildCsvBaseName(file, key)
+            const csvFilePath = path.join(csvPath, `${csvBaseName}_${safeName}.csv`)
             const headers = buildSingleKeyHeaders(key)
             await writeSingleCsv(csvFilePath, headers, [...csvDataByKey[key]])
             filePaths.push(csvFilePath)
@@ -592,14 +630,9 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           resolve({ [param]: 'success', filePath: filePaths[0], filePaths })
         } else {
           // 单矩阵系统：根据矩阵类型区分文件名
-          const csvNameMap = {
-            'back': 'carback',
-            'sit': 'carcushion',
-          }
           const key = keyArr[0]
-          const part = key.includes('-') ? key.split('-').pop() : key
-          const csvBaseName = csvNameMap[part] || (file === 'endi' ? 'car' : file)
-          const csvFilePath = path.join(csvPath, `${csvBaseName}${safeName}.csv`)
+          const csvBaseName = buildCsvBaseName(file, key)
+          const csvFilePath = path.join(csvPath, `${csvBaseName}_${safeName}.csv`)
           const headers = buildSingleKeyHeaders(key)
           await writeSingleCsv(csvFilePath, headers, [...csvDataByKey[key]])
           resolve({ [param]: 'success', filePath: csvFilePath, filePaths: [csvFilePath] })

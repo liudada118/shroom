@@ -18,6 +18,7 @@ import { pageContext } from "../../page/test/Test";
 import { jetWhite3, lineInterp } from "../../assets/util/line";
 import { getDisplayType, getSettingValue, getStatus } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
+import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -174,9 +175,11 @@ const Canvas =
             backGeometry,
             sitGeometry
         // let controls;
+        let cleanupZoomSync = () => {};
 
         const controls = useRef()
         const camera = useRef()
+        const baseCameraDistanceRef = useRef(null)
 
         console.log('Canvas')
 
@@ -311,7 +314,16 @@ const Canvas =
             controls.current.minDistance = 40;        // 最近距离（对应300%）
             controls.current.maxDistance = 1200;      // 最远距离（对应10%）
             controls.current.dynamicDampingFactor = 0.15; // 阻尼系数，使缩放有惯性过渡
+            baseCameraDistanceRef.current = camera.current.position.distanceTo(controls.current.target)
+            applyZoomBounds(controls.current, baseCameraDistanceRef.current)
             controls.current?.update();
+            cleanupZoomSync();
+            cleanupZoomSync = bindZoomValueSync({
+                camera: camera.current,
+                controls: controls.current,
+                baseDistance: baseCameraDistanceRef.current,
+                onChange: props.changeViewProp,
+            });
             window.addEventListener("resize", onWindowResize);
 
 
@@ -1174,13 +1186,16 @@ const Canvas =
 
         function changeCamera(value) {
             // 限制缩放范围 10%-300%
-            const clampedValue = Math.max(10, Math.min(300, value))
-            if (!camera.current) return
-            const targetZ = -120 * 100 / clampedValue
-            const startZ = camera.current.position.z
+            if (!camera.current || !controls.current || !baseCameraDistanceRef.current) return
+            animateCameraZoom({
+                camera: camera.current,
+                controls: controls.current,
+                baseDistance: baseCameraDistanceRef.current,
+                zoomValue: value,
+            })
+            return
+            /*
             // 平滑过渡动画（200ms）
-            const duration = 200
-            const startTime = performance.now()
             function animateZoom(now) {
                 const elapsed = now - startTime
                 const progress = Math.min(elapsed / duration, 1)
@@ -1191,11 +1206,11 @@ const Canvas =
                     requestAnimationFrame(animateZoom)
                 }
             }
-            requestAnimationFrame(animateZoom)
             // 放大缩小时回到初始位置（整体模式）
-            actionSit('all');
         }
 
+            */
+        }
         useImperativeHandle(refs, () => ({
             changePointRotation: changePointRotation,
             changeCamera,
@@ -1208,6 +1223,14 @@ const Canvas =
         let wheelRAF = null
 
         function wheel(event) {
+            if (wheelRAF) cancelAnimationFrame(wheelRAF)
+            wheelRAF = requestAnimationFrame(() => {
+                if (camera.current && controls.current && baseCameraDistanceRef.current) {
+                    props.changeViewProp(getZoomValueFromCamera(camera.current, controls.current, baseCameraDistanceRef.current))
+                }
+                wheelRAF = null
+            })
+            return
             // 限制 camera.position.z 在 10%-300% 对应的范围内
             const minZ = -120 * 100 / 10   // -1200 (对应10%)
             const maxZ = -120 * 100 / 300  // -40   (对应300%)
@@ -1382,10 +1405,9 @@ const Canvas =
             init();
             animate();
 
-            document.addEventListener("wheel", wheel);
             return () => {
                 renderer.setAnimationLoop(null);
-                document.removeEventListener("wheel", wheel)
+                cleanupZoomSync();
                 if (wheelRAF) cancelAnimationFrame(wheelRAF)
                 cleanupThree({ scene, renderer, controls: controls.current })
             };
