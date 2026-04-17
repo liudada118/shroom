@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { PlusCircleOutlined, UnorderedListOutlined, SettingOutlined, FileTextOutlined } from '@ant-design/icons';
+import { PlusCircleOutlined, UnorderedListOutlined, SettingOutlined, FileTextOutlined, WifiOutlined } from '@ant-design/icons';
 import { Menu, Layout } from 'antd';
 import Addequip from './addEquip/Addequip';
 import EquipList from './equipList/EquipList';
 import SystemSetting from './systemSetting/SystemSetting';
 import ChangeLog from './changeLog/ChangeLog';
+import MacConfig from './macConfig/MacConfig';
 
 const { Sider, Content } = Layout;
 
@@ -18,6 +19,7 @@ const items = [
             { key: '1', label: '设备列表', icon: <UnorderedListOutlined /> },
             { key: '2', label: '配置系统', icon: <SettingOutlined /> },
             { key: '3', label: '更新日志', icon: <FileTextOutlined /> },
+            { key: '4', label: 'MAC地址配置', icon: <WifiOutlined /> },
         ],
     },
 ];
@@ -26,7 +28,8 @@ const componentArr = {
     0: <Addequip />,
     1: <EquipList />,
     2: <SystemSetting />,
-    3: <ChangeLog />
+    3: <ChangeLog />,
+    4: <MacConfig />
 }
 
 const App = () => {

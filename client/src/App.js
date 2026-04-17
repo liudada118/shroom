@@ -1,12 +1,13 @@
 import logo from './logo.svg';
 import './App.css';
-import { HashRouter, Route, Routes } from 'react-router-dom';
+import { HashRouter, Route, Routes, Navigate } from 'react-router-dom';
+import React, { useState, useCallback } from 'react';
 import Test from './page/test/Test';
 import './locale/index'; // 在这里导入
 import i18next from "i18next";
 import Equip from './page/equip/Equip';
 import Data from './page/data/Data';
-// import Addequip from './page/addEquip/Addequip';
+import MacConfig, { hasMacConfig } from './page/equip/macConfig/MacConfig';
 
 i18next.init({
   resources: {
@@ -268,6 +269,43 @@ i18next.init({
   lng: localStorage.getItem('language') ? localStorage.getItem('language') : 'zh',
 });
 
+/**
+ * 路由守卫组件：检查本地是否有 MAC 配置
+ * 没有配置 → 重定向到 /macConfig
+ * 有配置 → 渲染子组件
+ */
+function RequireMacConfig({ children }) {
+  if (!hasMacConfig()) {
+    return <Navigate to="/macConfig" replace />
+  }
+  return children
+}
+
+/**
+ * 全屏 MAC 配置页面（首次启动时展示）
+ */
+function MacConfigFullscreen() {
+  const [configured, setConfigured] = useState(false)
+
+  const handleBack = useCallback(() => {
+    setConfigured(true)
+  }, [])
+
+  if (configured && hasMacConfig()) {
+    return <Navigate to="/" replace />
+  }
+
+  return (
+    <div className="mac-config-fullscreen">
+      <div className="fullscreen-title">
+        <h1>欢迎使用传感器系统</h1>
+        <p>首次使用请先配置设备 MAC 地址</p>
+      </div>
+      <MacConfig onBack={handleBack} />
+    </div>
+  )
+}
+
 function App() {
   return (
     <HashRouter>
@@ -289,13 +327,21 @@ function App() {
           }
         />
 
-
+        <Route
+          path="/macConfig"
+          exact
+          element={
+            <MacConfigFullscreen />
+          }
+        />
 
         <Route
           exact
           path="/"
           element={
-            <Test i18n={i18next} />
+            <RequireMacConfig>
+              <Test i18n={i18next} />
+            </RequireMacConfig>
           }
         />
       </Routes>

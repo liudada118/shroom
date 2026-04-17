@@ -52,9 +52,29 @@
 
         .titleRight {
             display: flex;
+            align-items: center;
+            gap: 0.8rem;
 
             .systemSelect {
                 margin-right: 1.6rem;
+            }
+
+            .settingBtn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 2rem;
+                height: 2rem;
+                border-radius: 6px;
+                transition: background-color 0.2s;
+
+                &:hover {
+                    background-color: rgba(255, 255, 255, 0.1);
+                }
+
+                &:active {
+                    transform: scale(0.92);
+                }
             }
         }
 

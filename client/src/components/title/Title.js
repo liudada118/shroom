@@ -12,6 +12,8 @@ import { systemConfig, localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import { useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
+import { Tooltip } from 'antd'
+import { SettingOutlined } from '@ant-design/icons'
 
 
 const Title = memo((props) => {
@@ -101,6 +103,11 @@ const Title = memo((props) => {
     }
   }
 
+  // 跳转到 MAC 地址配置页面
+  const goToMacConfig = () => {
+    window.location.hash = '#/macConfig'
+  }
+
   return (
 
     <div className='titleContent'>
@@ -120,9 +127,11 @@ const Title = memo((props) => {
         </div>
 
         <div className="titleRight">
-          {/* <div className="systemSelect cursor">
-          中文
-        </div> */}
+          <Tooltip title="设备 MAC 地址配置">
+            <div className="settingBtn cursor" onClick={goToMacConfig}>
+              <SettingOutlined style={{ fontSize: '1.1rem', color: '#E6EBF0' }} />
+            </div>
+          </Tooltip>
           <Select defaultValue='中文' options={[
             {
               label: '中文',
@@ -140,14 +149,6 @@ const Title = memo((props) => {
             }}
 
           />
-          {/* <div className="loginOut">
-            <div className="loginOutText">
-              退出
-            </div>
-            <div className="loginOutImg">
-
-            </div>
-          </div> */}
         </div>
       </div>
 

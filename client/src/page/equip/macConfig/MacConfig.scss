@@ -1,0 +1,187 @@
+.mac-config-page {
+  padding: 24px;
+  max-width: 900px;
+  margin: 0 auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.mac-config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+      color: #262626;
+    }
+
+    .back-btn {
+      color: #595959;
+      padding: 4px 8px;
+
+      &:hover {
+        color: #1890ff;
+      }
+    }
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+  }
+}
+
+.mac-config-tip {
+  background: #e6f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: 6px;
+  padding: 10px 16px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: #096dd9;
+  display: flex;
+  align-items: center;
+}
+
+.mac-config-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.device-card {
+  transition: box-shadow 0.2s, border-color 0.2s;
+
+  &:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .device-card-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .device-index {
+    min-width: 32px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .device-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .field-label {
+      font-size: 13px;
+      color: #8c8c8c;
+      white-space: nowrap;
+      min-width: 56px;
+    }
+  }
+
+  .delete-btn {
+    margin-left: auto;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+
+    &:hover {
+      opacity: 1;
+    }
+  }
+}
+
+.add-device-btn {
+  margin-top: 4px;
+  border-color: #d9d9d9;
+  color: #8c8c8c;
+  height: 40px;
+
+  &:hover {
+    border-color: #1890ff;
+    color: #1890ff;
+  }
+}
+
+.mac-config-summary {
+  margin-top: 20px;
+  padding: 12px 16px;
+  background: #fafafa;
+  border-radius: 6px;
+  border: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+
+  .summary-label {
+    font-size: 13px;
+    color: #595959;
+    white-space: nowrap;
+  }
+
+  .summary-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}
+
+/* 全屏模式（从 App.js 直接渲染时） */
+.mac-config-fullscreen {
+  min-height: 100vh;
+  background: #f5f7fa;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+
+  .mac-config-page {
+    width: 100%;
+    max-width: 900px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+    padding: 32px;
+    min-height: 500px;
+  }
+
+  .fullscreen-title {
+    text-align: center;
+    margin-bottom: 24px;
+
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      color: #262626;
+      margin: 0 0 8px 0;
+    }
+
+    p {
+      color: #8c8c8c;
+      font-size: 14px;
+      margin: 0;
+    }
+  }
+}
