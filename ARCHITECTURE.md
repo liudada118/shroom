@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-03-12 10:30
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-04-17 14:40
 
 ## 1. 项目概述
 
@@ -39,14 +39,14 @@ shroom/
 ├── genJqtoolsConfig.js         # 配置生成工具
 ├── package.json
 ├── server/                     # 后端服务（模块化）
-│   ├── serialServer.js         # 服务入口（~90 行）
-│   ├── state.js                # 全局状态管理（~74 行）
+│   ├── serialServer.js         # 服务入口（~118 行）
+│   ├── state.js                # 全局状态管理（含 lastDataTime/rescanLock）
 │   ├── api/
 │   │   └── routes.js           # Express REST API 路由（~373 行）
 │   ├── websocket/
 │   │   └── index.js            # WebSocket 服务（~80 行）
 │   ├── serial/
-│   │   └── SerialManager.js    # 串口管理（~384 行）
+│   │   └── SerialManager.js    # 串口管理（含 rescanPort/僵尸检测/帧验证）
 │   ├── services/
 │   │   └── DataService.js      # 数据采集/回放/导出（~201 行）
 │   ├── equipMap.js             # 设备映射配置
@@ -56,6 +56,7 @@ shroom/
 │   ├── db.js                   # SQLite 数据库操作
 │   ├── logger.js               # 统一日志模块
 │   ├── config.js               # 加密配置读写
+│   ├── serialCache.js          # MAC→设备类型本地缓存（serial_cache.json）
 │   ├── line.js                 # 数据转换工具
 │   ├── aes_ecb.js              # AES-ECB 加密
 │   ├── parseData.js            # 数据解析
@@ -69,14 +70,15 @@ shroom/
 │   │   ├── page/
 │   │   │   ├── test/Test.js    # 主测试页面（272 行）
 │   │   │   ├── data/Data.js    # 数据页面
-│   │   │   └── equip/Equip.js  # 设备管理页面
+│   │   │   ├── equip/Equip.js  # 设备管理页面
+│   │   │   └── equip/macConfig/MacConfig.js # MAC 地址配置页面
 │   │   ├── hooks/
 │   │   │   ├── useWebSocket.js # WebSocket 连接管理 Hook
 │   │   │   ├── useMatrixData.js# 矩阵数据处理 Hook
 │   │   │   ├── useWindowsize.js# 窗口尺寸 Hook
 │   │   │   └── useDebounce.js  # 防抖 Hook
 │   │   ├── store/
-│   │   │   └── equipStore.js   # zustand 状态仓库
+│   │   │   └── equipStore.js   # zustand 状态仓库（含 macInfo/rescanning 状态）
 │   │   ├── components/
 │   │   │   ├── three/          # Three.js 3D 可视化组件（14 个）
 │   │   │   ├── chartsAside/    # ECharts 图表侧边栏
@@ -184,8 +186,10 @@ graph TD
 | `POST` | `/selectSystem` | 选择系统类型 |
 | `POST` | `/changeSystemType` | 切换系统类型 |
 | `GET` | `/getPort` | 获取可用串口列表 |
-| `GET` | `/connPort` | 连接指定串口 |
-| `GET` | `/sendMac` | 发送 MAC 地址绑定 |
+| `GET` | `/connPort` | 一键连接（波特率探测+连接+MAC识别一体化） |
+| `GET` | `/rescanPort` | 重新连接（清理死端口/僵尸设备后重连） |
+| `GET` | `/stopPort` | 断开所有串口连接 |
+| `GET` | `/sendMac` | 发送 MAC 地址绑定（保留兼容） |
 | `POST` | `/startCol` | 开始数据采集 |
 | `GET` | `/endCol` | 结束数据采集 |
 | `GET` | `/getColHistory` | 获取采集历史列表 |
@@ -261,6 +265,9 @@ graph TD
 | 2026-03-09 | 3D 边缘外框 | 坐垫/靠背单独模式下显示有效识别范围边缘外框（青色 LineLoop） |
 | 2026-03-09 | 删除编辑图标 | 历史数据面板中删除重命名图标 |
 | 2026-03-09 | 版本号 V0.0.3 | 新增临时软件版本号，显示在底部工具栏右侧 |
+| 2026-04-17 | MAC 地址本地配置 | 新增 MacConfig 页面（黑色主题单输入框），MAC→类型映射持久化到 serial_cache.json，启动自动检测，右上角设置按钮跳转 |
+| 2026-04-17 | 3D 缩放等比例优化 | 缩放改为等比例（×1.1/÷1.1），范围 10%~300%，消除阶梯跳跃卡顿 |
+| 2026-04-17 | 连接逻辑全面优化 | 一键连接合并 connPort+sendMac；新增 rescanPort（清理死端口+僵尸设备+重连）；新增 stopPort（断开所有串口）；波特率帧长度双重验证；连接重试 3 次；前端重连/断开按钮；5 秒防抖 offline 检测 |
 
 ## 9. 更新日志
 
@@ -298,6 +305,9 @@ graph TD
 | 2026-03-10 23:32 | all | 新增功能 | 框选功能添加传感点数范围校验：初始 X+长度不超过横向点数，初始 Y+宽度不超过纵向点数，超出时 message.warning 提示 |
 | 2026-03-10 23:54 | all | 优化重构 | 3D场景放大缩小功能优化：TrackballControls 配置缩放参数、滚轮实时更新百分比、+/- 按钮智能步长、缩放平滑动画 |
 | 2026-03-12 10:30 | serial | 修复缺陷 | 修复串口循环断开重连问题：移除 MAX_PORT_DATA_KEEP=2 限制，允许所有设备同时连接；重连监控增加 portHistory 检查防止重复检测；stopPort 完整清理状态；同端口重连后重新绑定数据处理器 |
+| 2026-04-17 14:00 | ld | 新增功能 | MAC 地址配置改为本地存储：新增 MacConfig.js 黑色主题单输入框配置页面，数据持久化到 serial_cache.json（不依赖 localStorage），启动时自动检测配置，右上角设置按钮 |
+| 2026-04-17 14:20 | ld | 优化重构 | 3D 模型缩放优化：等比例缩放（乘/除 1.1），范围限制 10%~300%，移除阶梯步长，TrackballControls 配置同步 |
+| 2026-04-17 14:40 | ld | 优化重构 | 连接逻辑全面优化：波特率帧长度双重验证、连接重试 3 次（500ms 间隔）、僵尸检测（5s 无数据）、rescanPort 手动重连、移除自动重连监控、前端断开/重连按钮、5 秒防抖 offline 检测、WS 固定 3 秒重连 |
 
 *变更类型：`新增功能` / `优化重构` / `修复缺陷` / `配置变更` / `文档更新` / `依赖升级` / `初始化`*
 
