@@ -308,8 +308,8 @@ const Canvas =
             controls.current.zoomSpeed = 0.8;        // 缩放灵敏度（默认1.2，降低使滚轮更平滑）
             controls.current.rotateSpeed = 2.0;      // 旋转灵敏度
             controls.current.panSpeed = 0.8;          // 平移灵敏度
-            controls.current.minDistance = 12;        // 最近距离（对应约1000%）
-            controls.current.maxDistance = 1200;      // 最远距离（对应约10%）
+            controls.current.minDistance = 40;        // 最近距离（对应300%）
+            controls.current.maxDistance = 1200;      // 最远距离（对应10%）
             controls.current.dynamicDampingFactor = 0.15; // 阻尼系数，使缩放有惯性过渡
             controls.current?.update();
             window.addEventListener("resize", onWindowResize);
@@ -1173,8 +1173,8 @@ const Canvas =
         }
 
         function changeCamera(value) {
-            // 限制缩放范围 10%-1000%
-            const clampedValue = Math.max(10, Math.min(1000, value))
+            // 限制缩放范围 10%-300%
+            const clampedValue = Math.max(10, Math.min(300, value))
             if (!camera.current) return
             const targetZ = -120 * 100 / clampedValue
             const startZ = camera.current.position.z
@@ -1208,9 +1208,9 @@ const Canvas =
         let wheelRAF = null
 
         function wheel(event) {
-            // 限制 camera.position.z 在 10%-1000% 对应的范围内
+            // 限制 camera.position.z 在 10%-300% 对应的范围内
             const minZ = -120 * 100 / 10   // -1200 (对应10%)
-            const maxZ = -120 * 100 / 1000 // -12   (对应1000%)
+            const maxZ = -120 * 100 / 300  // -40   (对应300%)
             if (camera.current) {
                 camera.current.position.z = Math.max(minZ, Math.min(maxZ, camera.current.position.z))
             }
@@ -1220,7 +1220,7 @@ const Canvas =
             wheelRAF = requestAnimationFrame(() => {
                 if (camera.current) {
                     let zoomValue = Math.round(-120 * 100 / camera.current.position.z)
-                    zoomValue = Math.max(10, Math.min(1000, zoomValue))
+                    zoomValue = Math.max(10, Math.min(300, zoomValue))
                     props.changeViewProp(zoomValue)
                 }
                 wheelRAF = null

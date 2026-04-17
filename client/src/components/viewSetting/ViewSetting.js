@@ -46,22 +46,15 @@ const ViewSetting = (props) => {
 
 
 
-    // 动态步长计算：值越小步长越小，值越大步长越大，缩放更均匀
-    const getZoomStep = (value) => {
-        if (value <= 20) return 2
-        if (value <= 50) return 5
-        if (value <= 100) return 10
-        if (value <= 200) return 20
-        if (value <= 500) return 50
-        return 100
-    }
+    // 等比例缩放：每次按固定比例（约10%）缩放，范围 10%~300%
+    const ZOOM_MIN = 10
+    const ZOOM_MAX = 300
+    const ZOOM_RATIO = 1.1  // 每次缩放 10%
 
     const subShow = () => {
         if (display == 'point3D') {
-            const step = getZoomStep(showProp)
-            // 对齐到步长的整数倍，避免出现奇怪的数字
-            let newVal = Math.floor((showProp - 1) / step) * step
-            newVal = Math.max(10, newVal)
+            let newVal = Math.round(showProp / ZOOM_RATIO)
+            newVal = Math.max(ZOOM_MIN, newVal)
             if (newVal !== showProp) {
                 setShowProp(newVal)
                 props.three?.current?.changeCamera(newVal)
@@ -71,10 +64,8 @@ const ViewSetting = (props) => {
 
     const addShow = () => {
         if (display == 'point3D') {
-            const step = getZoomStep(showProp)
-            // 对齐到步长的整数倍
-            let newVal = Math.ceil((showProp + 1) / step) * step
-            newVal = Math.min(1000, newVal)
+            let newVal = Math.round(showProp * ZOOM_RATIO)
+            newVal = Math.min(ZOOM_MAX, newVal)
             if (newVal !== showProp) {
                 setShowProp(newVal)
                 props.three?.current?.changeCamera(newVal)
