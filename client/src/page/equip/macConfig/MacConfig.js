@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { Button, Input, message, Tag } from 'antd'
+import { Button, Input, message, Tag, Spin } from 'antd'
 import { SaveOutlined, ArrowLeftOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import { localAddress } from '../../../util/constant'
 import './MacConfig.scss'
-
-const STORAGE_KEY = 'shroom_mac_config'
 
 /**
  * 解析输入字符串为设备配置数组
@@ -39,43 +37,40 @@ function configToString(config) {
 }
 
 /**
- * 从 localStorage 读取 MAC 配置
+ * 从后端 serial_cache.json 读取 MAC 配置
+ * @returns {Promise<Array|null>} 设备配置数组或 null
  */
-export function getMacConfig() {
+export async function getMacConfig() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const config = JSON.parse(raw)
-      if (Array.isArray(config) && config.length > 0) {
-        return config
-      }
+    const res = await axios.get(`${localAddress}/cache/devices`, { timeout: 3000 })
+    const devices = res.data?.data || {}
+    const entries = Object.entries(devices)
+    if (entries.length > 0) {
+      return entries.map(([mac, info]) => ({
+        mac,
+        type: info.type || ''
+      }))
     }
   } catch (e) {
-    // ignore
+    console.warn('[MacConfig] 读取后端缓存失败:', e.message)
   }
   return null
 }
 
 /**
- * 保存 MAC 配置到 localStorage
+ * 检查后端 serial_cache.json 是否有有效的 MAC 配置
+ * @returns {Promise<boolean>}
  */
-export function saveMacConfig(config) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
-}
-
-/**
- * 检查是否有有效的 MAC 配置
- */
-export function hasMacConfig() {
-  const config = getMacConfig()
+export async function hasMacConfig() {
+  const config = await getMacConfig()
   return config !== null && config.length > 0
 }
 
 /**
- * 同步 MAC 配置到后端 serial_cache.json
+ * 保存 MAC 配置到后端 serial_cache.json
  * 带重试机制，最多重试 2 次
  */
-async function syncToBackend(devices, retries = 2) {
+async function saveToBackend(devices, retries = 2) {
   let lastErr = null
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -107,7 +102,7 @@ async function syncToBackend(devices, retries = 2) {
       const cachedCount = Object.keys(cachedDevices).length
 
       if (cachedCount >= devices.length) {
-        console.log(`[MacConfig] 后端缓存同步成功，已写入 ${cachedCount} 个设备`)
+        console.log(`[MacConfig] 后端缓存写入成功，已写入 ${cachedCount} 个设备`)
         return { success: true, count: cachedCount }
       } else {
         console.warn(`[MacConfig] 后端缓存验证不一致：期望 ${devices.length}，实际 ${cachedCount}`)
@@ -115,9 +110,8 @@ async function syncToBackend(devices, retries = 2) {
       }
     } catch (err) {
       lastErr = err
-      console.warn(`[MacConfig] 后端同步第 ${attempt + 1} 次失败:`, err.message)
+      console.warn(`[MacConfig] 后端写入第 ${attempt + 1} 次失败:`, err.message)
       if (attempt < retries) {
-        // 等待 500ms 后重试
         await new Promise(r => setTimeout(r, 500))
       }
     }
@@ -129,16 +123,29 @@ export default function MacConfig({ onBack }) {
   const [inputValue, setInputValue] = useState('')
   const [parsed, setParsed] = useState([])
   const [saving, setSaving] = useState(false)
-  const [syncStatus, setSyncStatus] = useState(null) // null | 'success' | 'local-only'
+  const [loading, setLoading] = useState(true)
+  const [syncStatus, setSyncStatus] = useState(null) // null | 'success' | 'error'
 
-  // 初始化：从 localStorage 加载已有配置
+  // 初始化：从后端 serial_cache.json 加载已有配置
   useEffect(() => {
-    const config = getMacConfig()
-    if (config && config.length > 0) {
-      const str = configToString(config)
-      setInputValue(str)
-      setParsed(config)
+    let cancelled = false
+    async function loadConfig() {
+      setLoading(true)
+      try {
+        const config = await getMacConfig()
+        if (!cancelled && config && config.length > 0) {
+          const str = configToString(config)
+          setInputValue(str)
+          setParsed(config)
+        }
+      } catch (e) {
+        console.warn('[MacConfig] 加载配置失败:', e.message)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
+    loadConfig()
+    return () => { cancelled = true }
   }, [])
 
   // 输入变化时实时解析
@@ -149,7 +156,7 @@ export default function MacConfig({ onBack }) {
     setSyncStatus(null)
   }
 
-  // 保存配置
+  // 保存配置到后端 serial_cache.json
   const handleSave = async () => {
     const devices = parseConfigString(inputValue)
     if (devices.length === 0) {
@@ -160,19 +167,15 @@ export default function MacConfig({ onBack }) {
     setSaving(true)
     setSyncStatus(null)
     try {
-      // 1. 保存到 localStorage
-      saveMacConfig(devices)
-
-      // 2. 同步到后端 serial_cache.json（带重试和验证）
-      const result = await syncToBackend(devices)
+      const result = await saveToBackend(devices)
 
       if (result.success) {
-        message.success(`配置已保存，${result.count} 个设备已同步到本地缓存`)
+        message.success(`配置已保存，${result.count} 个设备已写入本地缓存`)
         setSyncStatus('success')
       } else {
-        message.warning('配置已保存到浏览器，但同步到后端缓存失败（后端服务可能未启动），连接设备后将自动重试')
-        setSyncStatus('local-only')
-        console.error('[MacConfig] 后端同步失败:', result.error?.message)
+        message.error('保存失败：' + (result.error?.message || '未知错误'))
+        setSyncStatus('error')
+        return
       }
 
       if (onBack) {
@@ -180,6 +183,7 @@ export default function MacConfig({ onBack }) {
       }
     } catch (err) {
       message.error('保存失败: ' + err.message)
+      setSyncStatus('error')
     } finally {
       setSaving(false)
     }
@@ -224,14 +228,20 @@ export default function MacConfig({ onBack }) {
         </div>
 
         {/* 单输入框 */}
-        <Input.TextArea
-          className="mac-input"
-          value={inputValue}
-          onChange={handleInputChange}
-          placeholder="请输入设备配置，格式：MAC地址:类型,MAC地址:类型"
-          autoSize={{ minRows: 3, maxRows: 8 }}
-          spellCheck={false}
-        />
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '2rem' }}>
+            <Spin tip="加载配置中..." />
+          </div>
+        ) : (
+          <Input.TextArea
+            className="mac-input"
+            value={inputValue}
+            onChange={handleInputChange}
+            placeholder="请输入设备配置，格式：MAC地址:类型,MAC地址:类型"
+            autoSize={{ minRows: 3, maxRows: 8 }}
+            spellCheck={false}
+          />
+        )}
 
         {/* 实时解析预览 */}
         {parsed.length > 0 && (
@@ -250,10 +260,10 @@ export default function MacConfig({ onBack }) {
 
         {/* 同步状态提示 */}
         {syncStatus === 'success' && (
-          <div className="mac-sync-status success">已成功同步到本地缓存文件</div>
+          <div className="mac-sync-status success">已成功写入本地缓存文件 (serial_cache.json)</div>
         )}
-        {syncStatus === 'local-only' && (
-          <div className="mac-sync-status warning">仅保存到浏览器，后端服务未响应，启动应用后将自动同步</div>
+        {syncStatus === 'error' && (
+          <div className="mac-sync-status error">写入失败，请确认后端服务已启动</div>
         )}
       </div>
     </div>

@@ -7,9 +7,7 @@ import './locale/index'; // 在这里导入
 import i18next from "i18next";
 import Equip from './page/equip/Equip';
 import Data from './page/data/Data';
-import MacConfig, { hasMacConfig, getMacConfig } from './page/equip/macConfig/MacConfig';
-import axios from 'axios';
-import { localAddress } from './util/constant';
+import MacConfig, { hasMacConfig } from './page/equip/macConfig/MacConfig';
 
 i18next.init({
   resources: {
@@ -272,62 +270,56 @@ i18next.init({
 });
 
 /**
- * 路由守卫组件：检查本地是否有 MAC 配置
+ * 路由守卫组件：异步检查后端 serial_cache.json 是否有 MAC 配置
  * 没有配置 → 重定向到 /macConfig
- * 有配置 → 渲染子组件，并自动同步 localStorage 到后端缓存
+ * 有配置 → 渲染子组件
  */
 function RequireMacConfig({ children }) {
+  const [checking, setChecking] = useState(true)
+  const [hasConfig, setHasConfig] = useState(false)
+
   useEffect(() => {
-    // 应用启动时，自动将 localStorage 中的 MAC 配置同步到后端 serial_cache.json
-    const config = getMacConfig()
-    if (config && config.length > 0) {
-      syncLocalConfigToBackend(config)
+    let cancelled = false
+    async function check() {
+      try {
+        const result = await hasMacConfig()
+        if (!cancelled) {
+          setHasConfig(result)
+          setChecking(false)
+        }
+      } catch (e) {
+        console.warn('[RequireMacConfig] 检查失败:', e.message)
+        if (!cancelled) {
+          setHasConfig(false)
+          setChecking(false)
+        }
+      }
     }
+    check()
+    return () => { cancelled = true }
   }, [])
 
-  if (!hasMacConfig()) {
+  if (checking) {
+    // 加载中显示黑色背景，避免白屏闪烁
+    return (
+      <div style={{
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: '#141414',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#666'
+      }}>
+        正在检查设备配置...
+      </div>
+    )
+  }
+
+  if (!hasConfig) {
     return <Navigate to="/macConfig" replace />
   }
   return children
-}
-
-/**
- * 启动时自动同步：将 localStorage 的 MAC 配置写入后端 serial_cache.json
- */
-async function syncLocalConfigToBackend(devices) {
-  try {
-    // 先检查后端是否已有缓存
-    const res = await axios.get(`${localAddress}/cache/devices`, { timeout: 3000 })
-    const cached = res.data?.data || {}
-    const cachedCount = Object.keys(cached).length
-
-    // 如果后端缓存已有相同数量的设备，跳过同步
-    if (cachedCount >= devices.length) {
-      console.log('[AutoSync] 后端缓存已是最新，跳过同步')
-      return
-    }
-
-    console.log(`[AutoSync] 后端缓存 ${cachedCount} 个，本地 ${devices.length} 个，开始同步...`)
-    await axios.post(`${localAddress}/cache/clear`, {}, { timeout: 3000 })
-    for (const device of devices) {
-      let deviceClass
-      if (device.type.startsWith('endi-') || device.type.startsWith('car-')) {
-        deviceClass = 'foot'
-      } else if (device.type.startsWith('carY-')) {
-        deviceClass = 'carY'
-      } else {
-        deviceClass = device.type
-      }
-      await axios.post(`${localAddress}/cache/devices`, {
-        mac: device.mac.trim().toUpperCase(),
-        type: device.type,
-        deviceClass: deviceClass,
-      }, { timeout: 3000 })
-    }
-    console.log(`[AutoSync] 同步完成，已写入 ${devices.length} 个设备到后端缓存`)
-  } catch (err) {
-    console.warn('[AutoSync] 后端同步失败（后端可能未就绪）:', err.message)
-  }
 }
 
 /**
@@ -335,12 +327,27 @@ async function syncLocalConfigToBackend(devices) {
  */
 function MacConfigFullscreen() {
   const [configured, setConfigured] = useState(false)
+  const [verified, setVerified] = useState(false)
 
   const handleBack = useCallback(() => {
     setConfigured(true)
   }, [])
 
-  if (configured && hasMacConfig()) {
+  // 保存后异步验证后端是否确实有配置
+  useEffect(() => {
+    if (!configured) return
+    let cancelled = false
+    async function verify() {
+      const result = await hasMacConfig()
+      if (!cancelled) {
+        setVerified(result)
+      }
+    }
+    verify()
+    return () => { cancelled = true }
+  }, [configured])
+
+  if (configured && verified) {
     return <Navigate to="/" replace />
   }
 
