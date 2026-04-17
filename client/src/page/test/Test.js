@@ -100,13 +100,12 @@ function Test() {
         },
     })
 
-    // ─── 框选订阅 ────────────────────────────────────────
+    // ─── 框选订阅（支持多框选） ─────────────────────────────
     useEffect(() => {
         const cb = (arr) => {
             useEquipStore.getState().setSelectArr(arr)
             const status = useEquipStore.getState().dataStatus
-            const range = Array.isArray(arr) ? arr[0] : null
-            if (status !== 'replay' || !range) return
+            if (status !== 'replay' || !Array.isArray(arr) || arr.length === 0) return
 
             const systemType = getSysType()
             const displayType = getDisplayType()
@@ -115,6 +114,9 @@ function Test() {
                 typeKey = `${systemType}-${displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : 'back'}`
             }
 
+            // 使用第一个框作为回放查询的选区（后端目前只支持单选区）
+            const range = arr[0]
+            if (!range) return
             const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[typeKey])
             if (!matrix) return
             const selectJson = {}

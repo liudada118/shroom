@@ -9,7 +9,7 @@ import { isMoreMatrix } from '../assets/util/util'
  * 矩阵数据处理 Hook
  * 
  * 封装传感器数据的预处理、框选、翻转、统计计算逻辑
- * 从 Test.js 中抽取，消除 sitData / sitDataPlay 之间的重复代码
+ * 支持多框选（最多4个），每个框独立计算统计数据
  */
 
 const divisor = 100 / 3
@@ -30,25 +30,53 @@ export function useMatrixData() {
   }
 
   /**
-   * 计算框选区域数据
+   * 从矩阵中提取框选区域的数据
+   */
+  function extractSelectData(arr, matrix, width) {
+    if (!matrix) return null
+    const { xStart, xEnd, yStart, yEnd } = matrix
+    const newArr = []
+    for (let y = yStart; y < yEnd; y++) {
+      for (let x = xStart; x < xEnd; x++) {
+        newArr.push(arr[y * width + x])
+      }
+    }
+    return newArr
+  }
+
+  /**
+   * 计算框选区域数据 — 支持多框
+   * 返回: { default: [...全部数据], boxes: [{data, colorIndex, bgc, matrix}] }
    */
   function computeSelectArr(arr, key, fullKey, select, displayType, sitDataItem) {
     const config = systemPointConfig[fullKey]
-    if (!config) return arr  // 未知设备类型，跳过框选计算
+    if (!config) return { default: arr, boxes: [] }
     const { width, height } = config
 
-    // 实时框选
+    // 实时框选 — 支持多个框
     if (select.length && displayType.includes(key)) {
-      const matrix = colSelectMatrix('canvasThree', select[0], systemPointConfig[fullKey])
-      if (matrix) {
-        const { xStart, xEnd, yStart, yEnd } = matrix
-        const newArr = []
-        for (let y = yStart; y < yEnd; y++) {
-          for (let x = xStart; x < xEnd; x++) {
-            newArr.push(arr[y * width + x])
+      const boxes = []
+      for (let i = 0; i < select.length; i++) {
+        const sel = select[i]
+        const matrix = colSelectMatrix('canvasThree', sel, systemPointConfig[fullKey])
+        if (matrix) {
+          const data = extractSelectData(arr, matrix, width)
+          if (data) {
+            boxes.push({
+              data,
+              colorIndex: sel.colorIndex != null ? sel.colorIndex : i,
+              bgc: sel.bgc || '#FF6B6B',
+              matrix,
+            })
           }
         }
-        return [...newArr]
+      }
+
+      // 如果有框选，default 使用第一个框的数据（兼容旧逻辑）
+      // boxes 包含所有框的独立数据
+      return {
+        default: boxes.length > 0 ? boxes[0].data : [...arr],
+        boxes,
       }
     }
 
@@ -72,30 +100,76 @@ export function useMatrixData() {
         removeHistoryBox()
       }
 
-      const newArr = []
-      for (let y = yStart; y < yEnd; y++) {
-        for (let x = xStart; x < xEnd; x++) {
-          newArr.push(arr[y * width + x])
-        }
+      const data = extractSelectData(arr, matrixObj, width)
+      return {
+        default: data || [...arr],
+        boxes: [{
+          data: data || [...arr],
+          colorIndex: 0,
+          bgc: '#FF6B6B',
+          matrix: matrixObj,
+        }],
       }
-      return [...newArr]
     }
 
     // 无框选，使用全部数据
-    return [...arr]
+    return { default: [...arr], boxes: [] }
+  }
+
+  /**
+   * 计算单个数据集的统计指标
+   */
+  function computeSingleStats(arr, selectedArr, fullKey) {
+    const stats = {}
+    const area = selectedArr.filter(a => a > 0).length
+    const press = selectedArr.reduce((a, b) => a + b, 0)
+
+    stats.pressTotal = press.toFixed(1)
+    stats.areaTotal = area
+    const positiveSelected = selectedArr.filter(a => a > 0)
+    const min = positiveSelected.length ? Math.min(...positiveSelected).toFixed(1) : 0
+    stats.pressMax = Math.max(...selectedArr)
+    stats.total = press
+    stats.pressMin = min || 0
+    stats.pressAver = (press / (area || 1)).toFixed(2)
+
+    // endi 类型单位转换
+    if (fullKey === 'endi-back') {
+      stats.pressMax = backYToX(Math.max(...selectedArr)).toFixed(2)
+      stats.pressMin = backYToX(min || 0).toFixed(2)
+      stats.pressAver = backYToX(press / (area || 1)).toFixed(2)
+    } else if (fullKey === 'endi-sit') {
+      stats.pressMax = sitYToX(Math.max(...selectedArr)).toFixed(2)
+      stats.pressMin = sitYToX(min || 0).toFixed(2)
+      stats.pressAver = sitYToX(press / (area || 1)).toFixed(2)
+    }
+
+    // carY 类型压力转换
+    if (fullKey === 'carY-back' || fullKey === 'carY-sit') {
+      const pressTotal = press / divisor
+      stats.pressMax = (Math.max(...selectedArr) / divisor).toFixed(2)
+      stats.pressTotal = pressTotal.toFixed(2)
+      stats.pressAver = (pressTotal / (area || 1)).toFixed(2)
+    }
+
+    return { area, press, stats }
   }
 
   /**
    * 计算统计指标（压力、面积、重心、正态分布等）
+   * 支持多框选：data[key].boxStats = [{colorIndex, bgc, pressArr, areaArr, data}]
    */
-  function computeStats(data, arr, selectedArr, key, fullKey) {
-    if (!systemPointConfig[fullKey]) return  // 未知设备类型，跳过统计计算
+  function computeStats(data, arr, selectResult, key, fullKey) {
+    if (!systemPointConfig[fullKey]) return
     const { width, height } = systemPointConfig[fullKey]
 
     if (!data[key]) data[key] = {}
     if (!data[key].areaArr) data[key].areaArr = []
     if (!data[key].pressArr) data[key].pressArr = []
     if (!data[key].data) data[key].data = {}
+    if (!data[key].boxStats) data[key].boxStats = []
+
+    const selectedArr = selectResult.default
 
     const arrSmooth = calcCentroidRatio([...arr], width, height)
     const mu = mean(arr)
@@ -105,7 +179,7 @@ export function useMatrixData() {
     const ku = kurtosis(arr, mu, sigma)
     const xData = Array.from({ length: 256 }, (_, i) => i)
     const yData = xData.map(x => normalPDF(x, mu, sigma))
-    
+
     const area = selectedArr.filter(a => a > 0).length
     const press = selectedArr.reduce((a, b) => a + b, 0)
 
@@ -118,14 +192,13 @@ export function useMatrixData() {
       yData
     }
 
-    // 滑动窗口（保留最近 20 帧）
+    // 默认统计（全部数据或第一个框）
     if (data[key].areaArr.length < 20) {
       data[key].areaArr.push(area)
     } else {
       data[key].areaArr.shift()
       data[key].areaArr.push(area)
     }
-    // carY 类型曲线数据也需要转换
     const pressForChart = (fullKey === 'carY-back' || fullKey === 'carY-sit') ? press / (divisor) : press
     if (data[key].pressArr.length < 20) {
       data[key].pressArr.push(pressForChart)
@@ -154,13 +227,58 @@ export function useMatrixData() {
       data[key].data.pressAver = sitYToX(press / (area || 1)).toFixed(2)
     }
 
-    // carY 类型压力转换：ADC值除以(100/3)
+    // carY 类型压力转换
     if (fullKey === 'carY-back' || fullKey === 'carY-sit') {
-
       const pressTotal = press / divisor
       data[key].data.pressMax = (Math.max(...selectedArr) / divisor).toFixed(2)
       data[key].data.pressTotal = pressTotal.toFixed(2)
       data[key].data.pressAver = (pressTotal / (area || 1)).toFixed(2)
+    }
+
+    // ─── 多框选独立统计 ───────────────────────────────────
+    const boxes = selectResult.boxes
+    if (boxes.length > 0) {
+      // 确保每个框都有自己的滑动窗口
+      while (data[key].boxStats.length < boxes.length) {
+        data[key].boxStats.push({
+          colorIndex: 0,
+          bgc: '#FF6B6B',
+          pressArr: [],
+          areaArr: [],
+          data: {},
+        })
+      }
+      // 如果框数减少了，截断
+      if (data[key].boxStats.length > boxes.length) {
+        data[key].boxStats.length = boxes.length
+      }
+
+      for (let i = 0; i < boxes.length; i++) {
+        const box = boxes[i]
+        const boxStat = data[key].boxStats[i]
+        boxStat.colorIndex = box.colorIndex
+        boxStat.bgc = box.bgc
+
+        const { area: bArea, press: bPress, stats } = computeSingleStats(arr, box.data, fullKey)
+        boxStat.data = stats
+
+        const bPressForChart = (fullKey === 'carY-back' || fullKey === 'carY-sit') ? bPress / divisor : bPress
+        if (boxStat.pressArr.length < 20) {
+          boxStat.pressArr.push(bPressForChart)
+        } else {
+          boxStat.pressArr.shift()
+          boxStat.pressArr.push(bPressForChart)
+        }
+        if (boxStat.areaArr.length < 20) {
+          boxStat.areaArr.push(bArea)
+        } else {
+          boxStat.areaArr.shift()
+          boxStat.areaArr.push(bArea)
+        }
+      }
+    } else {
+      // 无框选时清空 boxStats
+      data[key].boxStats = []
     }
   }
 
@@ -206,7 +324,6 @@ export function useMatrixData() {
 
   /**
    * 处理传感器数据帧（实时或回放）
-   * 统一处理 sitData 和 sitDataPlay，消除重复代码
    */
   function processSensorFrame(sitData, data) {
     if (!Object.keys(sitData).length) {
@@ -228,15 +345,16 @@ export function useMatrixData() {
       if (!sitData[fullKey]?.arr) continue
 
       arr[key] = clampEndi([...sitData[fullKey].arr], fullKey, key)
-      selectedArr[key] = computeSelectArr(arr[key], key, fullKey, select, displayType, sitData[fullKey])
-      computeStats(data, arr[key], selectedArr[key], key, fullKey)
+      const selectResult = computeSelectArr(arr[key], key, fullKey, select, displayType, sitData[fullKey])
+      selectedArr[key] = selectResult.default
+      computeStats(data, arr[key], selectResult, key, fullKey)
     }
 
     chartRef.current = data
     sitDataRef.current = arr
     disPlayDataRef.current = arr
 
-    // 2. 设备状态更新（遍历找到第一个有效的 stamp，避免 offline 设备无 stamp 导致 NaN）
+    // 2. 设备状态更新
     let stamp, cop
     for (const k of keyArr) {
       if (sitData[k]?.stamp != null) { stamp = sitData[k].stamp; break }
@@ -250,12 +368,9 @@ export function useMatrixData() {
     }
     useEquipStore.getState().setEquipStatus(newObj)
 
-    // 检测设备断开：5 秒防抖，持续 offline 才降级连接状态
-    // （避免短暂数据中断误触发断开）
-    const hasOffline = Object.values(newObj).some(s => s === 'offline')
+    // 检测设备断开：5 秒防抖
     const allOffline = Object.values(newObj).every(s => s === 'offline' || s === undefined)
     if (allOffline && useEquipStore.getState().connectState === 'connected') {
-      // 所有设备都 offline 时，5 秒后检查是否仍然全部 offline
       if (!window.__offlineDebounceTimer) {
         window.__offlineDebounceTimer = setTimeout(() => {
           const currentStatus = useEquipStore.getState().equipStatus
@@ -268,7 +383,6 @@ export function useMatrixData() {
         }, 5000)
       }
     } else if (!allOffline && window.__offlineDebounceTimer) {
-      // 有设备恢复在线，取消降级计时
       clearTimeout(window.__offlineDebounceTimer)
       window.__offlineDebounceTimer = null
     }
