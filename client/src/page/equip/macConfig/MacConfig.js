@@ -11,19 +11,20 @@ const STORAGE_KEY = 'shroom_mac_config'
  * 解析输入字符串为设备配置数组
  * 格式: mac地址:类型,mac地址:类型
  * 例如: AA:BB:CC:DD:EE:FF:endi-back,11:22:33:44:55:66:endi-sit
+ * 
+ * 解析规则：以最后一个冒号为分隔点，前面是 MAC 地址，后面是设备类型
  */
 function parseConfigString(str) {
   if (!str || !str.trim()) return []
   const items = str.split(',').map(s => s.trim()).filter(Boolean)
   const result = []
   for (const item of items) {
-    // 从最后一个冒号分割（因为 MAC 地址本身含冒号）
     const lastColon = item.lastIndexOf(':')
     if (lastColon <= 0) continue
     const mac = item.substring(0, lastColon).trim()
     const type = item.substring(lastColon + 1).trim()
     if (mac && type) {
-      result.push({ mac, type })
+      result.push({ mac: mac.toUpperCase(), type })
     }
   }
   return result
@@ -70,10 +71,65 @@ export function hasMacConfig() {
   return config !== null && config.length > 0
 }
 
+/**
+ * 同步 MAC 配置到后端 serial_cache.json
+ * 带重试机制，最多重试 2 次
+ */
+async function syncToBackend(devices, retries = 2) {
+  let lastErr = null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      // 先清空后端缓存
+      await axios.post(`${localAddress}/cache/clear`, {}, { timeout: 3000 })
+
+      // 逐个写入
+      for (const device of devices) {
+        // 根据类型推断 deviceClass
+        let deviceClass
+        if (device.type.startsWith('endi-') || device.type.startsWith('car-')) {
+          deviceClass = 'foot'
+        } else if (device.type.startsWith('carY-')) {
+          deviceClass = 'carY'
+        } else {
+          deviceClass = device.type // hand, bed 等
+        }
+
+        await axios.post(`${localAddress}/cache/devices`, {
+          mac: device.mac.trim().toUpperCase(),
+          type: device.type,
+          deviceClass: deviceClass,
+        }, { timeout: 3000 })
+      }
+
+      // 验证写入：读回来检查
+      const verifyRes = await axios.get(`${localAddress}/cache/devices`, { timeout: 3000 })
+      const cachedDevices = verifyRes.data?.data || {}
+      const cachedCount = Object.keys(cachedDevices).length
+
+      if (cachedCount >= devices.length) {
+        console.log(`[MacConfig] 后端缓存同步成功，已写入 ${cachedCount} 个设备`)
+        return { success: true, count: cachedCount }
+      } else {
+        console.warn(`[MacConfig] 后端缓存验证不一致：期望 ${devices.length}，实际 ${cachedCount}`)
+        lastErr = new Error(`写入验证失败：期望 ${devices.length} 个，实际 ${cachedCount} 个`)
+      }
+    } catch (err) {
+      lastErr = err
+      console.warn(`[MacConfig] 后端同步第 ${attempt + 1} 次失败:`, err.message)
+      if (attempt < retries) {
+        // 等待 500ms 后重试
+        await new Promise(r => setTimeout(r, 500))
+      }
+    }
+  }
+  return { success: false, error: lastErr }
+}
+
 export default function MacConfig({ onBack }) {
   const [inputValue, setInputValue] = useState('')
   const [parsed, setParsed] = useState([])
   const [saving, setSaving] = useState(false)
+  const [syncStatus, setSyncStatus] = useState(null) // null | 'success' | 'local-only'
 
   // 初始化：从 localStorage 加载已有配置
   useEffect(() => {
@@ -90,6 +146,7 @@ export default function MacConfig({ onBack }) {
     const val = e.target.value
     setInputValue(val)
     setParsed(parseConfigString(val))
+    setSyncStatus(null)
   }
 
   // 保存配置
@@ -101,31 +158,25 @@ export default function MacConfig({ onBack }) {
     }
 
     setSaving(true)
+    setSyncStatus(null)
     try {
       // 1. 保存到 localStorage
       saveMacConfig(devices)
 
-      // 2. 同步到后端 serial_cache.json
-      try {
-        await axios.post(`${localAddress}/cache/clear`)
-        for (const device of devices) {
-          const deviceClass = device.type.includes('-')
-            ? device.type.split('-')[0] === 'endi' ? 'foot' : device.type.split('-')[0]
-            : device.type
-          await axios.post(`${localAddress}/cache/devices`, {
-            mac: device.mac.trim().toUpperCase(),
-            type: device.type,
-            deviceClass: deviceClass,
-          })
-        }
-      } catch (err) {
-        console.warn('同步到后端缓存失败（不影响本地配置）:', err.message)
+      // 2. 同步到后端 serial_cache.json（带重试和验证）
+      const result = await syncToBackend(devices)
+
+      if (result.success) {
+        message.success(`配置已保存，${result.count} 个设备已同步到本地缓存`)
+        setSyncStatus('success')
+      } else {
+        message.warning('配置已保存到浏览器，但同步到后端缓存失败（后端服务可能未启动），连接设备后将自动重试')
+        setSyncStatus('local-only')
+        console.error('[MacConfig] 后端同步失败:', result.error?.message)
       }
 
-      message.success('配置已保存')
-
       if (onBack) {
-        setTimeout(() => onBack(), 400)
+        setTimeout(() => onBack(), 600)
       }
     } catch (err) {
       message.error('保存失败: ' + err.message)
@@ -195,6 +246,14 @@ export default function MacConfig({ onBack }) {
               ))}
             </div>
           </div>
+        )}
+
+        {/* 同步状态提示 */}
+        {syncStatus === 'success' && (
+          <div className="mac-sync-status success">已成功同步到本地缓存文件</div>
+        )}
+        {syncStatus === 'local-only' && (
+          <div className="mac-sync-status warning">仅保存到浏览器，后端服务未响应，启动应用后将自动同步</div>
         )}
       </div>
     </div>

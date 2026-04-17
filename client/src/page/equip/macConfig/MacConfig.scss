@@ -147,6 +147,25 @@
       }
     }
   }
+
+  .mac-sync-status {
+    font-size: 12px;
+    padding: 8px 14px;
+    border-radius: 6px;
+    text-align: center;
+
+    &.success {
+      color: #49aa19;
+      background: rgba(73, 170, 25, 0.08);
+      border: 1px solid rgba(73, 170, 25, 0.15);
+    }
+
+    &.warning {
+      color: #d89614;
+      background: rgba(216, 150, 20, 0.08);
+      border: 1px solid rgba(216, 150, 20, 0.15);
+    }
+  }
 }
 
 /* 全屏模式（首次启动 / 从 App.js 渲染） */
