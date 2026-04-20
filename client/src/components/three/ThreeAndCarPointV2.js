@@ -77,12 +77,16 @@ const Canvas =
         const {
             // sitnum1 = 32, sitnum2 = 32, sitInterp = 4, sitInterp2 = 2, sitOrder = 4 , 
             sitConfig, backConfig } = props
-        let group = new THREE.Group();
+        const groupRef = useRef(new THREE.Group());
+        const group = groupRef.current;
 
         let controlsFlag = true;
 
         // === 配置面板状态 ===
         const pointGroupRef = useRef(null)
+        const chairRef = useRef(null)
+        const tweenRef = useRef(null)
+        const tween1Ref = useRef(null)
         const [configPanelOpen, setConfigPanelOpen] = useState(false)
         const [configValues, setConfigValues] = useState({
             back: {
@@ -144,6 +148,10 @@ const Canvas =
                 updateThreeObject(name, prop, axisMap[axisIdx], value)
             }
         }, [updateThreeObject])
+
+        function getPointConfig(name) {
+            return configValues[name] || allConfig[name]?.pointConfig
+        }
 
         // let smoothBig = new Array(
         //     (sitnum1 * sitInterp + sitOrder * 2) *
@@ -599,13 +607,13 @@ const Canvas =
             })
         }
 
-        let chair
         function initModel() {
             // model
             const loader = new GLTFLoader();
 
             loader.load("./model/chair3.glb", function (gltf) {
-                chair = gltf.scene;
+                chairRef.current = gltf.scene;
+                const chair = chairRef.current;
 
                 // scene.add(chair);
                 // gltf.scene.traverse((obj) => {
@@ -755,7 +763,8 @@ const Canvas =
             });
         }
 
-        let tween, tween1
+        const tween = { update: (time) => tweenRef.current?.update(time) }
+        const tween1 = { update: (time) => tween1Ref.current?.update(time) }
         function morphWithTWEEN(attr, toArray, duration = 1500) {
             const buffer = attr.array;
             const from = buffer.slice();
@@ -775,7 +784,7 @@ const Canvas =
                     z: toArray[i3 + 2]
                 };
 
-                tween = new TWEEN.Tween(point)
+                const morphTween = new TWEEN.Tween(point)
                     .to(target, duration)
                     .easing(TWEEN.Easing.Exponential.InOut)
                     .onUpdate(() => {
@@ -1151,6 +1160,8 @@ const Canvas =
 
         function changePointRotation(value) {
             console.log('three', value, group)
+            const sitPointConfig = getPointConfig('sit')
+            const backPointConfig = getPointConfig('back')
 
             const type = getDisplayType()
             console.log(type)
@@ -1163,11 +1174,11 @@ const Canvas =
                 const backBorder = pointGroup.children.find((a) => a.name == 'back_border')
                 const rotationOffset = (value * 2) / 12
                 if (sitParticles) {
-                    sitParticles.rotation.x = allConfig.sit.pointConfig.rotation[0] + rotationOffset
+                    sitParticles.rotation.x = sitPointConfig.rotation[0] + rotationOffset
                     if (sitBorder) sitBorder.rotation.x = sitParticles.rotation.x
                 }
                 if (backParticles) {
-                    backParticles.rotation.x = allConfig.back.pointConfig.rotation[0] + rotationOffset
+                    backParticles.rotation.x = backPointConfig.rotation[0] + rotationOffset
                     if (backBorder) backBorder.rotation.x = backParticles.rotation.x
                 }
                 // 同时旋转椅子模型
@@ -1176,7 +1187,7 @@ const Canvas =
                 // 单独坐垫/靠背模式：与整体模式一致的旋转逻辑
                 const particles = pointGroup.children.find((a) => a.name == type)
                 if (!particles) return
-                const baseRotation = allConfig[type] ? allConfig[type].pointConfig.rotation[0] : -Math.PI / 2
+                const baseRotation = getPointConfig(type)?.rotation?.[0] ?? -Math.PI / 2
                 particles.rotation.x = baseRotation + (value * 2) / 12
                 // 同步边框旋转
                 const border = pointGroup.children.find((a) => a.name == type + '_border')
@@ -1287,7 +1298,12 @@ const Canvas =
         }
 
         function actionSit(type) {
+            const chair = chairRef.current
+            const sitPointConfig = getPointConfig('sit')
+            const backPointConfig = getPointConfig('back')
 
+            tweenRef.current?.stop?.()
+            tween1Ref.current?.stop?.()
 
             // 隐藏所有边框
             const hideBorders = () => {
@@ -1311,7 +1327,7 @@ const Canvas =
                 const particles = pointGroup.children.find((a) => a.name == 'sit')
                 particles.visible = true;
                 controls.current?.reset()
-                tween = move(
+                tweenRef.current = move(
                     {
                         x: 0,
                         y: -28,
@@ -1322,7 +1338,7 @@ const Canvas =
                     particles
                 );
 
-                tween.start();
+                tweenRef.current.start();
                 sitshowFlag = true
                 backshowFlag = false
             } else if (type == 'back') {
@@ -1335,7 +1351,7 @@ const Canvas =
                 const particles = pointGroup.children.find((a) => a.name == 'back')
                 particles.visible = true;
                 controls.current?.reset()
-                tween = move(
+                tweenRef.current = move(
                     {
                         x: 2.5,
                         y: -28,
@@ -1346,7 +1362,7 @@ const Canvas =
                     particles
                 );
 
-                tween.start();
+                tweenRef.current.start();
 
                 sitshowFlag = false
                 backshowFlag = true
@@ -1362,9 +1378,9 @@ const Canvas =
                 if (back) back.visible = true
 
                 // 恢复 sit 到 allConfig 中定义的初始位置和旋转
-                const sitInitPos = allConfig.sit.pointConfig.position
-                const sitInitRot = allConfig.sit.pointConfig.rotation
-                tween = move(
+                const sitInitPos = sitPointConfig.position
+                const sitInitRot = sitPointConfig.rotation
+                tweenRef.current = move(
                     {
                         x: sitInitPos[0],
                         y: sitInitPos[1],
@@ -1374,12 +1390,12 @@ const Canvas =
                     600,
                     sit
                 );
-                tween.start();
+                tweenRef.current.start();
 
                 // 恢复 back 到 allConfig 中定义的初始位置和旋转
-                const backInitPos = allConfig.back.pointConfig.position
-                const backInitRot = allConfig.back.pointConfig.rotation
-                tween1 = move(
+                const backInitPos = backPointConfig.position
+                const backInitRot = backPointConfig.rotation
+                tween1Ref.current = move(
                     {
                         x: backInitPos[0],
                         y: backInitPos[1],
@@ -1389,7 +1405,7 @@ const Canvas =
                     600,
                     back
                 );
-                tween1.start();
+                tween1Ref.current.start();
 
                 sitshowFlag = false
                 backshowFlag = false
