@@ -1,5 +1,8 @@
 import React from 'react';
 import { message } from 'antd';
+import { getDisplayType, getSysType } from '../../store/equipStore';
+import { systemPointConfig } from '../../util/constant';
+import { isMoreMatrix } from '../../assets/util/util';
 
 // ─── 4 个框选的固定颜色 ──────────────────────────────────────
 export const SELECT_COLORS = [
@@ -8,6 +11,34 @@ export const SELECT_COLORS = [
     '#FFD93D',  // 框3 - 黄
     '#6C5CE7',  // 框4 - 紫
 ];
+
+const SELECT_BOX_BRIGHTNESS_RATIO = 0.18;
+export const SELECT_BOX_FILL_ALPHA = 0.24;
+
+function parseSelectBoxColor(color) {
+    const normalizedColor = color.replace('#', '');
+    if (normalizedColor.length !== 6) return null;
+
+    return {
+        r: parseInt(normalizedColor.slice(0, 2), 16),
+        g: parseInt(normalizedColor.slice(2, 4), 16),
+        b: parseInt(normalizedColor.slice(4, 6), 16),
+    };
+}
+
+export function getSelectBoxDisplayColor(color, brightenRatio = SELECT_BOX_BRIGHTNESS_RATIO) {
+    const rgb = parseSelectBoxColor(color);
+    if (!rgb) return color;
+
+    const brightenChannel = (value) => Math.round(value + (255 - value) * brightenRatio);
+    return `rgb(${brightenChannel(rgb.r)}, ${brightenChannel(rgb.g)}, ${brightenChannel(rgb.b)})`;
+}
+
+export function getSelectBoxFillColor(color, alpha = SELECT_BOX_FILL_ALPHA) {
+    const rgb = parseSelectBoxColor(color);
+    if (!rgb) return color;
+    return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
 
 const MAX_BOXES = 4;
 
@@ -48,24 +79,63 @@ export class BrushManager {
     }
 
     /**
-     * 检查坐标是否在 canvasThree 有效范围内
+     * 获取当前用于框选的真实矩阵渲染区域。
+     * 对于非正方形矩阵（例如 endi-back 50x64），只允许在真实矩阵区域内框选。
+     */
+    _getEffectiveCanvasRect() {
+        const canvas =
+            document.querySelector('.canvasThree:not(.canvasRuler)') ||
+            document.querySelector('.canvasThree');
+        if (!canvas) return null;
+
+        const rect = canvas.getBoundingClientRect();
+        const systemType = getSysType();
+        const displayType = getDisplayType();
+
+        let configKey = systemType;
+        if (isMoreMatrix(systemType)) {
+            const matrixType = displayType.includes('back')
+                ? 'back'
+                : displayType.includes('sit')
+                    ? 'sit'
+                    : '';
+            if (matrixType) configKey = `${systemType}-${matrixType}`;
+        }
+
+        const matrixConfig = systemPointConfig[configKey];
+        if (!matrixConfig) return rect;
+
+        const { width, height } = matrixConfig;
+        const maxSide = Math.max(width, height);
+        const unitWidth = rect.width / maxSide;
+        const unitHeight = rect.height / maxSide;
+        const offsetX = width < height ? ((height - width) / 2) * unitWidth : 0;
+        const offsetY = height < width ? ((width - height) / 2) * unitHeight : 0;
+
+        return {
+            left: rect.left + offsetX,
+            right: rect.left + offsetX + width * unitWidth,
+            top: rect.top + offsetY,
+            bottom: rect.top + offsetY + height * unitHeight,
+        };
+    }
+
+    /**
+     * 检查坐标是否在真实矩阵区域内
      */
     _isInCanvasRange(x, y) {
-        const canvas = document.querySelector('.canvasThree');
-        if (!canvas) return true; // 找不到 canvas 则不限制
-        const rect = canvas.getBoundingClientRect();
+        const rect = this._getEffectiveCanvasRect();
+        if (!rect) return true;
         return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
     }
 
     /**
-     * 检查框选区域是否与 canvasThree 有交集
+     * 检查框选区域是否完整落在真实矩阵区域内
      */
-    _hasCanvasOverlap(x1, y1, x2, y2) {
-        const canvas = document.querySelector('.canvasThree');
-        if (!canvas) return true;
-        const rect = canvas.getBoundingClientRect();
-        // 检查两个矩形是否有交集
-        return !(x2 < rect.left || x1 > rect.right || y2 < rect.top || y1 > rect.bottom);
+    _isSelectionInCanvasRange(x1, y1, x2, y2) {
+        const rect = this._getEffectiveCanvasRect();
+        if (!rect) return true;
+        return x1 >= rect.left && x2 <= rect.right && y1 >= rect.top && y2 <= rect.bottom;
     }
 
     startBrush() {
@@ -318,7 +388,7 @@ export class BrushManager {
 
         // 检查起点是否在 canvasThree 范围内
         if (!this._isInCanvasRange(e.clientX, e.clientY)) {
-            message.warning('请在有效范围内框选');
+            message.warning('请在有效区域框选');
             return;
         }
 
@@ -345,11 +415,13 @@ export class BrushManager {
             if (Math.abs(this.start.x - e.clientX) > 5 && Math.abs(this.start.y - e.clientY) > 5) {
                 const colorIndex = this._currentColorIndex;
                 const bgc = SELECT_COLORS[colorIndex];
+                const displayColor = getSelectBoxDisplayColor(bgc);
 
                 this.element.classList.add(`selectBox-color-${colorIndex}`);
-                this.element.style.border = `2px solid ${bgc}`;
-                this.element.style.backgroundColor = bgc;
-                this.element.style.opacity = 0.3;
+                this.element.style.border = `2px solid ${displayColor}`;
+                this.element.style.backgroundColor = getSelectBoxFillColor(bgc);
+                this.element.style.boxShadow = `0 0 0 1px ${displayColor}`;
+                this.element.style.opacity = 1;
                 this.element.style.display = 'block';
 
                 this.pointBottomRight.x = Math.max(this.start.x, e.clientX);
@@ -385,9 +457,9 @@ export class BrushManager {
         const h = this.pointBottomRight.y - this.pointTopLeft.y;
 
         if (w > 5 && h > 5) {
-            // 检查框选区域是否与 canvasThree 有交集
-            if (!this._hasCanvasOverlap(this.range.x1, this.range.y1, this.range.x2, this.range.y2)) {
-                message.warning('请在有效范围内框选');
+            // 检查框选区域是否完整落在真实矩阵区域内
+            if (!this._isSelectionInCanvasRange(this.range.x1, this.range.y1, this.range.x2, this.range.y2)) {
+                message.warning('请在有效区域框选');
                 if (this.element && this.element.parentNode) {
                     this.element.parentNode.removeChild(this.element);
                 }

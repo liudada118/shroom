@@ -337,6 +337,87 @@ const Canvas =
 
 
         }
+        function rebindZoomSync(baseDistance) {
+            if (!camera.current || !controls.current || !baseDistance) return
+            applyZoomBounds(controls.current, baseDistance)
+            cleanupZoomSync()
+            cleanupZoomSync = bindZoomValueSync({
+                camera: camera.current,
+                controls: controls.current,
+                baseDistance,
+                onChange: props.changeViewProp,
+            })
+        }
+
+        function applyControlsFocusTarget(worldTarget, options = {}) {
+            if (!camera.current || !controls.current || !worldTarget) return false
+            const { syncResetState = false, preserveView = false } = options
+            let nextTarget = worldTarget.clone()
+            if (preserveView) {
+                const viewDirection = new THREE.Vector3()
+                camera.current.getWorldDirection(viewDirection)
+                const targetOffset = worldTarget.clone().sub(camera.current.position)
+                const projectedDistance = targetOffset.dot(viewDirection)
+                if (projectedDistance > 0) {
+                    nextTarget = camera.current.position.clone().add(viewDirection.multiplyScalar(projectedDistance))
+                }
+            }
+            controls.current.target.copy(nextTarget)
+            if (syncResetState) {
+                controls.current.position0.copy(camera.current.position)
+                controls.current.target0.copy(nextTarget)
+                controls.current.up0.copy(camera.current.up)
+            }
+            controls.current.update()
+            baseCameraDistanceRef.current = camera.current.position.distanceTo(nextTarget)
+            rebindZoomSync(baseCameraDistanceRef.current)
+            props.changeViewProp(100)
+            return true
+        }
+
+        function focusControlsOnBounds(targetObjects, options = {}) {
+            if (!camera.current || !controls.current) return false
+            const objects = (Array.isArray(targetObjects) ? targetObjects : [targetObjects]).filter(Boolean)
+            if (!objects.length) return false
+
+            scene?.updateMatrixWorld(true)
+            const totalBox = new THREE.Box3()
+            const objectBox = new THREE.Box3()
+            let hasBounds = false
+
+            objects.forEach((object) => {
+                object.updateWorldMatrix?.(true, true)
+                objectBox.setFromObject(object)
+                if (objectBox.isEmpty()) return
+                if (!hasBounds) {
+                    totalBox.copy(objectBox)
+                    hasBounds = true
+                    return
+                }
+                totalBox.union(objectBox)
+            })
+
+            if (!hasBounds) return false
+
+            const worldTarget = totalBox.getCenter(new THREE.Vector3())
+            return applyControlsFocusTarget(worldTarget, options)
+        }
+
+        function focusControlsOnObject(targetObject, options = {}) {
+            if (!targetObject) return false
+            scene?.updateMatrixWorld(true)
+            targetObject.updateWorldMatrix?.(true, true)
+            const worldTarget = new THREE.Vector3()
+            targetObject.getWorldPosition(worldTarget)
+            return applyControlsFocusTarget(worldTarget, options)
+        }
+
+        function focusControlsOnOverall(syncResetState = false, preserveView = false) {
+            const sit = pointGroup.children.find((a) => a.name == 'sit')
+            const back = pointGroup.children.find((a) => a.name == 'back')
+            return focusControlsOnBounds([chairRef.current, sit, back], { syncResetState, preserveView })
+        }
+
         let pointParticles
         function initMovePoint() {
             const SEPARATION = 100, AMOUNTX = 50, AMOUNTY = 50;
@@ -640,6 +721,7 @@ const Canvas =
                 chair.position.z = 60
                 chair.position.x = -0
                 scene.add(group);
+                focusControlsOnOverall(true)
                 // group.position.x = -10;
                 // group.position.y = -20;
             });
@@ -1261,7 +1343,8 @@ const Canvas =
             })
         }
 
-        function move(position, time, particles) {
+        function move(position, time, particles, options = {}) {
+            const { onUpdate, onComplete } = options
             // 查找对应的边框，使边框跟随粒子同步移动
             const borderName = particles.name + '_border'
             const border = pointGroup.children.find((a) => a.name === borderName)
@@ -1281,13 +1364,18 @@ const Canvas =
 
             tween1.onUpdate(() => {
                 particles.position.set(p1.x, p1.y, p1.z);
-                if (p1.rotationx) particles.rotation.x = p1.rotationx;
+                if (typeof p1.rotationx === 'number') particles.rotation.x = p1.rotationx;
                 // 同步更新边框位置和旋转
                 if (border) {
                     border.position.set(p1.x, p1.y, p1.z);
-                    if (p1.rotationx) border.rotation.x = p1.rotationx;
+                    if (typeof p1.rotationx === 'number') border.rotation.x = p1.rotationx;
                 }
+                onUpdate?.(particles, border, p1)
             });
+
+            tween1.onComplete(() => {
+                onComplete?.(particles, border)
+            })
 
             return tween1;
         }
@@ -1335,7 +1423,12 @@ const Canvas =
                         rotationx: - Math.PI * 13 / 24,
                     },
                     600,
-                    particles
+                    particles,
+                    {
+                        onComplete: (targetParticles) => focusControlsOnObject(targetParticles, {
+                            preserveView: true,
+                        }),
+                    }
                 );
 
                 tweenRef.current.start();
@@ -1359,7 +1452,12 @@ const Canvas =
                         rotationx: - Math.PI * 13 / 24,
                     },
                     600,
-                    particles
+                    particles,
+                    {
+                        onComplete: (targetParticles) => focusControlsOnObject(targetParticles, {
+                            preserveView: true,
+                        }),
+                    }
                 );
 
                 tweenRef.current.start();
@@ -1376,36 +1474,55 @@ const Canvas =
                 const back = pointGroup.children.find((a) => a.name == 'back')
                 if (sit) sit.visible = true
                 if (back) back.visible = true
+                let pendingFocusCount = 0
+                const focusOverallWhenReady = () => {
+                    pendingFocusCount -= 1
+                    if (pendingFocusCount <= 0) focusControlsOnOverall(false, true)
+                }
 
                 // 恢复 sit 到 allConfig 中定义的初始位置和旋转
                 const sitInitPos = sitPointConfig.position
                 const sitInitRot = sitPointConfig.rotation
-                tweenRef.current = move(
-                    {
-                        x: sitInitPos[0],
-                        y: sitInitPos[1],
-                        z: sitInitPos[2],
-                        rotationx: sitInitRot[0],
-                    },
-                    600,
-                    sit
-                );
-                tweenRef.current.start();
+                if (sit) {
+                    pendingFocusCount += 1
+                    tweenRef.current = move(
+                        {
+                            x: sitInitPos[0],
+                            y: sitInitPos[1],
+                            z: sitInitPos[2],
+                            rotationx: sitInitRot[0],
+                        },
+                        600,
+                        sit,
+                        {
+                            onComplete: focusOverallWhenReady,
+                        }
+                    );
+                    tweenRef.current.start();
+                }
 
                 // 恢复 back 到 allConfig 中定义的初始位置和旋转
                 const backInitPos = backPointConfig.position
                 const backInitRot = backPointConfig.rotation
-                tween1Ref.current = move(
-                    {
-                        x: backInitPos[0],
-                        y: backInitPos[1],
-                        z: backInitPos[2],
-                        rotationx: backInitRot[0],
-                    },
-                    600,
-                    back
-                );
-                tween1Ref.current.start();
+                if (back) {
+                    pendingFocusCount += 1
+                    tween1Ref.current = move(
+                        {
+                            x: backInitPos[0],
+                            y: backInitPos[1],
+                            z: backInitPos[2],
+                            rotationx: backInitRot[0],
+                        },
+                        600,
+                        back,
+                        {
+                            onComplete: focusOverallWhenReady,
+                        }
+                    );
+                    tween1Ref.current.start();
+                }
+
+                if (pendingFocusCount === 0) focusControlsOnOverall(false, true)
 
                 sitshowFlag = false
                 backshowFlag = false

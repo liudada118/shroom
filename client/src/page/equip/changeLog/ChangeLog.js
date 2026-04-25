@@ -16,6 +16,21 @@ const CHANGE_TYPES = {
 
 const changeLogData = [
   {
+    version: 'endi1.0.1',
+    date: '2026-04-22',
+    changes: [
+      {
+        type: 'optimize',
+        title: '框选框亮度提升',
+        details: [
+          '框选边框改为更亮的显示色，提升深色界面下的可见度',
+          '填充层改为单独半透明色值，不再通过整体 opacity 把边框一起压暗',
+          '鼠标拖拽框选与输入生成框选统一复用同一套视觉样式',
+        ],
+      },
+    ],
+  },
+  {
     version: 'endi1.0.0',
     date: '2026-04-13',
     changes: [

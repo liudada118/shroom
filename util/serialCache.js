@@ -21,13 +21,18 @@ const fs = require('fs')
 const path = require('path')
 
 // 缓存文件路径（与 db 目录同级）
-let cachePath = path.join(__dirname, '..', 'serial_cache.json')
+let cachePath = process.env.SERIAL_CACHE_PATH || path.join(__dirname, '..', 'serial_cache.json')
 
 /**
  * 设置缓存文件路径（打包后路径不同）
  */
 function setCachePath(newPath) {
+  if (!newPath) return
   cachePath = newPath
+}
+
+function ensureCacheDir() {
+  fs.mkdirSync(path.dirname(cachePath), { recursive: true })
 }
 
 /**
@@ -53,6 +58,7 @@ function readCache() {
 function writeCache(cache) {
   try {
     cache.updatedAt = new Date().toISOString()
+    ensureCacheDir()
     fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2), 'utf-8')
   } catch (err) {
     console.error('[SerialCache] Cache write failed:', err.message)

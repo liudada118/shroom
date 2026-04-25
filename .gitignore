@@ -38,3 +38,4 @@ Desktop.ini
 *.deb
 *.rpm
 *.snap
+/dist-serial-cache-fix

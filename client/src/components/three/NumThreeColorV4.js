@@ -463,7 +463,7 @@ export default function NumThree(props) {
     const wheelTarget = canvasNum;
     const applyMatrixColor = (value, colorMax) => {
       // 使用与3D统一的颜色映射
-      return jetWhite3(0, colorMax, value);
+      return jet(0, colorMax, value);
     };
 
     const drawMagnifier = (col, row) => {

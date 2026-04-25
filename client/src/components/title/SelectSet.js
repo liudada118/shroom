@@ -7,7 +7,7 @@ import { systemPointConfig } from '../../util/constant'
 import { pageContext } from '../../page/test/Test'
 import { isMoreMatrix } from '../../assets/util/util'
 import { calMatrixToSelect } from '../../assets/util/selectMatrix'
-import { SELECT_COLORS } from '../selectBox/newSelecttBox'
+import { getSelectBoxDisplayColor, getSelectBoxFillColor, SELECT_COLORS } from '../selectBox/newSelecttBox'
 
 const selectInputObj = [
     { name: 'X', placeholder: '横向起点', valueStr: 'xStart' },
@@ -109,6 +109,7 @@ export default function SelectSet(props) {
         const { selectWidth, selectHeight, selectX, selectY } = selectInfo
         const colorIndex = pageInfo.brushInstance._nextColorIndex()
         const bgc = SELECT_COLORS[colorIndex]
+        const displayColor = getSelectBoxDisplayColor(bgc)
 
         // 创建 DOM 元素
         const element = document.createElement('div')
@@ -118,9 +119,10 @@ export default function SelectSet(props) {
         element.style.top = selectY + 'px'
         element.style.width = selectWidth + 'px'
         element.style.height = selectHeight + 'px'
-        element.style.border = `2px solid ${bgc}`
-        element.style.backgroundColor = bgc
-        element.style.opacity = 0.3
+        element.style.border = `2px solid ${displayColor}`
+        element.style.backgroundColor = getSelectBoxFillColor(bgc)
+        element.style.boxShadow = `0 0 0 1px ${displayColor}`
+        element.style.opacity = 1
         element.style.zIndex = 999
         element.style.display = 'block'
         document.body.appendChild(element)

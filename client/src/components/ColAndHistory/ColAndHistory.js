@@ -101,6 +101,20 @@ const ColAndHistory = memo((props) => {
 
     const [contrastArr, setContrast] = useState(contrastInitArr)
 
+    const resetOperateState = () => {
+        setSelectArr([])
+        setOperateStatus('')
+        setContrast(contrastInitArr)
+    }
+
+    const handleTabChange = (nextIndex) => {
+        if (nextIndex === Onindex) {
+            return
+        }
+        resetOperateState()
+        setIndex(nextIndex)
+    }
+
     const [colName, setColName] = useState('')
     const [HZ, setHZ] = useState('')
 
@@ -311,15 +325,25 @@ const ColAndHistory = memo((props) => {
         }
     }
 
-    const handleOpenFolder = (folderPathOverride) => {
-        const targetPath = folderPathOverride || downloadPath
+    const handleOpenFolder = async (folderPathOverride) => {
+        const targetPath = typeof folderPathOverride === 'string' && folderPathOverride.trim()
+            ? folderPathOverride.trim()
+            : downloadPath
         if (!targetPath) {
             message.warning(t('noPath') || '路径为空')
             return
         }
         // 优先使用 Electron API
         if (window.electronAPI?.openPath) {
-            window.electronAPI.openPath(targetPath)
+            try {
+                const openResult = await window.electronAPI.openPath(targetPath)
+                if (typeof openResult === 'string' && openResult.trim()) {
+                    message.error(openResult.trim())
+                }
+            } catch (err) {
+                console.error('Open folder error:', err)
+                message.error(err?.message || '打开文件夹失败')
+            }
         } else {
             const payload = { folderPath: targetPath }
             axios.post(`${localAddress}/openFolder`, payload, {
@@ -758,13 +782,11 @@ const ColAndHistory = memo((props) => {
                     <Button key="openFolder" type="primary" onClick={() => {
                         handleOpenFolder()
                         setDownloadProgress(null)
-                        setSelectArr([])
-                        setOperateStatus('')
+                        resetOperateState()
                     }}>{t('openFolder') || '打开文件夹'}</Button>,
                     <Button key="close" onClick={() => {
                         setDownloadProgress(null)
-                        setSelectArr([])
-                        setOperateStatus('')
+                        resetOperateState()
                     }}>{t('close') || '关闭'}</Button>
                 ] : downloadProgress?.status === 'error' ? [
                     <Button key="close" onClick={() => setDownloadProgress(null)}>{t('close') || '关闭'}</Button>
@@ -772,8 +794,7 @@ const ColAndHistory = memo((props) => {
                 closable={downloadProgress?.status !== 'downloading'}
                 onCancel={() => {
                     setDownloadProgress(null)
-                    setSelectArr([])
-                    setOperateStatus('')
+                    resetOperateState()
                 }}
                 maskClosable={false}
                 width={480}
@@ -838,7 +859,7 @@ const ColAndHistory = memo((props) => {
                             {title.map((a, index) => {
                                 return (
                                     <div onClick={() => {
-                                        setIndex(index)
+                                        handleTabChange(index)
                                     }} className={`${Onindex == index ? 'onNavItem' : 'offNavItem'} navTitleItem cursor`}>{a}</div>
                                 )
                             })}
@@ -886,8 +907,7 @@ const ColAndHistory = memo((props) => {
                                     }
 
                                     <div className='modalConfirmButton cursor' onClick={() => {
-                                        setSelectArr([])
-                                        setOperateStatus('')
+                                        resetOperateState()
                                     }}>{t('cancel')}</div>
                                 </>
                             ) : Onindex == 1 ? (
@@ -915,8 +935,7 @@ const ColAndHistory = memo((props) => {
                                         operateStatus == 'delete' ? <div className='modalConfirmButton cursor' onClick={deleteData}>{t('delete')}</div> : ''
                                     }
                                     <div className='modalConfirmButton cursor' onClick={() => {
-                                        setSelectArr([])
-                                        setOperateStatus('')
+                                        resetOperateState()
                                     }}>{t('cancel')}</div>
                                 </>
                             ) : null}
@@ -1259,7 +1278,7 @@ const ColAndHistory = memo((props) => {
                             <span style={{ color: '#8794A1', fontSize: '0.75rem' }}>{t('storagePath')}</span>
                             <div style={{ display: 'flex', gap: '0.5rem' }}>
                                 <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem' }} onClick={handleSelectFolder}>{t('modify')}</span>
-                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem' }} onClick={handleOpenFolder}>{t('open')}</span>
+                                <span className="cursor" style={{ color: '#0072EF', fontSize: '0.75rem' }} onClick={() => handleOpenFolder()}>{t('open')}</span>
                             </div>
                         </div>
                         <Input

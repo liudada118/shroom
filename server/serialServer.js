@@ -17,6 +17,7 @@ const http = require('http')
 const { listenWithRetry, DEFAULT_PORTS } = require('../util/portFinder')
 const { decryptStr } = require('../util/aes_ecb')
 const { initDb } = require('../util/db')
+const { setCachePath } = require('../util/serialCache')
 
 // ─── 模块导入 ────────────────────────────────────────────
 const { state } = require('./state')
@@ -34,6 +35,10 @@ isPackaged = isPackaged === 'true'
 const resourcesRoot = isPackaged
   ? (process.env.RESOURCES_PATH || (appPath ? path.resolve(appPath, '..') : path.resolve('resources')))
   : path.join(__dirname, '..')
+const serialCachePath = process.env.SERIAL_CACHE_PATH || path.join(resourcesRoot, 'serial_cache.json')
+
+setCachePath(serialCachePath)
+console.log('[Server] Serial cache path:', serialCachePath)
 
 // ─── 路径配置 ────────────────────────────────────────────
 let dbPath = path.join(__dirname, '..', 'db')

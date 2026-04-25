@@ -1,6 +1,6 @@
 {
   "name": "jqtools2",
-  "version": "endi1.0.0",
+  "version": "1.0.1",
   "description": "JQ 压力传感器桌面工具",
   "main": "index.js",
   "scripts": {
@@ -32,6 +32,7 @@
   },
   "build": {
     "asar": true,
+    "npmRebuild": false,
     "files": [
       "index.js",
       "preload.js",
