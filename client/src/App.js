@@ -142,7 +142,7 @@ i18next.init({
     },
     zh: {
       translation: {
-        connect: '一键连接',
+        connect: '连接',
         connecting: '连接中',
         connected: '已连接',
         back: '靠背',
