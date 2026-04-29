@@ -20,4 +20,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 在文件管理器中显示文件
   showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
+
+  // 框选预设持久化 (跨端口/会话稳定保存到 userData 目录)
+  readBrushPresets: () => ipcRenderer.invoke('brush-presets-read'),
+  writeBrushPresets: (data) => ipcRenderer.invoke('brush-presets-write', data),
 })

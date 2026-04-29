@@ -360,6 +360,32 @@ app.whenReady().then(async () => {
     return true
   })
 
+  // ─── 框选预设持久化 (userData/brushPresets.json, 跨端口/会话稳定) ────
+  const presetsFilePath = () => path.join(app.getPath('userData'), 'brushPresets.json')
+
+  ipcMain.handle('brush-presets-read', async () => {
+    try {
+      const file = presetsFilePath()
+      if (!fs.existsSync(file)) return {}
+      const raw = fs.readFileSync(file, 'utf8')
+      return raw ? JSON.parse(raw) : {}
+    } catch (err) {
+      console.warn('[Main] read brushPresets failed:', err.message)
+      return {}
+    }
+  })
+
+  ipcMain.handle('brush-presets-write', async (event, data) => {
+    try {
+      const file = presetsFilePath()
+      fs.writeFileSync(file, JSON.stringify(data || {}), 'utf8')
+      return true
+    } catch (err) {
+      console.warn('[Main] write brushPresets failed:', err.message)
+      return false
+    }
+  })
+
   try {
     // 1. 并行执行：硬件指纹 + Port分配（互不依赖）
     console.log('[Main] Initializing...')

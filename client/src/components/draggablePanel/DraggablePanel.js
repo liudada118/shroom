@@ -5,18 +5,38 @@ import './index.scss'
 let globalMaxZIndex = 2000
 
 /**
- * 可拖拽、可缩放、置顶的面板组件
+ * 可拖拽、可缩放、可折叠、置顶的面板组件
  * - 不可关闭
  * - 鼠标拖拽移动
  * - 可放大/缩小
+ * - 可折叠为只剩标题栏（受控/非受控均支持）
  * - 始终在最上层（点击时置顶）
+ *
+ * collapsed 受控用法（外部 boolean 切换会自动折叠/展开）：
+ *   <DraggablePanel collapsed={someFlag}>
+ * 用户手动点折叠按钮后会进入 override 状态，忽略外部 collapsed 直到下一次外部值翻转。
  */
-export default function DraggablePanel({ children, defaultPosition, title, className = '' }) {
+export default function DraggablePanel({
+    children,
+    defaultPosition,
+    title,
+    className = '',
+    collapsed: collapsedProp,
+    defaultCollapsed = false,
+    onCollapseChange,
+    disableDrag = false,
+    bodyMaxHeight,
+}) {
     const panelRef = useRef(null)
     const [position, setPosition] = useState(defaultPosition || { x: 0, y: 0 })
     const [scale, setScale] = useState(1)
     const [zIndex, setZIndex] = useState(globalMaxZIndex)
     const [isDragging, setIsDragging] = useState(false)
+    const [internalCollapsed, setInternalCollapsed] = useState(
+        collapsedProp != null ? collapsedProp : defaultCollapsed
+    )
+    const userOverrideRef = useRef(false)
+    const lastPropRef = useRef(collapsedProp)
     const dragOffset = useRef({ x: 0, y: 0 })
 
     // 点击面板时置顶
@@ -27,6 +47,7 @@ export default function DraggablePanel({ children, defaultPosition, title, class
 
     // 拖拽开始
     const onMouseDown = useCallback((e) => {
+        if (disableDrag) return
         // 只在标题栏区域拖拽
         if (!e.target.closest('.draggable-panel-header')) return
         e.preventDefault()
@@ -37,7 +58,7 @@ export default function DraggablePanel({ children, defaultPosition, title, class
             x: e.clientX - rect.left,
             y: e.clientY - rect.top
         }
-    }, [bringToFront])
+    }, [bringToFront, disableDrag])
 
     useEffect(() => {
         if (!isDragging) return
@@ -91,10 +112,39 @@ export default function DraggablePanel({ children, defaultPosition, title, class
         setScale(1)
     }, [])
 
+    // 外部 collapsedProp 翻转时同步内部状态并清除用户 override
+    useEffect(() => {
+        if (collapsedProp == null) return
+        if (collapsedProp !== lastPropRef.current) {
+            lastPropRef.current = collapsedProp
+            userOverrideRef.current = false
+            setInternalCollapsed(collapsedProp)
+        }
+    }, [collapsedProp])
+
+    // 锁定位置的面板需要跟随外部 defaultPosition 变化（动态定位场景）
+    useEffect(() => {
+        if (!disableDrag || !defaultPosition) return
+        setPosition(prev => {
+            if (prev.x === defaultPosition.x && prev.y === defaultPosition.y) return prev
+            return { x: defaultPosition.x, y: defaultPosition.y }
+        })
+    }, [disableDrag, defaultPosition?.x, defaultPosition?.y])
+
+    const toggleCollapse = useCallback((e) => {
+        e.stopPropagation()
+        userOverrideRef.current = true
+        setInternalCollapsed(prev => {
+            const next = !prev
+            if (onCollapseChange) onCollapseChange(next)
+            return next
+        })
+    }, [onCollapseChange])
+
     return (
         <div
             ref={panelRef}
-            className={`draggable-panel ${className}`}
+            className={`draggable-panel ${className}${internalCollapsed ? ' collapsed' : ''}`}
             style={{
                 position: 'fixed',
                 left: position.x + 'px',
@@ -109,16 +159,21 @@ export default function DraggablePanel({ children, defaultPosition, title, class
             }}
         >
             <div className='draggable-panel-header' onMouseDown={onMouseDown}
-                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}>
+                style={{ cursor: disableDrag ? 'default' : (isDragging ? 'grabbing' : 'grab') }}>
                 <span className='draggable-panel-title'>{title}</span>
                 <div className='draggable-panel-controls'>
+                    <span className='panel-ctrl-btn' onClick={toggleCollapse}
+                        title={internalCollapsed ? '展开' : '折叠'}
+                        style={{ fontSize: '0.7rem' }}>
+                        {internalCollapsed ? '▾' : '▴'}
+                    </span>
                     <span className='panel-ctrl-btn' onClick={zoomOut} title='缩小'>-</span>
                     <span className='panel-ctrl-btn' onClick={resetZoom} title='重置'
                         style={{ fontSize: '0.65rem' }}>{Math.round(scale * 100)}%</span>
                     <span className='panel-ctrl-btn' onClick={zoomIn} title='放大'>+</span>
                 </div>
             </div>
-            <div className='draggable-panel-body'>
+            <div className='draggable-panel-body' style={(bodyMaxHeight && !internalCollapsed) ? { maxHeight: bodyMaxHeight } : undefined}>
                 {children}
             </div>
         </div>

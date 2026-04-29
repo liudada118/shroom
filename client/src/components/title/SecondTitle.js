@@ -10,7 +10,6 @@ import { getDisplayType, getSettingValue, getSettingValueOptimal, getSysType, us
 import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
 import { pointConfig } from '../../util/constant'
-import SelectSet from './SelectSet'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
@@ -97,24 +96,27 @@ function SecondTitle(props) {
 
 
     const selectClick = () => {
-
-        // if (!onSelect) {
-        //     selectHelper.isShiftPressed = true
-        // }else{
-        //     selectHelper.isShiftPressed = false
-        // }
-        if (display == 'num') {
-            setOnSelect(!onSelect)
-            if (!onSelect) {
-                pageInfo?.brushInstance.startBrush();
-            } else {
-                pageInfo?.brushInstance.stopBrush();
-                useEquipStore.getState().setSelectArr([])
-            }
-        } else {
+        if (display !== 'num') {
             message.info(t('use2DMode'))
+            return
         }
-
+        if (!onSelect) {
+            // 开启框选工具: 直接开
+            setOnSelect(true)
+            pageInfo?.brushInstance.startBrush()
+            return
+        }
+        // 关闭框选工具: 检查 dirty, 必要时弹保存提示
+        const proceed = () => {
+            setOnSelect(false)
+            pageInfo?.brushInstance.stopBrush()
+            useEquipStore.getState().setSelectArr([])
+        }
+        if (pageInfo?.confirmBrushSwitch) {
+            pageInfo.confirmBrushSwitch(proceed)
+        } else {
+            proceed()
+        }
     }
     const system = useEquipStore(s => s.systemType, shallow);
     const rulerClick = () => {
@@ -332,7 +334,6 @@ function SecondTitle(props) {
                     <div className="selectInputButtonContent">
                         <div className="selectInputButton connectButton cursor">确认</div></div>
                 </div> : ''} */}
-               {onSelect ? <SelectSet onSelect={onSelect}  selectArr={selectArr}/> : ''}
             </div>
 
         </>

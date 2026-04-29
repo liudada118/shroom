@@ -55,5 +55,29 @@
 
     .draggable-panel-body {
         padding: 0.75rem 0.625rem;
+        max-height: 80vh;
+        overflow: auto;
+        opacity: 1;
+        transition: max-height 0.22s ease, opacity 0.18s ease, padding 0.22s ease;
+
+        // 自定义滚动条
+        &::-webkit-scrollbar { width: 6px; }
+        &::-webkit-scrollbar-track { background: transparent; }
+        &::-webkit-scrollbar-thumb { background: #3b4048; border-radius: 3px; }
+        &::-webkit-scrollbar-thumb:hover { background: #4E565F; }
+    }
+
+    &.collapsed {
+        .draggable-panel-header {
+            border-bottom-color: transparent;
+        }
+
+        .draggable-panel-body {
+            max-height: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            opacity: 0;
+            overflow: hidden;
+        }
     }
 }

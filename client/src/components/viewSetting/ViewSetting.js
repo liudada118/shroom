@@ -106,16 +106,22 @@ const ViewSetting = (props) => {
         {
             car2DArr.map((type, index) => {
                 return <div className='cursor' onClick={() => {
-                    setCarType(type)
-                    if (display != 'num') {
-                        setDisplay('num')
+                    const proceed = () => {
+                        setCarType(type)
+                        if (display != 'num') {
+                            setDisplay('num')
+                        }
+                        // props.three.current?.actionSit(type)
+                        useEquipStore.getState().setDisplayType(type);
+                        setDisplayType(type)
+                        changeAllFun()
                     }
-
-
-                    // props.three.current?.actionSit(type)
-                    useEquipStore.getState().setDisplayType(type);
-                    setDisplayType(type)
-                    changeAllFun()
+                    // 切换前若有未保存的框, 弹提示
+                    if (pageInfo?.confirmBrushSwitch) {
+                        pageInfo.confirmBrushSwitch(proceed)
+                    } else {
+                        proceed()
+                    }
                 }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: carType == type ? '#0072EF' : 'unset' }}>{t(type)}</div>
 
             })
@@ -144,11 +150,18 @@ const ViewSetting = (props) => {
     const changeMoreViewContent = <div style={{ color: '#E6EBF0' }}>
         <Popover trigger='click' color='#32373E' placement="right" content={changeCarViewContent}>
             <div className='cursor' onClick={() => {
-                setShowProp(100)
-                setDisplay('point3D')
-                useEquipStore.getState().setDisplayType('all')
-                setCarType('all')
-                changeAllFun()
+                const proceed = () => {
+                    setShowProp(100)
+                    setDisplay('point3D')
+                    useEquipStore.getState().setDisplayType('all')
+                    setCarType('all')
+                    changeAllFun()
+                }
+                if (pageInfo?.confirmBrushSwitch) {
+                    pageInfo.confirmBrushSwitch(proceed)
+                } else {
+                    proceed()
+                }
             }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: display == 'point3D' ? '#0072EF' : 'unset' }}>{t('point3D')}</div></Popover>
 
         {/* <Popover trigger='click' color='#32373E' placement="right" content={changeCar3DNumViewContent}>

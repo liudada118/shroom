@@ -168,7 +168,9 @@ export function colSelectMatrix(className, select, matrixConfig) {
 
     // console.log(className, select)
     if (!select) return
+    if (!matrixConfig) return null
     const canvas = document.querySelector(`.${className}`)
+    if (!canvas) return null
     const canvasInfo = canvas.getBoundingClientRect()
 
     const canvasObj = {

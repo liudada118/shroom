@@ -16,6 +16,10 @@ import DraggablePanel from '../draggablePanel/DraggablePanel';
 
 function ChartsAside(props) {
 
+    // 进入框选工具时把两个面板自动折叠
+    const pageInfo = useContext(pageContext)
+    const onSelect = pageInfo?.onSelect ?? false
+
     // 设备颜色（无框选时使用）
     const pressColorArr = { back: '#8AC287', sit: '#5D65FF' }
     const areaColorArr = { back: '#8AC287', sit: '#5D65FF' }
@@ -420,7 +424,7 @@ function ChartsAside(props) {
 
     return (
         <>
-            <DraggablePanel title={t('pressureCurve') + ' / ' + t('areaCurve')} defaultPosition={{ x: 20, y: 80 }}>
+            <DraggablePanel title={t('pressureCurve') + ' / ' + t('areaCurve')} defaultPosition={{ x: 20, y: 80 }} collapsed={onSelect}>
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{t('pressureCurve')}</div>
@@ -450,7 +454,7 @@ function ChartsAside(props) {
                 </div>
             </DraggablePanel>
 
-            <DraggablePanel title={t('pressureCenterCurve') + ' / ' + t('pressureNormalDist')} defaultPosition={{ x: window.innerWidth - 380, y: 80 }}>
+            <DraggablePanel title={t('pressureCenterCurve') + ' / ' + t('pressureNormalDist')} defaultPosition={{ x: window.innerWidth - 380, y: 80 }} collapsed={onSelect} className='pressure-center-panel'>
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{t('pressureCenterCurve')}</div>

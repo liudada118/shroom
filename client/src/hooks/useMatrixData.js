@@ -9,7 +9,7 @@ import { isMoreMatrix } from '../assets/util/util'
  * 矩阵数据处理 Hook
  * 
  * 封装传感器数据的预处理、框选、翻转、统计计算逻辑
- * 支持多框选（最多4个），每个框独立计算统计数据
+ * 支持多框选（最多 8 个），每个框独立计算统计数据
  */
 
 const divisor = 100 / 3
