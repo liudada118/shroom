@@ -1,0 +1,1057 @@
+﻿client/src/App.css:46:/* 在线链接服务仅供平台体验和调试使用，平台不承诺服务的稳定性，企业客户需下载字体包自行发布使用并做好备份。 */
+client/src/assets/util/date.js:11:  // 补零
+client/src/assets/util/line.js:84: * 高斯return
+client/src/assets/util/pythonDataFormat.js:2:    "range_x": "横向偏移(range)",
+client/src/assets/util/pythonDataFormat.js:3:    "range_y": "纵向偏移(range)",
+client/src/assets/util/pythonDataFormat.js:4:    "ellipse_area": "置信椭圆面积",
+client/src/assets/util/pythonDataFormat.js:5:    "rms_vx": "横向速度(RMS)",
+client/src/assets/util/pythonDataFormat.js:6:    "rms_vy": "纵向速度(RMS)",
+client/src/assets/util/pythonDataFormat.js:7:    "rms_v": "合速度(RMS)",
+client/src/assets/util/pythonDataFormat.js:8:    "rms_ax": "横向加速度(RMS)",
+client/src/assets/util/pythonDataFormat.js:9:    "rms_ay": "纵向加速度(RMS)",
+client/src/assets/util/pythonDataFormat.js:10:    "rms_a": "合加速度(RMS)",
+client/src/assets/util/pythonDataFormat.js:11:    "sampen_x": "横向偏移(SampEn)",
+client/src/assets/util/pythonDataFormat.js:12:    "sampen_y": "纵向偏移(SampEn)",
+client/src/assets/util/pythonDataFormat.js:13:    "sampen_disp": "合偏移(SampEn)",
+client/src/assets/util/pythonDataFormat.js:14:    "sampen_vx": "横向速度(SampEn)",
+client/src/assets/util/pythonDataFormat.js:15:    "sampen_vy": "纵向速度(SampEn)",
+client/src/assets/util/pythonDataFormat.js:16:    "sampen_v": "合速度(SampEn)",
+client/src/assets/util/pythonDataFormat.js:17:    "swing_density_max": "摇摆密度_峰值",
+client/src/assets/util/pythonDataFormat.js:18:    "swing_density_mean": "摇摆密度_均值",
+client/src/assets/util/pythonDataFormat.js:19:    "swing_density_std": "摇摆密度_标准差",
+client/src/assets/util/pythonDataFormat.js:20:    "swing_length_max": "摇摆长度_峰值",
+client/src/assets/util/pythonDataFormat.js:21:    "swing_length_mean": "摇摆长度_均值",
+client/src/assets/util/pythonDataFormat.js:22:    "swing_length_std": "摇摆长度_标准差",
+client/src/assets/util/pythonDataFormat.js:23:    "swing_radius_max": "摇摆半径_峰值",
+client/src/assets/util/pythonDataFormat.js:24:    "swing_radius_mean": "摇摆半径_均值",
+client/src/assets/util/pythonDataFormat.js:25:    "swing_radius_std": "摇摆半径_标准差"
+client/src/assets/util/selectMatrix.js:14: * 通过canvas的位置信息和框选的矩阵信息还有传感器的点阵信息计算出 真实框选区域
+client/src/assets/util/selectMatrix.js:59: * 通过 canvas的位置信息还有真实框选区域还有 传感器点阵信息计算出 框选框的位置信息
+client/src/assets/util/selectMatrix.js:121:    // 处理非正方形矩阵的偏移
+client/src/assets/util/selectMatrix.js:146:        // 右上角叉号关闭按钮
+client/src/components/ColAndHistory/ColAndHistory.js:104:    // ─── 下载路径和弹窗状态 ───
+client/src/components/ColAndHistory/ColAndHistory.js:109:    const [showDownloadPathModal, setShowDownloadPathModal] = useState(false) // 下载前路径选择对话框
+client/src/components/ColAndHistory/ColAndHistory.js:198:            message.success(t('pathUpdated') || '路径已更新')
+client/src/components/ColAndHistory/ColAndHistory.js:266:            console.log('历史执行')
+client/src/components/ColAndHistory/ColAndHistory.js:272:    // 获取下载路径
+client/src/components/ColAndHistory/ColAndHistory.js:281:    // 下载弹窗自动消失
+client/src/components/ColAndHistory/ColAndHistory.js:298:        // 优先使用 Electron 文件夹选择对话框
+client/src/components/ColAndHistory/ColAndHistory.js:308:                        // 使用后端返回的实际路径更新输入框
+client/src/components/ColAndHistory/ColAndHistory.js:312:                        message.success(t('pathUpdated') || '路径已更新')
+client/src/components/ColAndHistory/ColAndHistory.js:315:                    // 即使后端请求失败，也更新前端显示
+client/src/components/ColAndHistory/ColAndHistory.js:320:            // 非 Electron 环境，显示编辑框
+client/src/components/ColAndHistory/ColAndHistory.js:374:            message.warning(t('noPath') || '路径为空')
+client/src/components/ColAndHistory/ColAndHistory.js:377:        // 优先使用 Electron API
+client/src/components/ColAndHistory/ColAndHistory.js:386:                message.error(err?.message || '打开文件夹失败')
+client/src/components/ColAndHistory/ColAndHistory.js:394:                    message.error(res.data?.message || '打开文件夹失败')
+client/src/components/ColAndHistory/ColAndHistory.js:398:                message.error('打开文件夹失败')
+client/src/components/ColAndHistory/ColAndHistory.js:413:                    // 如果打开文件失败，尝试打开所在文件夹
+client/src/components/ColAndHistory/ColAndHistory.js:418:                        message.error(res.data?.message || '打开文件失败')
+client/src/components/ColAndHistory/ColAndHistory.js:423:                // 降级：尝试打开所在文件夹
+client/src/components/ColAndHistory/ColAndHistory.js:432:    // 点击下载按钮：先弹出路径选择对话框
+client/src/components/ColAndHistory/ColAndHistory.js:442:    // 确认下载：关闭路径对话框，显示进度弹窗，执行下载
+client/src/components/ColAndHistory/ColAndHistory.js:467:        // 模拟进度动画
+client/src/components/ColAndHistory/ColAndHistory.js:493:                // 提取所有文件路径（支持单文件 filePath 和多文件 filePaths）
+client/src/components/ColAndHistory/ColAndHistory.js:499:                            // 优先处理 filePaths 数组（多矩阵系统分文件导出）
+client/src/components/ColAndHistory/ColAndHistory.js:510:                                // 兼容单文件 filePath
+client/src/components/ColAndHistory/ColAndHistory.js:750:                title="采集参数设置"
+client/src/components/ColAndHistory/ColAndHistory.js:757:                    数据名称 <Input value={colName} onChange={(e) => { setColName(e.target.value) }} />
+client/src/components/ColAndHistory/ColAndHistory.js:761:                    采集频率 <Input value={HZ} onChange={(e) => { setHZ(e.target.value) }} /> 帧/秒
+client/src/components/ColAndHistory/ColAndHistory.js:813:            {/* ─── 下载路径选择对话框 ─── */}
+client/src/components/ColAndHistory/ColAndHistory.js:815:                title={t('downloadPathSelect') || '下载路径选择'}
+client/src/components/ColAndHistory/ColAndHistory.js:819:                okText={t('startDownload') || '开始下载'}
+client/src/components/ColAndHistory/ColAndHistory.js:824:                    {t('downloadPathHint') || '请确认或修改下载保存路径：'}
+client/src/components/ColAndHistory/ColAndHistory.js:841:                        placeholder={t('inputPath') || '输入存储路径...'}
+client/src/components/ColAndHistory/ColAndHistory.js:843:                    <Button onClick={handleSelectFolder}>{t('browse') || '浏览'}</Button>
+client/src/components/ColAndHistory/ColAndHistory.js:847:                    {t('selectedCount') || '已选择'}: {selectArr.length} {t('items') || '项'}
+client/src/components/ColAndHistory/ColAndHistory.js:851:            {/* ─── 下载进度弹窗 ─── */}
+client/src/components/ColAndHistory/ColAndHistory.js:853:                title={downloadProgress?.status === 'done' ? (t('downloadSuccess') || '下载完成') : downloadProgress?.status === 'error' ? (t('downloadFailed') || '下载失败') : (t('downloading') || '正在下载...')}
+client/src/components/ColAndHistory/ColAndHistory.js:860:                    }}>{t('openFolder') || '打开文件夹'}</Button>,
+client/src/components/ColAndHistory/ColAndHistory.js:864:                    }}>{t('close') || '关闭'}</Button>
+client/src/components/ColAndHistory/ColAndHistory.js:866:                    <Button key="close" onClick={() => setDownloadProgress(null)}>{t('close') || '关闭'}</Button>
+client/src/components/ColAndHistory/ColAndHistory.js:884:                            {t('downloadingHint') || '正在导出数据，请稍候...'}
+client/src/components/ColAndHistory/ColAndHistory.js:890:                                {t('downloadedFiles') || '已下载文件：'}
+client/src/components/ColAndHistory/ColAndHistory.js:902:                                        {t('clickToOpen') || '点击打开'}
+client/src/components/ColAndHistory/ColAndHistory.js:911:                                {t('openDownloadFolder') || '打开下载文件夹'}: {downloadPath}
+client/src/components/ColAndHistory/ColAndHistory.js:989:                                <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={t('uploadFile') || 'CSV导入'}>
+client/src/components/ColAndHistory/ColAndHistory.js:1127:                                                        // 如果历史数据有保存的框选信息，自动设置框选缓存供回放时展示
+client/src/components/ColAndHistory/ColAndHistory.js:1217:                                                        message.error(result.message || '导入文件格式不正确，请选择系统导出的CSV文件')
+client/src/components/ColAndHistory/ColAndHistory.js:1243:                                                    message.error(err.message || '导入文件格式不正确，请选择系统导出的CSV文件')
+client/src/components/ColAndHistory/ColAndHistory.js:1273:                                    选择数据文件
+client/src/components/ColAndHistory/ColAndHistory.js:1305:                                    选择数据文件
+client/src/components/ColAndHistory/ColAndHistory.js:1340:                        }}>对比</div>
+client/src/components/ColAndHistory/ColAndHistory.js:1344:                            }}>csv导入</div> </> :
+client/src/components/ColAndHistory/ColAndHistory.js:1366:                            }}>对比</div>
+client/src/components/ColAndHistory/ColAndHistory.js:1371:                                }}>取消</div> </>
+client/src/components/ColAndHistory/ColAndHistory.js:1376:                    {/* ─── 下载路径区域 ─── */}
+client/src/components/ColAndHistory/ColAndHistory.js:1408:                                            message.success(t('pathUpdated') || '路径已更新')
+client/src/components/ColAndHistory/ColAndHistory.js:1414:                            placeholder={t('inputPath') || '输入存储路径...'}
+client/src/components/ColAndHistory/ColAndHistory.js:1419:            {/* 旧的下载成功弹窗已替换为上方的下载进度 Modal */}
+client/src/components/aside/Aside.js:25:        // 基于上一次状态更新
+client/src/components/aside/Aside.js:71:    <Drawer show={show} asideClose setShow={setShow} title={'数据'}>
+client/src/components/aside/selectChart/SelectChart.js:78:                <div className="selectInfo">框选{index + 1}  <i className='iconfont selectEdit' >&#xe623;</i></div>
+client/src/components/aside/selectChart/SelectChart.js:83:                    <div className="selectDataTitle">传感面积</div>
+client/src/components/aside/selectChart/SelectChart.js:87:                    <div className="selectDataTitle">传感压力</div>
+client/src/components/chart/Chart.js:212:        // 创建一个虚拟链接来下载保存的图片
+client/src/components/chartsAside/ChartsAside.js:19:    // 设备颜色（无框选时使用）
+client/src/components/chartsAside/ChartsAside.js:41:     * 构建 ECharts series 数组
+client/src/components/chartsAside/ChartsAside.js:42:     * 当有多框选时，每个框一条线（颜色与框对应）
+client/src/components/chartsAside/ChartsAside.js:43:     * 无框选时，按设备（back/sit）分色
+client/src/components/chartsAside/ChartsAside.js:57:            // 检查是否有多框选统计
+client/src/components/chartsAside/ChartsAside.js:60:                // 多框选模式：每个框一条线
+client/src/components/chartsAside/ChartsAside.js:70:                        name: `框${b + 1}${keyArr.length > 1 ? `-${key}` : ''}`,
+client/src/components/chartsAside/ChartsAside.js:74:                // 无框选模式：按设备分色
+client/src/components/chartsAside/ChartsAside.js:228:                    return `灰度值: ${value[0]}<br>(概率密度): ${value[1].toFixed(6)}`;
+client/src/components/chartsAside/ChartsAside.js:233:                name: '灰度值 (0–255)', splitNumber: 5,
+client/src/components/chartsAside/ChartsAside.js:238:                type: 'value', name: '概率密度', splitNumber: 3,
+client/src/components/chartsAside/ChartsAside.js:297:                        // 多框选统计数据
+client/src/components/chartsAside/ChartsAside.js:334:     * 判断当前是否有多框选数据
+client/src/components/chartsAside/ChartsAside.js:342:     * 渲染图表图例 — 多框选时显示框颜色，否则显示设备颜色
+client/src/components/chartsAside/ChartsAside.js:346:            // 多框选模式：显示每个框的颜色
+client/src/components/chartsAside/ChartsAside.js:360:                    {`框选${box.colorIndex + 1}`}
+client/src/components/chartsAside/ChartsAside.js:364:        // 设备模式
+client/src/components/chartsAside/ChartsAside.js:376:     * 渲染数据行 — 多框选时每个框一行数据（颜色对应），否则按设备
+client/src/components/chartsAside/ChartsAside.js:380:            // 多框选模式
+client/src/components/chartsAside/ChartsAside.js:393:                                        {system === 'carY' ? '' : (item === 'total' ? 'N' : item === 'pointTotal' ? '个' : item === 'areaTotal' ? 'cm²' : 'Kpa')}
+client/src/components/chartsAside/ChartsAside.js:404:        // 设备模式
+client/src/components/chartsAside/ChartsAside.js:412:                            {system === 'carY' ? '' : (item === 'total' ? 'N' : item === 'pointTotal' ? '个' : item === 'areaTotal' ? 'cm²' : 'Kpa')}
+client/src/components/chartsAside/chartAndData/ChartAndData.js:7:    aver: '平均压力',
+client/src/components/chartsAside/chartAndData/ChartAndData.js:8:    max: '最大压力',
+client/src/components/chartsAside/chartAndData/ChartAndData.js:9:    press: '压力总和',
+client/src/components/chartsAside/chartAndData/ChartAndData.js:10:    aver: '点数'
+client/src/components/chartsAside/chartAndData/ChartAndData.js:31:                // 阴影/渐变填充
+client/src/components/chartsAside/chartAndData/ChartAndData.js:33:                    { offset: 0, color: 'rgba(65,156,220 , 1)' }, // 上方浅
+client/src/components/chartsAside/chartAndData/ChartAndData.js:35:                    { offset: 1, color: 'rgba(26,28,32,0)' }  // 下方透明
+client/src/components/chartsAside/chartAndData/ChartAndData.js:95:            //             // 阴影/渐变填充
+client/src/components/chartsAside/chartAndData/ChartAndData.js:97:            //                 { offset: 0, color: 'rgba(65,156,220 , 1)' }, // 上方浅
+client/src/components/chartsAside/chartAndData/ChartAndData.js:99:            //                 { offset: 1, color: 'rgba(26,28,32,0)' }  // 下方透明
+client/src/components/chartsAside/chartAndData/ChartAndData.js:121:                name: "中风",
+client/src/components/col/Col.js:24:            // 去掉DOM引用，只保留坐标数据
+client/src/components/col/Col.js:28:                // 多矩阵系统（如 carY）：根据 displayType 决定保存哪个
+client/src/components/col/Col.js:54:                // 单矩阵系统
+client/src/components/col/Col.js:94:                    message.success('开始采集')
+client/src/components/col/Col.js:98:                    // 始终调用 upsertRemark 保存框选数据（即使没有 alias 和 remark）
+client/src/components/col/Col.js:109:                    // 只要有任何需要保存的信息就调用
+client/src/components/col/Col.js:134:                message.error('采集失败')
+client/src/components/col/Col.js:145:                    message.success('采集成功')
+client/src/components/contrast/NumThresContrast.js:23:    // 根据 systemType 和 displayType 动态获取 width/height
+client/src/components/contrast/NumThresContrast.js:35:    // 判断靠背是否为正方形（如 carY 32×32），正方形靠背使用与坐垫相同的 NumThree 渲染
+client/src/components/draggablePanel/DraggablePanel.js:4:// 全局 z-index 管理器
+client/src/components/draggablePanel/DraggablePanel.js:8: * 可拖拽、可缩放、置顶的面板组件
+client/src/components/draggablePanel/DraggablePanel.js:9: * - 不可关闭
+client/src/components/draggablePanel/DraggablePanel.js:10: * - 鼠标拖拽移动
+client/src/components/draggablePanel/DraggablePanel.js:11: * - 可放大/缩小
+client/src/components/draggablePanel/DraggablePanel.js:12: * - 始终在最上层（点击时置顶）
+client/src/components/draggablePanel/DraggablePanel.js:22:    // 点击面板时置顶
+client/src/components/draggablePanel/DraggablePanel.js:28:    // 拖拽开始
+client/src/components/draggablePanel/DraggablePanel.js:30:        // 只在标题栏区域拖拽
+client/src/components/draggablePanel/DraggablePanel.js:64:    // 缩放（10%~1000%），固定 10% 步长，只保留 10 的倍数
+client/src/components/draggablePanel/DraggablePanel.js:115:                    <span className='panel-ctrl-btn' onClick={zoomOut} title='缩小'>-</span>
+client/src/components/draggablePanel/DraggablePanel.js:116:                    <span className='panel-ctrl-btn' onClick={resetZoom} title='重置'
+client/src/components/draggablePanel/DraggablePanel.js:118:                    <span className='panel-ctrl-btn' onClick={zoomIn} title='放大'>+</span>
+client/src/components/ruler/newRuler.js:35: * 判断点击位置是否在某条量尺附近（线段距离检测）
+client/src/components/ruler/newRuler.js:50: * 判断点击位置是否在距离标签区域内
+client/src/components/ruler/newRuler.js:56:// ─── 选中颜色配置 ───
+client/src/components/ruler/newRuler.js:57:const SELECTED_COLOR = '#FFD600'          // 选中线条/端点颜色（黄色）
+client/src/components/ruler/newRuler.js:58:const SELECTED_LABEL_BG = '#FFD600'       // 选中标签背景（黄色）
+client/src/components/ruler/newRuler.js:59:const SELECTED_LABEL_TEXT = '#000'         // 选中标签文字（黑色）
+client/src/components/ruler/newRuler.js:60:const SELECTED_BORDER_COLOR = 'rgba(255, 214, 0, 0.5)' // 选中高亮边框
+client/src/components/ruler/newRuler.js:61:const DELETE_BTN_COLOR = '#E53935'         // 删除按钮背景（红色）
+client/src/components/ruler/newRuler.js:73:        // 存储所有量尺线段 [{startGrid, endGrid, distance}]
+client/src/components/ruler/newRuler.js:75:        // 选中的量尺索引集合
+client/src/components/ruler/newRuler.js:77:        // 临时起点（正在绘制中的起点）
+client/src/components/ruler/newRuler.js:80:        // 统一使用 mousedown 事件，通过 e.button 区分左右键
+client/src/components/ruler/newRuler.js:83:                // ═══ 左键：负责绘制起点/终点 + 点击删除按钮 ═══
+client/src/components/ruler/newRuler.js:85:                // 1. 先检查是否左键点击了某个选中量尺的删除按钮（最高优先级）
+client/src/components/ruler/newRuler.js:88:                    // 删除该量尺
+client/src/components/ruler/newRuler.js:90:                    // 更新selectedIndices：删除该索引，大于该索引的减1
+client/src/components/ruler/newRuler.js:106:                    message.warning('请在有效区域内测量')
+client/src/components/ruler/newRuler.js:110:                // 2. 绘制逻辑：左键只负责绘制，不做选中检测
+client/src/components/ruler/newRuler.js:112:                    // 正在绘制中（已有起点，等待终点），直接完成绘制
+client/src/components/ruler/newRuler.js:134:                // 3. 没有正在绘制，开始新量尺的起点
+client/src/components/ruler/newRuler.js:141:                // ═══ 右键：负责选中/取消选中量尺（显示删除框） ═══
+client/src/components/ruler/newRuler.js:144:                // 如果正在绘制中，右键取消当前绘制
+client/src/components/ruler/newRuler.js:153:                // 检查是否右键点击了已有量尺（线条或标签）
+client/src/components/ruler/newRuler.js:156:                    // 切换选中状态（支持多选）
+client/src/components/ruler/newRuler.js:167:        // 阻止右键默认菜单
+client/src/components/ruler/newRuler.js:215:     * 检查是否点击了某个选中量尺的删除按钮
+client/src/components/ruler/newRuler.js:216:     * 返回该量尺的索引，-1表示未命中
+client/src/components/ruler/newRuler.js:230:            // 删除按钮位置（与_drawRulerLine中一致）
+client/src/components/ruler/newRuler.js:235:            const btnSize = propW * 1.2 // 加大点击区域
+client/src/components/ruler/newRuler.js:247:     * 点击命中测试：检查是否点击了某条量尺的线条或距离标签
+client/src/components/ruler/newRuler.js:248:     * 返回命中的量尺索引，-1表示未命中
+client/src/components/ruler/newRuler.js:258:        // 线条点击容差：3个格子宽度
+client/src/components/ruler/newRuler.js:273:            // 检查是否点击了线条
+client/src/components/ruler/newRuler.js:280:            // 检查是否点击了距离标签区域
+client/src/components/ruler/newRuler.js:287:                break // 标签命中优先
+client/src/components/ruler/newRuler.js:290:            // 检查是否点击了起点圆点附近
+client/src/components/ruler/newRuler.js:297:            // 检查是否点击了终点圆点附近
+client/src/components/ruler/newRuler.js:309:     * 重绘所有量尺
+client/src/components/ruler/newRuler.js:318:        // 绘制所有已完成的量尺
+client/src/components/ruler/newRuler.js:325:        // 绘制正在绘制的临时起点
+client/src/components/ruler/newRuler.js:339:     * 绘制单条量尺线段
+client/src/components/ruler/newRuler.js:345:        // 线宽：普通3px，选中4.5px
+client/src/components/ruler/newRuler.js:351:        // 绘制起点圆点
+client/src/components/ruler/newRuler.js:357:        // 绘制起点S标记
+client/src/components/ruler/newRuler.js:364:        // 绘制终点圆点
+client/src/components/ruler/newRuler.js:370:        // 绘制连线
+client/src/components/ruler/newRuler.js:379:        // 绘制距离标签
+client/src/components/ruler/newRuler.js:385:        // 如果选中，绘制删除按钮和高亮边框
+client/src/components/ruler/newRuler.js:391:            // 删除按钮背景（红色圆形）
+client/src/components/ruler/newRuler.js:397:            // 删除按钮X图标
+client/src/components/ruler/newRuler.js:411:            // 选中高亮边框（黄色虚线）
+client/src/components/ruler/newRuler.js:433:     * 删除所有选中的量尺
+client/src/components/ruler/newRuler.js:446:     * 获取选中数量
+client/src/components/ruler/newRuler.js:464:            message.info('请在2D模式下使用')
+client/src/components/ruler/newRuler.js:481:    // 保留旧接口兼容性
+client/src/components/select/Select.js:5:    label: '汽车',
+client/src/components/select/Select.js:9:    label: '床垫',
+client/src/components/select/Select.js:20:  // 当 defaultValue 变化时同步更新显示值
+client/src/components/selectBox/SelectBox.js:106:        // 按下shift键
+client/src/components/selectBox/newSelecttBox.js:7:// ─── 4 个框选的固定颜色 ──────────────────────────────────────
+client/src/components/selectBox/newSelecttBox.js:9:    '#FF6B6B',  // 框1 - 红
+client/src/components/selectBox/newSelecttBox.js:10:    '#4ECDC4',  // 框2 - 青
+client/src/components/selectBox/newSelecttBox.js:11:    '#FFD93D',  // 框3 - 黄
+client/src/components/selectBox/newSelecttBox.js:12:    '#6C5CE7',  // 框4 - 紫
+client/src/components/selectBox/newSelecttBox.js:52:        this.rangeArr = []       // 最多 4 个框选 [{x1,y1,x2,y2,bgc,colorIndex,_element}]
+client/src/components/selectBox/newSelecttBox.js:53:        this._resizing = false   // 是否正在拖拽调整大小
+client/src/components/selectBox/newSelecttBox.js:54:        this._dragging = false   // 是否正在拖动框
+client/src/components/selectBox/newSelecttBox.js:55:        this._isDrawing = false  // 是否正在绘制新框
+client/src/components/selectBox/newSelecttBox.js:56:        this._hasDragged = false // 是否已经产生真实拖拽
+client/src/components/selectBox/newSelecttBox.js:72:     * 获取下一个可用的颜色索引（0-3）
+client/src/components/selectBox/newSelecttBox.js:83:     * 获取当前用于框选的真实矩阵渲染区域。
+client/src/components/selectBox/newSelecttBox.js:84:     * 对于非正方形矩阵（例如 endi-back 50x64），只允许在真实矩阵区域内框选。
+client/src/components/selectBox/newSelecttBox.js:125:     * 获取完整画布区域，用于判断一次鼠标操作是否可能是框选。
+client/src/components/selectBox/newSelecttBox.js:126:     * 画布外的按钮、抽屉、设置面板等 UI 不应被框选工具接管。
+client/src/components/selectBox/newSelecttBox.js:142:     * 检查坐标是否在真实矩阵区域内
+client/src/components/selectBox/newSelecttBox.js:151:     * 检查框选区域是否完整落在真实矩阵区域内
+client/src/components/selectBox/newSelecttBox.js:166:        // 方向键移动最后一个框
+client/src/components/selectBox/newSelecttBox.js:195:                // 删除最后一个框
+client/src/components/selectBox/newSelecttBox.js:224:    // ─── 为框添加交互控件（拖拽手柄 + 删除按钮 + 编号标签） ───
+client/src/components/selectBox/newSelecttBox.js:232:        // 编号标签（左上角）
+client/src/components/selectBox/newSelecttBox.js:246:        // 删除按钮（右上角）
+client/src/components/selectBox/newSelecttBox.js:285:            // 找到当前框在 rangeArr 中的索引
+client/src/components/selectBox/newSelecttBox.js:291:        // 8 个拖拽手柄
+client/src/components/selectBox/newSelecttBox.js:320:        // 拖动整个框
+client/src/components/selectBox/newSelecttBox.js:329:    // ─── 拖拽调整大小 ──────────────────────────────────────
+client/src/components/selectBox/newSelecttBox.js:378:    // ─── 拖动整个框 ────────────────────────────────────────
+client/src/components/selectBox/newSelecttBox.js:416:        // 如果点击的是已有的框选区域或其子控件，不创建新框
+client/src/components/selectBox/newSelecttBox.js:418:        // 如果正在拖拽或调整大小，不创建新框
+client/src/components/selectBox/newSelecttBox.js:421:        // 画布外的普通 UI 点击不进入框选流程，也不弹出有效区提示。
+client/src/components/selectBox/newSelecttBox.js:494:            // 只有真实拖拽创建框时才提示数量限制，避免普通点击其它 UI 弹提示。
+client/src/components/selectBox/newSelecttBox.js:496:                message.warning(`最多只能创建 ${MAX_BOXES} 个框选区域`);
+client/src/components/selectBox/newSelecttBox.js:506:            // 检查框选区域是否完整落在真实矩阵区域内
+client/src/components/selectBox/newSelecttBox.js:508:                message.warning('请在有效区域内框选');
+client/src/components/selectBox/newSelecttBox.js:524:            // 绘制完成后，为框添加交互控件
+client/src/components/selectBox/newSelecttBox.js:548:     * 删除所有框选
+client/src/components/three/CanvasMemo.js:240:  //   初始化座椅
+client/src/components/three/CanvasMemo.js:365:    const from = attr.array.slice(); // 起始状态的拷贝
+client/src/components/three/CanvasMemo.js:366:    const to = attrTo.array.slice()   // 目标 Float32Array（已准备好）
+client/src/components/three/CanvasMemo.js:368:    const offsets = Array.from({ length: attr.count }, () => Math.random() * 0.5); // 每个点一个随机偏移
+client/src/components/three/CanvasMemo.js:449:  //       // 🧩 强制把坐标设置为目标形状，确保形状不乱
+client/src/components/three/CanvasMemo.js:459:  //   // 三阶段动画：from → mid → to
+client/src/components/three/CanvasMemo.js:460:  //   // mid 是加入噪声/扰动后的中间状态，整体形变曲线变得流畅
+client/src/components/three/CanvasMemo.js:472:  //     // 加入扰动 - 每个点向随机方向偏移一定距离
+client/src/components/three/CanvasMemo.js:477:  //     // mid 是 from 和 to 中间点 + 扰动
+client/src/components/three/CanvasMemo.js:483:  //   // 第一阶段：from → mid
+client/src/components/three/CanvasMemo.js:496:  //       // 第二阶段：mid → to
+client/src/components/three/CanvasMemo.js:509:  //           // 最终强制设置为精准位置
+client/src/components/three/CanvasMemo.js:527:    const mid = new Float32Array(count * 3); // 中间扰动点
+client/src/components/three/CanvasMemo.js:529:    // 构建中间路径点（扰动一下）
+client/src/components/three/CanvasMemo.js:551:          // 二阶贝塞尔插值 from → mid → to
+client/src/components/three/CanvasMemo.js:568:        // 强制精准对齐目标点
+client/src/components/three/CanvasMemo.js:607:          // 最终对齐
+client/src/components/three/CanvasMemo.js:674:  //  更新座椅数据
+client/src/components/three/CanvasMemo.js:725:        //柔化处理smooth
+client/src/components/three/CanvasMemo.js:755:  //模型动画
+client/src/components/three/CanvasMemo.js:759:    controls.update();  // 必须更新
+client/src/components/three/CanvasMemo.js:760:    // if (tween) tween.update(); // 👈 必须！
+client/src/components/three/CanvasMemo.js:815:  //   视图数据
+client/src/components/three/CanvasMemo.js:819:    // 清除之前的计时器，避免在短时间内多次触发
+client/src/components/three/CanvasMemo.js:824:    // 设置一个新的计时器，例如 300毫秒后触发
+client/src/components/three/CanvasMemo.js:826:      console.log('鼠标滚轮滑动结束');
+client/src/components/three/CanvasMemo.js:827:      // 在这里执行滚动结束后的操作，例如加载更多内容
+client/src/components/three/CanvasMemo.js:831:      timer = null; // 重置 timer 变量
+client/src/components/three/CanvasMemo.js:833:    }, 400); // 300毫秒为一个示例值
+client/src/components/three/CanvasMemo.js:839:    // 靠垫数据
+client/src/components/three/NumThree.js:39:        // 初始化 Three.js
+client/src/components/three/NumThree.js:89:            // dummy.position.set((x - 31.5) / 32, (y - 31.5) / 32, 0); // 居中
+client/src/components/three/NumThree.js:91:            dummy.position.set((x) / 32, (y) / 32, 0); // 居中
+client/src/components/three/NumThree.js:116:                dummy.position.set((x - 31.5) / 32, (y - 31.5) / 32, 0); // 居中
+client/src/components/three/NumThreeBgColor.js:76:        // 初始化 Three.js
+client/src/components/three/NumThreeBgColor.js:111:            vec3 bgColor = vec3(1.0, 0.0, 0.0);  // 🔴 静态红色背景
+client/src/components/three/NumThreeBgColor.js:113:  // 如果贴图透明，就显示背景色
+client/src/components/three/NumThreeBgColor.js:119:  // 否则混合贴图和背景
+client/src/components/three/NumThreeBgColor.js:142:            // dummy.position.set((x - 31.5) / 32, (y - 31.5) / 32, 0); // 居中
+client/src/components/three/NumThreeBgColor.js:144:            dummy.position.set((x) / 32, (y) / 32, 0); // 居中
+client/src/components/three/NumThreeBgColor.js:169:                dummy.position.set((x - 31.5) / 32, (y - 31.5) / 32, 0); // 居中
+client/src/components/three/NumThreeColor.js:76:        // 初始化 Three.js
+client/src/components/three/NumThreeColor.js:113:            // 乘以格子颜色
+client/src/components/three/NumThreeColor.js:135:            // dummy.position.set((x - 31.5) / 32, (y - 31.5) / 32, 0); // 居中
+client/src/components/three/NumThreeColor.js:137:            dummy.position.set((x) / 32, (y) / 32, 0); // 居中
+client/src/components/three/NumThreeColor.js:162:                dummy.position.set((x - 31.5) / 32, (y - 31.5) / 32, 0); // 居中
+client/src/components/three/NumThreeColorBase.js:96:      // ✅ 计算背景颜色
+client/src/components/three/NumThreeColorBase.js:101:      // ✅ 黑色边框
+client/src/components/three/NumThreeColorBase.js:106:      // ✅ 白色数字
+client/src/components/three/NumThreeColorBase.js:122:    // 初始化 Three.js
+client/src/components/three/NumThreeColorBase.js:179:  return pow(color*1.5, vec3(1.0 / 2.2));  // Gamma 矫正
+client/src/components/three/NumThreeColorBase.js:186:           vec3 rgb = texColor.rgb * vColor; // 染色
+client/src/components/three/NumThreeColorBase.js:189:            // 乘以格子颜色
+client/src/components/three/NumThreeColorBase.js:201:    // size为1就是64矩阵
+client/src/components/three/NumThreeColorBase.js:205:    // 总大小  64 * 0.032
+client/src/components/three/NumThreeColorBase.js:219:      // dummy.position.set((x - 31.5) / 32, (y - 31.5) / 32, 0); // 居中
+client/src/components/three/NumThreeColorBase.js:221:      dummy.position.set((x) / 32 * size, (y) / 32 * size, 0); // 居中
+client/src/components/three/NumThreeColorBase.js:303:        dummy.position.set((x - (32 / size - 0.5)) / 32 * size, (y - (32 / size - 0.5)) / 32 * size, 0); // 居中
+client/src/components/three/NumThreeColorV2.js:94:      // ✅ 计算背景颜色
+client/src/components/three/NumThreeColorV2.js:99:      // ✅ 黑色边框
+client/src/components/three/NumThreeColorV2.js:104:      // ✅ 白色数字（加黑色描边增强可读性）
+client/src/components/three/NumThreeColorV2.js:125:    // 初始化 Three.js
+client/src/components/three/NumThreeColorV2.js:182:  return pow(color*1.5, vec3(1.0 / 2.2));  // Gamma 矫正
+client/src/components/three/NumThreeColorV2.js:189:           vec3 rgb = texColor.rgb * vColor; // 染色
+client/src/components/three/NumThreeColorV2.js:192:            // 乘以格子颜色
+client/src/components/three/NumThreeColorV2.js:204:    // size为1就是64矩阵
+client/src/components/three/NumThreeColorV2.js:208:    // 总大小  64 * 0.032
+client/src/components/three/NumThreeColorV2.js:222:    //   // dummy.position.set((x - 31.5) / 32, (y - 31.5) / 32, 0); // 居中
+client/src/components/three/NumThreeColorV2.js:224:    //   dummy.position.set((x) / (gridSize / 2), (y) / (gridSize / 2), 0); // 居中
+client/src/components/three/NumThreeColorV2.js:315:        dummy.position.set((x - (gridSize / 2 - 0.5)) / (gridSize / 2), (y - (gridSize / 2 - 0.5)) / (gridSize / 2), 0); // 居中
+client/src/components/three/NumThreeColorV3.js:114:      // ✅ 计算背景颜色
+client/src/components/three/NumThreeColorV3.js:119:      // ✅ 黑色边框
+client/src/components/three/NumThreeColorV3.js:124:      // ✅ 白色数字
+client/src/components/three/NumThreeColorV3.js:140:    // 初始化 Three.js
+client/src/components/three/NumThreeColorV3.js:250:  return pow(color*1.5, vec3(1.0 / 2.2));  // Gamma 矫正
+client/src/components/three/NumThreeColorV3.js:257:           vec3 rgb = texColor.rgb * vColor; // 染色
+client/src/components/three/NumThreeColorV3.js:260:            // 乘以格子颜色
+client/src/components/three/NumThreeColorV3.js:272:    // size为1就是64矩阵
+client/src/components/three/NumThreeColorV3.js:278:    // 总大小  64 * 0.032
+client/src/components/three/NumThreeColorV3.js:292:    //   // dummy.position.set((x - 31.5) / 32, (y - 31.5) / 32, 0); // 居中
+client/src/components/three/NumThreeColorV3.js:294:    //   dummy.position.set((x) / (gridSize / 2), (y) / (gridSize / 2), 0); // 居中
+client/src/components/three/NumThreeColorV3.js:415:        dummy.position.set((x - (gridSize / 2 - 0.5)) / (gridSize / 2), (y - (gridSize / 2 - 0.5)) / (gridSize / 2), 0); // 居中
+client/src/components/three/NumThreeColorV3.js:450:      // 放大镜实时更新：即使鼠标不动，数据变化时也重绘放大镜
+client/src/components/three/NumThreeColorV4.js:8:// jetWhite3 已统一为 jet 颜色方案，不再引用
+client/src/components/three/NumThreeColorV4.js:115:      // ✅ 计算背景颜色（与坐垫统一使用 jet 颜色映射）
+client/src/components/three/NumThreeColorV4.js:120:      // ✅ 黑色边框
+client/src/components/three/NumThreeColorV4.js:125:      // ✅ 白色数字
+client/src/components/three/NumThreeColorV4.js:141:    // 初始化 Three.js
+client/src/components/three/NumThreeColorV4.js:251:  return pow(color*1.5, vec3(1.0 / 2.2));  // Gamma 矫正
+client/src/components/three/NumThreeColorV4.js:258:           vec3 rgb = texColor.rgb * vColor; // 染色
+client/src/components/three/NumThreeColorV4.js:261:            // 乘以格子颜色
+client/src/components/three/NumThreeColorV4.js:273:    // size为1就是64矩阵
+client/src/components/three/NumThreeColorV4.js:279:    // 总大小  64 * 0.032
+client/src/components/three/NumThreeColorV4.js:293:    //   // dummy.position.set((x - 31.5) / 32, (y - 31.5) / 32, 0); // 居中
+client/src/components/three/NumThreeColorV4.js:295:    //   dummy.position.set((x) / (gridSize / 2), (y) / (gridSize / 2), 0); // 居中
+client/src/components/three/NumThreeColorV4.js:415:        dummy.position.set((((gridSize2 - gridSize1) / 2) + x - (gridSize2 / 2 - 0.5)) / (gridSize2 / 2), (y - (gridSize2 / 2 - 0.5)) / (gridSize2 / 2), 0); // 居中
+client/src/components/three/NumThreeColorV4.js:425:        // 与坐垫统一的颜色映射
+client/src/components/three/NumThreeColorV4.js:444:      // 放大镜实时更新：即使鼠标不动，数据变化时也重绘放大镜
+client/src/components/three/NumThreeColorV4.js:465:      // 使用与3D统一的颜色映射
+client/src/components/three/NumThres.js:18:    // 根据 systemType 和 displayType 动态获取 width/height
+client/src/components/three/NumThres.js:31:    // 判断靠背是否为正方形（如 carY 32×32），正方形靠背使用与坐垫相同的 NumThree 渲染
+client/src/components/three/ThreeAndCar.js:23://     //逆时针旋转 90 度
+client/src/components/three/ThreeAndCar.js:24://     //列 = 行
+client/src/components/three/ThreeAndCar.js:25://     //行 = n - 1 - 列(j);  n表示总行数
+client/src/components/three/ThreeAndCar.js:185:            // const light = new THREE.AmbientLight(0x404040 ,1); // 柔和的白光
+client/src/components/three/ThreeAndCar.js:287:        //   初始化座椅
+client/src/components/three/ThreeAndCar.js:421:                //             // 仅基色贴图设 sRGB
+client/src/components/three/ThreeAndCar.js:423:                //             // 防黑：先给个稳妥值
+client/src/components/three/ThreeAndCar.js:447:            const from = attr.array.slice(); // 起始状态的拷贝
+client/src/components/three/ThreeAndCar.js:448:            const to = attrTo.array.slice()   // 目标 Float32Array（已准备好）
+client/src/components/three/ThreeAndCar.js:450:            const offsets = Array.from({ length: attr.count }, () => Math.random() * 0.5); // 每个点一个随机偏移
+client/src/components/three/ThreeAndCar.js:512:            const mid = new Float32Array(count * 3); // 中间扰动点
+client/src/components/three/ThreeAndCar.js:514:            // 构建中间路径点（扰动一下）
+client/src/components/three/ThreeAndCar.js:536:                        // 二阶贝塞尔插值 from → mid → to
+client/src/components/three/ThreeAndCar.js:553:                    // 强制精准对齐目标点
+client/src/components/three/ThreeAndCar.js:592:                        // 最终对齐
+client/src/components/three/ThreeAndCar.js:659:        //  更新座椅数据
+client/src/components/three/ThreeAndCar.js:704:                    //柔化处理smooth
+client/src/components/three/ThreeAndCar.js:734:        //模型动画
+client/src/components/three/ThreeAndCar.js:739:            controls.update();  // 必须更新
+client/src/components/three/ThreeAndCar.js:740:            // if (tween) tween.update(); // 👈 必须！
+client/src/components/three/ThreeAndCar.js:796:        //   视图数据
+client/src/components/three/ThreeAndCar.js:800:            // 清除之前的计时器，避免在短时间内多次触发
+client/src/components/three/ThreeAndCar.js:805:            // 设置一个新的计时器，例如 300毫秒后触发
+client/src/components/three/ThreeAndCar.js:807:                console.log('鼠标滚轮滑动结束');
+client/src/components/three/ThreeAndCar.js:808:                // 在这里执行滚动结束后的操作，例如加载更多内容
+client/src/components/three/ThreeAndCar.js:812:                timer = null; // 重置 timer 变量
+client/src/components/three/ThreeAndCar.js:814:            }, 400); // 300毫秒为一个示例值
+client/src/components/three/ThreeAndCar.js:820:            // 靠垫数据
+client/src/components/three/ThreeAndCarPoint.js:24://     //逆时针旋转 90 度
+client/src/components/three/ThreeAndCarPoint.js:25://     //列 = 行
+client/src/components/three/ThreeAndCarPoint.js:26://     //行 = n - 1 - 列(j);  n表示总行数
+client/src/components/three/ThreeAndCarPoint.js:203:            // const light = new THREE.AmbientLight(0x404040 ,1); // 柔和的白光
+client/src/components/three/ThreeAndCarPoint.js:241:            // 缩放优化配置
+client/src/components/three/ThreeAndCarPoint.js:245:            controls.minDistance = 40;         // 最近距离（对应300%）
+client/src/components/three/ThreeAndCarPoint.js:246:            controls.maxDistance = 1200;       // 最远距离（对应10%）
+client/src/components/three/ThreeAndCarPoint.js:312:        //   初始化座椅
+client/src/components/three/ThreeAndCarPoint.js:489:                //             // 仅基色贴图设 sRGB
+client/src/components/three/ThreeAndCarPoint.js:491:                //             // 防黑：先给个稳妥值
+client/src/components/three/ThreeAndCarPoint.js:516:            const from = attr.array.slice(); // 起始状态的拷贝
+client/src/components/three/ThreeAndCarPoint.js:517:            const to = attrTo.array.slice()   // 目标 Float32Array（已准备好）
+client/src/components/three/ThreeAndCarPoint.js:519:            const offsets = Array.from({ length: attr.count }, () => Math.random() * 0.5); // 每个点一个随机偏移
+client/src/components/three/ThreeAndCarPoint.js:581:            const mid = new Float32Array(count * 3); // 中间扰动点
+client/src/components/three/ThreeAndCarPoint.js:583:            // 构建中间路径点（扰动一下）
+client/src/components/three/ThreeAndCarPoint.js:605:                        // 二阶贝塞尔插值 from → mid → to
+client/src/components/three/ThreeAndCarPoint.js:622:                    // 强制精准对齐目标点
+client/src/components/three/ThreeAndCarPoint.js:661:                        // 最终对齐
+client/src/components/three/ThreeAndCarPoint.js:728:        //  更新座椅数据
+client/src/components/three/ThreeAndCarPoint.js:773:        //             //柔化处理smooth
+client/src/components/three/ThreeAndCarPoint.js:850:                    //柔化处理smooth
+client/src/components/three/ThreeAndCarPoint.js:855:                    position[k + 1] = smoothBig[l] * height * 0.1; // y (乘以0.1缩放因子使高度调节更合理)
+client/src/components/three/ThreeAndCarPoint.js:910:        //模型动画
+client/src/components/three/ThreeAndCarPoint.js:915:            controls.update();  // 必须更新
+client/src/components/three/ThreeAndCarPoint.js:916:            if (tween) tween.update(time); // 👈 必须传入时间参数！
+client/src/components/three/ThreeAndCarPoint.js:917:            if (tween1) tween1.update(time); // 👈 必须传入时间参数！
+client/src/components/three/ThreeAndCarPoint.js:942:        // return ref; // .current 永远是最新
+client/src/components/three/ThreeAndCarPoint.js:1025:            // 限制缩放范围 10%-300%
+client/src/components/three/ThreeAndCarPoint.js:1033:            // 平滑过渡动画（200ms）
+client/src/components/three/ThreeAndCarPoint.js:1034:            // 放大缩小时回到初始位置（整体模式）
+client/src/components/three/ThreeAndCarPoint.js:1043:        //   视图数据
+client/src/components/three/ThreeAndCarPoint.js:1055:            // 限制 camera.position.z 在 10%-300% 对应的范围内
+client/src/components/three/ThreeAndCarPoint.js:1056:            const minZ = -120 * 100 / 10   // -1200 (对应10%)
+client/src/components/three/ThreeAndCarPoint.js:1057:            const maxZ = -120 * 100 / 300  // -40   (对应300%)
+client/src/components/three/ThreeAndCarPoint.js:1062:            // 使用 requestAnimationFrame 实时更新百分比显示
+client/src/components/three/ThreeAndCarPoint.js:1216:            // 靠垫数据
+client/src/components/three/ThreeAndCarPointV2.js:24://     //逆时针旋转 90 度
+client/src/components/three/ThreeAndCarPointV2.js:25://     //列 = 行
+client/src/components/three/ThreeAndCarPointV2.js:26://     //行 = n - 1 - 列(j);  n表示总行数
+client/src/components/three/ThreeAndCarPointV2.js:85:        // === 配置面板状态 ===
+client/src/components/three/ThreeAndCarPointV2.js:122:                // 更新 PointsMaterial 的 size 属性（pointSize * scale.x * 300）
+client/src/components/three/ThreeAndCarPointV2.js:280:            // const light = new THREE.AmbientLight(0x404040 ,1); // 柔和的白光
+client/src/components/three/ThreeAndCarPointV2.js:318:            // 缩放优化配置
+client/src/components/three/ThreeAndCarPointV2.js:319:            controls.current.zoomSpeed = 0.8;        // 缩放灵敏度（默认1.2，降低使滚轮更平滑）
+client/src/components/three/ThreeAndCarPointV2.js:320:            controls.current.rotateSpeed = 2.0;      // 旋转灵敏度
+client/src/components/three/ThreeAndCarPointV2.js:321:            controls.current.panSpeed = 0.8;          // 平移灵敏度
+client/src/components/three/ThreeAndCarPointV2.js:322:            controls.current.minDistance = 40;        // 最近距离（对应300%）
+client/src/components/three/ThreeAndCarPointV2.js:323:            controls.current.maxDistance = 1200;      // 最远距离（对应10%）
+client/src/components/three/ThreeAndCarPointV2.js:324:            controls.current.dynamicDampingFactor = 0.15; // 阻尼系数，使缩放有惯性过渡
+client/src/components/three/ThreeAndCarPointV2.js:470:        //   初始化座椅
+client/src/components/three/ThreeAndCarPointV2.js:533:        // 默认点位配置
+client/src/components/three/ThreeAndCarPointV2.js:649:            // 为坐垫/靠背添加有效识别范围的边缘外框
+client/src/components/three/ThreeAndCarPointV2.js:650:            // 点阵坐标计算：
+client/src/components/three/ThreeAndCarPointV2.js:651:            //   x 方向: iy * SEPARATION - (AMOUNTX * SEPARATION) / 2, iy 范围 [0, AMOUNTY-1]
+client/src/components/three/ThreeAndCarPointV2.js:652:            //     实际 x 范围: [-(AMOUNTX*SEP)/2, (AMOUNTY-1)*SEP - (AMOUNTX*SEP)/2]
+client/src/components/three/ThreeAndCarPointV2.js:653:            //   z 方向: ix * SEPARATION - (AMOUNTY * SEPARATION) / 2, ix 范围 [0, AMOUNTX-1]
+client/src/components/three/ThreeAndCarPointV2.js:654:            //     实际 z 范围: [-(AMOUNTY*SEP)/2, (AMOUNTX-1)*SEP - (AMOUNTY*SEP)/2]
+client/src/components/three/ThreeAndCarPointV2.js:659:            // 边框稍微扩大半个 SEPARATION 的间距，确保完全包围所有点
+client/src/components/three/ThreeAndCarPointV2.js:676:            // 外框跟随点阵的位置和旋转
+client/src/components/three/ThreeAndCarPointV2.js:679:            // 默认隐藏，只在单独坐垫/靠背模式下显示
+client/src/components/three/ThreeAndCarPointV2.js:705:                //             // 仅基色贴图设 sRGB
+client/src/components/three/ThreeAndCarPointV2.js:707:                //             // 防黑：先给个稳妥值
+client/src/components/three/ThreeAndCarPointV2.js:733:            const from = attr.array.slice(); // 起始状态的拷贝
+client/src/components/three/ThreeAndCarPointV2.js:734:            const to = attrTo.array.slice()   // 目标 Float32Array（已准备好）
+client/src/components/three/ThreeAndCarPointV2.js:736:            const offsets = Array.from({ length: attr.count }, () => Math.random() * 0.5); // 每个点一个随机偏移
+client/src/components/three/ThreeAndCarPointV2.js:798:            const mid = new Float32Array(count * 3); // 中间扰动点
+client/src/components/three/ThreeAndCarPointV2.js:800:            // 构建中间路径点（扰动一下）
+client/src/components/three/ThreeAndCarPointV2.js:822:                        // 二阶贝塞尔插值 from → mid → to
+client/src/components/three/ThreeAndCarPointV2.js:839:                    // 强制精准对齐目标点
+client/src/components/three/ThreeAndCarPointV2.js:879:                        // 最终对齐
+client/src/components/three/ThreeAndCarPointV2.js:946:        //  更新座椅数据
+client/src/components/three/ThreeAndCarPointV2.js:991:        //             //柔化处理smooth
+client/src/components/three/ThreeAndCarPointV2.js:1069:                    //柔化处理smooth
+client/src/components/three/ThreeAndCarPointV2.js:1074:                    position[k + 1] = smoothBig[l] * height * 0.1; // y (乘以0.1缩放因子使高度调节更合理)
+client/src/components/three/ThreeAndCarPointV2.js:1134:        //模型动画
+client/src/components/three/ThreeAndCarPointV2.js:1139:            controls.current?.update();  // 必须更新
+client/src/components/three/ThreeAndCarPointV2.js:1140:            if (tween) tween.update(time); // 👈 必须传入时间参数！
+client/src/components/three/ThreeAndCarPointV2.js:1141:            if (tween1) tween1.update(time); // 👈 必须传入时间参数！
+client/src/components/three/ThreeAndCarPointV2.js:1166:        // return ref; // .current 永远是最新
+client/src/components/three/ThreeAndCarPointV2.js:1252:                // 整体模式：同时旋转所有子点阵，使用各自的初始 rotation 作为基准
+client/src/components/three/ThreeAndCarPointV2.js:1266:                // 同时旋转椅子模型
+client/src/components/three/ThreeAndCarPointV2.js:1269:                // 单独坐垫/靠背模式：与整体模式一致的旋转逻辑
+client/src/components/three/ThreeAndCarPointV2.js:1274:                // 同步边框旋转
+client/src/components/three/ThreeAndCarPointV2.js:1281:            // 限制缩放范围 10%-300%
+client/src/components/three/ThreeAndCarPointV2.js:1291:            // 平滑过渡动画（200ms）
+client/src/components/three/ThreeAndCarPointV2.js:1295:                // easeOutCubic 缓动函数，先快后慢更自然
+client/src/components/three/ThreeAndCarPointV2.js:1302:            // 放大缩小时回到初始位置（整体模式）
+client/src/components/three/ThreeAndCarPointV2.js:1313:        //   视图数据
+client/src/components/three/ThreeAndCarPointV2.js:1315:        // 用于滚轮实时更新的 requestAnimationFrame ID
+client/src/components/three/ThreeAndCarPointV2.js:1327:            // 限制 camera.position.z 在 10%-300% 对应的范围内
+client/src/components/three/ThreeAndCarPointV2.js:1328:            const minZ = -120 * 100 / 10   // -1200 (对应10%)
+client/src/components/three/ThreeAndCarPointV2.js:1329:            const maxZ = -120 * 100 / 300  // -40   (对应300%)
+client/src/components/three/ThreeAndCarPointV2.js:1334:            // 使用 requestAnimationFrame 实时更新百分比显示，避免延迟感
+client/src/components/three/ThreeAndCarPointV2.js:1348:            // 查找对应的边框，使边框跟随粒子同步移动
+client/src/components/three/ThreeAndCarPointV2.js:1368:                // 同步更新边框位置和旋转
+client/src/components/three/ThreeAndCarPointV2.js:1396:            // 隐藏所有边框
+client/src/components/three/ThreeAndCarPointV2.js:1402:            // 显示指定边框
+client/src/components/three/ThreeAndCarPointV2.js:1409:                // 隐藏所有子对象（包括边框）
+client/src/components/three/ThreeAndCarPointV2.js:1438:                // 隐藏所有子对象（包括边框）
+client/src/components/three/ThreeAndCarPointV2.js:1468:                // 整体模式：先隐藏所有，再恢复 sit 和 back 到初始位置
+client/src/components/three/ThreeAndCarPointV2.js:1483:                // 恢复 sit 到 allConfig 中定义的初始位置和旋转
+client/src/components/three/ThreeAndCarPointV2.js:1504:                // 恢复 back 到 allConfig 中定义的初始位置和旋转
+client/src/components/three/ThreeAndCarPointV2.js:1537:            // 靠垫数据
+client/src/components/three/ThreeAndCarPointV2.js:1555:                {/* 点位配置面板 */}
+client/src/components/three/ThreeAndCarPointV2.js:1583:                        <span style={{ fontWeight: 'bold' }}>点位配置</span>
+client/src/components/three/ThreeAndCarPointV2.js:1592:                                        {name === 'back' ? '靠背 (back)' : '坐垫 (sit)'}
+client/src/components/three/ThreeAndCarPointV2.js:1622:                                    {/* 点大小控件 */}
+client/src/components/three/ThreeAndCarPointV2.js:1656:                            {/* 复制配置按钮 */}
+client/src/components/three/ThreeAndCarPointV2.js:1663:                                        console.log('\n点位配置:\n' + code)
+client/src/components/three/ThreeAndCarPointV2.js:1676:                                    复制配置代码
+client/src/components/three/ThreeAndModel.js:24://     //逆时针旋转 90 度
+client/src/components/three/ThreeAndModel.js:25://     //列 = 行
+client/src/components/three/ThreeAndModel.js:26://     //行 = n - 1 - 列(j);  n表示总行数
+client/src/components/three/ThreeAndModel.js:186:            // const light = new THREE.AmbientLight(0x404040 ,1); // 柔和的白光
+client/src/components/three/ThreeAndModel.js:289:        //   初始化座椅
+client/src/components/three/ThreeAndModel.js:427:                //             // 仅基色贴图设 sRGB
+client/src/components/three/ThreeAndModel.js:429:                //             // 防黑：先给个稳妥值
+client/src/components/three/ThreeAndModel.js:451:            const from = attr.array.slice(); // 起始状态的拷贝
+client/src/components/three/ThreeAndModel.js:452:            const to = attrTo.array.slice()   // 目标 Float32Array（已准备好）
+client/src/components/three/ThreeAndModel.js:454:            const offsets = Array.from({ length: attr.count }, () => Math.random() * 0.5); // 每个点一个随机偏移
+client/src/components/three/ThreeAndModel.js:516:            const mid = new Float32Array(count * 3); // 中间扰动点
+client/src/components/three/ThreeAndModel.js:518:            // 构建中间路径点（扰动一下）
+client/src/components/three/ThreeAndModel.js:540:                        // 二阶贝塞尔插值 from → mid → to
+client/src/components/three/ThreeAndModel.js:557:                    // 强制精准对齐目标点
+client/src/components/three/ThreeAndModel.js:596:                        // 最终对齐
+client/src/components/three/ThreeAndModel.js:663:        //  更新座椅数据
+client/src/components/three/ThreeAndModel.js:710:                    //柔化处理smooth
+client/src/components/three/ThreeAndModel.js:740:        //模型动画
+client/src/components/three/ThreeAndModel.js:745:            controls.update();  // 必须更新
+client/src/components/three/ThreeAndModel.js:746:            // if (tween) tween.update(); // 👈 必须！
+client/src/components/three/ThreeAndModel.js:809:        //   视图数据
+client/src/components/three/ThreeAndModel.js:813:            // 清除之前的计时器，避免在短时间内多次触发
+client/src/components/three/ThreeAndModel.js:818:            // 设置一个新的计时器，例如 300毫秒后触发
+client/src/components/three/ThreeAndModel.js:820:                console.log('鼠标滚轮滑动结束');
+client/src/components/three/ThreeAndModel.js:821:                // 在这里执行滚动结束后的操作，例如加载更多内容
+client/src/components/three/ThreeAndModel.js:824:                timer = null; // 重置 timer 变量
+client/src/components/three/ThreeAndModel.js:826:            }, 400); // 300毫秒为一个示例值
+client/src/components/three/ThreeAndModel.js:832:            // 靠垫数据
+client/src/components/three/canvas.js:227:  //   初始化座椅
+client/src/components/three/canvas.js:347:    const from = attr.array.slice(); // 起始状态的拷贝
+client/src/components/three/canvas.js:348:    const to = attrTo.array.slice()   // 目标 Float32Array（已准备好）
+client/src/components/three/canvas.js:350:    const offsets = Array.from({ length: attr.count }, () => Math.random() * 0.5); // 每个点一个随机偏移
+client/src/components/three/canvas.js:431:  //       // 🧩 强制把坐标设置为目标形状，确保形状不乱
+client/src/components/three/canvas.js:441:  //   // 三阶段动画：from → mid → to
+client/src/components/three/canvas.js:442:  //   // mid 是加入噪声/扰动后的中间状态，整体形变曲线变得流畅
+client/src/components/three/canvas.js:454:  //     // 加入扰动 - 每个点向随机方向偏移一定距离
+client/src/components/three/canvas.js:459:  //     // mid 是 from 和 to 中间点 + 扰动
+client/src/components/three/canvas.js:465:  //   // 第一阶段：from → mid
+client/src/components/three/canvas.js:478:  //       // 第二阶段：mid → to
+client/src/components/three/canvas.js:491:  //           // 最终强制设置为精准位置
+client/src/components/three/canvas.js:509:    const mid = new Float32Array(count * 3); // 中间扰动点
+client/src/components/three/canvas.js:511:    // 构建中间路径点（扰动一下）
+client/src/components/three/canvas.js:533:          // 二阶贝塞尔插值 from → mid → to
+client/src/components/three/canvas.js:550:        // 强制精准对齐目标点
+client/src/components/three/canvas.js:589:          // 最终对齐
+client/src/components/three/canvas.js:656:  //  更新座椅数据
+client/src/components/three/canvas.js:695:        //柔化处理smooth
+client/src/components/three/canvas.js:725:  //模型动画
+client/src/components/three/canvas.js:729:    controls.update();  // 必须更新
+client/src/components/three/canvas.js:730:    // if (tween) tween.update(); // 👈 必须！
+client/src/components/three/canvas.js:751:  //   视图数据
+client/src/components/three/canvas.js:756:    // 靠垫数据
+client/src/components/three/three.js:198:  //   初始化座椅
+client/src/components/three/three.js:318:    const from = attr.array.slice(); // 起始状态的拷贝
+client/src/components/three/three.js:319:    const to = attrTo.array.slice()   // 目标 Float32Array（已准备好）
+client/src/components/three/three.js:321:    const offsets = Array.from({ length: attr.count }, () => Math.random() * 0.5); // 每个点一个随机偏移
+client/src/components/three/three.js:402:  //       // 🧩 强制把坐标设置为目标形状，确保形状不乱
+client/src/components/three/three.js:412:  //   // 三阶段动画：from → mid → to
+client/src/components/three/three.js:413:  //   // mid 是加入噪声/扰动后的中间状态，整体形变曲线变得流畅
+client/src/components/three/three.js:425:  //     // 加入扰动 - 每个点向随机方向偏移一定距离
+client/src/components/three/three.js:430:  //     // mid 是 from 和 to 中间点 + 扰动
+client/src/components/three/three.js:436:  //   // 第一阶段：from → mid
+client/src/components/three/three.js:449:  //       // 第二阶段：mid → to
+client/src/components/three/three.js:462:  //           // 最终强制设置为精准位置
+client/src/components/three/three.js:480:    const mid = new Float32Array(count * 3); // 中间扰动点
+client/src/components/three/three.js:482:    // 构建中间路径点（扰动一下）
+client/src/components/three/three.js:504:          // 二阶贝塞尔插值 from → mid → to
+client/src/components/three/three.js:521:        // 强制精准对齐目标点
+client/src/components/three/three.js:560:          // 最终对齐
+client/src/components/three/three.js:626:  //模型动画
+client/src/components/three/three.js:630:    controls.update();  // 必须更新
+client/src/components/three/three.js:631:    // if (tween) tween.update(); // 👈 必须！
+client/src/components/three/three.js:649:  //   视图数据
+client/src/components/three/three.js:654:    // 靠垫数据
+client/src/components/title/SecondTitle.js:171:            placeholder: '输入初始横向起点'
+client/src/components/title/SecondTitle.js:174:            placeholder: '输入初始纵向起点'
+client/src/components/title/SecondTitle.js:176:            name: '长',
+client/src/components/title/SecondTitle.js:177:            placeholder: '输入框选横向点数'
+client/src/components/title/SecondTitle.js:179:            name: '宽',
+client/src/components/title/SecondTitle.js:180:            placeholder: '输入框选纵向点数'
+client/src/components/title/SecondTitle.js:185:        <div>X: 输入初始横向起点</div>
+client/src/components/title/SecondTitle.js:186:        <div>Y: 输入初始纵向起点</div>
+client/src/components/title/SecondTitle.js:187:        <div>长: 输入框选横向点数</div>
+client/src/components/title/SecondTitle.js:188:        <div>宽: 输入框选纵向点数</div>
+client/src/components/title/SecondTitle.js:189:        <div>注意: x加长不能超过横向传感点数(60个),y加宽不能超过纵向传感点数(50个)</div>
+client/src/components/title/SecondTitle.js:202:                            <Col span={4} >高斯模糊</Col>
+client/src/components/title/SecondTitle.js:250:                                                        // Seed Token，影响范围大
+client/src/components/title/SecondTitle.js:294:                    {/* <IconAndText text='画布翻转' /> */}
+client/src/components/title/SecondTitle.js:329:                    <div className="selectInputTitle"> <div className="selectInputTitleInfo">框选区域</div>  
+client/src/components/title/SecondTitle.js:341:                        <div className="selectInputButton connectButton cursor">确认</div></div>
+client/src/components/title/SelectSet.js:13:    { name: 'X', placeholder: '横向起点', valueStr: 'xStart' },
+client/src/components/title/SelectSet.js:14:    { name: 'Y', placeholder: '纵向起点', valueStr: 'yStart' },
+client/src/components/title/SelectSet.js:15:    { name: '长', placeholder: '横向点数', valueStr: 'width' },
+client/src/components/title/SelectSet.js:16:    { name: '宽', placeholder: '纵向点数', valueStr: 'height' },
+client/src/components/title/SelectSet.js:60:            // 将每个框选转换为矩阵坐标
+client/src/components/title/SelectSet.js:103:            message.error('请输入有效数字')
+client/src/components/title/SelectSet.js:107:            message.error('初始坐标需要大于0')
+client/src/components/title/SelectSet.js:111:            message.error('框选区域需要大于0')
+client/src/components/title/SelectSet.js:116:            message.warning(`X(${x}) + 长(${w}) 超过横向传感点数(${maxW})`)
+client/src/components/title/SelectSet.js:120:            message.warning(`Y(${y}) + 宽(${h}) 超过纵向传感点数(${maxH})`)
+client/src/components/title/SelectSet.js:125:            message.warning('最多只能创建 4 个框选区域')
+client/src/components/title/SelectSet.js:131:            message.error('无法计算框选位置')
+client/src/components/title/SelectSet.js:139:        // 创建 DOM 元素
+client/src/components/title/SelectSet.js:173:        <div>X: 横向起点（从0开始）</div>
+client/src/components/title/SelectSet.js:174:        <div>Y: 纵向起点（从0开始）</div>
+client/src/components/title/SelectSet.js:175:        <div>长: 框选横向点数</div>
+client/src/components/title/SelectSet.js:176:        <div>宽: 框选纵向点数</div>
+client/src/components/title/SelectSet.js:178:            最多4个框选，X+长 ≤ {matrixInfo.width || '?'}，Y+宽 ≤ {matrixInfo.height || '?'}
+client/src/components/title/SelectSet.js:186:            {/* 标题 */}
+client/src/components/title/SelectSet.js:189:                    <div className="selectInputTitleInfo">框选区域</div>
+client/src/components/title/SelectSet.js:200:                        清除全部
+client/src/components/title/SelectSet.js:205:            {/* 已有框选列表 */}
+client/src/components/title/SelectSet.js:216:                    <span style={{ color: '#E6EBF0', minWidth: '2.2rem' }}>框{box.colorIndex + 1}</span>
+client/src/components/title/SelectSet.js:228:            {/* 手动输入添加框选 */}
+client/src/components/title/SelectSet.js:231:                    <div style={{ fontSize: '0.7rem', color: '#6C7784', marginBottom: '0.25rem' }}>手动添加框选</div>
+client/src/components/title/SelectSet.js:256:                            添加
+client/src/components/title/Title.js:20:    label: '中文',
+client/src/components/title/Title.js:36:  // ─── 一键连接 ──────────────────────────────────────────
+client/src/components/title/Title.js:37:  // connPort 已合并 MAC 查询，不再需要单独调用 /sendMac
+client/src/components/title/Title.js:52:  // ─── 重新连接 ──────────────────────────────────────────
+client/src/components/title/Title.js:53:  // 清理死端口 + 僵尸设备 → 重新连接
+client/src/components/title/Title.js:68:  // ─── 断开连接 ──────────────────────────────────────────
+client/src/components/title/Title.js:69:  // 调用后端 stopPort 关闭所有串口，并清空前端状态
+client/src/components/title/Title.js:79:    // 立即清空前端状态
+client/src/components/title/Title.js:115:  const currentLanguageLabel = languageOptions.find((item) => item.value === currentLanguage)?.label || '中文'
+client/src/components/title/Title.js:119:  // 根据 connectState 决定主按钮样式和文本
+client/src/components/title/Title.js:137:        return '重新连接中...'
+client/src/components/title/Title.js:145:  // 跳转到 MAC 地址配置页面
+client/src/components/title/Title.js:161:          {/* 一键连接按钮 */}
+client/src/components/title/Title.js:166:          {/* 重新连接按钮（仅在已连接状态显示） */}
+client/src/components/title/Title.js:168:            <Tooltip title="重新连接（清理死端口/僵尸设备后重连）">
+client/src/components/title/Title.js:175:          {/* 断开连接按钮（仅在已连接/重扫状态显示） */}
+client/src/components/title/Title.js:177:            <Tooltip title="断开所有串口连接">
+client/src/components/title/Title.js:188:          <Tooltip title="设备 MAC 地址配置">
+client/src/components/viewSetting/ViewSetting.js:19:    const list = ['靠背', '座椅']
+client/src/components/viewSetting/ViewSetting.js:49:    // 等比例缩放：每次按固定比例（约10%）缩放，范围 10%~300%
+client/src/components/viewSetting/ViewSetting.js:52:    const ZOOM_RATIO = 1.1  // 每次缩放 10%
+client/src/components/viewSetting/ViewSetting.js:219:            label: '3D模型',
+client/src/components/viewSetting/ViewSetting.js:224:            label: '3D数字',
+client/src/components/viewSetting/ViewSetting.js:229:            label: '2D数字',
+client/src/components/viewSetting/ViewSetting.js:236:            label: '3D模型',
+client/src/components/viewSetting/ViewSetting.js:240:                    label: '整体',
+client/src/components/viewSetting/ViewSetting.js:244:                    label: '靠背',
+client/src/components/viewSetting/ViewSetting.js:247:                    label: '座椅',
+client/src/components/viewSetting/ViewSetting.js:253:            label: '3D数字',
+client/src/components/viewSetting/ViewSetting.js:257:                    label: '靠背',
+client/src/components/viewSetting/ViewSetting.js:260:                    label: '座椅',
+client/src/components/viewSetting/ViewSetting.js:266:            label: '2D数字',
+client/src/components/viewSetting/ViewSetting.js:270:                    label: '靠背',
+client/src/components/viewSetting/ViewSetting.js:273:                    label: '座椅',
+client/src/hooks/useDebounce.js:5: * @param value 需要防抖处理的值
+client/src/hooks/useDebounce.js:6: * @param delay 延迟时间（毫秒）
+client/src/hooks/useDebounce.js:7: * @returns 防抖后的值
+client/src/hooks/useDebounce.js:13:        // 设置定时器
+client/src/hooks/useDebounce.js:18:        // 清理副作用：value 或 delay 改变时重置定时器
+client/src/hooks/useMatrixData.js:9: * 矩阵数据处理 Hook
+client/src/hooks/useMatrixData.js:11: * 封装传感器数据的预处理、框选、翻转、统计计算逻辑
+client/src/hooks/useMatrixData.js:12: * 支持多框选（最多4个），每个框独立计算统计数据
+client/src/hooks/useMatrixData.js:25:   * 限制 endi 类型数据值上限为 255
+client/src/hooks/useMatrixData.js:33:   * 从矩阵中提取框选区域的数据
+client/src/hooks/useMatrixData.js:48:   * 计算框选区域数据 — 支持多框
+client/src/hooks/useMatrixData.js:49:   * 返回: { default: [...全部数据], boxes: [{data, colorIndex, bgc, matrix}] }
+client/src/hooks/useMatrixData.js:56:    // 实时框选 — 支持多个框
+client/src/hooks/useMatrixData.js:75:      // 如果有框选，default 使用第一个框的数据（兼容旧逻辑）
+client/src/hooks/useMatrixData.js:76:      // boxes 包含所有框的独立数据
+client/src/hooks/useMatrixData.js:83:    // 回放框选
+client/src/hooks/useMatrixData.js:115:    // 无框选，使用全部数据
+client/src/hooks/useMatrixData.js:120:   * 计算单个数据集的统计指标
+client/src/hooks/useMatrixData.js:136:    // endi 类型单位转换
+client/src/hooks/useMatrixData.js:147:    // carY 类型压力转换
+client/src/hooks/useMatrixData.js:159:   * 计算统计指标（压力、面积、重心、正态分布等）
+client/src/hooks/useMatrixData.js:160:   * 支持多框选：data[key].boxStats = [{colorIndex, bgc, pressArr, areaArr, data}]
+client/src/hooks/useMatrixData.js:195:    // 默认统计（全部数据或第一个框）
+client/src/hooks/useMatrixData.js:219:    // endi 类型单位转换
+client/src/hooks/useMatrixData.js:230:    // carY 类型压力转换
+client/src/hooks/useMatrixData.js:238:    // ─── 多框选独立统计 ───────────────────────────────────
+client/src/hooks/useMatrixData.js:241:      // 确保每个框都有自己的滑动窗口
+client/src/hooks/useMatrixData.js:251:      // 如果框数减少了，截断
+client/src/hooks/useMatrixData.js:280:      // 无框选时清空 boxStats
+client/src/hooks/useMatrixData.js:286:   * 水平翻转矩阵数据
+client/src/hooks/useMatrixData.js:306:   * 垂直翻转矩阵数据
+client/src/hooks/useMatrixData.js:326:   * 处理传感器数据帧（实时或回放）
+client/src/hooks/useMatrixData.js:341:    // 1. 解析矩阵数据 + 框选计算
+client/src/hooks/useMatrixData.js:357:    // 2. 设备状态更新
+client/src/hooks/useMatrixData.js:371:    // 检测设备断开：5 秒防抖
+client/src/hooks/useMatrixData.js:396:    // 3. 预压力置零
+client/src/hooks/useMatrixData.js:410:    // 4. 噪点过滤
+client/src/hooks/useMatrixData.js:422:    // 5. 翻转处理
+client/src/hooks/useMatrixData.js:435:   * 切换翻转方向
+client/src/hooks/useMatrixData.js:446:   * 预压力置零：记录当前帧作为基准
+client/src/hooks/useWebSocket.js:5:// ─── WS 数据打印开关（通过浏览器控制台切换）────────────────
+client/src/hooks/useWebSocket.js:12:  window.wsDebugOn = () => { window.__WS_DEBUG__ = true; console.log('[WS Debug] 已开启 WebSocket 数据打印') }
+client/src/hooks/useWebSocket.js:13:  window.wsDebugOff = () => { window.__WS_DEBUG__ = false; console.log('[WS Debug] 已关闭 WebSocket 数据打印') }
+client/src/hooks/useWebSocket.js:14:  window.wsDebugFilter = (key) => { window.__WS_DEBUG_FILTER__ = key || null; console.log(`[WS Debug] 过滤器: ${key || '全部'}`) }
+client/src/hooks/useWebSocket.js:15:  window.wsDebugLast = () => { console.log('[WS Debug] 最近一条消息:', window.__WS_LAST_DATA__); return window.__WS_LAST_DATA__ }
+client/src/hooks/useWebSocket.js:16:  window.wsDebugCount = () => { console.log(`[WS Debug] 已接收 ${window.__WS_MSG_COUNT__} 条消息`); return window.__WS_MSG_COUNT__ }
+client/src/hooks/useWebSocket.js:19:    '%c[WS Debug] WebSocket 调试工具已加载',
+client/src/hooks/useWebSocket.js:21:    '\n  wsDebugOn()    - 开启数据打印',
+client/src/hooks/useWebSocket.js:22:    '\n  wsDebugOff()   - 关闭数据打印',
+client/src/hooks/useWebSocket.js:23:    '\n  wsDebugFilter("sitData") - 只打印指定类型',
+client/src/hooks/useWebSocket.js:24:    '\n  wsDebugLast()  - 查看最近一条消息',
+client/src/hooks/useWebSocket.js:25:    '\n  wsDebugCount() - 查看消息总数',
+client/src/hooks/useWebSocket.js:30: * 解析 WebSocket 消息，自动适配 JSON 和 MessagePack 格式
+client/src/hooks/useWebSocket.js:41:    console.warn('[WS] 收到 Blob 类型消息，请检查 binaryType 设置')
+client/src/hooks/useWebSocket.js:47:/** WebSocket 断线后固定 3 秒重连 */
+client/src/hooks/useWebSocket.js:51: * WebSocket 连接 Hook
+client/src/hooks/useWebSocket.js:53: * 封装 WebSocket 连接管理、固定 3 秒自动重连、消息分发
+client/src/hooks/useWebSocket.js:54: * 自动适配 JSON 和 MessagePack 两种传输格式
+client/src/hooks/useWebSocket.js:56: * @param {Object} handlers - 消息处理回调
+client/src/hooks/useWebSocket.js:57: * @param {Function} handlers.onSitData - 实时数据回调 (sitData)
+client/src/hooks/useWebSocket.js:58: * @param {Function} handlers.onSitDataPlay - 回放数据回调 (sitDataPlay)
+client/src/hooks/useWebSocket.js:59: * @param {Function} handlers.onPlayEnd - 回放结束回调 (playEnd)
+client/src/hooks/useWebSocket.js:60: * @param {Function} handlers.onContrastData - 对比数据回调 (contrastData)
+client/src/hooks/useWebSocket.js:61: * @param {Function} handlers.onMacInfo - 设备信息回调 (macInfo)
+client/src/hooks/useWebSocket.js:62: * @param {Function} handlers.onIndex - 帧索引回调
+client/src/hooks/useWebSocket.js:63: * @param {Function} handlers.onTimestamp - 时间戳回调
+client/src/hooks/useWebSocket.js:64: * @param {Function} handlers.onConnectProgress - 连接进度回调 (connectProgress)
+client/src/hooks/useWebSocket.js:65: * @param {Function} handlers.onConnectResult - 连接结果回调 (connectResult)
+client/src/hooks/useWebSocket.js:66: * @param {Function} handlers.onDeviceUpdate - 设备更新回调 (deviceUpdate)
+client/src/hooks/useWebSocket.js:67: * @param {Function} handlers.onRescanProgress - 重扫进度回调 (rescanProgress)
+client/src/hooks/useWebSocket.js:68: * @param {Function} handlers.onWsOpen - WebSocket 连接成功回调
+client/src/hooks/useWebSocket.js:69: * @param {Function} handlers.onWsClose - WebSocket 断开回调
+client/src/hooks/useWebSocket.js:91:        console.info('[WS] 连接成功')
+client/src/hooks/useWebSocket.js:100:          // ─── WS 数据打印 ──────────────────────────────
+client/src/hooks/useWebSocket.js:114:                console.log('完整数据:', jsonObj)
+client/src/hooks/useWebSocket.js:118:                    console.log(`  ${key}.status:`, val.status, '| arr长度:', val.arr.length, '| 前5项:', val.arr.slice(0, 5))
+client/src/hooks/useWebSocket.js:130:          // 实时数据
+client/src/hooks/useWebSocket.js:135:          // 回放数据
+client/src/hooks/useWebSocket.js:140:          // 回放结束信号
+client/src/hooks/useWebSocket.js:145:          // 对比数据
+client/src/hooks/useWebSocket.js:150:          // 设备 MAC 信息
+client/src/hooks/useWebSocket.js:155:          // 帧索引
+client/src/hooks/useWebSocket.js:160:          // 时间戳
+client/src/hooks/useWebSocket.js:165:          // ─── 连接进度事件 ──────────────────────────────
+client/src/hooks/useWebSocket.js:170:          // 连接结果
+client/src/hooks/useWebSocket.js:175:          // 设备更新（MAC 解析后设备类型变更）
+client/src/hooks/useWebSocket.js:180:          // 重扫进度
+client/src/hooks/useWebSocket.js:185:          console.error('[WS] 消息解析失败:', err)
+client/src/hooks/useWebSocket.js:196:        console.info('[WS] 连接断开，3 秒后重连...')
+client/src/hooks/useWindowsize.js:28:        // 注意：仅比较引用
+client/src/library/playback/PlaybackBar.js:41:            message.warning('请选择回放文件');
+client/src/library/playback/PlaybackBar.js:74:            message.warning('请选择回放文件');
+client/src/locale/zh_CN.json:2:     "connect" : "连接"
+client/src/page/data/Data.js:6:    // 1-15行调换
+client/src/page/equip/Equip.js:15:        label: '设备管理',
+client/src/page/equip/Equip.js:18:            { key: '0', label: '设备添加', icon: <PlusCircleOutlined /> },
+client/src/page/equip/Equip.js:19:            { key: '1', label: '设备列表', icon: <UnorderedListOutlined /> },
+client/src/page/equip/Equip.js:20:            { key: '2', label: '配置系统', icon: <SettingOutlined /> },
+client/src/page/equip/Equip.js:21:            { key: '3', label: '更新日志', icon: <FileTextOutlined /> },
+client/src/page/equip/Equip.js:22:            { key: '4', label: 'MAC地址配置', icon: <WifiOutlined /> },
+client/src/page/equip/addEquip/Addequip.js:17:  hand: { color: '#722ed1', bg: '#f9f0ff', border: '#d3adf7', label: '手套' },
+client/src/page/equip/addEquip/Addequip.js:18:  sit: { color: '#1890ff', bg: '#e6f7ff', border: '#91d5ff', label: '坐垫' },
+client/src/page/equip/addEquip/Addequip.js:19:  foot: { color: '#52c41a', bg: '#f6ffed', border: '#b7eb8f', label: '脚垫' },
+client/src/page/equip/addEquip/Addequip.js:20:  unknown: { color: '#8c8c8c', bg: '#fafafa', border: '#d9d9d9', label: '未知' },
+client/src/page/equip/addEquip/Addequip.js:34:  idle: { color: '#d9d9d9', text: '未连接', pulse: false },
+client/src/page/equip/addEquip/Addequip.js:35:  detecting: { color: '#faad14', text: '探测中', pulse: true },
+client/src/page/equip/addEquip/Addequip.js:36:  reading: { color: '#1890ff', text: '读取中', pulse: true },
+client/src/page/equip/addEquip/Addequip.js:37:  done: { color: '#52c41a', text: '完成', pulse: false },
+client/src/page/equip/addEquip/Addequip.js:38:  error: { color: '#ff4d4f', text: '错误', pulse: false },
+client/src/page/equip/addEquip/Addequip.js:208:    addLog('通过已有连接读取 MAC 地址...', 'info')
+client/src/page/equip/addEquip/Addequip.js:213:          addLog(`错误: ${res.data.msg}`, 'error')
+client/src/page/equip/addEquip/Addequip.js:219:        addLog(`请求失败: ${err.message}`, 'error')
+client/src/page/equip/addEquip/Addequip.js:230:    addLog('独立模式：自动探测波特率 & 读取 MAC...', 'info')
+client/src/page/equip/addEquip/Addequip.js:235:          addLog(`错误: ${res.data.msg}`, 'error')
+client/src/page/equip/addEquip/Addequip.js:240:        addLog(`请求失败: ${err.message}`, 'error')
+client/src/page/equip/addEquip/Addequip.js:286:          message.success('绑定成功')
+client/src/page/equip/addEquip/Addequip.js:289:          message.error('绑定失败')
+client/src/page/equip/addEquip/Addequip.js:292:      .catch(() => message.error('绑定失败'))
+client/src/page/equip/addEquip/Addequip.js:308:          message.success('修改成功')
+client/src/page/equip/addEquip/Addequip.js:310:          message.error('修改失败')
+client/src/page/equip/addEquip/Addequip.js:313:      .catch(() => message.error('修改失败'))
+client/src/page/equip/addEquip/Addequip.js:319:      message.success('已复制到剪贴板')
+client/src/page/equip/addEquip/Addequip.js:321:      message.error('复制失败')
+client/src/page/equip/addEquip/Addequip.js:332:        <h2>MAC 地址读取</h2>
+client/src/page/equip/addEquip/Addequip.js:359:          <Card size="small" title="串口连接" className="control-card">
+client/src/page/equip/addEquip/Addequip.js:362:                <div className="baud-label">探测波特率列表：</div>
+client/src/page/equip/addEquip/Addequip.js:364:                  <Tag>921600 - 手套</Tag>
+client/src/page/equip/addEquip/Addequip.js:365:                  <Tag>1000000 - 坐垫</Tag>
+client/src/page/equip/addEquip/Addequip.js:366:                  <Tag>3000000 - 脚垫</Tag>
+client/src/page/equip/addEquip/Addequip.js:376:                {isReading ? '读取中...' : '读取已连接设备 MAC'}
+client/src/page/equip/addEquip/Addequip.js:384:                独立探测 & 读取 MAC（未连接时用）
+client/src/page/equip/addEquip/Addequip.js:389:          <Card size="small" title="使用说明" className="control-card" style={{ marginTop: 12 }}>
+client/src/page/equip/addEquip/Addequip.js:391:              <p><strong>方式一（推荐）：</strong></p>
+client/src/page/equip/addEquip/Addequip.js:392:              <p>1. 先在主页面点击“一键连接”</p>
+client/src/page/equip/addEquip/Addequip.js:393:              <p>2. 连接成功后进入此页面</p>
+client/src/page/equip/addEquip/Addequip.js:394:              <p>3. 点击“读取已连接设备 MAC”</p>
+client/src/page/equip/addEquip/Addequip.js:395:              <p style={{ marginTop: 8 }}><strong>方式二（未连接时）：</strong></p>
+client/src/page/equip/addEquip/Addequip.js:396:              <p>1. 将设备通过 USB 连接到电脑</p>
+client/src/page/equip/addEquip/Addequip.js:397:              <p>2. 点击“独立探测 & 读取 MAC”</p>
+client/src/page/equip/addEquip/Addequip.js:398:              <p>3. 等待自动探测波特率和读取 MAC</p>
+client/src/page/equip/addEquip/Addequip.js:414:                      <strong>{d.path}</strong> — {dc.label} (波特率: {d.baudRate})
+client/src/page/equip/addEquip/Addequip.js:425:              <h3>读取结果</h3>
+client/src/page/equip/addEquip/Addequip.js:447:                          <Tooltip title="点击复制">
+client/src/page/equip/addEquip/Addequip.js:469:                          <span className="bind-label">设备备注:</span>
+client/src/page/equip/addEquip/Addequip.js:472:                            placeholder="备注"
+client/src/page/equip/addEquip/Addequip.js:478:                          <span className="bind-label">截止日期:</span>
+client/src/page/equip/addEquip/Addequip.js:486:                          <span className="bind-label">设备型号:</span>
+client/src/page/equip/addEquip/Addequip.js:496:                              修改设备
+client/src/page/equip/addEquip/Addequip.js:500:                              绑定设备
+client/src/page/equip/addEquip/Addequip.js:515:              <h3>通信日志</h3>
+client/src/page/equip/addEquip/Addequip.js:516:              <Button size="small" onClick={() => setLogs([])}>清空</Button>
+client/src/page/equip/addEquip/Addequip.js:520:                <div className="log-empty">等待操作...</div>
+client/src/page/equip/changeLog/ChangeLog.js:12:  feature: { color: '#52c41a', label: '新功能', icon: <RocketOutlined /> },
+client/src/page/equip/changeLog/ChangeLog.js:13:  fix: { color: '#ff4d4f', label: '修复', icon: <BugOutlined /> },
+client/src/page/equip/changeLog/ChangeLog.js:14:  optimize: { color: '#1890ff', label: '优化', icon: <ToolOutlined /> },
+client/src/page/equip/changeLog/ChangeLog.js:24:        title: '框选框亮度提升',
+client/src/page/equip/changeLog/ChangeLog.js:26:          '框选边框改为更亮的显示色，提升深色界面下的可见度',
+client/src/page/equip/changeLog/ChangeLog.js:27:          '填充层改为单独半透明色值，不再通过整体 opacity 把边框一起压暗',
+client/src/page/equip/changeLog/ChangeLog.js:28:          '鼠标拖拽框选与输入生成框选统一复用同一套视觉样式',
+client/src/page/equip/changeLog/ChangeLog.js:39:        title: 'CSV 导出表头优化',
+client/src/page/equip/changeLog/ChangeLog.js:41:          '表头改为中文显示（Unicode 转义防乱码）',
+client/src/page/equip/changeLog/ChangeLog.js:42:          '新增原始最大压强坐标、框选区域最大压强坐标字段',
+client/src/page/equip/changeLog/ChangeLog.js:43:          '坐标显示为矩阵二维点位置 (行, 列)',
+client/src/page/equip/changeLog/ChangeLog.js:44:          '去掉压强总和字段',
+client/src/page/equip/changeLog/ChangeLog.js:49:        title: '平均压强计算修复',
+client/src/page/equip/changeLog/ChangeLog.js:51:          '修复 aver 返回字符串导致 backYToX/sitYToX 转换函数返回 0 的问题',
+client/src/page/equip/changeLog/ChangeLog.js:56:        title: '受力面积计算修复',
+client/src/page/equip/changeLog/ChangeLog.js:58:          '面积计算增加 /100 转换为 cm\u00B2，与前端 ChartsAside 保持一致',
+client/src/page/equip/changeLog/ChangeLog.js:63:        title: 'CSV 表头 null 修复',
+client/src/page/equip/changeLog/ChangeLog.js:65:          '修复只连接单个设备时，未连接设备的 type 为 null 导致 CSV 表头显示 null 的问题',
+client/src/page/equip/changeLog/ChangeLog.js:66:          'parseData 中跳过 type 为 null/undefined 的设备',
+client/src/page/equip/changeLog/ChangeLog.js:67:          'CSV 导出兜底过滤无效 key',
+client/src/page/equip/changeLog/ChangeLog.js:72:        title: '靠背 2D 颜色统一',
+client/src/page/equip/changeLog/ChangeLog.js:74:          '靠背 NumThreeColorV4 颜色映射从 jetWhite3 改为 jet，与座椅 V3 保持一致',
+client/src/page/equip/changeLog/ChangeLog.js:79:        title: '回放曲线颜色修复',
+client/src/page/equip/changeLog/ChangeLog.js:81:          '曲线颜色从按索引分配改为按 key 名称匹配，确保 back/sit 颜色在实时和回放时一致',
+client/src/page/equip/changeLog/ChangeLog.js:86:        title: '回放框选区域展示修复',
+client/src/page/equip/changeLog/ChangeLog.js:88:          '回放历史数据时自动加载已保存的框选信息到 historySelectCache',
+client/src/page/equip/changeLog/ChangeLog.js:89:          '替换 DataService.js 为 yanfeng 版本，使用 getPlaybackSnapshot 注入 select 数据',
+client/src/page/equip/changeLog/ChangeLog.js:94:        title: '靠背采集时间 NaN 修复',
+client/src/page/equip/changeLog/ChangeLog.js:96:          '修复只连接靠背时 stamp 获取逻辑，遍历所有 key 找到第一个有效 stamp',
+client/src/page/equip/changeLog/ChangeLog.js:101:        title: 'initDb async 修复',
+client/src/page/equip/changeLog/ChangeLog.js:103:          '修复 initDb 改为 async 后调用方未 await 导致数据库句柄为 undefined 的问题',
+client/src/page/equip/changeLog/ChangeLog.js:104:          '影响 serialServer.js 和 routes.js 中的 getSystem/selectSystem/changeSystemType',
+client/src/page/equip/changeLog/ChangeLog.js:109:        title: '框选 z-index 调整',
+client/src/page/equip/changeLog/ChangeLog.js:111:          '框选区域 z-index 从 10001 降低到 999，确保下载弹窗（Modal）不被遮挡',
+client/src/page/equip/changeLog/ChangeLog.js:116:        title: '同步 yanfeng 分支功能',
+client/src/page/equip/changeLog/ChangeLog.js:118:          '同步 CSV 下载、一键连接、框选、采集等核心逻辑',
+client/src/page/equip/changeLog/ChangeLog.js:119:          '新增 request.js API 工具函数',
+client/src/page/equip/changeLog/ChangeLog.js:120:          '数据库损坏自动恢复、可写目录自动回退',
+client/src/page/equip/changeLog/ChangeLog.js:131:        <Title level={3} style={{ marginBottom: 24 }}>更新日志</Title>
+client/src/page/equip/equipList/EquipList.js:13:        title: 'mac地址',
+client/src/page/equip/equipList/EquipList.js:18:        title: '备注',
+client/src/page/equip/equipList/EquipList.js:23:        title: '截至时间',
+client/src/page/equip/equipList/EquipList.js:28:        title: '设备类型',
+client/src/page/equip/macConfig/MacConfig.js:11:    title: '设备密钥配置',
+client/src/page/equip/macConfig/MacConfig.js:12:    back: '返回主页',
+client/src/page/equip/macConfig/MacConfig.js:13:    save: '保存',
+client/src/page/equip/macConfig/MacConfig.js:14:    format: '格式',
+client/src/page/equip/macConfig/MacConfig.js:15:    formatValue: 'MAC地址:类型,MAC地址:类型',
+client/src/page/equip/macConfig/MacConfig.js:16:    example: '示例',
+client/src/page/equip/macConfig/MacConfig.js:17:    availableTypes: '可用类型',
+client/src/page/equip/macConfig/MacConfig.js:18:    loading: '加载配置中...',
+client/src/page/equip/macConfig/MacConfig.js:19:    placeholder: '请输入设备配置，格式：MAC地址:类型,MAC地址:类型',
+client/src/page/equip/macConfig/MacConfig.js:20:    detected: (count) => `已识别 ${count} 个设备：`,
+client/src/page/equip/macConfig/MacConfig.js:21:    syncSuccess: '已成功写入本地缓存文件 (serial_cache.json)',
+client/src/page/equip/macConfig/MacConfig.js:22:    syncError: '写入失败，请确认后端服务已启动',
+client/src/page/equip/macConfig/MacConfig.js:23:    invalidConfig: '请输入有效的 MAC 地址配置',
+client/src/page/equip/macConfig/MacConfig.js:24:    saveSuccess: (count) => `配置已保存，${count} 个设备已写入本地缓存`,
+client/src/page/equip/macConfig/MacConfig.js:25:    saveFailed: '保存失败',
+client/src/page/equip/macConfig/MacConfig.js:26:    unknownError: '未知错误',
+client/src/page/equip/macConfig/MacConfig.js:51: * 解析输入字符串为设备配置数组
+client/src/page/equip/macConfig/MacConfig.js:52: * 格式: mac地址:类型,mac地址:类型
+client/src/page/equip/macConfig/MacConfig.js:53: * 例如: AA:BB:CC:DD:EE:FF:endi-back,11:22:33:44:55:66:endi-sit
+client/src/page/equip/macConfig/MacConfig.js:55: * 解析规则：以最后一个冒号为分隔点，前面是 MAC 地址，后面是设备类型
+client/src/page/equip/macConfig/MacConfig.js:74: * 将设备配置数组转为字符串
+client/src/page/equip/macConfig/MacConfig.js:82: * 从后端 serial_cache.json 读取 MAC 配置
+client/src/page/equip/macConfig/MacConfig.js:83: * @returns {Promise<Array|null>} 设备配置数组或 null
+client/src/page/equip/macConfig/MacConfig.js:97:    console.warn('[MacConfig] 读取后端缓存失败:', e.message)
+client/src/page/equip/macConfig/MacConfig.js:103: * 检查后端 serial_cache.json 是否有有效的 MAC 配置
+client/src/page/equip/macConfig/MacConfig.js:112: * 保存 MAC 配置到后端 serial_cache.json
+client/src/page/equip/macConfig/MacConfig.js:113: * 带重试机制，最多重试 2 次
+client/src/page/equip/macConfig/MacConfig.js:119:      // 先清空后端缓存
+client/src/page/equip/macConfig/MacConfig.js:122:      // 逐个写入
+client/src/page/equip/macConfig/MacConfig.js:124:        // 根据类型推断 deviceClass
+client/src/page/equip/macConfig/MacConfig.js:131:          deviceClass = device.type // hand, bed 等
+client/src/page/equip/macConfig/MacConfig.js:141:      // 验证写入：读回来检查
+client/src/page/equip/macConfig/MacConfig.js:147:        console.log(`[MacConfig] 后端缓存写入成功，已写入 ${cachedCount} 个设备`)
+client/src/page/equip/macConfig/MacConfig.js:150:        console.warn(`[MacConfig] 后端缓存验证不一致：期望 ${devices.length}，实际 ${cachedCount}`)
+client/src/page/equip/macConfig/MacConfig.js:151:        lastErr = new Error(`写入验证失败：期望 ${devices.length} 个，实际 ${cachedCount} 个`)
+client/src/page/equip/macConfig/MacConfig.js:155:      console.warn(`[MacConfig] 后端写入第 ${attempt + 1} 次失败:`, err.message)
+client/src/page/equip/macConfig/MacConfig.js:173:  // 初始化：从后端 serial_cache.json 加载已有配置
+client/src/page/equip/macConfig/MacConfig.js:186:        console.warn('[MacConfig] 加载配置失败:', e.message)
+client/src/page/equip/macConfig/MacConfig.js:195:  // 输入变化时实时解析
+client/src/page/equip/macConfig/MacConfig.js:203:  // 保存配置到后端 serial_cache.json
+client/src/page/equip/macConfig/MacConfig.js:239:        {/* 标题栏 */}
+client/src/page/equip/macConfig/MacConfig.js:265:        {/* 格式提示 */}
+client/src/page/equip/macConfig/MacConfig.js:276:        {/* 单输入框 */}
+client/src/page/equip/macConfig/MacConfig.js:292:        {/* 实时解析预览 */}
+client/src/page/equip/macConfig/MacConfig.js:307:        {/* 同步状态提示 */}
+client/src/page/equip/systemSetting/SystemSetting.js:18:/* ────── 系统选项配置 ────── */
+client/src/page/equip/systemSetting/SystemSetting.js:20:    { label: '床垫', value: 'bed' },
+client/src/page/equip/systemSetting/SystemSetting.js:21:    { label: '汽车座椅', value: 'car' },
+client/src/page/equip/systemSetting/SystemSetting.js:22:    { label: '汽车座椅(endi)', value: 'endi' },
+client/src/page/equip/systemSetting/SystemSetting.js:23:    { label: '汽车座椅Y', value: 'carY' },
+client/src/page/equip/systemSetting/SystemSetting.js:24:    { label: '大矩阵(bigHand)', value: 'bigHand' },
+client/src/page/equip/systemSetting/SystemSetting.js:25:    { label: '小矩阵(hand)', value: 'hand' },
+client/src/page/equip/systemSetting/SystemSetting.js:31:    bed: '床垫',
+client/src/page/equip/systemSetting/SystemSetting.js:32:    car: '汽车座椅',
+client/src/page/equip/systemSetting/SystemSetting.js:33:    endi: '汽车座椅(endi)',
+client/src/page/equip/systemSetting/SystemSetting.js:34:    carY: '汽车座椅Y',
+client/src/page/equip/systemSetting/SystemSetting.js:35:    bigHand: '大矩阵(bigHand)',
+client/src/page/equip/systemSetting/SystemSetting.js:36:    hand: '小矩阵(hand)'
+client/src/page/equip/systemSetting/SystemSetting.js:48:/* ────── 可调节参数定义 ────── */
+client/src/page/equip/systemSetting/SystemSetting.js:50:    { title: '图像润滑', key: 'gauss', unit: '', desc: '高斯模糊系数，数值越大画面越平滑' },
+client/src/page/equip/systemSetting/SystemSetting.js:51:    { title: '颜色调节', key: 'color', unit: '', desc: '色彩映射范围，控制热力图色阶分布' },
+client/src/page/equip/systemSetting/SystemSetting.js:52:    { title: '噪点消除', key: 'filter', unit: '', desc: '低于该阈值的噪点将被过滤' },
+client/src/page/equip/systemSetting/SystemSetting.js:53:    { title: '高度调节', key: 'height', unit: '', desc: '3D 视图中数据点的高度缩放系数' },
+client/src/page/equip/systemSetting/SystemSetting.js:54:    { title: '响应速度', key: 'coherent', unit: '', desc: '帧间平滑度，数值越大响应越平缓' }
+client/src/page/equip/systemSetting/SystemSetting.js:57:/* ────── 前端硬编码的默认值（后端不可用时的兜底） ────── */
+client/src/page/equip/systemSetting/SystemSetting.js:91:    /* ────── 页面加载时从后端读取默认配置 ────── */
+client/src/page/equip/systemSetting/SystemSetting.js:99:                    // 读取默认系统类型
+client/src/page/equip/systemSetting/SystemSetting.js:103:                    // 读取可选系统列表
+client/src/page/equip/systemSetting/SystemSetting.js:107:                    // 读取 optimalObj 和 maxObj
+client/src/page/equip/systemSetting/SystemSetting.js:110:                        // optimalObj: 后端数据优先，缺失则用 fallback
+client/src/page/equip/systemSetting/SystemSetting.js:115:                        // maxObj: 后端数据优先，缺失则用 fallback
+client/src/page/equip/systemSetting/SystemSetting.js:122:                    message.success('已从后端加载配置');
+client/src/page/equip/systemSetting/SystemSetting.js:126:                console.warn('从后端加载配置失败，使用默认值:', err.message);
+client/src/page/equip/systemSetting/SystemSetting.js:128:                message.warning('后端服务未连接，使用本地默认值');
+client/src/page/equip/systemSetting/SystemSetting.js:139:    /* ────── 事件处理 ────── */
+client/src/page/equip/systemSetting/SystemSetting.js:169:            message.success('配置文件已生成');
+client/src/page/equip/systemSetting/SystemSetting.js:171:            message.error('生成失败，请检查后端服务是否正常');
+client/src/page/equip/systemSetting/SystemSetting.js:180:                message.success('已复制到剪贴板');
+client/src/page/equip/systemSetting/SystemSetting.js:182:                message.warning('复制失败，请手动选中复制');
+client/src/page/equip/systemSetting/SystemSetting.js:187:    /* ────── 表格数据 & 列定义 ────── */
+client/src/page/equip/systemSetting/SystemSetting.js:200:            title: '参数',
+client/src/page/equip/systemSetting/SystemSetting.js:214:            title: '推荐值（最佳）',
+client/src/page/equip/systemSetting/SystemSetting.js:229:            title: '上限值（最大）',
+client/src/page/equip/systemSetting/SystemSetting.js:245:    /* ────── 折叠面板 ────── */
+client/src/page/equip/systemSetting/SystemSetting.js:252:                    共 {paramConfig.length} 项可调参数
+client/src/page/equip/systemSetting/SystemSetting.js:268:    /* ────── 渲染 ────── */
+client/src/page/equip/systemSetting/SystemSetting.js:271:            {/* 页面标题区 */}
+client/src/page/equip/systemSetting/SystemSetting.js:275:                    <Title level={4} style={{ margin: 0 }}>传感器系统配置</Title>
+client/src/page/equip/systemSetting/SystemSetting.js:279:                        在此页面可设置默认系统类型、下拉选项，以及各系统的可视化调节参数范围
+client/src/page/equip/systemSetting/SystemSetting.js:282:                        <Tag color="warning" style={{ fontSize: 11 }}>离线模式</Tag>
+client/src/page/equip/systemSetting/SystemSetting.js:285:                        <Tooltip title="重新从后端加载配置">
+client/src/page/equip/systemSetting/SystemSetting.js:298:            <Spin spinning={pageLoading} tip="正在从后端加载配置..." indicator={<LoadingOutlined style={{ fontSize: 24 }} spin />}>
+client/src/page/equip/systemSetting/SystemSetting.js:299:                {/* 卡片 1：默认系统 & 下拉选项 */}
+client/src/page/equip/systemSetting/SystemSetting.js:302:                    title={<Space><AppstoreOutlined style={{ color: '#1677ff' }} /><span>系统选择</span></Space>}
+client/src/page/equip/systemSetting/SystemSetting.js:305:                    {/* 默认系统 */}
+client/src/page/equip/systemSetting/SystemSetting.js:307:                        <Text className="setting-label">默认系统</Text>
+client/src/page/equip/systemSetting/SystemSetting.js:325:                    {/* 下拉可选系统 */}
+client/src/page/equip/systemSetting/SystemSetting.js:327:                        <Text className="setting-label">可选系统</Text>
+client/src/page/equip/systemSetting/SystemSetting.js:334:                                全选
+client/src/page/equip/systemSetting/SystemSetting.js:349:                {/* 卡片 2：各系统调节参数 */}
+client/src/page/equip/systemSetting/SystemSetting.js:352:                    title={<Space><ControlOutlined style={{ color: '#1677ff' }} /><span>可视化调节参数</span></Space>}
+client/src/page/equip/systemSetting/SystemSetting.js:355:                            点击展开对应系统，编辑推荐值与上限值
+client/src/page/equip/systemSetting/SystemSetting.js:367:                {/* 卡片 3：生成 & 输出 */}
+client/src/page/equip/systemSetting/SystemSetting.js:370:                    title={<Space><FileTextOutlined style={{ color: '#1677ff' }} /><span>生成配置文件</span></Space>}
+client/src/page/equip/systemSetting/SystemSetting.js:381:                                生成配置
+client/src/page/equip/systemSetting/SystemSetting.js:385:                                    复制到剪贴板
+client/src/page/equip/systemSetting/SystemSetting.js:390:                                    调整好参数后点击"生成配置"，将输出可用的配置内容
+client/src/page/equip/systemSetting/SystemSetting.js:398:                                    <Text style={{ color: '#8caaee', fontSize: 12 }}>配置文件内容</Text>
+client/src/page/test/Test.js:65:    // ─── 使用抽取的 Hook ─────────────────────────────────
+client/src/page/test/Test.js:79:    // 持久化的数据对象（跨帧累积）
+client/src/page/test/Test.js:82:    // ─── WebSocket 连接 ──────────────────────────────────
+client/src/page/test/Test.js:103:    // ─── 框选订阅（支持多框选） ─────────────────────────────
+client/src/page/test/Test.js:117:            // 使用第一个框作为回放查询的选区（后端目前只支持单选区）
+client/src/page/test/Test.js:151:    // ─── 调度器启动 ──────────────────────────────────────
+client/src/page/test/Test.js:156:    // ─── 状态 ────────────────────────────────────────────
+client/src/page/test/Test.js:200:    // ─── 3D 组件映射 ─────────────────────────────────────
+client/src/page/test/util.js:16:// 分压公式
+client/src/page/test/util.js:96:  // 归一化
+client/src/page/test/util.js:113:      // 边界处理 (Clamp 边界)
+client/src/scheduler/scheduler.js:10:            // 高频渲染层（Canvas / WebGL）
+client/src/scheduler/scheduler.js:13:            // 每 10 帧 (~6Hz) 通知 UI 层
+client/src/store/equipStore.js:4:// ─── 持久化设置值 ────────────────────────────────────────
+client/src/store/equipStore.js:19:// ─── Store 定义 ──────────────────────────────────────────
+client/src/store/equipStore.js:21:  // 实时数据
+client/src/store/equipStore.js:27:  // 系统配置
+client/src/store/equipStore.js:33:  // 设备状态
+client/src/store/equipStore.js:36:  macInfo: {},              // 设备 MAC 信息 { portPath: { uniqueId, version } }
+client/src/store/equipStore.js:38:  // 可视化设置
+client/src/store/equipStore.js:43:  // 框选工具
+client/src/store/equipStore.js:46:  // 历史数据
+client/src/store/equipStore.js:51:  // 对比数据
+client/src/store/equipStore.js:82:// ─── Getters (用于非 React 上下文) ───────────────────────
+client/src/util/constant.js:1:// ─── 颜色配置 ────────────────────────────────────────────
+client/src/util/constant.js:11:// ─── 传感器点阵配置 ──────────────────────────────────────
+client/src/util/constant.js:39:// ─── 系统点阵配置（含压力转换函数）─────────────────────────
+client/src/util/constant.js:69:// 32x32 矩阵系统统一配置
+client/src/util/constant.js:78:// ─── 系统名称映射 ────────────────────────────────────────
+client/src/util/constant.js:80:  car: '汽车座椅',
+client/src/util/constant.js:81:  carY: '汽车座椅Y',
+client/src/util/constant.js:82:  bed: '床垫',
+client/src/util/constant.js:83:  chair: '人体工学椅',
+client/src/util/constant.js:84:  hand: '压力点阵图',
+client/src/util/constant.js:86:  foot: '脚部检测'
+client/src/util/constant.js:89:// ─── 服务地址配置 ────────────────────────────────────────
+client/src/util/constant.js:92:// 动态端口配置：从 portConfig 统一管理，支持端口冲突自动分配
+client/src/util/disposeThree.js:2: * Three.js 资源清理工具
+client/src/util/disposeThree.js:4: * 用于在组件卸载时释放 GPU 资源，防止内存泄漏。
+client/src/util/disposeThree.js:6: * 使用方式：
+client/src/util/disposeThree.js:10: *     // ... 初始化 scene, renderer ...
+client/src/util/disposeThree.js:19: * 递归释放一个 Three.js 对象及其所有子对象的 geometry、material、texture
+client/src/util/disposeThree.js:24:  // 递归处理子对象
+client/src/util/disposeThree.js:32:  // 释放 geometry
+client/src/util/disposeThree.js:37:  // 释放 material（可能是数组）
+client/src/util/disposeThree.js:41:      // 释放 material 上的所有 texture
+client/src/util/disposeThree.js:52:  // 释放 texture（如 DataTexture 直接挂在对象上的情况）
+client/src/util/disposeThree.js:59: * 清理整个 scene 中的所有资源
+client/src/util/disposeThree.js:67: * 清理 renderer 并释放 WebGL 上下文
+client/src/util/disposeThree.js:80: * 一站式清理：scene + renderer + cancelAnimationFrame
+client/src/util/echarts.js:2: * ECharts 按需引入
+client/src/util/echarts.js:4: * 只引入项目实际使用的组件，减少打包体积约 60%
+client/src/util/echarts.js:5: * 使用方式：import * as echarts from '../util/echarts' 替代 import * as echarts from 'echarts'
+client/src/util/echarts.js:9:// 图表类型
+client/src/util/echarts.js:12:// 组件
+client/src/util/echarts.js:20:// 渲染器 — Canvas 渲染器（适合大量数据）
+client/src/util/echarts.js:23:// 注册
+client/src/util/portConfig.js:2: * 动态端口配置模块
+client/src/util/portConfig.js:4: * 端口获取优先级：
+client/src/util/portConfig.js:5: *   1. window.__PORTS__  —— 生产模式下由 Electron 静态文件服务器注入到 HTML <head> 中
+client/src/util/portConfig.js:6: *   2. VITE_API_PORT / VITE_WS_PORT  —— 开发模式下由 Electron 主进程通过环境变量传入
+client/src/util/portConfig.js:7: *   3. 默认值 19245 / 19999（与 util/portFinder.js 中的 DEFAULT_PORTS 保持一致）
+client/src/util/portConfig.js:9: * 注意：当端口冲突时，Electron 主进程会自动分配新端口并通过上述机制传递给前端，
+client/src/util/portConfig.js:10: *       前端无需手动处理端口冲突。
+client/src/util/portConfig.js:13:// 默认端口（与后端 DEFAULT_PORTS 保持一致）
+client/src/util/portConfig.js:18:  // 生产模式：从注入的全局变量读取
+client/src/util/portConfig.js:22:  // 开发模式：从 Vite 环境变量读取
+client/src/util/portConfig.js:26:  // 默认值
+client/src/util/portConfig.js:46:// 调试输出
+client/src/util/util.js:6: * @param {Array} arr 添加边框前的数组
+client/src/util/util.js:7: * @param {number} width 数据矩阵的宽
+client/src/util/util.js:8: * @param {number} height 数据矩阵的高
+client/src/util/util.js:9: * @param {number} wnum 数据矩阵横向插值的长度
+client/src/util/util.js:10: * @param {number} hnum 数据矩阵纵向插值的长度
+client/src/util/util.js:11: * @param {number} sideNum 插值的数字
+client/src/util/util.js:49: * @param {Array} scl 高斯前的数组
+client/src/util/util.js:50: * @param {number} w 矩阵的宽
+client/src/util/util.js:51: * @param {number} h 矩阵的高
+client/src/util/util.js:52: * @param {number} r 高斯的卷积核
+client/src/util/util.js:80: * @param {Array} smallMat 插值前的数组
+client/src/util/util.js:81: * @param {number} Length 正方形矩阵的长
+client/src/util/util.js:82: * @param {number} num 插值的倍数
+client/src/util/util.js:104: * 给一个数字 输出一个颜色
+client/src/util/util.js:105: * @param {number} min 自定义颜色最小刻度
+client/src/util/util.js:106: * @param {number} max 自定义颜色最大刻度
+client/src/util/util.js:107: * @param {number} x 真实数值
+client/src/util/util.js:108: * @returns 颜色
+client/src/util/util.js:150: * 给一个数字 输出一个颜色
+client/src/util/util.js:151: * @param {number} min 自定义颜色最小刻度
+client/src/util/util.js:152: * @param {number} max 自定义颜色最大刻度
+client/src/util/util.js:153: * @param {number} x 真实数值
+client/src/util/util.js:154: * @returns 颜色
+client/src/util/util.js:222:// 计算数组的质心（中心）坐标（比例）
+client/src/util/util.js:231:        // 可选：过滤掉小噪声，比如 ADC < 20
+client/src/util/util.js:234:        const x = i % width;             // 列
+client/src/util/util.js:235:        const y = Math.floor(i / width); // 行
+client/src/util/util.js:243:        // 全是 0 的情况，随便约定一个返回，比如中心
+client/src/util/util.js:251:        // 比例坐标：0~1
+client/src/util/util.js:260:// 计算平均值
+client/src/util/util.js:286:// -------------------- 计算分布 --------------------
+client/src/util/util.js:289:// const xData = Array.from({ length: 256 }, (_, i) => i);  // 横轴 0–255
+client/src/util/util.js:290:// const yData = xData.map(x => normalPDF(x, μ, σ));        // 概率密度
+client/src/util/util.js:300:        // 线性段：y = 84.1215525878 * x  =>  x = y / 84.1215525878
+client/src/util/util.js:305:        // 指数段：y = 101 - 64.3561 * e^(-0.3857x)
+client/src/util/util.js:306:        // 反解：x = -(1 / 0.3857) * ln( (101 - y) / 64.3561 )
+client/src/util/util.js:309:        // yMax 对应的 x
+client/src/util/util.js:314:        // 在 yMax 处的斜率 dx/dy
+client/src/util/util.js:317:        // 线性外推到 300
+client/src/util/util.js:329:    // 线性段：y = 119.26628 * x
+client/src/util/util.js:334:    // 指数段：y = 145 - 92.1735 * e^(-0.3912 x)
+client/src/util/util.js:338:        // 分段点的 x
+client/src/util/util.js:342:        // 指数段在 yMax 处的斜率 dx/dy
+client/src/util/util.js:345:        // 线性外推
+client/src/util/util.js:351:    // 超出范围你可以钳制，也可以报错，这里先用钳制：
+client/src/util/util.js:358:    // 饱和平台
+client/src/util/util.js:361:    // 下限保护，看你需不需要，可以改阈值
+client/src/util/util.js:370:    // 饱和平台
+client/src/util/util.js:373:    // 下限保护（可以按你实际业务调）
+client/src/util/version.js:2: * 软件版本号

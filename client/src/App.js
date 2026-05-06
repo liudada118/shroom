@@ -5,9 +5,25 @@ import React, { useState, useCallback, useEffect } from 'react';
 import Test from './page/test/Test';
 import './locale/index'; // 在这里导入
 import i18next from "i18next";
+import { useTranslation } from 'react-i18next';
 import Equip from './page/equip/Equip';
 import Data from './page/data/Data';
 import MacConfig, { hasMacConfig } from './page/equip/macConfig/MacConfig';
+
+const MAC_FULLSCREEN_COPY = {
+  zh: {
+    title: '传感器系统',
+    subtitle: '请输入设备密钥以继续',
+    exit: '返回主页面',
+  },
+  en: {
+    title: 'Sensor System',
+    subtitle: 'Enter the device key to continue',
+    exit: 'Back to Main',
+  },
+}
+
+const getLanguageKey = (language) => String(language || '').toLowerCase().startsWith('en') ? 'en' : 'zh'
 
 i18next.init({
   resources: {
@@ -16,6 +32,12 @@ i18next.init({
         connect: 'Connect',
         connecting: 'Connecting',
         connected: 'Connected',
+        reconnecting: 'Reconnecting...',
+        reconnectTooltip: 'Reconnect (clean dead ports / zombie devices first)',
+        disconnectAllPorts: 'Disconnect all serial ports',
+        noSerialDevice: 'No device detected',
+        connectFailed: 'Connection failed',
+        deviceMacConfig: 'Device MAC Address Settings',
         back: 'Back',
         sit: 'Seat',
         freq: 'Freq',
@@ -75,12 +97,6 @@ i18next.init({
         sizeAdj: 'SizeAdjustment',
         viewAdj: 'ViewAdjustment',
         angleAdj: 'AngleAdjustment',
-        pressAver: 'pressAver',
-        pressMax: 'pressMax',
-        pressMin: 'pressMin',
-        pressTotal: 'pressTotal',
-        areaTotal: 'areaTotal',
-        pointTotal: 'pointTotal',
         pressureCurve: 'Pressure Curve',
         areaCurve: 'Area Curve',
         speed: 'Speed',
@@ -132,6 +148,127 @@ i18next.init({
         openDownloadFolder: 'Open download folder',
         close: 'Close',
         noPath: 'Path is empty',
+        openFolderFailed: 'Failed to open folder',
+        openFileFailed: 'Failed to open file',
+        grayValue: 'Gray Value',
+        probabilityDensity: 'Probability Density',
+        boxShort: 'Box',
+        boxSelection: 'Selection',
+        pointUnit: '',
+        areaUnit: 'cm²',
+        pressureUnit: 'kPa',
+        validMeasurementArea: 'Please measure within the valid area',
+        validSelectionArea: 'Please select within the valid area',
+        maxSelectionBoxes: 'A maximum of {{count}} selection areas can be created',
+        collectStart: 'Collection started',
+        collectSuccess: 'Collection completed',
+        collectFailed: 'Collection failed',
+        playbackFileRequired: 'Please select a playback file',
+        zoomOut: 'Zoom out',
+        resetZoom: 'Reset zoom',
+        zoomIn: 'Zoom in',
+        sensorArea: 'Sensor Area',
+        sensorPressure: 'Sensor Pressure',
+        choosingDataFile: 'Choose Data File',
+        csvImportInvalid: 'Invalid file format. Please select a CSV file exported by this system',
+        framePerSecond: 'frames/sec',
+        checkingDeviceConfig: 'Checking device configuration...',
+        pointConfigTitle: 'Point Configuration',
+        backWithCode: 'Back (back)',
+        sitWithCode: 'Seat (sit)',
+        copyConfigCode: 'Copy Configuration Code',
+        deviceHand: 'Glove',
+        deviceSeat: 'Seat Pad',
+        deviceFoot: 'Foot Pad',
+        deviceUnknown: 'Unknown',
+        statusDisconnected: 'Disconnected',
+        statusDetecting: 'Detecting',
+        statusReading: 'Reading',
+        statusDone: 'Done',
+        statusError: 'Error',
+        error: 'Error',
+        requestFailed: 'Request failed',
+        macReaderTitle: 'MAC Address Reader',
+        serialConnection: 'Serial Connection',
+        baudRateDetectList: 'Baud rate detection list:',
+        readConnectedMac: 'Read Connected Device MAC',
+        reading: 'Reading...',
+        standaloneReadMac: 'Standalone Detect & Read MAC (when disconnected)',
+        instructions: 'Instructions',
+        methodRecommended: 'Method 1 (Recommended):',
+        macHelpStep1: '1. Click “One-click Connect” on the main page first',
+        macHelpStep2: '2. Enter this page after the connection succeeds',
+        macHelpStep3: '3. Click “Read Connected Device MAC”',
+        methodStandalone: 'Method 2 (When Disconnected):',
+        macHelpStandalone1: '1. Connect the device to the computer via USB',
+        macHelpStandalone2: '2. Click “Standalone Detect & Read MAC”',
+        macHelpStandalone3: '3. Wait for automatic baud-rate detection and MAC reading',
+        baudRate: 'Baud Rate',
+        readResults: 'Read Results',
+        clickToCopy: 'Click to copy',
+        deviceRemark: 'Device Remark',
+        expireDate: 'Expiration Date',
+        deviceModel: 'Device Model',
+        modifyDevice: 'Modify Device',
+        bindDevice: 'Bind Device',
+        bindSuccess: 'Bind successful',
+        bindFailed: 'Bind failed',
+        modifySuccess: 'Modified successfully',
+        modifyFailed: 'Modification failed',
+        copiedToClipboard: 'Copied to clipboard',
+        copyFailed: 'Copy failed',
+        communicationLogs: 'Communication Logs',
+        clear: 'Clear',
+        waitingOperation: 'Waiting for operation...',
+        readingConnectedMac: 'Reading MAC address from existing connection...',
+        standaloneDetectingMac: 'Standalone mode: automatically detecting baud rate and reading MAC...',
+        systemBed: 'Mattress',
+        systemCar: 'Car Seat',
+        systemEndi: 'Car Seat (endi)',
+        systemCarY: 'Car Seat Y',
+        systemBigHand: 'Large Matrix (bigHand)',
+        systemHand: 'Small Matrix (hand)',
+        paramGauss: 'Image Smoothing',
+        paramGaussDesc: 'Gaussian blur coefficient. A larger value makes the image smoother.',
+        paramColor: 'Color Adjustment',
+        paramColorDesc: 'Color mapping range. Controls the heatmap color-scale distribution.',
+        paramFilter: 'Noise Filtering',
+        paramFilterDesc: 'Noise below this threshold will be filtered out.',
+        paramHeight: 'Height Adjustment',
+        paramHeightDesc: 'Height scaling factor for data points in the 3D view.',
+        paramCoherent: 'Response Speed',
+        paramCoherentDesc: 'Inter-frame smoothing. A larger value makes the response smoother.',
+        loadedBackendConfig: 'Configuration loaded from backend',
+        backendOfflineUseDefault: 'Backend service is not connected. Local defaults are used.',
+        configGenerated: 'Configuration file generated',
+        generateFailedCheckBackend: 'Generation failed. Please check whether the backend service is running.',
+        copyFailedManual: 'Copy failed. Please select and copy manually.',
+        parameter: 'Parameter',
+        recommendedValueBest: 'Recommended Value (Best)',
+        maxValueLimit: 'Limit Value (Max)',
+        adjustableParamCount: '{{count}} adjustable parameters',
+        sensorSystemConfig: 'Sensor System Configuration',
+        sensorSystemConfigDesc: 'Set the default system type, dropdown options, and visualization parameter ranges for each system on this page.',
+        offlineMode: 'Offline Mode',
+        reloadBackendConfig: 'Reload configuration from backend',
+        loadingBackendConfig: 'Loading configuration from backend...',
+        systemSelection: 'System Selection',
+        defaultSystem: 'Default System',
+        optionalSystems: 'Optional Systems',
+        selectAll: 'Select All',
+        visualAdjustParams: 'Visualization Parameters',
+        clickExpandEditParams: 'Expand a system to edit recommended and limit values',
+        generateConfigFile: 'Generate Configuration File',
+        generateConfig: 'Generate Configuration',
+        copyToClipboard: 'Copy to Clipboard',
+        generateConfigHint: 'After adjusting parameters, click “Generate Configuration” to output usable configuration content.',
+        configFileContent: 'Configuration File Content',
+        measureInValidArea: 'Please measure within the valid area',
+        useIn2DMode: 'Please use this feature in 2D mode',
+        maxSelectBoxes: 'You can create up to {{count}} selection areas',
+        selectInValidArea: 'Please select within the valid area',
+        macAddress: 'MAC Address',
+        deviceType: 'Device Type',
         pressAver: 'Avg Pressure',
         pressMax: 'Max Pressure',
         pressMin: 'Min Pressure',
@@ -145,6 +282,12 @@ i18next.init({
         connect: '连接',
         connecting: '连接中',
         connected: '已连接',
+        reconnecting: '重新连接中...',
+        reconnectTooltip: '重新连接（清理死端口/僵尸设备后重连）',
+        disconnectAllPorts: '断开所有串口连接',
+        noSerialDevice: '未检测到设备',
+        connectFailed: '连接失败',
+        deviceMacConfig: '设备 MAC 地址配置',
         back: '靠背',
         sit: '坐垫',
         freq: '采集频率',
@@ -263,6 +406,127 @@ i18next.init({
         openDownloadFolder: '打开下载文件夹',
         close: '关闭',
         noPath: '路径为空',
+        openFolderFailed: '打开文件夹失败',
+        openFileFailed: '打开文件失败',
+        grayValue: '灰度值',
+        probabilityDensity: '概率密度',
+        boxShort: '框',
+        boxSelection: '框选',
+        pointUnit: '个',
+        areaUnit: 'cm²',
+        pressureUnit: 'Kpa',
+        validMeasurementArea: '请在有效区域内测量',
+        validSelectionArea: '请在有效区域内框选',
+        maxSelectionBoxes: '最多只能创建 {{count}} 个框选区域',
+        collectStart: '开始采集',
+        collectSuccess: '采集成功',
+        collectFailed: '采集失败',
+        playbackFileRequired: '请选择回放文件',
+        zoomOut: '缩小',
+        resetZoom: '重置',
+        zoomIn: '放大',
+        sensorArea: '传感面积',
+        sensorPressure: '传感压力',
+        choosingDataFile: '选择数据文件',
+        csvImportInvalid: '导入文件格式不正确，请选择系统导出的CSV文件',
+        framePerSecond: '帧/秒',
+        checkingDeviceConfig: '正在检查设备配置...',
+        pointConfigTitle: '点位配置',
+        backWithCode: '靠背 (back)',
+        sitWithCode: '坐垫 (sit)',
+        copyConfigCode: '复制配置代码',
+        deviceHand: '手套',
+        deviceSeat: '坐垫',
+        deviceFoot: '脚垫',
+        deviceUnknown: '未知',
+        statusDisconnected: '未连接',
+        statusDetecting: '探测中',
+        statusReading: '读取中',
+        statusDone: '完成',
+        statusError: '错误',
+        error: '错误',
+        requestFailed: '请求失败',
+        macReaderTitle: 'MAC 地址读取',
+        serialConnection: '串口连接',
+        baudRateDetectList: '探测波特率列表：',
+        readConnectedMac: '读取已连接设备 MAC',
+        reading: '读取中...',
+        standaloneReadMac: '独立探测 & 读取 MAC（未连接时用）',
+        instructions: '使用说明',
+        methodRecommended: '方式一（推荐）：',
+        macHelpStep1: '1. 先在主页面点击“一键连接”',
+        macHelpStep2: '2. 连接成功后进入此页面',
+        macHelpStep3: '3. 点击“读取已连接设备 MAC”',
+        methodStandalone: '方式二（未连接时）：',
+        macHelpStandalone1: '1. 将设备通过 USB 连接到电脑',
+        macHelpStandalone2: '2. 点击“独立探测 & 读取 MAC”',
+        macHelpStandalone3: '3. 等待自动探测波特率和读取 MAC',
+        baudRate: '波特率',
+        readResults: '读取结果',
+        clickToCopy: '点击复制',
+        deviceRemark: '设备备注',
+        expireDate: '截止日期',
+        deviceModel: '设备型号',
+        modifyDevice: '修改设备',
+        bindDevice: '绑定设备',
+        bindSuccess: '绑定成功',
+        bindFailed: '绑定失败',
+        modifySuccess: '修改成功',
+        modifyFailed: '修改失败',
+        copiedToClipboard: '已复制到剪贴板',
+        copyFailed: '复制失败',
+        communicationLogs: '通信日志',
+        clear: '清空',
+        waitingOperation: '等待操作...',
+        readingConnectedMac: '通过已有连接读取 MAC 地址...',
+        standaloneDetectingMac: '独立模式：自动探测波特率 & 读取 MAC...',
+        systemBed: '床垫',
+        systemCar: '汽车座椅',
+        systemEndi: '汽车座椅(endi)',
+        systemCarY: '汽车座椅Y',
+        systemBigHand: '大矩阵(bigHand)',
+        systemHand: '小矩阵(hand)',
+        paramGauss: '图像润滑',
+        paramGaussDesc: '高斯模糊系数，数值越大画面越平滑',
+        paramColor: '颜色调节',
+        paramColorDesc: '色彩映射范围，控制热力图色阶分布',
+        paramFilter: '噪点消除',
+        paramFilterDesc: '低于该阈值的噪点将被过滤',
+        paramHeight: '高度调节',
+        paramHeightDesc: '3D 视图中数据点的高度缩放系数',
+        paramCoherent: '响应速度',
+        paramCoherentDesc: '帧间平滑度，数值越大响应越平缓',
+        loadedBackendConfig: '已从后端加载配置',
+        backendOfflineUseDefault: '后端服务未连接，使用本地默认值',
+        configGenerated: '配置文件已生成',
+        generateFailedCheckBackend: '生成失败，请检查后端服务是否正常',
+        copyFailedManual: '复制失败，请手动选中复制',
+        parameter: '参数',
+        recommendedValueBest: '推荐值（最佳）',
+        maxValueLimit: '上限值（最大）',
+        adjustableParamCount: '共 {{count}} 项可调参数',
+        sensorSystemConfig: '传感器系统配置',
+        sensorSystemConfigDesc: '在此页面可设置默认系统类型、下拉选项，以及各系统的可视化调节参数范围',
+        offlineMode: '离线模式',
+        reloadBackendConfig: '重新从后端加载配置',
+        loadingBackendConfig: '正在从后端加载配置...',
+        systemSelection: '系统选择',
+        defaultSystem: '默认系统',
+        optionalSystems: '可选系统',
+        selectAll: '全选',
+        visualAdjustParams: '可视化调节参数',
+        clickExpandEditParams: '点击展开对应系统，编辑推荐值与上限值',
+        generateConfigFile: '生成配置文件',
+        generateConfig: '生成配置',
+        copyToClipboard: '复制到剪贴板',
+        generateConfigHint: '调整好参数后点击“生成配置”，将输出可用的配置内容',
+        configFileContent: '配置文件内容',
+        measureInValidArea: '请在有效区域内测量',
+        useIn2DMode: '请在2D模式下使用',
+        maxSelectBoxes: '最多只能创建 {{count}} 个框选区域',
+        selectInValidArea: '请在有效区域内框选',
+        macAddress: 'MAC地址',
+        deviceType: '设备类型',
       },
     },
   },
@@ -311,7 +575,7 @@ function RequireMacConfig({ children }) {
         justifyContent: 'center',
         color: '#666'
       }}>
-        正在检查设备配置...
+        {i18next.t('checkingDeviceConfig')}
       </div>
     )
   }
@@ -326,11 +590,32 @@ function RequireMacConfig({ children }) {
  * 全屏 MAC 配置页面（首次启动时展示）
  */
 function MacConfigFullscreen() {
+  const { i18n } = useTranslation()
+  const copy = MAC_FULLSCREEN_COPY[getLanguageKey(i18n.language || localStorage.getItem('language'))]
   const [configured, setConfigured] = useState(false)
   const [verified, setVerified] = useState(false)
+  const [hasExistingConfig, setHasExistingConfig] = useState(false)
 
   const handleBack = useCallback(() => {
     setConfigured(true)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    async function checkExistingConfig() {
+      try {
+        const result = await hasMacConfig()
+        if (!cancelled) {
+          setHasExistingConfig(result)
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setHasExistingConfig(false)
+        }
+      }
+    }
+    checkExistingConfig()
+    return () => { cancelled = true }
   }, [])
 
   // 保存后异步验证后端是否确实有配置
@@ -353,11 +638,16 @@ function MacConfigFullscreen() {
 
   return (
     <div className="mac-config-fullscreen">
+      {hasExistingConfig && (
+        <button type="button" className="mac-fullscreen-exit" onClick={handleBack}>
+          {copy.exit}
+        </button>
+      )}
       <div className="fullscreen-title">
-        <h1>传感器系统</h1>
-        <p>请输入设备密钥以继续</p>
+        <h1>{copy.title}</h1>
+        <p>{copy.subtitle}</p>
       </div>
-      <MacConfig onBack={handleBack} />
+      <MacConfig onBack={handleBack} showBackButton={hasExistingConfig} />
     </div>
   )
 }

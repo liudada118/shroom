@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { TrackballControls } from "three/examples/jsm/controls/TrackballControls";
 import React, { memo, useContext, useEffect, useImperativeHandle, useRef, useState, useCallback } from "react";
+import { useTranslation } from 'react-i18next';
 import { cleanupThree } from '../../util/disposeThree'
 import { TextureLoader } from "three";
 import * as TWEEN from '@tweenjs/tween.js'
@@ -72,6 +73,7 @@ const Canvas =
     memo(React.forwardRef((props, refs) => {
 
         useWhyReRender(props)
+        const { t } = useTranslation()
 
         console.log('renderCanvas')
         const {
@@ -1580,7 +1582,7 @@ const Canvas =
                             userSelect: 'none',
                         }}
                     >
-                        <span style={{ fontWeight: 'bold' }}>点位配置</span>
+                        <span style={{ fontWeight: 'bold' }}>{t('pointConfigTitle')}</span>
                         <span style={{ transform: configPanelOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▲</span>
                     </div>
 
@@ -1589,7 +1591,7 @@ const Canvas =
                             {['back', 'sit'].map(name => (
                                 <div key={name} style={{ marginBottom: 12 }}>
                                     <div style={{ fontWeight: 'bold', marginBottom: 4, color: '#00ccff', fontSize: 13 }}>
-                                        {name === 'back' ? '靠背 (back)' : '坐垫 (sit)'}
+                                        {name === 'back' ? t('backWithCode') : t('sitWithCode')}
                                     </div>
                                     {['position', 'rotation', 'scale'].map(prop => (
                                         <div key={prop} style={{ marginBottom: 6 }}>
@@ -1673,7 +1675,7 @@ sitPointConfig={{ position: [${configValues.sit.position.map(v => v.toFixed(4)).
                                         fontSize: 11,
                                     }}
                                 >
-                                    复制配置代码
+                                    {t('copyConfigCode')}
                                 </button>
                             </div>
                         </div>

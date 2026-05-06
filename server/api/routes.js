@@ -13,7 +13,7 @@ const module2 = require('../../util/aes_ecb')
 const { state } = require('../state')
 const { broadcast } = require('../websocket')
 const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
-const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed } = require('../services/DataService')
+const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot } = require('../services/DataService')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 
 const router = express.Router()
@@ -314,11 +314,21 @@ router.get('/getPort', asyncHandler(async (req, res) => {
 
 router.get('/connPort', asyncHandler(async (req, res) => {
   const port = await connectPort(broadcast, colAndSendData)
+  const hasConnectedPort = Array.isArray(port) && port.some((item) => item?.status === 'connected' || item?.status === 'already_connected')
+  if (!hasConnectedPort) {
+    res.json(new HttpResult(1, port, port?.length ? 'No serial devices connected' : 'No serial ports found'))
+    return
+  }
   res.json(new HttpResult(0, port, 'Connect success'))
 }))
 
 router.get('/rescanPort', asyncHandler(async (req, res) => {
   const result = await rescanPort(broadcast, colAndSendData)
+  const hasConnectedPort = Array.isArray(result) && result.some((item) => item?.status === 'connected' || item?.status === 'already_connected')
+  if (!hasConnectedPort) {
+    res.json(new HttpResult(1, result, result?.length ? 'No serial devices connected' : 'No serial ports found'))
+    return
+  }
   res.json(new HttpResult(0, result, 'Rescan complete'))
 }))
 
@@ -681,6 +691,42 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
   res.json(new HttpResult(0, { length: rows.length, pressArr, areaArr }, 'success'))
 }))
 
+router.post('/clearDbHistorySelect', asyncHandler(async (req, res) => {
+  state.historySelectCache = null
+
+  if (!state.historyDbArr || !state.historyDbArr.length) {
+    res.json(new HttpResult(0, { length: 0, pressArr: {}, areaArr: {} }, 'success'))
+    return
+  }
+
+  const rows = state.historyDbArr
+  const keyArr = Object.keys(JSON.parse(rows[0].data || '{}'))
+  const pressArr = {}
+  const areaArr = {}
+  keyArr.forEach((key) => {
+    pressArr[key] = []
+    areaArr[key] = []
+  })
+
+  for (let i = 0; i < rows.length; i++) {
+    const dataObj = JSON.parse(rows[i].data || '{}')
+    for (const key of keyArr) {
+      const item = dataObj[key]
+      const arr = item && item.arr ? item.arr : []
+      let press = 0, area = 0
+      for (let j = 0; j < arr.length; j++) {
+        const v = arr[j] || 0
+        press += v
+        if (v > 0) area++
+      }
+      pressArr[key].push(press)
+      areaArr[key].push(area)
+    }
+  }
+
+  res.json(new HttpResult(0, { length: rows.length, pressArr, areaArr }, 'success'))
+}))
+
 router.post('/getContrastData', asyncHandler(async (req, res) => {
   const left = resolveRequestValue(req, ['left'])
   const right = resolveRequestValue(req, ['right'])
@@ -751,12 +797,14 @@ router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
   }
 
   state.playIndex = index
-  broadcast(JSON.stringify({
-    sitDataPlay: JSON.parse(state.historyDbArr[state.playIndex].data),
-    index: state.playIndex,
-    timestamp: JSON.parse(state.historyDbArr[state.playIndex].timestamp)
-  }))
-  res.json(new HttpResult(0, state.historyDbArr[index], 'success'))
+  const snapshot = getPlaybackSnapshot(state.playIndex)
+  if (!snapshot) {
+    res.json(new HttpResult(1, {}, 'No playback data found for the selected time'))
+    return
+  }
+
+  broadcast(JSON.stringify(snapshot.payload))
+  res.json(new HttpResult(0, snapshot.row, 'success'))
 }))
 
 // ─── 数据操作 ────────────────────────────────────────────
@@ -1081,6 +1129,282 @@ const csvUpload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB限制
 })
 
+const CSV_IMPORT_ERROR_MESSAGE = '\u5bfc\u5165\u6587\u4ef6\u683c\u5f0f\u4e0d\u6b63\u786e\uff0c\u8bf7\u9009\u62e9\u7cfb\u7edf\u5bfc\u51fa\u7684CSV\u6587\u4ef6'
+const CSV_SENSOR_POINT_COUNTS = new Set([32 * 32, 46 * 46, 50 * 64])
+
+function cleanCsvHeader(value) {
+  return normalizeRequestString(value).replace(/^\ufeff/, '').trim()
+}
+
+function parseCsvNumericArray(value) {
+  if (Array.isArray(value)) {
+    const values = value.map((item) => Number(item))
+    return values.every((item) => Number.isFinite(item)) ? values : null
+  }
+
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (!Array.isArray(parsed)) {
+      return null
+    }
+    const values = parsed.map((item) => Number(item))
+    return values.every((item) => Number.isFinite(item)) ? values : null
+  } catch {
+    return null
+  }
+}
+
+function isCsvSensorArray(arr) {
+  return Array.isArray(arr) && CSV_SENSOR_POINT_COUNTS.has(arr.length)
+}
+
+function isPreferredCsvDataHeader(header) {
+  const normalized = cleanCsvHeader(header)
+  const lower = normalized.toLowerCase()
+  if (!normalized || normalized === 'file' || lower.includes('select') || normalized.includes('\u6846\u9009')) {
+    return false
+  }
+
+  return /\bdata\b/i.test(normalized)
+    || lower.endsWith('realdata')
+    || lower.includes('raw data')
+    || normalized.includes('\u539f\u59cb\u6570\u636e')
+}
+
+function normalizeCsvMatrixKey(key, sampleArr, fileName) {
+  let normalized = normalizeRequestString(key)
+  const basename = path.basename(fileName || '').toLowerCase()
+
+  if (/^carcushion-(back|sit)$/i.test(normalized)) {
+    normalized = normalized.replace(/^carcushion-/i, 'car-')
+  }
+
+  if (/^car-(sit|back)$/i.test(normalized)) {
+    const isEndiFromFile = basename.startsWith('endi-')
+    const isEndiFromShape = sampleArr.length === 46 * 46 || sampleArr.length === 50 * 64
+    if (isEndiFromFile || isEndiFromShape) {
+      normalized = normalized.replace(/^car-/i, 'endi-')
+    }
+  }
+
+  return normalized
+}
+
+function deriveCsvMatrixKey(header, sampleArr, fileName) {
+  const key = cleanCsvHeader(header)
+    .replace(/\s*\u6846\u9009.*$/u, '')
+    .replace(/\s*\u539f\u59cb\u6570\u636e.*$/u, '')
+    .replace(/\s+raw\s+data$/i, '')
+    .replace(/\s+data$/i, '')
+    .replace(/realdata$/i, '')
+    .trim()
+
+  return normalizeCsvMatrixKey(key, sampleArr, fileName)
+}
+
+function findCsvDataColumns(rows, fileName) {
+  const headers = Object.keys(rows[0] || {}).filter((header) => cleanCsvHeader(header) !== 'file')
+  const columns = []
+  const seen = new Set()
+
+  for (const header of headers) {
+    if (!isPreferredCsvDataHeader(header)) {
+      continue
+    }
+
+    const sampleArr = rows.slice(0, 20)
+      .map((row) => parseCsvNumericArray(row[header]))
+      .find((arr) => isCsvSensorArray(arr))
+    if (!sampleArr) {
+      continue
+    }
+
+    const key = deriveCsvMatrixKey(header, sampleArr, fileName)
+    if (!key || seen.has(key)) {
+      continue
+    }
+
+    seen.add(key)
+    columns.push({ header, key })
+  }
+
+  return columns
+}
+
+function getCsvField(row, names) {
+  const normalizedNames = new Set(names.map((name) => cleanCsvHeader(name).toLowerCase()))
+  for (const key of Object.keys(row || {})) {
+    if (normalizedNames.has(cleanCsvHeader(key).toLowerCase())) {
+      return row[key]
+    }
+  }
+  return ''
+}
+
+function parseCsvTimestampValue(value) {
+  const text = normalizeRequestString(value)
+  if (!text) {
+    return null
+  }
+
+  const numericValue = Number(text)
+  if (Number.isFinite(numericValue) && numericValue > 1000000000) {
+    return numericValue
+  }
+
+  const normalized = text
+    .replace(/^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2})-(\d{1,2})-(\d{1,2})$/, '$1/$2/$3 $4:$5:$6')
+    .replace(/^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/, '$1/$2/$3 $4:$5:$6')
+  const parsed = Date.parse(normalized)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseCsvSecondValue(row) {
+  const value = getCsvField(row, ['sec', 'sec(s)', 'sec\uff08s\uff09'])
+  const second = Number(value)
+  return Number.isFinite(second) ? second : null
+}
+
+function resolveCsvRowTimestamp(row, index, baseTimestamp) {
+  const second = parseCsvSecondValue(row)
+  if (Number.isFinite(baseTimestamp) && Number.isFinite(second)) {
+    return baseTimestamp + Math.round(second * 1000)
+  }
+
+  const parsedTimestamp = parseCsvTimestampValue(getCsvField(row, ['timestamp', 'time', 'date', '\u65f6\u95f4']))
+  if (Number.isFinite(parsedTimestamp)) {
+    return parsedTimestamp
+  }
+
+  return index
+}
+
+function parseStoredTimestamp(value) {
+  if (value === undefined || value === null || value === '') {
+    return null
+  }
+  if (typeof value === 'number') {
+    return value
+  }
+  try {
+    return JSON.parse(value)
+  } catch {
+    const numericValue = Number(value)
+    return Number.isFinite(numericValue) ? numericValue : value
+  }
+}
+
+function buildCsvPlaybackRows(csvRows, dataColumns, fileName) {
+  const firstRow = csvRows[0] || {}
+  const baseTimestamp = parseCsvTimestampValue(getCsvField(firstRow, ['timestamp', 'time', 'date', '\u65f6\u95f4']))
+
+  return csvRows.map((row, index) => {
+    const frameData = {}
+
+    for (const column of dataColumns) {
+      const arr = parseCsvNumericArray(row[column.header])
+      if (!isCsvSensorArray(arr)) {
+        continue
+      }
+      frameData[column.key] = { arr, status: 'online' }
+    }
+
+    if (!Object.keys(frameData).length) {
+      return null
+    }
+
+    return {
+      date: fileName,
+      timestamp: JSON.stringify(resolveCsvRowTimestamp(row, index, baseTimestamp)),
+      data: JSON.stringify(frameData),
+      select: null
+    }
+  }).filter(Boolean)
+}
+
+function summarizePlaybackRows(rows) {
+  const pressArr = {}
+  const areaArr = {}
+
+  for (const row of rows) {
+    let frameData
+    try {
+      frameData = JSON.parse(row.data || '{}')
+    } catch {
+      frameData = {}
+    }
+
+    for (const key of Object.keys(frameData)) {
+      const arr = Array.isArray(frameData[key]?.arr) ? frameData[key].arr : []
+      if (!pressArr[key]) {
+        pressArr[key] = []
+        areaArr[key] = []
+      }
+
+      pressArr[key].push(arr.reduce((sum, item) => sum + (Number(item) || 0), 0))
+      areaArr[key].push(arr.filter((item) => Number(item) > 0).length)
+    }
+  }
+
+  return { length: rows.length, pressArr, areaArr }
+}
+
+function resolveCsvPlaybackHz(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) {
+    return 1
+  }
+
+  const first = Number(parseStoredTimestamp(rows[0].timestamp))
+  const second = Number(parseStoredTimestamp(rows[1].timestamp))
+  const diff = second - first
+  if (!Number.isFinite(diff) || diff <= 0) {
+    return 1
+  }
+
+  return 1000 / diff
+}
+
+async function loadCsvPlaybackData(fileName) {
+  const csvRows = await getCsvData(fileName)
+  if (!Array.isArray(csvRows) || !csvRows.length) {
+    throw new Error(CSV_IMPORT_ERROR_MESSAGE)
+  }
+
+  const dataColumns = findCsvDataColumns(csvRows, fileName)
+  if (!dataColumns.length) {
+    throw new Error(CSV_IMPORT_ERROR_MESSAGE)
+  }
+
+  const rows = buildCsvPlaybackRows(csvRows, dataColumns, fileName)
+  if (!rows.length) {
+    throw new Error(CSV_IMPORT_ERROR_MESSAGE)
+  }
+
+  return {
+    rows,
+    dataColumns,
+    summary: summarizePlaybackRows(rows),
+    sourceRows: csvRows.length
+  }
+}
+
+function removeUploadedCsv(filePath) {
+  try {
+    fs.rmSync(filePath, { force: true })
+  } catch (err) {
+    console.warn('[CSV] Failed to remove invalid uploaded CSV:', err.message)
+  }
+}
+
 router.post('/uploadCsv', csvUpload.single('file'), asyncHandler(async (req, res) => {
   if (!req.file) {
     res.json(new HttpResult(1, {}, 'No file uploaded'))
@@ -1088,13 +1412,49 @@ router.post('/uploadCsv', csvUpload.single('file'), asyncHandler(async (req, res
   }
   const filePath = req.file.path
   const fileName = req.file.filename
-  res.json(new HttpResult(0, { fileName, filePath }, 'Upload success'))
+  try {
+    const playbackData = await loadCsvPlaybackData(filePath)
+    res.json(new HttpResult(0, {
+      fileName,
+      filePath,
+      length: playbackData.summary.length,
+      dataColumns: playbackData.dataColumns.map((column) => column.key)
+    }, 'Upload success'))
+  } catch (err) {
+    console.warn('[CSV] Invalid import file:', err.message)
+    removeUploadedCsv(filePath)
+    res.json(new HttpResult(1, {}, CSV_IMPORT_ERROR_MESSAGE))
+  }
 }))
 
 router.post('/getCsvData', asyncHandler(async (req, res) => {
   const fileName = resolveRequestValue(req, ['fileName'])
-  const data = getCsvData(fileName)
-  res.json(new HttpResult(0, data, 'success'))
+  state.historyFlag = false
+  state.historyPlayFlag = false
+  state.historyDbArr = null
+  state.historySelectCache = null
+  clearPlayTimer()
+  try {
+    const playbackData = await loadCsvPlaybackData(fileName)
+    state.historyDbArr = playbackData.rows
+    state.colMaxHZ = resolveCsvPlaybackHz(playbackData.rows)
+    state.colplayHZ = state.colMaxHZ
+    state.historyFlag = true
+    state.playIndex = 0
+
+    res.json(new HttpResult(0, {
+      length: playbackData.summary.length,
+      pressArr: playbackData.summary.pressArr,
+      areaArr: playbackData.summary.areaArr,
+      initialIndex: 0,
+      initialTimestamp: parseStoredTimestamp(playbackData.rows[0]?.timestamp),
+      dataColumns: playbackData.dataColumns.map((column) => column.key),
+      sourceRows: playbackData.sourceRows
+    }, 'success'))
+  } catch (err) {
+    console.warn('[CSV] Failed to load import file:', err.message)
+    res.json(new HttpResult(1, {}, CSV_IMPORT_ERROR_MESSAGE))
+  }
 }))
 
 router.post('/getSysconfig', (req, res) => {

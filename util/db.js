@@ -756,10 +756,12 @@ async function deleteRemarkByDate({ db, params }) {
 
 async function getCsvData(file) {
   const results = []
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     fs.createReadStream(file)
+      .on("error", reject)
       .pipe(csv())
       .on("data", (data) => results.push({ ...data, file }))
+      .on("error", reject)
       .on("end", () => resolve(results))
   })
 }

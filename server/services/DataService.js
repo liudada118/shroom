@@ -135,13 +135,32 @@ function getPlaybackRows() {
 
 function parsePlaybackData(value) {
   if (!value) return {}
-  if (typeof value === 'object') return value
+  if (typeof value === 'object') {
+    try {
+      return JSON.parse(JSON.stringify(value))
+    } catch {
+      return { ...value }
+    }
+  }
 
   try {
     return JSON.parse(value)
   } catch {
     return {}
   }
+}
+
+function removePlaybackSelect(data) {
+  if (!data || typeof data !== 'object') return data
+
+  for (const key of Object.keys(data)) {
+    if (data[key] && typeof data[key] === 'object' && 'select' in data[key]) {
+      data[key] = { ...data[key] }
+      delete data[key].select
+    }
+  }
+
+  return data
 }
 
 function parsePlaybackTimestamp(value) {
@@ -181,11 +200,11 @@ function getPlaybackSnapshot(index = state.playIndex) {
     return null
   }
 
-  const sitDataPlay = parsePlaybackData(row.data)
+  const sitDataPlay = removePlaybackSelect(parsePlaybackData(row.data))
 
   // 将缓存的框选信息注入到每帧数据中，供前端渲染框选框
   const selectCache = state.historySelectCache
-  if (selectCache && typeof selectCache === 'object') {
+  if (selectCache && typeof selectCache === 'object' && Object.keys(selectCache).length) {
     for (const key of Object.keys(selectCache)) {
       if (sitDataPlay[key]) {
         sitDataPlay[key].select = selectCache[key]
@@ -254,7 +273,10 @@ function startPlayback() {
   clearPlayTimer()
   broadcast(JSON.stringify({ playEnd: true }))
 
-  state.colTimer = setInterval(runPlaybackTick, getPlaybackIntervalMs())
+  runPlaybackTick()
+  if (state.historyPlayFlag) {
+    state.colTimer = setInterval(runPlaybackTick, getPlaybackIntervalMs())
+  }
 
   return true
 }

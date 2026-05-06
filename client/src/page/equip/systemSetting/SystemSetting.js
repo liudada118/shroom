@@ -11,29 +11,30 @@ import {
 import './index.scss'
 import axios from 'axios';
 import { localAddress } from '../../../util/constant';
+import { useTranslation } from 'react-i18next';
 import { buildFallbackParams } from '../../../util/request';
 
 const { Title, Text } = Typography;
 
 /* ────── 系统选项配置 ────── */
 const systemOptions = [
-    { label: '床垫', value: 'bed' },
-    { label: '汽车座椅', value: 'car' },
-    { label: '汽车座椅(endi)', value: 'endi' },
-    { label: '汽车座椅Y', value: 'carY' },
-    { label: '大矩阵(bigHand)', value: 'bigHand' },
-    { label: '小矩阵(hand)', value: 'hand' },
+    { labelKey: 'systemBed', value: 'bed' },
+    { labelKey: 'systemCar', value: 'car' },
+    { labelKey: 'systemEndi', value: 'endi' },
+    { labelKey: 'systemCarY', value: 'carY' },
+    { labelKey: 'systemBigHand', value: 'bigHand' },
+    { labelKey: 'systemHand', value: 'hand' },
 ];
 
 const plainOptions = ['bed', 'car', 'endi', 'carY', 'bigHand', 'hand'];
 
 const systemNameMap = {
-    bed: '床垫',
-    car: '汽车座椅',
-    endi: '汽车座椅(endi)',
-    carY: '汽车座椅Y',
-    bigHand: '大矩阵(bigHand)',
-    hand: '小矩阵(hand)'
+    bed: 'systemBed',
+    car: 'systemCar',
+    endi: 'systemEndi',
+    carY: 'systemCarY',
+    bigHand: 'systemBigHand',
+    hand: 'systemHand'
 };
 
 const systemTagColor = {
@@ -47,11 +48,11 @@ const systemTagColor = {
 
 /* ────── 可调节参数定义 ────── */
 const paramConfig = [
-    { title: '图像润滑', key: 'gauss', unit: '', desc: '高斯模糊系数，数值越大画面越平滑' },
-    { title: '颜色调节', key: 'color', unit: '', desc: '色彩映射范围，控制热力图色阶分布' },
-    { title: '噪点消除', key: 'filter', unit: '', desc: '低于该阈值的噪点将被过滤' },
-    { title: '高度调节', key: 'height', unit: '', desc: '3D 视图中数据点的高度缩放系数' },
-    { title: '响应速度', key: 'coherent', unit: '', desc: '帧间平滑度，数值越大响应越平缓' }
+    { titleKey: 'paramGauss', key: 'gauss', unit: '', descKey: 'paramGaussDesc' },
+    { titleKey: 'paramColor', key: 'color', unit: '', descKey: 'paramColorDesc' },
+    { titleKey: 'paramFilter', key: 'filter', unit: '', descKey: 'paramFilterDesc' },
+    { titleKey: 'paramHeight', key: 'height', unit: '', descKey: 'paramHeightDesc' },
+    { titleKey: 'paramCoherent', key: 'coherent', unit: '', descKey: 'paramCoherentDesc' }
 ];
 
 /* ────── 前端硬编码的默认值（后端不可用时的兜底） ────── */
@@ -77,6 +78,7 @@ const fallbackConfig = {
 const CheckboxGroup = Checkbox.Group;
 
 export default function SystemSetting() {
+    const { t } = useTranslation();
     const [checkedList, setCheckedList] = useState(plainOptions);
     const checkAll = plainOptions.length === checkedList.length;
     const indeterminate = checkedList.length > 0 && checkedList.length < plainOptions.length;
@@ -119,13 +121,13 @@ export default function SystemSetting() {
                         };
                     }
                     setInputValue(newInputValue);
-                    message.success('已从后端加载配置');
+                    message.success(t('loadedBackendConfig'));
                 }
             })
             .catch((err) => {
-                console.warn('从后端加载配置失败，使用默认值:', err.message);
+                console.warn('load backend config failed, use defaults:', err.message);
                 setLoadError(true);
-                message.warning('后端服务未连接，使用本地默认值');
+                message.warning(t('backendOfflineUseDefault'));
             })
             .finally(() => {
                 setPageLoading(false);
@@ -166,9 +168,9 @@ export default function SystemSetting() {
             data: payload
         }).then((res) => {
             setConfig(res.data.data);
-            message.success('配置文件已生成');
+            message.success(t('configGenerated'));
         }).catch(() => {
-            message.error('生成失败，请检查后端服务是否正常');
+            message.error(t('generateFailedCheckBackend'));
         }).finally(() => {
             setLoading(false);
         });
@@ -177,9 +179,9 @@ export default function SystemSetting() {
     const handleCopyConfig = () => {
         if (config) {
             navigator.clipboard.writeText(config).then(() => {
-                message.success('已复制到剪贴板');
+                message.success(t('copiedToClipboard'));
             }).catch(() => {
-                message.warning('复制失败，请手动选中复制');
+                message.warning(t('copyFailedManual'));
             });
         }
     };
@@ -188,16 +190,16 @@ export default function SystemSetting() {
     const getTableData = (systemKey) =>
         paramConfig.map((param, index) => ({
             key: index,
-            param: param.title,
+            param: t(param.titleKey),
             paramKey: param.key,
-            desc: param.desc,
+            desc: t(param.descKey),
             optimal: inputValue.optimalObj[systemKey][param.key],
             max: inputValue.maxObj[systemKey][param.key],
         }));
 
     const getColumns = (systemKey) => [
         {
-            title: '参数',
+            title: t('parameter'),
             dataIndex: 'param',
             key: 'param',
             width: 140,
@@ -211,7 +213,7 @@ export default function SystemSetting() {
             )
         },
         {
-            title: '推荐值（最佳）',
+            title: t('recommendedValueBest'),
             dataIndex: 'optimal',
             key: 'optimal',
             width: 160,
@@ -226,7 +228,7 @@ export default function SystemSetting() {
             )
         },
         {
-            title: '上限值（最大）',
+            title: t('maxValueLimit'),
             dataIndex: 'max',
             key: 'max',
             width: 160,
@@ -247,9 +249,9 @@ export default function SystemSetting() {
         key: sysKey,
         label: (
             <Space>
-                <Tag color={systemTagColor[sysKey]} style={{ marginRight: 0 }}>{systemNameMap[sysKey]}</Tag>
+                <Tag color={systemTagColor[sysKey]} style={{ marginRight: 0 }}>{t(systemNameMap[sysKey])}</Tag>
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                    共 {paramConfig.length} 项可调参数
+                    {t('adjustableParamCount', { count: paramConfig.length })}
                 </Text>
             </Space>
         ),
@@ -272,17 +274,17 @@ export default function SystemSetting() {
             <div className="page-header">
                 <Space align="center" size={8}>
                     <SettingOutlined style={{ fontSize: 20, color: '#1677ff' }} />
-                    <Title level={4} style={{ margin: 0 }}>传感器系统配置</Title>
+                    <Title level={4} style={{ margin: 0 }}>{t('sensorSystemConfig')}</Title>
                 </Space>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
                     <Text type="secondary" style={{ fontSize: 13 }}>
-                        在此页面可设置默认系统类型、下拉选项，以及各系统的可视化调节参数范围
+                        {t('sensorSystemConfigDesc')}
                     </Text>
                     {loadError && (
-                        <Tag color="warning" style={{ fontSize: 11 }}>离线模式</Tag>
+                        <Tag color="warning" style={{ fontSize: 11 }}>{t('offlineMode')}</Tag>
                     )}
                     {!pageLoading && (
-                        <Tooltip title="重新从后端加载配置">
+                        <Tooltip title={t('reloadBackendConfig')}>
                             <Button
                                 type="text"
                                 size="small"
@@ -295,16 +297,16 @@ export default function SystemSetting() {
                 </div>
             </div>
 
-            <Spin spinning={pageLoading} tip="正在从后端加载配置..." indicator={<LoadingOutlined style={{ fontSize: 24 }} spin />}>
+            <Spin spinning={pageLoading} tip={t('loadingBackendConfig')} indicator={<LoadingOutlined style={{ fontSize: 24 }} spin />}>
                 {/* 卡片 1：默认系统 & 下拉选项 */}
                 <Card
                     size="small"
-                    title={<Space><AppstoreOutlined style={{ color: '#1677ff' }} /><span>系统选择</span></Space>}
+                    title={<Space><AppstoreOutlined style={{ color: '#1677ff' }} /><span>{t('systemSelection')}</span></Space>}
                     className="setting-card"
                 >
                     {/* 默认系统 */}
                     <div className="setting-row">
-                        <Text className="setting-label">默认系统</Text>
+                        <Text className="setting-label">{t('defaultSystem')}</Text>
                         <Radio.Group
                             onChange={(e) => setSysValue(e.target.value)}
                             value={sysValue}
@@ -314,7 +316,7 @@ export default function SystemSetting() {
                         >
                             {systemOptions.map(opt => (
                                 <Radio.Button key={opt.value} value={opt.value}>
-                                    {opt.label}
+                                    {t(opt.labelKey)}
                                 </Radio.Button>
                             ))}
                         </Radio.Group>
@@ -324,19 +326,19 @@ export default function SystemSetting() {
 
                     {/* 下拉可选系统 */}
                     <div className="setting-row">
-                        <Text className="setting-label">可选系统</Text>
+                        <Text className="setting-label">{t('optionalSystems')}</Text>
                         <div className="checkbox-area">
                             <Checkbox
                                 indeterminate={indeterminate}
                                 onChange={(e) => setCheckedList(e.target.checked ? plainOptions : [])}
                                 checked={checkAll}
                             >
-                                全选
+                                {t('selectAll')}
                             </Checkbox>
                             <Divider type="vertical" />
                             <CheckboxGroup
                                 options={plainOptions.map(p => ({
-                                    label: <Tag color={systemTagColor[p]}>{systemNameMap[p]}</Tag>,
+                                    label: <Tag color={systemTagColor[p]}>{t(systemNameMap[p])}</Tag>,
                                     value: p
                                 }))}
                                 value={checkedList}
@@ -349,10 +351,10 @@ export default function SystemSetting() {
                 {/* 卡片 2：各系统调节参数 */}
                 <Card
                     size="small"
-                    title={<Space><ControlOutlined style={{ color: '#1677ff' }} /><span>可视化调节参数</span></Space>}
+                    title={<Space><ControlOutlined style={{ color: '#1677ff' }} /><span>{t('visualAdjustParams')}</span></Space>}
                     extra={
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                            点击展开对应系统，编辑推荐值与上限值
+                            {t('clickExpandEditParams')}
                         </Text>
                     }
                     className="setting-card"
@@ -367,7 +369,7 @@ export default function SystemSetting() {
                 {/* 卡片 3：生成 & 输出 */}
                 <Card
                     size="small"
-                    title={<Space><FileTextOutlined style={{ color: '#1677ff' }} /><span>生成配置文件</span></Space>}
+                    title={<Space><FileTextOutlined style={{ color: '#1677ff' }} /><span>{t('generateConfigFile')}</span></Space>}
                     className="setting-card"
                 >
                     <Space direction="vertical" style={{ width: '100%' }} size="middle">
@@ -378,16 +380,16 @@ export default function SystemSetting() {
                                 onClick={handleGenerate}
                                 loading={loading}
                             >
-                                生成配置
+                                {t('generateConfig')}
                             </Button>
                             {config && (
                                 <Button icon={<CopyOutlined />} onClick={handleCopyConfig}>
-                                    复制到剪贴板
+                                    {t('copyToClipboard')}
                                 </Button>
                             )}
                             {!config && (
                                 <Text type="secondary" style={{ fontSize: 12 }}>
-                                    调整好参数后点击"生成配置"，将输出可用的配置内容
+                                    {t('generateConfigHint')}
                                 </Text>
                             )}
                         </div>
@@ -395,7 +397,7 @@ export default function SystemSetting() {
                         {config && (
                             <div className="config-output">
                                 <div className="config-output-header">
-                                    <Text style={{ color: '#8caaee', fontSize: 12 }}>配置文件内容</Text>
+                                    <Text style={{ color: '#8caaee', fontSize: 12 }}>{t('configFileContent')}</Text>
                                 </div>
                                 <pre>{config}</pre>
                             </div>

@@ -22,6 +22,14 @@
         align-items: center;
         justify-content: center;
         // font-size: 0.85rem;
+
+        .colNameDisplay {
+            max-width: 14rem;
+            margin-right: 10px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
     }
 
     .changeColInfo {
@@ -33,7 +41,7 @@
         bottom: 2.5rem;
         right: -40px;
         width: 340px;
-        height: 230px;
+        height: 250px;
         z-index: 500;
         background-color: #32373E;
         padding: 20px 20px 20px 20px;
@@ -49,6 +57,35 @@
             background-color: #32373E;
             width: 5rem;
             color: #B4C0CA;
+        }
+
+        .ant-input-affix-wrapper {
+            flex: 1;
+            border: 1px solid #4E565F;
+            background-color: #32373E;
+            color: #B4C0CA;
+
+            .ant-input {
+                width: 100%;
+                border: 0;
+                background-color: transparent;
+            }
+
+            .ant-input-show-count-suffix {
+                color: #8794A1;
+            }
+        }
+
+        .ant-input-textarea-show-count {
+            flex: 1;
+
+            .ant-input {
+                width: 100%;
+            }
+        }
+
+        .ant-input-textarea-show-count::after {
+            color: #8794A1;
         }
 
         .changeColInfoModalTitle {
