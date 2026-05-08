@@ -188,7 +188,6 @@ const Num = React.memo((props) => {
                                                 key={index}
                                                 style={{
                                                     width: `${2 * scale}rem`,
-                                                    color: 'blue',
                                                     fontSize: `${scale * 20 * 0.7}px`,
                                                     lineHeight: `${1.5 * scale}rem`,
                                                     transform: `translateY(${-item * 3*height}px)`,

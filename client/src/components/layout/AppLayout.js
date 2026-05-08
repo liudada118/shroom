@@ -6,6 +6,7 @@ import { pageContext } from '../../page/test/Test'
 import axios from 'axios'
 import { localAddress } from '../../util/constant'
 import { withTranslation } from 'react-i18next'
+import { message } from 'antd'
 import RightPanel from './RightPanel'
 import { APP_VERSION } from '../../util/version'
 
@@ -93,11 +94,7 @@ function AppLayout(props) {
 
   // 导出报告（触发下载弹窗）
   const handleExport = useCallback(() => {
-    // 通过触发 ColAndHistory 的下载逻辑
-    // 这里暂时用 message 提示，实际下载逻辑在 ColAndHistory 中
-    import('antd').then(({ message }) => {
-      message.info('请在历史数据面板中选择数据后导出')
-    })
+    message.info('请在历史数据面板中选择数据后导出')
   }, [])
 
   // 预压力置零
