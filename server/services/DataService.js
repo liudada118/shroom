@@ -9,6 +9,76 @@ const { broadcast } = require('../websocket')
 
 const { blue } = constantObj
 const DEFAULT_PLAYBACK_HZ = 1
+const DEFAULT_DATA_DIRECTION = { left: true, up: true }
+const MATRIX_DIMENSIONS = {
+  'endi-back': { width: 50, height: 64 },
+  'endi-sit': { width: 46, height: 46 },
+  'carY-back': { width: 32, height: 32 },
+  'carY-sit': { width: 32, height: 32 },
+  'car-back': { width: 32, height: 32 },
+  'car-sit': { width: 32, height: 32 },
+  bed: { width: 32, height: 32 },
+  hand: { width: 32, height: 32 },
+  foot: { width: 32, height: 32 },
+  bigHand: { width: 64, height: 64 },
+}
+
+function normalizeDataDirection(direction) {
+  return {
+    left: direction?.left !== false,
+    up: direction?.up !== false,
+  }
+}
+
+function getMatrixDimensions(key, arr) {
+  if (MATRIX_DIMENSIONS[key]) {
+    return MATRIX_DIMENSIONS[key]
+  }
+
+  const length = Array.isArray(arr) ? arr.length : 0
+  const side = Math.sqrt(length)
+  if (Number.isInteger(side) && side > 0) {
+    return { width: side, height: side }
+  }
+
+  return null
+}
+
+function flipHorizontal(arr, width, height) {
+  const result = []
+  for (let y = 0; y < height; y++) {
+    for (let x = width - 1; x >= 0; x--) {
+      result.push(arr[y * width + x])
+    }
+  }
+  return result
+}
+
+function flipVertical(arr, width, height) {
+  const result = []
+  for (let y = height - 1; y >= 0; y--) {
+    for (let x = 0; x < width; x++) {
+      result.push(arr[y * width + x])
+    }
+  }
+  return result
+}
+
+function applyCollectionDirection(key, arr, direction) {
+  const dimensions = getMatrixDimensions(key, arr)
+  if (!dimensions) {
+    return [...arr]
+  }
+
+  let result = [...arr]
+  if (!direction.left) {
+    result = flipHorizontal(result, dimensions.width, dimensions.height)
+  }
+  if (!direction.up) {
+    result = flipVertical(result, dimensions.width, dimensions.height)
+  }
+  return result
+}
 
 /**
  * 解析串口数据为前端格式
@@ -89,10 +159,20 @@ function sendData() {
  */
 function storageData(data) {
   const timestamp = Date.now()
-  const newData = { ...data }
+  const direction = normalizeDataDirection(state.dataDirection || DEFAULT_DATA_DIRECTION)
+  const newData = {}
 
-  Object.keys(newData).forEach((key) => {
-    if (newData[key].status) delete newData[key].status
+  Object.keys(data || {}).forEach((key) => {
+    const item = data[key]
+    if (!item || typeof item !== 'object') return
+
+    const nextItem = { ...item }
+    if (nextItem.status) delete nextItem.status
+    if (Array.isArray(nextItem.arr)) {
+      nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
+      nextItem.dataDirection = direction
+    }
+    newData[key] = nextItem
   })
 
   const insertQuery = 'INSERT INTO matrix (data, timestamp, date, `select`) VALUES (?, ?, ?, ?)'

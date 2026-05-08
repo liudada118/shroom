@@ -258,6 +258,7 @@ function Test() {
                 brushInstance,
                 changeWsLocalData,
                 wsLocalData,
+                dataDirection,
                 changeDataDirection,
                 setDisplay,
                 display,

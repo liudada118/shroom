@@ -18,6 +18,12 @@ const pointConfig = {
   'car-sit': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
 };
 
+const CSV_IMPORT_INVALID_MESSAGE = '数据有误'
+const validImportMatrixLengths = new Set([
+  ...Object.values(pointConfig).map((config) => config.width * config.height),
+  4096,
+])
+
 /**
  * 将一维数组索引转换为矩阵中的二维点位置坐标
  * @param {number} index - 一维数组索引
@@ -754,11 +760,196 @@ async function deleteRemarkByDate({ db, params }) {
 
 // ─── CSV 读取 ────────────────────────────────────────────
 
+function normalizeCsvHeader(header) {
+  return String(header ?? '').replace(/^\uFEFF/, '').trim()
+}
+
+function isEmptyCsvValue(value) {
+  return value === undefined || value === null || String(value).trim() === ''
+}
+
+function isOriginalDataColumn(header) {
+  const normalized = normalizeCsvHeader(header)
+  if (!normalized) return false
+  if (/selectData$/i.test(normalized) || normalized.includes('框选区域')) return false
+  return /realData$/i.test(normalized) || normalized.endsWith(' 原始数据')
+}
+
+function getMetricPrefix(realDataHeader) {
+  const normalized = normalizeCsvHeader(realDataHeader)
+  if (/realData$/i.test(normalized)) {
+    return normalized.replace(/realData$/i, '')
+  }
+  return normalized.replace(/\s*原始数据$/, '').trim()
+}
+
+function hasImportMetricHeaders(headers, realDataHeader) {
+  const normalizedHeaders = headers.map(normalizeCsvHeader)
+  const prefix = getMetricPrefix(realDataHeader)
+  if (!prefix) return false
+
+  if (/realData$/i.test(realDataHeader)) {
+    return [
+      `${prefix}max`,
+      `${prefix}maxCoord`,
+      `${prefix}aver`,
+      `${prefix}pressureArea`,
+    ].every((header) => normalizedHeaders.includes(header))
+  }
+
+  const matches = (tester) => normalizedHeaders.some((header) => header.startsWith(`${prefix} `) && tester(header))
+  return [
+    (header) => /原始最大压强\s*\(/.test(header),
+    (header) => header.includes('原始最大压强坐标'),
+    (header) => header.includes('原始平均压强'),
+    (header) => header.includes('原始受力面积'),
+  ].every(matches)
+}
+
+function parseMatrixCsvValue(value) {
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  const text = String(value ?? '').trim()
+  if (!text || !text.startsWith('[') || !text.endsWith(']')) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(text)
+    return Array.isArray(parsed) ? parsed : null
+  } catch (err) {
+    return null
+  }
+}
+
+function isNumericMatrixValue(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value)
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    return Number.isFinite(Number(value))
+  }
+  return false
+}
+
+function isValidMatrixCsvValue(value) {
+  const matrix = parseMatrixCsvValue(value)
+  if (!matrix || !validImportMatrixLengths.has(matrix.length)) {
+    return false
+  }
+  return matrix.every(isNumericMatrixValue)
+}
+
+function analyzeImportHeaders(headers) {
+  const normalizedHeaders = headers.map(normalizeCsvHeader).filter(Boolean)
+  const secHeader = normalizedHeaders.find((header) => header === 'sec(s)' || header === 'sec')
+  const timeHeader = normalizedHeaders.find((header) => header === 'time')
+  const realDataColumns = normalizedHeaders
+    .filter(isOriginalDataColumn)
+    .filter((header) => hasImportMetricHeaders(normalizedHeaders, header))
+
+  if (!secHeader || !timeHeader || !realDataColumns.length) {
+    return { valid: false, reason: 'missing required headers' }
+  }
+
+  return { valid: true, secHeader, timeHeader, realDataColumns }
+}
+
+async function validateImportedCsv(file) {
+  return new Promise((resolve) => {
+    let settled = false
+    let headerInfo = null
+    let dataRowCount = 0
+
+    const settle = (valid, reason = '') => {
+      if (settled) return
+      settled = true
+      resolve({
+        valid,
+        message: valid ? 'success' : CSV_IMPORT_INVALID_MESSAGE,
+        reason,
+        rowCount: dataRowCount,
+      })
+    }
+
+    const fail = (reason, stream) => {
+      if (settled) return
+      if (stream && !stream.destroyed) {
+        stream.destroy()
+      }
+      settle(false, reason)
+    }
+
+    const input = fs.createReadStream(file)
+    const parser = csv({ mapHeaders: ({ header }) => normalizeCsvHeader(header) })
+
+    input.on('error', (err) => settle(false, err.message))
+    parser.on('error', (err) => settle(false, err.message))
+
+    parser.on('headers', (headers) => {
+      headerInfo = analyzeImportHeaders(headers)
+      if (!headerInfo.valid) {
+        fail(headerInfo.reason, input)
+      }
+    })
+
+    parser.on('data', (row) => {
+      if (settled || !headerInfo?.valid) return
+
+      const filledDataColumns = headerInfo.realDataColumns.filter((header) => !isEmptyCsvValue(row[header]))
+      if (!filledDataColumns.length) {
+        const hasNonRemarkValue = Object.entries(row).some(([key, value]) => key !== 'remark' && !isEmptyCsvValue(value))
+        if (hasNonRemarkValue) {
+          fail('missing matrix data', input)
+        }
+        return
+      }
+
+      if (isEmptyCsvValue(row[headerInfo.secHeader]) || !Number.isFinite(Number(row[headerInfo.secHeader]))) {
+        fail('invalid sec value', input)
+        return
+      }
+
+      if (isEmptyCsvValue(row[headerInfo.timeHeader])) {
+        fail('invalid time value', input)
+        return
+      }
+
+      const allColumnsValid = filledDataColumns.every((header) => isValidMatrixCsvValue(row[header]))
+      if (!allColumnsValid) {
+        fail('invalid matrix data', input)
+        return
+      }
+
+      dataRowCount += 1
+    })
+
+    parser.on('end', () => {
+      if (settled) return
+      if (!headerInfo?.valid) {
+        settle(false, headerInfo?.reason || 'missing headers')
+        return
+      }
+      if (!dataRowCount) {
+        settle(false, 'missing data rows')
+        return
+      }
+      settle(true)
+    })
+
+    input.pipe(parser)
+  })
+}
+
 async function getCsvData(file) {
   const results = []
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     fs.createReadStream(file)
-      .pipe(csv())
+      .on("error", reject)
+      .pipe(csv({ mapHeaders: ({ header }) => normalizeCsvHeader(header) }))
+      .on("error", reject)
       .on("data", (data) => results.push({ ...data, file }))
       .on("end", () => resolve(results))
   })
@@ -780,4 +971,5 @@ module.exports = {
   getRemark,
   deleteRemarkByDate,
   resolveWritableDownloadDir,
+  validateImportedCsv,
 }

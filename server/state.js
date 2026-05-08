@@ -27,6 +27,7 @@ const state = {
   colFlag: false,           // 采集开关
   colName: '',              // 采集命名
   selectArr: [],            // 框选区域
+  dataDirection: { left: true, up: true }, // collection save direction; false means the axis is flipped
 
   // ─── 历史回放 ────────────────────────────────────────
   historyFlag: false,       // 历史数据模式开关

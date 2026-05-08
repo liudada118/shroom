@@ -98,7 +98,7 @@ function ColControl(props) {
                 <Col startTime={startTime} setStartTime={setStartTime} colName={colName} remark={remark} HZ={HZ} col={col} setCol={setCol} />
             </div>
             <div className='colTimeAndHistory'>
-                <div className='colTime fs16'>
+                <div className='colTime fs14'>
                     {!col ? t('dataCollect') : startTime == 0 ? '00:00:00' : <ColTime startTime={startTime}  />}
                 </div>
                 <div className='historyButton cursor fs14' style={{right : '0.75rem' , color : '#0072EF'}} onClick={() => {

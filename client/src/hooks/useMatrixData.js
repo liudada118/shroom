@@ -13,6 +13,14 @@ import { isMoreMatrix } from '../assets/util/util'
  */
 
 const divisor = 100 / 3
+const DEFAULT_DATA_DIRECTION = { left: true, up: true }
+
+function normalizeDataDirection(direction) {
+  return {
+    left: direction?.left !== false,
+    up: direction?.up !== false,
+  }
+}
 
 export function useMatrixData() {
   const sitDataRef = useRef({})
@@ -285,19 +293,24 @@ export function useMatrixData() {
   /**
    * 水平翻转矩阵数据
    */
+  function flipHorizontalArray(arr, width, height) {
+    const res = []
+    for (let y = 0; y < height; y++) {
+      for (let x = width - 1; x >= 0; x--) {
+        res.push(arr[y * width + x])
+      }
+    }
+    return res
+  }
+
   function flipHorizontal(resArr, keyArr) {
     const res = {}
     for (const fullKey of keyArr) {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       if (!resArr[key]) continue
-      res[key] = []
       if (!systemPointConfig[fullKey]) continue
       const { width, height } = systemPointConfig[fullKey]
-      for (let y = 0; y < height; y++) {
-        for (let x = width - 1; x >= 0; x--) {
-          res[key].push(resArr[key][y * width + x])
-        }
-      }
+      res[key] = flipHorizontalArray(resArr[key], width, height)
     }
     return res
   }
@@ -305,20 +318,49 @@ export function useMatrixData() {
   /**
    * 垂直翻转矩阵数据
    */
+  function flipVerticalArray(arr, width, height) {
+    const res = []
+    for (let y = height - 1; y >= 0; y--) {
+      for (let x = 0; x < width; x++) {
+        res.push(arr[y * width + x])
+      }
+    }
+    return res
+  }
+
   function flipVertical(resArr, keyArr) {
     const res = {}
     for (const fullKey of keyArr) {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       if (!resArr[key]) continue
-      res[key] = []
       if (!systemPointConfig[fullKey]) continue
       const { width, height } = systemPointConfig[fullKey]
-      for (let y = height - 1; y >= 0; y--) {
-        for (let x = 0; x < width; x++) {
-          res[key].push(resArr[key][y * width + x])
-        }
-      }
+      res[key] = flipVerticalArray(resArr[key], width, height)
     }
+    return res
+  }
+
+  function applyDisplayDirection(resArr, keyArr, sitData) {
+    const res = { ...resArr }
+    const currentDirection = normalizeDataDirection(dataDirection.current)
+
+    for (const fullKey of keyArr) {
+      const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
+      if (!res[key] || !systemPointConfig[fullKey]) continue
+
+      const frameDirection = normalizeDataDirection(sitData[fullKey]?.dataDirection || DEFAULT_DATA_DIRECTION)
+      const { width, height } = systemPointConfig[fullKey]
+      let nextArr = res[key]
+
+      if (currentDirection.left !== frameDirection.left) {
+        nextArr = flipHorizontalArray(nextArr, width, height)
+      }
+      if (currentDirection.up !== frameDirection.up) {
+        nextArr = flipVerticalArray(nextArr, width, height)
+      }
+      res[key] = nextArr
+    }
+
     return res
   }
 
@@ -419,13 +461,8 @@ export function useMatrixData() {
       }
     }
 
-    // 5. 翻转处理
-    if (!dataDirection.current.left) {
-      resArr = flipHorizontal(resArr, keyArr)
-    }
-    if (!dataDirection.current.up) {
-      resArr = flipVertical(resArr, keyArr)
-    }
+    // 5. 翻转处理：实时帧按当前方向翻转；历史帧按保存方向和当前方向的差异修正，避免重复翻转
+    resArr = applyDisplayDirection(resArr, keyArr, sitData)
     disPlayDataRef.current = resArr
 
     useEquipStore.getState().setDisplayStatus(resArr)
@@ -440,6 +477,7 @@ export function useMatrixData() {
     } else {
       dataDirection.current.up = !dataDirection.current.up
     }
+    return normalizeDataDirection(dataDirection.current)
   }
 
   /**

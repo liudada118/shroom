@@ -7,13 +7,13 @@ const fs = require('fs')
 const path = require('path')
 const HttpResult = require('../HttpResult')
 const constantObj = require('../../util/config')
-const { initDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir } = require('../../util/db')
+const { initDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir, validateImportedCsv } = require('../../util/db')
 const { decryptStr } = require('../../util/aes_ecb')
 const module2 = require('../../util/aes_ecb')
 const { state } = require('../state')
 const { broadcast } = require('../websocket')
 const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
-const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed } = require('../services/DataService')
+const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot } = require('../services/DataService')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 
 const router = express.Router()
@@ -235,6 +235,19 @@ function resolveRequestValue(req, keys) {
     }
   }
   return undefined
+}
+
+function normalizeDataDirection(value, fallback = { left: true, up: true }) {
+  const parsedValue = tryParseRequestJson(value)
+  const source = parsedValue && typeof parsedValue === 'object' ? parsedValue : fallback
+  return {
+    left: source?.left !== false,
+    up: source?.up !== false,
+  }
+}
+
+function resolveDataDirection(req) {
+  return normalizeDataDirection(resolveRequestValue(req, ['dataDirection', 'direction']), state.dataDirection)
 }
 
 // ─── 通用错误处理包装器 ──────────────────────────────────
@@ -530,10 +543,16 @@ router.get('/readMacOnly', asyncHandler(async (req, res) => {
 
 // ─── 数据采集 ────────────────────────────────────────────
 
+router.post('/setDataDirection', asyncHandler(async (req, res) => {
+  state.dataDirection = resolveDataDirection(req)
+  res.json(new HttpResult(0, { dataDirection: state.dataDirection }, 'success'))
+}))
+
 router.post('/startCol', asyncHandler(async (req, res) => {
   const fileName = resolveRequestValue(req, ['fileName', 'filename'])
   const select = resolveRequestValue(req, ['select', 'selectJson'])
   state.selectArr = select && typeof select === 'object' ? select : []
+  state.dataDirection = resolveDataDirection(req)
   state.historySelectCache = null
   const currentFile = resolveCurrentSystemFile()
   const db = await ensureCurrentDb()
@@ -750,13 +769,14 @@ router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
     return
   }
 
-  state.playIndex = index
-  broadcast(JSON.stringify({
-    sitDataPlay: JSON.parse(state.historyDbArr[state.playIndex].data),
-    index: state.playIndex,
-    timestamp: JSON.parse(state.historyDbArr[state.playIndex].timestamp)
-  }))
-  res.json(new HttpResult(0, state.historyDbArr[index], 'success'))
+  const snapshot = getPlaybackSnapshot(index)
+  if (!snapshot) {
+    res.json(new HttpResult(1, {}, 'Playback frame not found'))
+    return
+  }
+
+  broadcast(JSON.stringify(snapshot.payload))
+  res.json(new HttpResult(0, snapshot.row, 'success'))
 }))
 
 // ─── 数据操作 ────────────────────────────────────────────
@@ -1088,12 +1108,19 @@ router.post('/uploadCsv', csvUpload.single('file'), asyncHandler(async (req, res
   }
   const filePath = req.file.path
   const fileName = req.file.filename
+  const validation = await validateImportedCsv(filePath)
+  if (!validation.valid) {
+    fs.rm(filePath, { force: true }, () => {})
+    console.warn('[CSV] Import validation failed:', validation.reason || 'invalid data')
+    res.json(new HttpResult(1, {}, '数据有误'))
+    return
+  }
   res.json(new HttpResult(0, { fileName, filePath }, 'Upload success'))
 }))
 
 router.post('/getCsvData', asyncHandler(async (req, res) => {
   const fileName = resolveRequestValue(req, ['fileName'])
-  const data = getCsvData(fileName)
+  const data = await getCsvData(fileName)
   res.json(new HttpResult(0, data, 'success'))
 }))
 

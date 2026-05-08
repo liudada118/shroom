@@ -68,6 +68,45 @@ const sitObj = {
 
 }
 
+const CHAIR_BRIGHTEN_COLOR = new THREE.Color(0xffffff)
+const CHAIR_EMISSIVE_COLOR = new THREE.Color(0x2f3338)
+
+function brightenChairModel(root) {
+    if (!root) return
+
+    root.traverse((obj) => {
+        if (!obj.isMesh) return
+
+        obj.castShadow = true
+        obj.receiveShadow = true
+        if (obj.geometry && !obj.geometry.attributes.normal) {
+            obj.geometry.computeVertexNormals()
+        }
+
+        const materials = Array.isArray(obj.material) ? obj.material : [obj.material]
+        materials.filter(Boolean).forEach((material) => {
+            if (material.map) {
+                material.map.colorSpace = THREE.SRGBColorSpace
+                material.map.needsUpdate = true
+            }
+            if (material.color) {
+                material.color.lerp(CHAIR_BRIGHTEN_COLOR, 0.16)
+            }
+            if (material.emissive) {
+                material.emissive.copy(CHAIR_EMISSIVE_COLOR)
+                material.emissiveIntensity = Math.max(material.emissiveIntensity || 0, 0.18)
+            }
+            if ('metalness' in material) {
+                material.metalness = Math.min(material.metalness ?? 0.1, 0.12)
+            }
+            if ('roughness' in material) {
+                material.roughness = Math.max(material.roughness ?? 0.65, 0.55)
+            }
+            material.needsUpdate = true
+        })
+    })
+}
+
 const Canvas =
     memo(React.forwardRef((props, refs) => {
 
@@ -290,12 +329,17 @@ const Canvas =
             // scene.add(dirLight1);
 
             // Lights
-            scene.add(new THREE.AmbientLight(0xffffff, 1));
-            scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
-            const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-            dir.position.set(5, 10, 5);
+            scene.add(new THREE.AmbientLight(0xffffff, 1.65));
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x66717d, 1.35);
+            hemiLight.position.set(0, 200, 0);
+            scene.add(hemiLight);
+            const dir = new THREE.DirectionalLight(0xffffff, 1.45);
+            dir.position.set(50, 90, -50);
             dir.castShadow = true;
             scene.add(dir);
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.75);
+            fillLight.position.set(-80, 30, 80);
+            scene.add(fillLight);
 
             // renderer
 
@@ -695,6 +739,7 @@ const Canvas =
             loader.load("./model/chair3.glb", function (gltf) {
                 chairRef.current = gltf.scene;
                 const chair = chairRef.current;
+                brightenChairModel(chair);
 
                 // scene.add(chair);
                 // gltf.scene.traverse((obj) => {

@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-04-22 16:46
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-04-30 16:19
 
 ## 1. 项目概述
 
@@ -208,6 +208,20 @@ graph TD
     - 打包后主进程会将 `SERIAL_CACHE_PATH` 传给后端子进程，统一落到 Electron `userData` 目录下的 `serial_cache.json`，不再尝试写入只读的 `app.asar`
     - `serialCache.writeCache()` 在落盘前会自动创建父目录，确保首次启动时缓存目录不存在也能正常写入
 
+11. **本地 CSV 导入校验与列表去重**
+    - `/uploadCsv` 保存后通过 `validateImportedCsv` 校验导出结构，必须包含 `sec(s)`、`time`、原始数据矩阵列和同前缀统计列；矩阵数组长度需匹配 32x32、46x46、50x64 或 4096 等受支持点阵，并且所有元素为数字
+    - 校验失败会删除临时上传文件并返回“数据有误”，避免无效 CSV 进入本地导入列表；`/getCsvData` 改为等待 CSV 读取完成并处理读取错误
+    - `ColAndHistory` 的导入列表从 `localStorage` 读取、上传追加和删除时统一按路径去重，切换页签和上传/删除后清空操作态，避免重复渲染和复选状态残留
+
+12. **回放框选与采集翻转方向一致性**
+    - `/getDbHistoryIndex` 拖动进度条时复用 `getPlaybackSnapshot()` 构造帧数据，和正常播放一样注入 `historySelectCache`，避免拖动时回退展示完整原始数据
+    - 前端画布翻转后会通过 `/setDataDirection` 同步当前方向；`/startCol` 也会携带采集开始时的方向，后端保存每帧前按该方向翻转矩阵并写入 `dataDirection`
+    - `useMatrixData` 渲染历史帧时比较“帧保存方向”和“当前显示方向”，只做差异翻转，避免已按翻转方向保存的数据在回放时被二次翻转
+
+13. **座椅模型亮度与采集控件字号**
+    - `ThreeAndCarPointV2` 为座椅 GLB 模型增加环境光、半球光、主补光，并在加载后统一处理贴图色彩空间、材质颜色、粗糙度和轻量自发光，降低黑场下模型发暗的问题
+    - `ColControlV2` 将“数据采集”/采集计时文字从 `fs16` 调整为 `fs14`，与右侧“历史数据”入口字号保持一致
+
 ## 5. API 端点 (Endpoints)
 
 | 方法 | 路径 | 描述 |
@@ -222,6 +236,7 @@ graph TD
 | `GET` | `/stopPort` | 断开所有串口连接 |
 | `GET` | `/sendMac` | 发送 MAC 地址绑定（保留兼容） |
 | `POST` | `/startCol` | 开始数据采集 |
+| `POST` | `/setDataDirection` | 同步当前画布翻转方向，供采集保存时按显示方向落库 |
 | `GET` | `/endCol` | 结束数据采集 |
 | `GET` | `/getColHistory` | 获取采集历史列表 |
 | `POST` | `/getDbHistory` | 获取数据库历史记录 |
@@ -239,6 +254,7 @@ graph TD
 | `POST` | `/upsertRemark` | 新增/更新备注 |
 | `POST` | `/getRemark` | 获取备注 |
 | `POST` | `/bindKey` | 绑定授权密钥 |
+| `POST` | `/uploadCsv` | 上传并校验本地 CSV，结构不匹配时返回“数据有误” |
 | `POST` | `/getCsvData` | 获取 CSV 格式数据 |
 | `POST` | `/getSysconfig` | 获取系统配置 |
 
@@ -328,6 +344,9 @@ graph TD
 | 2026-04-22 | changelog 补充同步 | 将“框选框亮度提升”同步补入根目录 `CHANGELOG.md` 与应用内 `ChangeLog.js`，保持版本说明与界面展示一致 |
 | 2026-04-22 | 打包版本元数据修复 | 根目录 `package.json` 改为合法 SemVer `1.0.1` 以兼容 `electron-builder`，同时保留前端展示版本 `endi1.0.1` 不变 |
 | 2026-04-22 | serial cache 打包写入修复 | 打包后 `serial_cache.json` 改为写入 Electron `userData` 目录，避免误写 `app.asar` 导致 ENOENT；同时默认关闭打包阶段原生模块重编 |
+| 2026-04-29 | 本地 CSV 导入校验与列表去重 | 导入 CSV 必须满足软件导出结构才允许进入本地列表；历史面板导入列表统一去重并在切换/上传/删除后清空操作选中态 |
+| 2026-04-29 | 回放框选与采集翻转方向修复 | 拖动回放进度条时保持框选数据展示；采集保存按当前画布翻转方向落库，回放时避免重复翻转 |
+| 2026-04-30 | 座椅模型亮度与采集字号优化 | 提升座椅 3D 模型灯光和材质亮度；将数据采集文字字号调整为与历史数据入口一致 |
 
 ## 9. 更新日志
 
@@ -396,6 +415,9 @@ graph TD
 | 2026-04-22 15:58 | 文档更新 | 更新根目录 `CHANGELOG.md` 与 `client/src/page/equip/changeLog/ChangeLog.js`，补充 `endi1.0.1` 的“框选框亮度提升”版本说明，并保持仓库 changelog 与应用内时间线同步 |
 | 2026-04-22 16:07 | 配置变更 | 调整根目录 `package.json` 与 `package-lock.json` 的包版本元数据为合法 SemVer `1.0.1`，修复 `electron-builder` 因 `endi1.0.1` 非法版本号而无法打包的问题；前端展示版本仍由 `client/src/util/version.js` 保持为 `endi1.0.1` |
 | 2026-04-22 16:46 | 修复缺陷 | 修复 `util/serialCache.js` 在打包后仍按模块相对路径写入 `app.asar/serial_cache.json` 导致 `ENOENT` 的问题：主进程在 `index.js` / `indexsingle.js` 中将 Electron `userData/serial_cache.json` 通过 `SERIAL_CACHE_PATH` 传给 `server/serialServer.js`，后端统一调用 `setCachePath()` 切到外置可写文件，并在写缓存前自动创建父目录；同时在 `package.json` 的 `build` 配置中设置 `npmRebuild: false`，避免后续打包再次卡在原生模块重编 |
+| 2026-04-29 11:15 | 修复缺陷 | 修复本地 CSV 导入缺少结构校验的问题：`/uploadCsv` 保存后校验 `sec(s)`、`time`、原始矩阵数据列、同前缀统计列和受支持矩阵长度，不合格立即删除文件并返回“数据有误”；同时修复历史面板导入列表因重复路径导致频繁切换后重复显示和选中态残留的问题 |
+| 2026-04-29 14:18 | 修复缺陷 | 修复回放拖动进度条时框选失效的问题：`/getDbHistoryIndex` 改用 `getPlaybackSnapshot()` 广播带框选信息的帧；同时新增 `/setDataDirection`，采集保存前按当前画布翻转方向转换矩阵，并在历史帧中记录 `dataDirection`，前端回放时按保存方向和当前方向的差异渲染 |
+| 2026-04-30 16:19 | 优化重构 | 优化座椅 3D 模型显示亮度：`ThreeAndCarPointV2` 增加环境光、半球光、主补光和 GLB 材质增亮处理；同时将 `ColControlV2` 的“数据采集”/计时文字从 `fs16` 调整为 `fs14`，与旁边历史数据入口字号一致 |
 
 *变更类型：`新增功能` / `优化重构` / `修复缺陷` / `配置变更` / `文档更新` / `依赖升级` / `初始化`*
 

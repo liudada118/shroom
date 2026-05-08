@@ -1,17 +1,17 @@
 {
   "devices": {
-    "344637301550321541": {
-      "type": "endi-back",
-      "deviceClass": "foot",
-      "lastSeen": "2026-04-22T07:20:52.155Z",
-      "alias": ""
-    },
     "504330390250435F24": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-04-22T07:20:52.157Z",
+      "lastSeen": "2026-04-30T08:53:37.702Z",
+      "alias": ""
+    },
+    "504330390150432304": {
+      "type": "endi-back",
+      "deviceClass": "foot",
+      "lastSeen": "2026-04-30T08:53:38.005Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-04-22T07:20:52.157Z"
+  "updatedAt": "2026-04-30T08:53:38.005Z"
 }

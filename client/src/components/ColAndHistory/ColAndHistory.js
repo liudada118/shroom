@@ -17,7 +17,61 @@ import { buildFallbackParams } from '../../util/request'
 import dayjs from 'dayjs'
 import { pageContext } from '../../page/test/Test'
 
-const arr = new Array(9).fill(0)
+const CSV_STORAGE_KEY = 'csvArr'
+const CSV_IMPORT_INVALID_MESSAGE = '数据有误'
+
+const normalizeCsvItem = (item) => {
+    if (item === undefined || item === null) {
+        return ''
+    }
+    return String(item).trim()
+}
+
+const normalizeCsvList = (list) => {
+    const seen = new Set()
+    const result = []
+    const source = Array.isArray(list) ? list : []
+
+    source.forEach((item) => {
+        const normalized = normalizeCsvItem(item)
+        const key = normalized.toLowerCase()
+        if (!normalized || seen.has(key)) {
+            return
+        }
+        seen.add(key)
+        result.push(normalized)
+    })
+
+    return result
+}
+
+const readStoredCsvList = () => {
+    try {
+        return normalizeCsvList(JSON.parse(localStorage.getItem(CSV_STORAGE_KEY) || '[]'))
+    } catch (err) {
+        return []
+    }
+}
+
+const persistCsvList = (list) => {
+    localStorage.setItem(CSV_STORAGE_KEY, JSON.stringify(normalizeCsvList(list)))
+}
+
+const normalizeHistoryList = (list) => {
+    const seen = new Set()
+    const source = Array.isArray(list) ? list : []
+    return source.filter((item) => {
+        const date = item?.date != null ? String(item.date).trim() : ''
+        const time = item?.time != null ? String(item.time).trim() : ''
+        const name = item?.name != null ? String(item.name).trim() : ''
+        const key = date || time || name
+        if (!key || seen.has(key)) {
+            return false
+        }
+        seen.add(key)
+        return true
+    })
+}
 
 const getApiErrorMessage = (result, fallback) => {
     const data = result?.data
@@ -82,8 +136,7 @@ const ColAndHistory = memo((props) => {
 
     const [colHistoryArr, setColHistoryArr] = useState()
     const [displayHistoryArr, setDisplayHistoryArr] = useState()
-    const arr = localStorage.getItem('csvArr') ? JSON.parse(localStorage.getItem('csvArr')) : []
-    const [localArr, setLocalArr] = useState(arr)
+    const [localArr, setLocalArr] = useState(readStoredCsvList)
 
     const onChange = () => {
 
@@ -115,6 +168,10 @@ const ColAndHistory = memo((props) => {
         setIndex(nextIndex)
     }
 
+    useEffect(() => {
+        persistCsvList(localArr)
+    }, [localArr])
+
     const [colName, setColName] = useState('')
     const [HZ, setHZ] = useState('')
 
@@ -125,6 +182,14 @@ const ColAndHistory = memo((props) => {
     const [uploadFileShow, setUploadFileShow] = useState(false)
 
     const [uploadLoading, setUploadLoading] = useState(false)
+
+    const clearUploadFile = () => {
+        uploadFileRef.current = null
+        setFileName('')
+        if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+        }
+    }
 
     const syncDownloadPathState = (nextPath) => {
         const normalizedPath = nextPath == null ? '' : String(nextPath)
@@ -172,17 +237,17 @@ const ColAndHistory = memo((props) => {
         }).then((res) => {
             if (res.data?.code === 0) {
                 const { fileName, filePath } = res.data.data
-                const newArr = [...localArr]
-                newArr.push(filePath || fileName)
-                setLocalArr(newArr)
-                localStorage.setItem('csvArr', JSON.stringify(newArr))
+                const uploadedItem = filePath || fileName
+                setLocalArr((prev) => normalizeCsvList([...(Array.isArray(prev) ? prev : []), uploadedItem]))
+                resetOperateState()
                 message.success(t('uploadSuccess') || 'Upload success')
                 setUploadFileShow(false)
+                clearUploadFile()
             } else {
-                message.error(res.data?.message || t('downloadFailed'))
+                message.error(res.data?.message || CSV_IMPORT_INVALID_MESSAGE)
             }
         }).catch((err) => {
-            message.error(err.message || t('downloadFailed'))
+            message.error(err?.response?.data?.message || err.message || CSV_IMPORT_INVALID_MESSAGE)
         }).finally(() => {
             setUploadLoading(false)
         })
@@ -190,16 +255,18 @@ const ColAndHistory = memo((props) => {
 
     const handleUploadCancel = () => {
         setUploadFileShow(false)
+        clearUploadFile()
     }
 
     const getColHistory = () => {
-        sethistoryDrawer(!historyDrawer)
+        sethistoryDrawer((prev) => !prev)
+        resetOperateState()
         axios({
             method: 'get',
             url: `${localAddress}/getColHistory`,
         }).then((res) => {
             console.log(res.data.data)
-            const arr = res.data.data.map((a) => {
+            const arr = normalizeHistoryList((res.data.data || []).map((a) => {
                 const obj = {}
                 const date = a && a.date != null ? String(a.date) : ''
                 const alias = a && a.alias != null ? String(a.alias) : ''
@@ -219,7 +286,7 @@ const ColAndHistory = memo((props) => {
                 obj.select = parsedSelect
                 obj.selected = parsedSelect && Object.keys(parsedSelect).length > 0
                 return obj
-            })
+            }))
             setColHistoryArr(arr)
             setDisplayHistoryArr(arr)
             console.log('历史执行')
@@ -514,17 +581,15 @@ const ColAndHistory = memo((props) => {
                 setColHistoryArr(resArr)
                 setDisplayHistoryArr(resArr)
                 message.success(t('deleteSuccess'))
-                setSelectArr([])
+                resetOperateState()
             }).catch((err) => {
                 message.error(t('deleteFailed'))
 
             })
         } else {
-            let res = [...localArr]
-            res = res.filter((a) => !selectArr.includes(a))
-            setLocalArr(res)
-            localStorage.setItem('csvArr', JSON.stringify(res))
-            // res
+            setLocalArr((prev) => normalizeCsvList(prev).filter((a) => !selectArr.includes(a)))
+            message.success(t('deleteSuccess'))
+            resetOperateState()
         }
 
     }
@@ -532,9 +597,10 @@ const ColAndHistory = memo((props) => {
 
     const [fileName, setFileName] = useState('')
     const uploadFileRef = useRef(null)
+    const fileInputRef = useRef(null)
 
     const fileChange = (e) => {
-        const file = e.target.files[0];
+        const file = e.target.files?.[0];
         if (file) {
             uploadFileRef.current = file
             setFileName(file.name)
@@ -731,8 +797,9 @@ const ColAndHistory = memo((props) => {
                 open={uploadFileShow}
                 onOk={handleUpload}
                 onCancel={handleUploadCancel}
+                confirmLoading={uploadLoading}
             >
-                <input type="file" accept=".csv" onChange={(e) => { fileChange(e) }} id="file" />
+                <input ref={fileInputRef} type="file" accept=".csv" onChange={(e) => { fileChange(e) }} id="file" />
                 {fileName && <div style={{ marginTop: '8px', color: '#8794A1', fontSize: '0.8rem' }}>{fileName}</div>}
             </Modal>
 
@@ -858,7 +925,7 @@ const ColAndHistory = memo((props) => {
                         <div className='navTitleChange'>
                             {title.map((a, index) => {
                                 return (
-                                    <div onClick={() => {
+                                    <div key={`${a}-${index}`} onClick={() => {
                                         handleTabChange(index)
                                     }} className={`${Onindex == index ? 'onNavItem' : 'offNavItem'} navTitleItem cursor`}>{a}</div>
                                 )

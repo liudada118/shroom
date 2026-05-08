@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useContext, useState } from 'react'
 import './index.scss'
 import axios from 'axios'
 import { message } from 'antd'
@@ -7,9 +7,17 @@ import { shallow } from 'zustand/shallow'
 import { systemPointConfig, localAddress } from '../../util/constant'
 import { colSelectMatrix } from '../../util/util'
 import { isMoreMatrix } from '../../assets/util/util'
+import { buildFallbackParams } from '../../util/request'
+import { pageContext } from '../../page/test/Test'
 
 export default function Col(props) {
     const { colName, remark, HZ, setStartTime, col, setCol } = props
+    const pageInfo = useContext(pageContext)
+
+    const getCurrentDataDirection = () => ({
+        left: pageInfo?.dataDirection?.current?.left !== false,
+        up: pageInfo?.dataDirection?.current?.up !== false,
+    })
 
     const colButtonClick = () => {
         const select = useEquipStore.getState().selectArr;
@@ -69,20 +77,20 @@ export default function Col(props) {
             const fileName = startStamp
             const hz = HZ ? HZ : 30
             const hasSelect = Object.keys(selectObj).length > 0
+            const startPayload = {
+                fileName: fileName,
+                HZ: hz,
+                dataDirection: getCurrentDataDirection(),
+            }
+            if (hasSelect) {
+                startPayload.select = selectObj
+            }
 
             axios({
                 method: 'post',
                 url: `${localAddress}/startCol`,
-                params: {
-                    fileName: String(fileName),
-                    HZ: hz,
-                    select: hasSelect ? JSON.stringify(selectObj) : undefined,
-                },
-                data: {
-                    fileName: fileName,
-                    HZ: hz,
-                    select: hasSelect ? selectObj : undefined,
-                }
+                params: buildFallbackParams(startPayload),
+                data: startPayload
             }).then((res) => {
 
                 if (res.data.message == 'error') {
