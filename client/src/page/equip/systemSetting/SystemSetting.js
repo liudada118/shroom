@@ -44,7 +44,7 @@ const systemTagColor = {
 /* ────── 可调节参数定义 ────── */
 const paramConfig = [
     { title: '图像润滑', key: 'gauss', unit: '', desc: '高斯模糊系数，数值越大画面越平滑' },
-    { title: '颜色调节', key: 'color', unit: '', desc: '色彩映射范围，控制热力图色阶分布' },
+    // 颜色调节已移至右侧 ADC 滑条面板，此处去掉
     { title: '噪点消除', key: 'filter', unit: '', desc: '低于该阈值的噪点将被过滤' },
     { title: '高度调节', key: 'height', unit: '', desc: '3D 视图中数据点的高度缩放系数' },
     { title: '响应速度', key: 'coherent', unit: '', desc: '帧间平滑度，数值越大响应越平缓' }

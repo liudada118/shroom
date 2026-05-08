@@ -1,22 +1,15 @@
-import { Button, Input } from 'antd'
 import axios from 'axios'
-import React, { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { createContext, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation, withTranslation } from 'react-i18next'
 import Canvas from '../../components/three/CanvasMemo'
 import Bed from '../../components/three/ThreeAndModel'
-import Car from '../../components/three/ThreeAndCar'
-import Title from '../../components/title/Title'
 import { useWindowSize } from '../../hooks/useWindowsize'
-import ViewSetting from '../../components/viewSetting/ViewSetting'
 import ColAndHistory from '../../components/ColAndHistory/ColAndHistory'
 import Num3D from '../../components/num/Num3D'
 import NumThree from '../../components/three/NumThreeColorV2'
-import { SelectionHelper } from '../../components/selectBox/SelectBox'
-import Aside from '../../components/aside/Aside'
 import { brushInstance } from '../../components/selectBox/newSelecttBox'
 import { getDisplayType, getSelectArr, getsetDisplayStatus, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore'
 import { pointConfig, systemConfig, systemPointConfig, localAddress, wsAddress } from '../../util/constant'
-import CanvasShow from '../../components/canvasShow/CanvasShow'
 import { shallow } from 'zustand/shallow'
 import Endi from '../../components/three/ThreeAndCarPoint'
 import Endi1 from '../../components/three/ThreeAndCarPointV2'
@@ -24,38 +17,19 @@ import { lengthObj } from '../../assets/util/constant'
 import ChartsAside from '../../components/chartsAside/ChartsAside'
 import { Scheduler } from '../../scheduler/scheduler'
 import { newRuler } from '../../components/ruler/newRuler'
-import { backYToX, calcCentroidRatio, colSelectMatrix, endiBackPressFn, endiSitPressFn, graCenter, kurtosis, mean, normalPDF, sitYToX, skewness, variance } from '../../util/util'
+import { colSelectMatrix, isMoreMatrix } from '../../util/util'
 import { matrixGenBox, removeHistoryBox } from '../../assets/util/selectMatrix'
 import NumThresContrast from '../../components/contrast/NumThresContrast'
-import { gaussianBlur1D, pressFN } from './util'
-import { isMoreMatrix } from '../../assets/util/util'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useMatrixData } from '../../hooks/useMatrixData'
 import NumThres from '../../components/three/NumThres'
+import AppLayout from '../../components/layout/AppLayout'
+import SitBackView from '../../components/layout/SitBackView'
 
 export const pageContext = createContext(null)
 
 function Test() {
     const { t, i18n } = useTranslation()
-    const [value, setValue] = useState('')
-
-    const connPort = () => {
-        axios.get(`${localAddress}/connPort`, {}).then((res) => {
-            console.log(res)
-        })
-    }
-
-    const handInput = (e) => {
-        setValue(e.target.value)
-    }
-
-    const postKey = () => {
-        axios({
-            method: 'post',
-            url: `${localAddress}/bindKey`,
-            data: { key: value }
-        })
-    }
 
     useWindowSize()
 
@@ -71,9 +45,6 @@ function Test() {
     } = useMatrixData()
 
     const [playBack, setPlayBack] = useState(false)
-    const wsLocalDataRef = useRef({ data: new Array(4096).fill(0), flag: false })
-
-    // 持久化的数据对象（跨帧累积）
     const persistentDataRef = useRef({})
 
     // ─── WebSocket 连接 ──────────────────────────────────
@@ -104,14 +75,12 @@ function Test() {
             const status = useEquipStore.getState().dataStatus
             const range = Array.isArray(arr) ? arr[0] : null
             if (status !== 'replay' || !range) return
-
             const systemType = getSysType()
             const displayType = getDisplayType()
             let typeKey = systemType
             if (isMoreMatrix(systemType)) {
                 typeKey = `${systemType}-${displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : 'back'}`
             }
-
             const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[typeKey])
             if (!matrix) return
             const selectJson = {}
@@ -123,7 +92,6 @@ function Test() {
                 width: systemPointConfig[typeKey].width,
                 height: systemPointConfig[typeKey].height
             }
-
             axios({
                 method: 'post',
                 url: `${localAddress}/getDbHistorySelect`,
@@ -148,18 +116,20 @@ function Test() {
     }, [])
 
     // ─── 状态 ────────────────────────────────────────────
-    const [sitData, setSitData] = useState([])
-    const [equipStatus, setStatus] = useState({ back: 'offline', sit: 'offline', data: new Array(4096).fill(0) })
-    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 1, color: 200, filter: 1, height: 1, coherent: 1 }
+    const [equipStatus] = useState({ back: 'offline', sit: 'offline' })
+    const setValueData = localStorage.getItem('setValueData')
+        ? JSON.parse(localStorage.getItem('setValueData'))
+        : { gauss: 1, filter: 1, height: 1, coherent: 1 }
     const [settingValue, setSettingValue] = useState(setValueData)
     const [selectArr, setSelectArr] = useState([])
-    const [wsLocalData, setWsLocalData] = useState(new Array(4096).fill(0))
+    const [wsLocalData] = useState(new Array(4096).fill(0))
 
-    const [display, setDisplay] = useState('point3D')
+    const display = useEquipStore(s => s.display, shallow)
+    const setDisplay = useEquipStore(s => s.setDisplay)
     const threeRef = useRef()
-    const setting = useRef()
-
     const systemType = useEquipStore(s => s.systemType, shallow)
+    const displayType = useEquipStore(s => s.displayType, shallow)
+    const setDisplayType = useEquipStore(s => s.setDisplayType)
 
     useLayoutEffect(() => {
         const { setSystemType, setSystemTypeArr } = useEquipStore.getState()
@@ -170,11 +140,9 @@ function Test() {
             const optimalObj = result.optimalObj
             const maxObj = result.maxObj
             setSystemType(type)
-
             useEquipStore.getState().setSettingValue(optimalObj[type])
             useEquipStore.getState().setSettingValueMax(maxObj[type])
             useEquipStore.getState().setSettingValueOptimal(optimalObj[type])
-
             if (typeArr) {
                 try {
                     const selectArr = typeArr.map((a) => ({
@@ -191,7 +159,7 @@ function Test() {
         setShowProp(value)
     }, [])
 
-    // ─── 3D 组件映射 ─────────────────────────────────────
+    // ─── 3D 组件映射（3D整体视图）────────────────────────
     const threeComponentObj = {
         bigHand: <Canvas ref={threeRef} sitnum1={64} sitnum2={64} />,
         bed: <Bed sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} type={'bed'} ref={threeRef} sitnum1={32} sitnum2={32} />,
@@ -210,15 +178,6 @@ function Test() {
         />
     }
 
-    const numComponentObj = {
-        bigHand: <NumThree size={64} sitData={disPlayDataRef} />,
-        bed: <NumThree size={32} sitData={disPlayDataRef} />,
-        hand: <NumThree size={32} sitData={disPlayDataRef} />,
-        foot: <NumThree size={32} sitData={disPlayDataRef} />,
-        car: <NumThree size={32} sitData={disPlayDataRef} />,
-        endi: <NumThree size={64} sitData={disPlayDataRef} />,
-    }
-
     const num3DComponentObj = {
         bigHand: <Num3D sitData={disPlayDataRef} />,
         bed: <Num3D sitData={disPlayDataRef} />,
@@ -228,44 +187,69 @@ function Test() {
     }
 
     const [showProp, setShowProp] = useState(100)
-    const [displayType, setDisplayType] = useState('back2D')
     const [onRuler, setOnRuler] = useState(false)
     const [onSelect, setOnSelect] = useState(false)
     const [onMagnifier, setOnMagnifier] = useState(false)
 
-    return (
-        <div className=''>
-            <pageContext.Provider value={{
-                equipStatus,
-                settingValue,
-                setSettingValue,
-                selectArr,
-                setSelectArr,
-                brushInstance,
-                changeWsLocalData,
-                wsLocalData,
-                changeDataDirection,
-                setDisplay,
-                display,
-                newRuler,
-                systemType,
-                setDisplayType,
-                displayType,
-                onRuler, setOnRuler, onSelect, setOnSelect,
-                onMagnifier, setOnMagnifier
-            }} >
-                <Title />
-                <ViewSetting showProp={showProp} setShowProp={setShowProp} three={threeRef} />
-                <ColAndHistory playBack={playBack} />
-                <ChartsAside sitData={disPlayDataRef} chartData={chartRef} />
+    // ─── 视图内容渲染 ─────────────────────────────────────
+    // AppLayout 通过 store 的 displayType 来决定显示哪个视图
+    // 'all' / '' → 3D整体; 'sit' / 'sit2D' → 坐垫; 'back' / 'back2D' → 靠背
+    const renderMainContent = () => {
+        const dt = displayType
+        if (dt === 'sit' || dt === 'sit2D') {
+            return <SitBackView viewType="sit" sitData={disPlayDataRef} />
+        }
+        if (dt === 'back' || dt === 'back2D') {
+            return <SitBackView viewType="back" sitData={disPlayDataRef} />
+        }
+        // 3D整体（all 或其他）
+        if (display === 'contrast') {
+            return <NumThresContrast sitData={disPlayDataRef} displayType={dt} />
+        }
+        if (display === 'num') {
+            return <NumThres sitData={disPlayDataRef} displayType={dt} />
+        }
+        if (display === 'point3D') {
+            return threeComponentObj[systemType]
+        }
+        return num3DComponentObj[systemType]
+    }
 
-                {display === 'contrast' ?
-                    <NumThresContrast sitData={disPlayDataRef} displayType={displayType} />
-                    : display === 'num' ?
-                        <NumThres sitData={disPlayDataRef} displayType={displayType} />
-                        : display === 'point3D' ? threeComponentObj[systemType] : num3DComponentObj[systemType]}
-            </pageContext.Provider>
-        </div>
+    return (
+        <pageContext.Provider value={{
+            equipStatus,
+            settingValue,
+            setSettingValue,
+            selectArr,
+            setSelectArr,
+            brushInstance,
+            changeWsLocalData,
+            wsLocalData,
+            changeDataDirection,
+            setDisplay,
+            display,
+            newRuler,
+            systemType,
+            setDisplayType,
+            displayType,
+            onRuler, setOnRuler, onSelect, setOnSelect,
+            onMagnifier, setOnMagnifier
+        }}>
+            {/* 保留 ColAndHistory（含历史数据 Drawer）和 ChartsAside */}
+            <ColAndHistory playBack={playBack} />
+            <ChartsAside sitData={disPlayDataRef} chartData={chartRef} />
+
+            {/* 新版主布局 */}
+            <AppLayout
+                chartRef={chartRef}
+                threeRef={threeRef}
+                disPlayDataRef={disPlayDataRef}
+                playBack={playBack}
+                changeWsLocalData={changeWsLocalData}
+            >
+                {renderMainContent()}
+            </AppLayout>
+        </pageContext.Provider>
     )
 }
 

@@ -16,7 +16,7 @@ import {
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
 import { jetWhite3, lineInterp } from "../../assets/util/line";
-import { getDisplayType, getSettingValue, getStatus } from "../../store/equipStore";
+import { getAdcLower, getAdcUpper, getDisplayType, getSettingValue, getStatus } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
 
 // function rotate90(arr, height, width) {
@@ -803,8 +803,10 @@ const Canvas =
 
             // const gauss = 1, color  =1, filter=1, height = 1, coherent = 1
             const {
-                gauss = 1, color, filter, height = 1, coherent = 1
+                gauss = 1, filter, height = 1, coherent = 1
             } = getSettingValue() //pageRef.current.settingValue
+            const color = getAdcUpper()
+            const colorMin = getAdcLower()
 
             // height , width , heightInterp , widthInterp
             // export function interpSmall(smallMat, width, height, interp1, interp2)
@@ -857,7 +859,7 @@ const Canvas =
 
 
 
-                    rgb = jetWhite3(0, color, smoothBig[l]);
+                    rgb = jetWhite3(colorMin, color, smoothBig[l]);
 
 
 

@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
 import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
-import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
+import { getAdcLower, getAdcUpper, getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
 
 function jet(min, max, x) {
@@ -275,8 +275,10 @@ export default function NumThree(props) {
        console.log(systemType , gridSize)
 
       const {
-        gauss, color, filter, height, coherent,
+        gauss, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
+      const color = getAdcUpper()
+      const colorMin = getAdcLower()
       // const { wsLocalData } = pageRef.current
       // if (wsLocalData) {
       //   data = data.map((a, index) => {

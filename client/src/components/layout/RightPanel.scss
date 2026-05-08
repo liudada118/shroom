@@ -1,0 +1,231 @@
+/* ============================================================
+   RightPanel — 颜色调节 + 实时统计
+   ============================================================ */
+
+.right-panel {
+  width: 220px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+/* ── 卡片通用 ─────────────────────────────────────────────── */
+.rp-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+  padding: 14px 14px 12px;
+}
+
+.rp-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1E293B;
+  margin-bottom: 2px;
+}
+
+.rp-card-subtitle {
+  font-size: 11px;
+  color: #94A3B8;
+  margin-bottom: 12px;
+}
+
+/* ── 颜色调节滑条 ─────────────────────────────────────────── */
+.rp-slider-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  position: relative;
+  margin-bottom: 12px;
+}
+
+/* 左侧标签 */
+.rp-labels {
+  position: relative;
+  width: 32px;
+  flex-shrink: 0;
+}
+
+.rp-label {
+  position: absolute;
+  right: 0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+
+  &.upper { color: #EF4444; }
+  &.lower { color: #3B82F6; }
+}
+
+/* 渐变滑条轨道 */
+.rp-slider-track {
+  width: 28px;
+  flex-shrink: 0;
+  position: relative;
+  border-radius: 4px;
+  overflow: visible;
+  background: linear-gradient(
+    to top,
+    #0000FF 0%,
+    #00FFFF 20%,
+    #00FF00 40%,
+    #FFFF00 60%,
+    #FF8000 80%,
+    #FF0000 100%
+  );
+  cursor: pointer;
+}
+
+/* 超出范围的灰色遮罩 */
+.rp-mask {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: rgba(241,245,249,0.85);
+  pointer-events: none;
+  z-index: 2;
+
+  &.top { top: 0; }
+  &.bottom { bottom: 0; }
+}
+
+/* 拖拽手柄 */
+.rp-handle {
+  position: absolute;
+  left: -2px;
+  width: 32px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  cursor: grab;
+  z-index: 10;
+  user-select: none;
+
+  &:active { cursor: grabbing; }
+
+  .rp-handle-arrow {
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  &.upper .rp-handle-arrow { color: #EF4444; }
+  &.lower .rp-handle-arrow { color: #3B82F6; }
+}
+
+/* 右侧刻度 */
+.rp-ticks {
+  position: relative;
+  width: 36px;
+  flex-shrink: 0;
+}
+
+.rp-tick {
+  position: absolute;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  transform: translateY(50%);
+}
+
+.rp-tick-line {
+  display: inline-block;
+  width: 6px;
+  height: 1px;
+  background: #CBD5E1;
+}
+
+.rp-tick-label {
+  font-size: 10px;
+  color: #94A3B8;
+  line-height: 1;
+}
+
+/* ── 数值输入 ─────────────────────────────────────────────── */
+.rp-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rp-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rp-input-label {
+  font-size: 12px;
+  color: #64748B;
+  width: 28px;
+  flex-shrink: 0;
+}
+
+.rp-input {
+  flex: 1;
+  height: 28px;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: #1E293B;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s;
+
+  &:focus {
+    border-color: #0EA5E9;
+  }
+
+  /* 隐藏数字输入的上下箭头 */
+  &::-webkit-inner-spin-button,
+  &::-webkit-outer-spin-button {
+    opacity: 1;
+  }
+}
+
+/* ── 实时统计 ─────────────────────────────────────────────── */
+.rp-stats {
+  flex: 1;
+}
+
+.rp-stat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.rp-stat-row {
+  display: flex;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid #F1F5F9;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.rp-stat-label {
+  font-size: 12px;
+  color: #64748B;
+  flex: 1;
+}
+
+.rp-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1E293B;
+  margin-right: 4px;
+  line-height: 1;
+}
+
+.rp-stat-unit {
+  font-size: 11px;
+  color: #94A3B8;
+  min-width: 24px;
+}

@@ -1,0 +1,52 @@
+/* ============================================================
+   SitBackView — 坐垫/靠背双面板视图
+   ============================================================ */
+
+.sbv-container {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.sbv-panel {
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sbv-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid #F1F5F9;
+  flex-shrink: 0;
+}
+
+.sbv-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1E293B;
+}
+
+.sbv-panel-badge {
+  font-size: 10px;
+  color: #64748B;
+  background: #F1F5F9;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.sbv-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}

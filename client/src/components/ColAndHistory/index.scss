@@ -1,12 +1,6 @@
 .colAndHContent {
-    position: fixed;
-    bottom: 5%;
-    width: 100%;
-    z-index: 1000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
+    /* 采集控制已移入顶部栏，此处隐藏旧的悬浮控制条 */
+    display: none !important;
 
     .colAndHistory {
         display: flex;

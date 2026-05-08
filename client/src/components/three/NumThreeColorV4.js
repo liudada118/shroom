@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
 import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
-import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
+import { getAdcLower, getAdcUpper, getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
 import { jetWhite3 } from '../../assets/util/line';
 
@@ -315,22 +315,15 @@ export default function NumThree(props) {
       let data = new Array(4096).fill(0)
 
       const systemType = getSysType()
-      const displayType = getDisplayType()
-
-      // if (props.sitData.current && Object.keys(props.sitData.current).length > 1) {
-      //   const key = Object.keys(props.sitData.current)[0]
-      //   console.log(props.sitData.current)
-      //   const
-      //     data = props.sitData.current[key]
-      // }
-      // const data = props.sitData.current
+      // forceDisplayType prop 允许坐垫/靠背独立视图直接指定显示类型
+      const displayType = props.forceDisplayType || getDisplayType()
 
       if (isMoreMatrix(systemType)) {
         if (displayType != 'all') {
           let realType = ''
-          if (displayType == 'back2D') {
+          if (displayType == 'back2D' || displayType == 'back') {
             realType = "back"
-          } else if (displayType == 'sit2D') {
+          } else if (displayType == 'sit2D' || displayType == 'sit') {
             realType = "sit"
             // if(systemType == 'endi'){
             //   gridSize = 45
@@ -366,13 +359,13 @@ export default function NumThree(props) {
 
 
       const {
-        gauss, color, filter, height, coherent,
+        gauss, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
+      const color = getAdcUpper()
+      const colorMin = getAdcLower()
 
-      console.log(color , oldColor)
-      if(oldColor != color && oldColor){
-        console.log('colorChange')
-        const nextMax = Math.max(1, Math.round(color || 22))
+      if(oldColor !== color && oldColor !== undefined){
+        const nextMax = Math.max(1, Math.round(color))
         const texture = createDigitSpriteSheetWithJet(nextMax)
         material.uniforms.map.value = texture
         textureMaxRef.current = nextMax

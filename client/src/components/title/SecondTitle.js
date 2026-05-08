@@ -57,14 +57,7 @@ function SecondTitle(props) {
             step: 1,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoUniform')}</div>
         },
-        {
-            title: t('colorAdj'),
-            type: 'color',
-            max: settingValueMax.color,
-            min: 1,
-            step: 1,
-            content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoRedBlue')}</div>
-        },
+        // 颜色调节已移至右侧 ADC 滑条面板，此处去掉
         {
             title: t('denoise'),
             type: 'filter',

@@ -16,7 +16,7 @@ import {
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
 import { jetWhite3, lineInterp } from "../../assets/util/line";
-import { getSettingValue, getStatus } from "../../store/equipStore";
+import { getAdcLower, getAdcUpper, getSettingValue, getStatus } from "../../store/equipStore";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -653,8 +653,10 @@ const Canvas =
             // value1 =2
 
             const {
-                gauss = 1, color, filter, height = 1, coherent = 1
+                gauss = 1, filter, height = 1, coherent = 1
             } = getSettingValue()//pageRef.current.settingValue
+            const color = getAdcUpper()
+            const colorMin = getAdcLower()
             const numParticles = AMOUNTX * AMOUNTY;
             const positions = new Float32Array(numParticles * 3);
             const colors = new Float32Array(numParticles * 3);
@@ -697,7 +699,7 @@ const Canvas =
                     positions[k + 2] = ix * SEPARATION - (AMOUNTX * SEPARATION) / 2; // z
 
                     let rgb
-                    rgb = jetWhite3(0, color, smoothBig[l]);
+                    rgb = jetWhite3(colorMin, color, smoothBig[l]);
 
                     colors[k] = rgb[0] / 255;
                     colors[k + 1] = rgb[1] / 255;

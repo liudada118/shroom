@@ -1,19 +1,41 @@
 import { create } from 'zustand'
 import { maxObj } from '../assets/util/constant'
 
-// ─── 持久化设置值 ────────────────────────────────────────
-const DEFAULT_SETTINGS = { gauss: 1, color: 200, filter: 1, height: 15, coherent: 1 }
+// ─── 持久化设置值（去掉 color，改用 adcUpper/adcLower）────
+const DEFAULT_SETTINGS = { gauss: 1, filter: 1, height: 15, coherent: 1 }
 
 function loadSettingValue() {
   try {
     const stored = localStorage.getItem('setValueData')
-    return stored ? JSON.parse(stored) : DEFAULT_SETTINGS
+    if (!stored) return DEFAULT_SETTINGS
+    const parsed = JSON.parse(stored)
+    // 兼容旧版：去掉 color 字段
+    const { color, ...rest } = parsed
+    return { ...DEFAULT_SETTINGS, ...rest }
   } catch {
     return DEFAULT_SETTINGS
   }
 }
 
+// ─── ADC 颜色范围持久化 ───────────────────────────────────
+const ADC_DEFAULT_UPPER = 200
+const ADC_DEFAULT_LOWER = 5
+
+function loadAdcRange() {
+  try {
+    const upper = localStorage.getItem('adcUpper')
+    const lower = localStorage.getItem('adcLower')
+    return {
+      adcUpper: upper !== null ? Number(upper) : ADC_DEFAULT_UPPER,
+      adcLower: lower !== null ? Number(lower) : ADC_DEFAULT_LOWER,
+    }
+  } catch {
+    return { adcUpper: ADC_DEFAULT_UPPER, adcLower: ADC_DEFAULT_LOWER }
+  }
+}
+
 const initialSettings = loadSettingValue()
+const initialAdcRange = loadAdcRange()
 const initialMaxData = maxObj['bed']
 
 // ─── Store 定义 ──────────────────────────────────────────
@@ -33,10 +55,14 @@ export const useEquipStore = create((set) => ({
   // 设备状态
   equipStatus: {},
 
-  // 可视化设置
+  // 可视化设置（不含 color）
   settingValue: initialSettings,
   settingValueMax: initialMaxData,
   settingValueOptimal: initialSettings,
+
+  // ADC 颜色范围（0~255，持久化）
+  adcUpper: initialAdcRange.adcUpper,
+  adcLower: initialAdcRange.adcLower,
 
   // 框选工具
   selectArr: [],
@@ -66,6 +92,18 @@ export const useEquipStore = create((set) => ({
   setSettingValueMax: (s) => set({ settingValueMax: s }),
   setSettingValueOptimal: (s) => set({ settingValueOptimal: s }),
 
+  // ADC 范围 setter（自动持久化 + 边界限制）
+  setAdcUpper: (v) => {
+    const val = Math.min(255, Math.max(0, Number(v)))
+    localStorage.setItem('adcUpper', val)
+    set({ adcUpper: val })
+  },
+  setAdcLower: (v) => {
+    const val = Math.min(255, Math.max(0, Number(v)))
+    localStorage.setItem('adcLower', val)
+    set({ adcLower: val })
+  },
+
   setSelectArr: (s) => set({ selectArr: s }),
 
   setHistoryStatus: (history) => set({ history }),
@@ -83,3 +121,5 @@ export const getSettingValue = () => useEquipStore.getState().settingValue
 export const getDisplayType = () => useEquipStore.getState().displayType
 export const getSettingValueOptimal = () => useEquipStore.getState().settingValueOptimal
 export const getSelectArr = () => useEquipStore.getState().selectArr
+export const getAdcUpper = () => useEquipStore.getState().adcUpper
+export const getAdcLower = () => useEquipStore.getState().adcLower
