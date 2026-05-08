@@ -3,9 +3,9 @@ import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
 import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
-import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
+import { getAdcLower, getAdcUpper, getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
-// jetWhite3 已统一为 jet 颜色方案，不再引用
+import { jetWhite3 } from '../../assets/util/line';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -112,8 +112,8 @@ export default function NumThree(props) {
       const cx = x * cellSize;
       const cy = y * cellSize;
 
-      // ✅ 计算背景颜色（与坐垫统一使用 jet 颜色映射）
-      const [r, g, b] = jet(0, value, i);
+      // ✅ 计算背景颜色（使用与3D统一的颜色映射）
+      const [r, g, b] = jetWhite3(0, value, i);
       ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
@@ -315,22 +315,15 @@ export default function NumThree(props) {
       let data = new Array(4096).fill(0)
 
       const systemType = getSysType()
-      const displayType = getDisplayType()
-
-      // if (props.sitData.current && Object.keys(props.sitData.current).length > 1) {
-      //   const key = Object.keys(props.sitData.current)[0]
-      //   console.log(props.sitData.current)
-      //   const
-      //     data = props.sitData.current[key]
-      // }
-      // const data = props.sitData.current
+      // forceDisplayType prop 允许坐垫/靠背独立视图直接指定显示类型
+      const displayType = props.forceDisplayType || getDisplayType()
 
       if (isMoreMatrix(systemType)) {
         if (displayType != 'all') {
           let realType = ''
-          if (displayType == 'back2D') {
+          if (displayType == 'back2D' || displayType == 'back') {
             realType = "back"
-          } else if (displayType == 'sit2D') {
+          } else if (displayType == 'sit2D' || displayType == 'sit') {
             realType = "sit"
             // if(systemType == 'endi'){
             //   gridSize = 45
@@ -366,14 +359,13 @@ export default function NumThree(props) {
 
 
       const {
-        gauss, color, filter, height, coherent,
+        gauss, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
+      const color = getAdcUpper()
+      const colorMin = getAdcLower()
 
-      if(oldColor != color && oldColor){
-        const settingValueMax = useEquipStore.getState().settingValueMax
-        const max = settingValueMax.color
-        console.log('colorChange')
-        const nextMax = parseInt(color / max * 255)
+      if(oldColor !== color && oldColor !== undefined){
+        const nextMax = Math.max(1, Math.round(color))
         const texture = createDigitSpriteSheetWithJet(nextMax)
         material.uniforms.map.value = texture
         textureMaxRef.current = nextMax
@@ -422,14 +414,12 @@ export default function NumThree(props) {
         uvOffsets[i * 2] = (d % 16) / 16;
         uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
 
-        // 与坐垫统一的颜色映射
-        const r = d / 255;
-        const g = 0.2;
-        const b = 1.0 - r;
-
-        colorArray[i * 3 + 0] = r;
-        colorArray[i * 3 + 1] = g;
-        colorArray[i * 3 + 2] = b;
+        // 使用与3D统一的颜色映射
+        const colorMax = textureMaxRef.current || 22;
+        const rgb = jetWhite3(0, colorMax, d);
+        colorArray[i * 3 + 0] = rgb[0] / 255;
+        colorArray[i * 3 + 1] = rgb[1] / 255;
+        colorArray[i * 3 + 2] = rgb[2] / 255;
 
         geometry.setAttribute("instanceColor", new THREE.InstancedBufferAttribute(colorArray, 3));
         geometry.attributes.instanceColor.needsUpdate = true;
@@ -463,7 +453,7 @@ export default function NumThree(props) {
     const wheelTarget = canvasNum;
     const applyMatrixColor = (value, colorMax) => {
       // 使用与3D统一的颜色映射
-      return jet(0, colorMax, value);
+      return jetWhite3(0, colorMax, value);
     };
 
     const drawMagnifier = (col, row) => {

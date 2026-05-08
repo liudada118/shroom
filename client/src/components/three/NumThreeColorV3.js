@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
 import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
-import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
+import { getAdcLower, getAdcUpper, getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
 
 function jet(min, max, x) {
@@ -312,25 +312,16 @@ export default function NumThree(props) {
       // let data = pageRef.current.equipStatus.data
       // let data = getStatus()
       // console.log(data)
-      let data = new Array(4096).fill(0)
-
+       let data = new Array(4096).fill(0)
       const systemType = getSysType()
-      const displayType = getDisplayType()
-
-      // if (props.sitData.current && Object.keys(props.sitData.current).length > 1) {
-      //   const key = Object.keys(props.sitData.current)[0]
-      //   console.log(props.sitData.current)
-      //   const
-      //     data = props.sitData.current[key]
-      // }
-      // const data = props.sitData.current
-
+      // forceDisplayType prop 允许坐垫/靠背独立视图直接指定显示类型
+      const displayType = props.forceDisplayType || getDisplayType()
       if (isMoreMatrix(systemType)) {
         if (displayType != 'all') {
           let realType = ''
-          if (displayType == 'back2D') {
+          if (displayType == 'back2D' || displayType == 'back') {
             realType = "back"
-          } else if (displayType == 'sit2D') {
+          } else if (displayType == 'sit2D' || displayType == 'sit') {
             realType = "sit"
             // if(systemType == 'endi'){
             //   gridSize = 45
@@ -366,8 +357,10 @@ export default function NumThree(props) {
 
 
       const {
-        gauss, color, filter, height, coherent,
+        gauss, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
+      const color = getAdcUpper()
+      const colorMin = getAdcLower()
       // const { wsLocalData } = pageRef.current
       // if (wsLocalData) {
       //   data = data.map((a, index) => {
@@ -389,11 +382,9 @@ export default function NumThree(props) {
       //   })
       // }
 
-      if(oldColor != color && oldColor){
-        const settingValueMax = useEquipStore.getState().settingValueMax
-        const max = settingValueMax.color
-        console.log('colorChange')
-        const nextMax = parseInt(color / max * 255)
+      if(oldColor !== color && oldColor !== undefined){
+        // ADC 上限直接作为颜色映射最大值（0~255）
+        const nextMax = Math.max(1, Math.round(color))
         const texture = createDigitSpriteSheetWithJet(nextMax)
         material.uniforms.map.value = texture
         textureMaxRef.current = nextMax

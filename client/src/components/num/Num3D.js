@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useImperativeHandle } from 'react'
 import './num.css'
 import { useEquipStore } from '../../store/equipStore';
+import { getAdcLower, getAdcUpper } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 var valuej1 = localStorage.getItem('carValuej') ? JSON.parse(localStorage.getItem('carValuej')) : 200,
     valueg1 = localStorage.getItem('carValueg') ? JSON.parse(localStorage.getItem('carValueg')) : 2,
@@ -94,8 +95,10 @@ const Num = React.memo((props) => {
     const settingValue = useEquipStore(s => s.settingValue, shallow);
 
     const {
-        gauss = 1, color, filter, height = 1, coherent = 1
+        gauss = 1, filter, height = 1, coherent = 1
     } = settingValue
+    const color = getAdcUpper()
+    const colorMin = getAdcLower()
 
     let ndata
     if (displayType == 'back3D') {
@@ -185,11 +188,10 @@ const Num = React.memo((props) => {
                                                 key={index}
                                                 style={{
                                                     width: `${2 * scale}rem`,
-                                                    color: 'blue',
                                                     fontSize: `${scale * 20 * 0.7}px`,
                                                     lineHeight: `${1.5 * scale}rem`,
                                                     transform: `translateY(${-item * 3*height}px)`,
-                                                    color: `rgb(${jet(0, color, item * 5)})`,
+                                                    color: `rgb(${jet(colorMin, color, item * 5)})`,
                                                 }}
                                             >
                                                 {parseInt(item)}

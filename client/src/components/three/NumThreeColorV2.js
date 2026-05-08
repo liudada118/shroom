@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
 import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
-import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
+import { getAdcLower, getAdcUpper, getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
 
 function jet(min, max, x) {
@@ -76,12 +76,14 @@ export default function NumThree(props) {
 
   function createDigitSpriteSheetWithJet() {
     const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 1024;
+    // document.body.appendChild(canvas)
+    canvas.width = canvas.height = 512;
     const ctx = canvas.getContext("2d");
 
     const gridSize = 16;
-    const cellSize = 64;
+    const cellSize = 32;
 
+    ctx.font = "bold 20px monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
@@ -101,12 +103,7 @@ export default function NumThree(props) {
       ctx.lineWidth = 1;
       ctx.strokeRect(cx, cy, cellSize, cellSize);
 
-      // ✅ 白色数字（加黑色描边增强可读性）
-      const fontSize = i >= 100 ? 32 : 40;
-      ctx.font = `bold ${fontSize}px monospace`;
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-      ctx.strokeText(i.toString(), cx + cellSize / 2, cy + cellSize / 2);
+      // ✅ 白色数字
       ctx.fillStyle = "white";
       ctx.fillText(i.toString(), cx + cellSize / 2, cy + cellSize / 2);
     }
@@ -114,7 +111,7 @@ export default function NumThree(props) {
     const tex = new THREE.CanvasTexture(canvas);
     tex.flipY = false;
     tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.NearestFilter;
     return tex;
   }
 
@@ -278,8 +275,10 @@ export default function NumThree(props) {
        console.log(systemType , gridSize)
 
       const {
-        gauss, color, filter, height, coherent,
+        gauss, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
+      const color = getAdcUpper()
+      const colorMin = getAdcLower()
       // const { wsLocalData } = pageRef.current
       // if (wsLocalData) {
       //   data = data.map((a, index) => {

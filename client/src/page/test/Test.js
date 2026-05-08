@@ -33,6 +33,8 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { useMatrixData } from '../../hooks/useMatrixData'
 import NumThres from '../../components/three/NumThres'
 import { buildFallbackParams } from '../../util/request'
+import AppLayout from '../../components/layout/AppLayout'
+import SitBackView from '../../components/layout/SitBackView'
 
 export const pageContext = createContext(null)
 
@@ -369,40 +371,62 @@ function Test() {
     const [onSelect, setOnSelect] = useState(false)
     const [onMagnifier, setOnMagnifier] = useState(false)
 
-    return (
-        <div className=''>
-            <pageContext.Provider value={{
-                equipStatus,
-                settingValue,
-                setSettingValue,
-                selectArr,
-                setSelectArr,
-                brushInstance,
-                changeWsLocalData,
-                wsLocalData,
-                changeDataDirection: handleChangeDataDirection,
-                setDisplay,
-                display,
-                newRuler,
-                systemType,
-                setDisplayType,
-                displayType,
-                onRuler, setOnRuler, onSelect, setOnSelect,
-                onMagnifier, setOnMagnifier,
-                clearHistorySelect
-            }} >
-                <Title />
-                <ViewSetting showProp={showProp} setShowProp={setShowProp} three={threeRef} />
-                <ColAndHistory playBack={playBack} />
-                <ChartsAside sitData={disPlayDataRef} chartData={chartRef} />
+    // ─── 视图内容渲染（根据 displayType 切换）─────────────────────
+    const renderMainContent = () => {
+        const dt = useEquipStore.getState().displayType
+        if (dt === 'sit' || dt === 'sit2D') {
+            return <SitBackView viewType="sit" sitData={disPlayDataRef} />
+        }
+        if (dt === 'back' || dt === 'back2D') {
+            return <SitBackView viewType="back" sitData={disPlayDataRef} />
+        }
+        if (display === 'contrast') {
+            return <NumThresContrast sitData={disPlayDataRef} displayType={displayType} />
+        }
+        if (display === 'num') {
+            return <NumThres sitData={disPlayDataRef} displayType={displayType} />
+        }
+        if (display === 'point3D') {
+            return threeComponentObj[systemType]
+        }
+        return num3DComponentObj[systemType]
+    }
 
-                {display === 'contrast' ?
-                    <NumThresContrast sitData={disPlayDataRef} displayType={displayType} />
-                    : display === 'num' ?
-                        <NumThres sitData={disPlayDataRef} displayType={displayType} />
-                        : display === 'point3D' ? threeComponentObj[systemType] : num3DComponentObj[systemType]}
-            </pageContext.Provider>
-        </div>
+    return (
+        <pageContext.Provider value={{
+            equipStatus,
+            settingValue,
+            setSettingValue,
+            selectArr,
+            setSelectArr,
+            brushInstance,
+            changeWsLocalData,
+            wsLocalData,
+            changeDataDirection: handleChangeDataDirection,
+            setDisplay,
+            display,
+            newRuler,
+            systemType,
+            setDisplayType,
+            displayType,
+            onRuler, setOnRuler, onSelect, setOnSelect,
+            onMagnifier, setOnMagnifier,
+            clearHistorySelect
+        }}>
+            {/* 保留旧组件（历史数据 Drawer、图表面板） */}
+            <ColAndHistory playBack={playBack} />
+            <ChartsAside sitData={disPlayDataRef} chartData={chartRef} />
+            {/* 新版主布局 */}
+            <AppLayout
+                chartRef={chartRef}
+                threeRef={threeRef}
+                disPlayDataRef={disPlayDataRef}
+                playBack={playBack}
+                changeWsLocalData={changeWsLocalData}
+            >
+                {renderMainContent()}
+            </AppLayout>
+        </pageContext.Provider>
     )
 }
 

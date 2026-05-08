@@ -1,7 +1,9 @@
-.canvasNum{
-    height: 100vh;
+.canvasNum {
+    height: 100%;
+    width: 100%;
     display: flex;
     justify-content: space-around;
     align-items: center;
-    background-color: #000;
+    background-color: #0F172A;
+    position: relative;
 }

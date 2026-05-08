@@ -16,11 +16,9 @@ import {
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
 import { jetWhite3, lineInterp } from "../../assets/util/line";
-import { getSettingValue, getStatus } from "../../store/equipStore";
-import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
+import { getAdcLower, getAdcUpper, getSettingValue, getStatus } from "../../store/equipStore";
 
 let camera
-let baseCameraDistance = null
 
 const Canvas = memo(React.forwardRef((props, refs) => {
 
@@ -67,7 +65,6 @@ const Canvas = memo(React.forwardRef((props, refs) => {
     backGeometry,
     sitGeometry
   let controls;
-  let cleanupZoomSync = () => {};
 
   console.log('Canvas')
 
@@ -173,16 +170,7 @@ const Canvas = memo(React.forwardRef((props, refs) => {
 
     //FlyControls
     controls = new TrackballControls(camera, renderer.domElement);
-    baseCameraDistance = camera.position.distanceTo(controls.target);
-    applyZoomBounds(controls, baseCameraDistance);
     controls.update();
-    cleanupZoomSync();
-    cleanupZoomSync = bindZoomValueSync({
-      camera,
-      controls,
-      baseDistance: baseCameraDistance,
-      onChange: props.changeViewProp,
-    });
     window.addEventListener("resize", onWindowResize);
 
 
@@ -679,8 +667,10 @@ const Canvas = memo(React.forwardRef((props, refs) => {
     // value1 =2
 
     const {
-      gauss = 1, color, filter, height = 1, coherent = 1
+      gauss = 1, filter, height = 1, coherent = 1
     } = getSettingValue()//pageRef.current.settingValue
+    const color = getAdcUpper()
+    const colorMin = getAdcLower()
     const numParticles = AMOUNTX * AMOUNTY;
     const positions = new Float32Array(numParticles * 3);
     const colors = new Float32Array(numParticles * 3);
@@ -730,7 +720,7 @@ const Canvas = memo(React.forwardRef((props, refs) => {
         positions[k + 2] = ix * SEPARATION - (AMOUNTX * SEPARATION) / 2; // z
 
         let rgb
-        rgb = jetWhite3(0, color, smoothBig[l]);
+        rgb = jetWhite3(colorMin, color, smoothBig[l]);
 
         colors[k] = rgb[0] / 255;
         colors[k + 1] = rgb[1] / 255;
@@ -799,13 +789,7 @@ const Canvas = memo(React.forwardRef((props, refs) => {
   }
 
   function changeCamera(value) {
-    if (!camera || !controls || !baseCameraDistance) return;
-    animateCameraZoom({
-      camera,
-      controls,
-      baseDistance: baseCameraDistance,
-      zoomValue: value,
-    });
+    if (camera) camera.position.z = -150 * 100 / value;
   }
 
   useImperativeHandle(refs, () => ({
@@ -827,7 +811,7 @@ const Canvas = memo(React.forwardRef((props, refs) => {
       // 在这里执行滚动结束后的操作，例如加载更多内容
       
 
-      props.changeViewProp(getZoomValueFromCamera(camera, controls, baseCameraDistance))
+      props.changeViewProp(Math.floor(-150 * 100 / camera.position.z))
       timer = null; // 重置 timer 变量
 
     }, 400); // 300毫秒为一个示例值
@@ -839,9 +823,10 @@ const Canvas = memo(React.forwardRef((props, refs) => {
     // 靠垫数据
     init();
     animate();
+    document.addEventListener("wheel", wheel);
     return () => {
       renderer.setAnimationLoop(null);
-      cleanupZoomSync();
+      document.removeEventListener("wheel", wheel)
       cleanupThree({ scene, renderer, controls })
     };
   }, []);

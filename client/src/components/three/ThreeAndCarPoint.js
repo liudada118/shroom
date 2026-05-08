@@ -16,9 +16,8 @@ import {
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
 import { jetWhite3, lineInterp } from "../../assets/util/line";
-import { getDisplayType, getSettingValue, getStatus } from "../../store/equipStore";
+import { getAdcLower, getAdcUpper, getDisplayType, getSettingValue, getStatus } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
-import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -88,7 +87,6 @@ const Canvas =
 
         let timer
         let camera, sitshowFlag = false, backshowFlag = false
-        let baseCameraDistance = null
 
         function debounce(fn, time) {
             if (timer) clearTimeout(timer)
@@ -110,7 +108,6 @@ const Canvas =
             backGeometry,
             sitGeometry
         let controls;
-        let cleanupZoomSync = () => {};
 
         console.log('Canvas')
 
@@ -238,23 +235,8 @@ const Canvas =
 
             //FlyControls
             controls = new TrackballControls(camera, renderer.domElement);
-            // 缩放优化配置
-            controls.zoomSpeed = 0.8;
-            controls.rotateSpeed = 2.0;
-            controls.panSpeed = 0.8;
-            controls.minDistance = 40;         // 最近距离（对应300%）
-            controls.maxDistance = 1200;       // 最远距离（对应10%）
-            controls.dynamicDampingFactor = 0.15;
-            baseCameraDistance = camera.position.distanceTo(controls.target);
-            applyZoomBounds(controls, baseCameraDistance);
+            // controls.noZoom = true;
             controls.update();
-            cleanupZoomSync();
-            cleanupZoomSync = bindZoomValueSync({
-                camera,
-                controls,
-                baseDistance: baseCameraDistance,
-                onChange: props.changeViewProp,
-            });
             window.addEventListener("resize", onWindowResize);
 
 
@@ -821,8 +803,10 @@ const Canvas =
 
             // const gauss = 1, color  =1, filter=1, height = 1, coherent = 1
             const {
-                gauss = 1, color, filter, height = 1, coherent = 1
+                gauss = 1, filter, height = 1, coherent = 1
             } = getSettingValue() //pageRef.current.settingValue
+            const color = getAdcUpper()
+            const colorMin = getAdcLower()
 
             // height , width , heightInterp , widthInterp
             // export function interpSmall(smallMat, width, height, interp1, interp2)
@@ -875,7 +859,7 @@ const Canvas =
 
 
 
-                    rgb = jetWhite3(0, color, smoothBig[l]);
+                    rgb = jetWhite3(colorMin, color, smoothBig[l]);
 
 
 
@@ -909,12 +893,12 @@ const Canvas =
 
         //模型动画
 
-        function animate(time) {
+        function animate() {
 
             const date = new Date().getTime();
             controls.update();  // 必须更新
-            if (tween) tween.update(time); // 👈 必须传入时间参数！
-            if (tween1) tween1.update(time); // 👈 必须传入时间参数！
+            if (tween) tween.update(); // 👈 必须！
+            if (tween1) tween1.update(); // 👈 必须！
             render();
 
             // pointMove()
@@ -1022,16 +1006,7 @@ const Canvas =
         }
 
         function changeCamera(value) {
-            // 限制缩放范围 10%-300%
-            if (!camera || !controls || !baseCameraDistance) return
-            animateCameraZoom({
-                camera,
-                controls,
-                baseDistance: baseCameraDistance,
-                zoomValue: value,
-            })
-            // 平滑过渡动画（200ms）
-            // 放大缩小时回到初始位置（整体模式）
+            if (camera) camera.position.z = (-120 * 100 / value);
         }
 
         useImperativeHandle(refs, () => ({
@@ -1042,33 +1017,25 @@ const Canvas =
         }));
         //   视图数据
 
-        let wheelRAF = null
         function wheel(event) {
-            if (wheelRAF) cancelAnimationFrame(wheelRAF)
-            wheelRAF = requestAnimationFrame(() => {
-                if (camera && controls && baseCameraDistance) {
-                    props.changeViewProp(getZoomValueFromCamera(camera, controls, baseCameraDistance))
-                }
-                wheelRAF = null
-            })
-            return
-            // 限制 camera.position.z 在 10%-300% 对应的范围内
-            const minZ = -120 * 100 / 10   // -1200 (对应10%)
-            const maxZ = -120 * 100 / 300  // -40   (对应300%)
-            if (camera) {
-                camera.position.z = Math.max(minZ, Math.min(maxZ, camera.position.z))
+
+            // 清除之前的计时器，避免在短时间内多次触发
+            if (timer) {
+                clearTimeout(timer);
             }
 
-            // 使用 requestAnimationFrame 实时更新百分比显示
-            if (wheelRAF) cancelAnimationFrame(wheelRAF)
-            wheelRAF = requestAnimationFrame(() => {
-                if (camera) {
-                    let zoomValue = Math.round(-120 * 100 / camera.position.z)
-                    zoomValue = Math.max(10, Math.min(300, zoomValue))
-                    props.changeViewProp(zoomValue)
-                }
-                wheelRAF = null
-            })
+            // 设置一个新的计时器，例如 300毫秒后触发
+            timer = setTimeout(() => {
+                console.log('鼠标滚轮滑动结束');
+                // 在这里执行滚动结束后的操作，例如加载更多内容
+
+
+                props.changeViewProp((Math.floor(-120 * 100 / camera.position.z)))
+                timer = null; // 重置 timer 变量
+
+            }, 400); // 300毫秒为一个示例值
+
+
         }
 
         function move(position, time, particles) {
@@ -1217,9 +1184,10 @@ const Canvas =
             init();
             animate();
 
+            document.addEventListener("wheel", wheel);
             return () => {
                 renderer.setAnimationLoop(null);
-                cleanupZoomSync();
+                document.removeEventListener("wheel", wheel)
                 cleanupThree({ scene, renderer, controls })
             };
         }, []);
