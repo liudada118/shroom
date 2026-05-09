@@ -16,6 +16,21 @@ const selectInputObj = [
     { name: '宽', placeholder: '纵向点数', valueStr: 'height' },
 ]
 
+const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value))
+
+const parseInputNumber = (value, fallback) => {
+    const text = String(value ?? '').trim()
+    if (!text) return fallback
+    const numberValue = Number(text)
+    return Number.isFinite(numberValue) ? Math.trunc(numberValue) : NaN
+}
+
+const getDefaultRectSize = (maxW, maxH) => {
+    const width = clampNumber(Math.round(maxW * 0.25), Math.min(6, maxW), Math.min(12, maxW))
+    const height = clampNumber(Math.round(maxH * 0.25), Math.min(6, maxH), Math.min(12, maxH))
+    return { width, height }
+}
+
 export default function SelectSet(props) {
     const { onSelect } = props
     const pageInfo = useContext(pageContext);
@@ -74,7 +89,15 @@ export default function SelectSet(props) {
 
     const handleAddByInput = () => {
         const { xStart, yStart, width, height } = inputRect
-        const x = Number(xStart), y = Number(yStart), w = Number(width), h = Number(height)
+        const maxW = matrixInfo.width || 32
+        const maxH = matrixInfo.height || 32
+        const defaultSize = getDefaultRectSize(maxW, maxH)
+        const w = parseInputNumber(width, defaultSize.width)
+        const h = parseInputNumber(height, defaultSize.height)
+        const defaultX = Math.max(0, Math.floor((maxW - Math.min(w, maxW)) / 2))
+        const defaultY = Math.max(0, Math.floor((maxH - Math.min(h, maxH)) / 2))
+        const x = parseInputNumber(xStart, defaultX)
+        const y = parseInputNumber(yStart, defaultY)
 
         if (isNaN(x) || isNaN(y) || isNaN(w) || isNaN(h)) {
             message.error('请输入有效数字')
@@ -84,9 +107,11 @@ export default function SelectSet(props) {
             message.error('初始坐标需要大于0')
             return
         }
+        if (w <= 0 || h <= 0) {
+            message.error('框选区域需要大于0')
+            return
+        }
 
-        const maxW = matrixInfo.width || 32
-        const maxH = matrixInfo.height || 32
         if (x + w > maxW) {
             message.warning(`X(${x}) + 长(${w}) 超过横向传感点数(${maxW})`)
             return

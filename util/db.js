@@ -951,6 +951,7 @@ async function getCsvData(file) {
       .pipe(csv({ mapHeaders: ({ header }) => normalizeCsvHeader(header) }))
       .on("error", reject)
       .on("data", (data) => results.push({ ...data, file }))
+      .on("error", reject)
       .on("end", () => resolve(results))
   })
 }

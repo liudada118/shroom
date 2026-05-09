@@ -115,6 +115,35 @@ const normalizeFolderSelection = (value) => {
     return ''
 }
 
+const normalizeLocalCsvItem = (value) => value == null ? '' : String(value).trim()
+const getLocalCsvIdentity = (value) => normalizeLocalCsvItem(value).replace(/\//g, '\\').toLowerCase()
+
+const normalizeLocalCsvArr = (value) => {
+    const source = Array.isArray(value) ? value : []
+    const seen = new Set()
+    const result = []
+
+    source.forEach((item) => {
+        const normalized = normalizeLocalCsvItem(item)
+        const identity = getLocalCsvIdentity(normalized)
+        if (!normalized || seen.has(identity)) {
+            return
+        }
+        seen.add(identity)
+        result.push(normalized)
+    })
+
+    return result
+}
+
+const loadLocalCsvArr = () => {
+    try {
+        return normalizeLocalCsvArr(JSON.parse(localStorage.getItem('csvArr') || '[]'))
+    } catch (err) {
+        return []
+    }
+}
+
 const ColAndHistory = memo((props) => {
 
     const pageInfo = useContext(pageContext);
@@ -137,6 +166,14 @@ const ColAndHistory = memo((props) => {
     const [colHistoryArr, setColHistoryArr] = useState()
     const [displayHistoryArr, setDisplayHistoryArr] = useState()
     const [localArr, setLocalArr] = useState(readStoredCsvList)
+
+    const updateLocalArr = (nextValue) => {
+        setLocalArr((prev) => {
+            const source = typeof nextValue === 'function' ? nextValue(prev) : nextValue
+            const nextArr = normalizeLocalCsvArr(source)
+            return nextArr
+        })
+    }
 
     const onChange = () => {
 
@@ -165,6 +202,7 @@ const ColAndHistory = memo((props) => {
             return
         }
         resetOperateState()
+        resetPlaybackViewState()
         setIndex(nextIndex)
     }
 
@@ -237,12 +275,11 @@ const ColAndHistory = memo((props) => {
         }).then((res) => {
             if (res.data?.code === 0) {
                 const { fileName, filePath } = res.data.data
-                const uploadedItem = filePath || fileName
-                setLocalArr((prev) => normalizeCsvList([...(Array.isArray(prev) ? prev : []), uploadedItem]))
+                updateLocalArr((prev) => [...prev, filePath || fileName])
                 resetOperateState()
                 message.success(t('uploadSuccess') || 'Upload success')
                 setUploadFileShow(false)
-                clearUploadFile()
+                resetUploadFile()
             } else {
                 message.error(res.data?.message || CSV_IMPORT_INVALID_MESSAGE)
             }
@@ -255,7 +292,7 @@ const ColAndHistory = memo((props) => {
 
     const handleUploadCancel = () => {
         setUploadFileShow(false)
-        clearUploadFile()
+        resetUploadFile()
     }
 
     const getColHistory = () => {
@@ -409,7 +446,7 @@ const ColAndHistory = memo((props) => {
                 }
             } catch (err) {
                 console.error('Open folder error:', err)
-                message.error(err?.message || '打开文件夹失败')
+                message.error(err?.message || t('openFolderFailed'))
             }
         } else {
             const payload = { folderPath: targetPath }
@@ -417,11 +454,11 @@ const ColAndHistory = memo((props) => {
                 params: buildFallbackParams(payload)
             }).then((res) => {
                 if (res.data?.code !== 0) {
-                    message.error(res.data?.message || '打开文件夹失败')
+                    message.error(res.data?.message || t('openFolderFailed'))
                 }
             }).catch((err) => {
                 console.error('Open folder error:', err)
-                message.error('打开文件夹失败')
+                message.error(t('openFolderFailed'))
             })
         }
     }
@@ -441,7 +478,7 @@ const ColAndHistory = memo((props) => {
                     if (folderPath && folderPath !== filePath) {
                         handleOpenFolder(folderPath)
                     } else {
-                        message.error(res.data?.message || '打开文件失败')
+                        message.error(res.data?.message || t('openFileFailed'))
                     }
                 }
             }).catch((err) => {
@@ -587,7 +624,9 @@ const ColAndHistory = memo((props) => {
 
             })
         } else {
-            setLocalArr((prev) => normalizeCsvList(prev).filter((a) => !selectArr.includes(a)))
+            let res = [...localArr]
+            res = res.filter((a) => !selectArr.includes(a))
+            updateLocalArr(res)
             message.success(t('deleteSuccess'))
             resetOperateState()
         }
@@ -597,7 +636,18 @@ const ColAndHistory = memo((props) => {
 
     const [fileName, setFileName] = useState('')
     const uploadFileRef = useRef(null)
-    const fileInputRef = useRef(null)
+    const [uploadInputKey, setUploadInputKey] = useState(0)
+
+    const resetUploadFile = () => {
+        uploadFileRef.current = null
+        setFileName('')
+        setUploadInputKey((key) => key + 1)
+    }
+
+    const openUploadModal = () => {
+        resetUploadFile()
+        setUploadFileShow(true)
+    }
 
     const fileChange = (e) => {
         const file = e.target.files?.[0];
@@ -612,6 +662,26 @@ const ColAndHistory = memo((props) => {
     const [currentName, setCurrentName] = useState()
     const [currentPlaybackKey, setCurrentPlaybackKey] = useState('')
 
+    const resetPlaybackViewState = ({ cancelServer = true } = {}) => {
+        setCurrentName('')
+        setCurrentPlaybackKey('')
+        setDataLength(0)
+        removeHistoryBox()
+        useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
+        useEquipStore.getState().setDataStatus('realtime')
+        useEquipStore.getState().setHistoryStatus({
+            index: 0,
+            timestamp: '',
+        })
+        if (!cancelServer) {
+            return
+        }
+        axios({
+            method: 'post',
+            url: `${localAddress}/cancalDbPlay`,
+        }).catch(() => {})
+    }
+
     const getHistoryItemKey = (item) => {
         if (!item || typeof item !== 'object') return ''
         if (item.date != null && String(item.date).trim()) return String(item.date).trim()
@@ -623,6 +693,16 @@ const ColAndHistory = memo((props) => {
     const getLocalItemKey = (item) => {
         if (item == null) return ''
         return String(item)
+    }
+
+    const refreshPlaybackFrame = (index = 0) => {
+        const payload = { index: Number(index) || 0 }
+        return axios({
+            method: 'post',
+            url: `${localAddress}/getDbHistoryIndex`,
+            params: buildFallbackParams(payload),
+            data: payload,
+        }).catch(() => {})
     }
 
     const close = () => {
@@ -798,8 +878,10 @@ const ColAndHistory = memo((props) => {
                 onOk={handleUpload}
                 onCancel={handleUploadCancel}
                 confirmLoading={uploadLoading}
+                cancelText={t('cancel')}
+                okText={t('ok')}
             >
-                <input ref={fileInputRef} type="file" accept=".csv" onChange={(e) => { fileChange(e) }} id="file" />
+                <input key={uploadInputKey} type="file" accept=".csv" onChange={(e) => { fileChange(e) }} id="file" />
                 {fileName && <div style={{ marginTop: '8px', color: '#8794A1', fontSize: '0.8rem' }}>{fileName}</div>}
             </Modal>
 
@@ -982,7 +1064,7 @@ const ColAndHistory = memo((props) => {
                                 <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={t('uploadFile') || 'CSV导入'}>
                                     <div className='navIconContent'>
                                         <i className='iconfont cursor' onClick={() => {
-                                            setUploadFileShow(true)
+                                            openUploadModal()
                                         }}>&#xe631;</i>
                                     </div>
                                 </Popover>
@@ -1014,9 +1096,10 @@ const ColAndHistory = memo((props) => {
                             {
                                 Onindex == 0 && displayHistoryArr ? displayHistoryArr.map((dbInfo, index) => {
                                     const historyItemKey = getHistoryItemKey(dbInfo)
+                                    const historyPlaybackKey = `history-${historyItemKey || index}`
 
                                     return (
-                                        <div key={historyItemKey || `history-${index}`} className={`playbackItem cursor ${currentPlaybackKey === historyItemKey ? 'playbackItemActive' : ''}`}
+                                        <div key={historyPlaybackKey} className={`playbackItem cursor ${currentPlaybackKey === historyPlaybackKey ? 'playbackItemActive' : ''}`}
 
                                             onClick={() => {
                                                 if (operateStatus == 'contrast') {
@@ -1099,12 +1182,13 @@ const ColAndHistory = memo((props) => {
                                                             return
                                                         }
 
+                                                        const initialIndex = Number(payload.initialIndex) || 0
                                                         setCurrentName(dbInfo.name)
-                                                        setCurrentPlaybackKey(historyItemKey)
+                                                        setCurrentPlaybackKey(historyPlaybackKey)
                                                         useEquipStore.getState().setDataStatus('replay')
                                                         setDataLength(length)
                                                         useEquipStore.getState().setHistoryStatus({
-                                                            index: Number(payload.initialIndex) || 0,
+                                                            index: initialIndex,
                                                             timestamp: payload.initialTimestamp || ''
                                                         })
                                                         if (payload.areaArr || payload.pressArr) {
@@ -1118,6 +1202,7 @@ const ColAndHistory = memo((props) => {
 
                                                         // 如果历史数据有保存的框选信息，自动设置框选缓存供回放时展示
                                                         if (dbInfo.selected && dbInfo.select && Object.keys(dbInfo.select).length > 0) {
+                                                            window.__historySelectCleared = false
                                                             axios({
                                                                 method: 'post',
                                                                 url: `${localAddress}/getDbHistorySelect`,
@@ -1132,7 +1217,9 @@ const ColAndHistory = memo((props) => {
                                                                         pressArr: selPressArr || {}
                                                                     })
                                                                 }
-                                                            })
+                                                            }).finally(() => refreshPlaybackFrame(initialIndex))
+                                                        } else {
+                                                            refreshPlaybackFrame(initialIndex)
                                                         }
                                                     }).catch((err) => {
                                                         message.error(err.message || 'Load playback failed')
@@ -1178,8 +1265,9 @@ const ColAndHistory = memo((props) => {
                                     )
                                 }) : Onindex == 1 && localArr ? localArr.map((a, index) => {
                                     const localItemKey = getLocalItemKey(a)
+                                    const localPlaybackKey = `local-${localItemKey || index}`
                                     return (
-                                        <div key={localItemKey || `local-${index}`} className={`playbackItem cursor ${currentPlaybackKey === localItemKey ? 'playbackItemActive' : ''}`} onClick={() => {
+                                        <div key={localPlaybackKey} className={`playbackItem cursor ${currentPlaybackKey === localPlaybackKey ? 'playbackItemActive' : ''}`} onClick={() => {
                                             if (selectDataArrType.includes(operateStatus)) {
                                                 let arr = [...selectArr]
                                                 if (arr.includes(a)) {
@@ -1189,6 +1277,7 @@ const ColAndHistory = memo((props) => {
                                                 }
                                                 setSelectArr(arr)
                                             } else {
+                                                resetPlaybackViewState({ cancelServer: false })
                                                 const payload = {
                                                     fileName: a,
                                                 }
@@ -1199,9 +1288,40 @@ const ColAndHistory = memo((props) => {
                                                     params: buildFallbackParams(payload),
                                                     data: payload,
                                                 }).then((res) => {
+                                                    const result = res.data || {}
+                                                    const csvPayload = result.data || {}
+                                                    const length = Number(csvPayload.length) || 0
+
+                                                    if (result.code !== 0) {
+                                                        message.error(result.message || t('csvImportInvalid'))
+                                                        return
+                                                    }
+
+                                                    if (length <= 0) {
+                                                        message.error(result.message || 'No playback data found for the selected time')
+                                                        return
+                                                    }
+
+                                                    const initialIndex = Number(csvPayload.initialIndex) || 0
                                                     setCurrentName(a)
-                                                    setCurrentPlaybackKey(localItemKey)
-                                                    console.log(res)
+                                                    setCurrentPlaybackKey(localPlaybackKey)
+                                                    useEquipStore.getState().setDataStatus('replay')
+                                                    setDataLength(length)
+                                                    useEquipStore.getState().setHistoryStatus({
+                                                        index: initialIndex,
+                                                        timestamp: csvPayload.initialTimestamp || ''
+                                                    })
+                                                    if (csvPayload.areaArr || csvPayload.pressArr) {
+                                                        useEquipStore.getState().setHistoryChart({
+                                                            areaArr: csvPayload.areaArr || {},
+                                                            pressArr: csvPayload.pressArr || {}
+                                                        })
+                                                    }
+                                                    useEquipStore.getState().setStatus(new Array(4096).fill(0))
+                                                    useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
+                                                    refreshPlaybackFrame(initialIndex)
+                                                }).catch((err) => {
+                                                    message.error(err.message || t('csvImportInvalid'))
                                                 })
                                             }
 
@@ -1231,7 +1351,7 @@ const ColAndHistory = memo((props) => {
                             <div className="contrastItem">
                                 {!Object.keys(contrastArr.left).length ? <><div className="contrastItemCard">
                                     <i className='iconfont add cursor' style={{}} >&#xe631;</i>
-                                    选择数据文件
+                                    {t('choosingDataFile')}
                                 </div>
                                     <div style={{ width: '100%', height: '16px', marginTop: 4 }}></div></>
                                     :
@@ -1263,7 +1383,7 @@ const ColAndHistory = memo((props) => {
                             <div className="contrastItem">
                                 {!Object.keys(contrastArr.right).length ? <> <div className="contrastItemCard">
                                     <i className='iconfont add cursor' style={{}} >&#xe631;</i>
-                                    选择数据文件
+                                    {t('choosingDataFile')}
                                 </div>
                                     <div style={{ width: '100%', height: '16px', marginTop: 4 }}></div>
                                 </> :
@@ -1298,11 +1418,11 @@ const ColAndHistory = memo((props) => {
                     {/* <div className="playbackFunction">
                         {operateStatus != 'contrast' ? <> <div className='playbackButton cursor' onClick={() => {
                             setOperateStatus('contrast')
-                        }}>对比</div>
+                        }}>{t('compare')}</div>
                             <div className='playbackButton cursor' onClick={() => {
                                 console.log('click setUploadFileShow')
-                                setUploadFileShow(true)
-                            }}>csv导入</div> </> :
+                                openUploadModal()
+                            }}>{t('csvImport')}</div> </> :
                             <> <div className='playbackButton cursor' onClick={() => {
 
                                 const payload = {
@@ -1324,12 +1444,12 @@ const ColAndHistory = memo((props) => {
                                     // setDisplay
                                 })
 
-                            }}>对比</div>
+                            }}>{t('compare')}</div>
                                 <div className='playbackButton cursor' onClick={() => {
                                     setSelectArr([])
                                     setOperateStatus('')
                                     setContrast(contrastInitArr)
-                                }}>取消</div> </>
+                                }}>{t('cancel')}</div> </>
                         }
                     </div> */}
                 </div>

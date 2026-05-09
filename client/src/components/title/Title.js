@@ -1,4 +1,4 @@
-import React, { memo, useContext, useState } from 'react'
+import React, { memo, useContext } from 'react'
 import './index.scss'
 import EquipStatus from '../EquipStatus/EquipStatus'
 import Select from '../select/Select'
@@ -12,14 +12,39 @@ import { systemConfig, localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import { useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
-import { Tooltip } from 'antd'
+import { message, Tooltip } from 'antd'
 import { SettingOutlined, ReloadOutlined, DisconnectOutlined } from '@ant-design/icons'
 
+const languageOptions = [
+  {
+    label: '中文',
+    value: 'zh'
+  },
+  {
+    label: 'EN',
+    value: 'en'
+  },
+]
+
+const normalizeLanguage = (language) => String(language || '').toLowerCase().startsWith('en') ? 'en' : 'zh'
+
+const isConnectedPort = (item) => item?.status === 'connected' || item?.status === 'already_connected'
+const getConnectedPortCount = (resData) => Array.isArray(resData?.data)
+  ? resData.data.filter(isConnectedPort).length
+  : 0
 
 const Title = memo((props) => {
   const { t, i18n } = props;
 
   const connectState = useEquipStore(s => s.connectState, shallow);
+
+  const setDisconnected = (warningText) => {
+    useEquipStore.getState().setConnectState('idle')
+    useEquipStore.getState().setEquipStatus({})
+    if (warningText) {
+      message.warning(warningText)
+    }
+  }
 
   // ─── 一键连接 ──────────────────────────────────────────
   // connPort 已合并 MAC 查询，不再需要单独调用 /sendMac
@@ -30,10 +55,14 @@ const Title = memo((props) => {
 
     axios.get(`${localAddress}/connPort`, {}).then((res) => {
       console.log('[Connect] connPort result:', res.data)
+      if (res.data?.code !== 0 || getConnectedPortCount(res.data) === 0) {
+        setDisconnected(t('noSerialDevice'))
+        return
+      }
       useEquipStore.getState().setConnectState('connected')
     }).catch((err) => {
       console.error('[Connect] connPort failed:', err)
-      useEquipStore.getState().setConnectState('idle')
+      setDisconnected(t('connectFailed'))
     })
   }
 
@@ -46,10 +75,14 @@ const Title = memo((props) => {
 
     axios.get(`${localAddress}/rescanPort`, {}).then((res) => {
       console.log('[Rescan] result:', res.data)
+      if (res.data?.code !== 0 || getConnectedPortCount(res.data) === 0) {
+        setDisconnected(t('noSerialDevice'))
+        return
+      }
       useEquipStore.getState().setConnectState('connected')
     }).catch((err) => {
       console.error('[Rescan] failed:', err)
-      useEquipStore.getState().setConnectState('idle')
+      setDisconnected(t('connectFailed'))
     })
   }
 
@@ -99,7 +132,8 @@ const Title = memo((props) => {
     })
   }
 
-  const [language, setLanguage] = useState('中文')
+  const currentLanguage = normalizeLanguage(i18n.language || localStorage.getItem('language'))
+  const currentLanguageLabel = languageOptions.find((item) => item.value === currentLanguage)?.label || '中文'
 
   const equipStatus = useEquipStore(s => s.equipStatus, shallow);
 
@@ -121,7 +155,7 @@ const Title = memo((props) => {
       case 'connecting':
         return t('connecting')
       case 'rescanning':
-        return '重新连接中...'
+        return t('reconnecting')
       case 'connected':
         return t('connected')
       default:
@@ -152,7 +186,7 @@ const Title = memo((props) => {
 
           {/* 重新连接按钮（仅在已连接状态显示） */}
           {connectState === 'connected' && (
-            <Tooltip title="重新连接（清理死端口/僵尸设备后重连）">
+            <Tooltip title={t('reconnectTooltip')}>
               <div className="rescanBtn cursor" onClick={rescan}>
                 <ReloadOutlined style={{ fontSize: '0.85rem' }} />
               </div>
@@ -161,7 +195,7 @@ const Title = memo((props) => {
 
           {/* 断开连接按钮（仅在已连接/重扫状态显示） */}
           {(connectState === 'connected' || connectState === 'rescanning') && (
-            <Tooltip title="断开所有串口连接">
+            <Tooltip title={t('disconnectAllPorts')}>
               <div className="disconnectBtn cursor" onClick={disconnect}>
                 <DisconnectOutlined style={{ fontSize: '0.85rem' }} />
               </div>
@@ -172,24 +206,16 @@ const Title = memo((props) => {
         </div>
 
         <div className="titleRight">
-          <Tooltip title="设备 MAC 地址配置">
+          <Tooltip title={t('deviceMacConfig')}>
             <div className="settingBtn cursor" onClick={goToMacConfig}>
               <SettingOutlined style={{ fontSize: '1.1rem', color: '#E6EBF0' }} />
             </div>
           </Tooltip>
-          <Select defaultValue='中文' options={[
-            {
-              label: '中文',
-              value: 'zh'
-            },
-            {
-              label: 'EN',
-              value: 'en'
-            },
-          ]}
+          <Select defaultValue={currentLanguageLabel} options={languageOptions}
 
             icon={<i className='iconfont' style={{ marginRight: '0.625rem', fontSize: '0.875rem', color: '#E6EBF0' }}>&#xe642;</i>}
             onChange={(value) => {
+              localStorage.setItem('language', value)
               i18n.changeLanguage(value)
             }}
 

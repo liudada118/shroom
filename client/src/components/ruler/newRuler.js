@@ -1,4 +1,5 @@
 import { message } from "antd"
+import i18n from 'i18next'
 
 function determineParity(index) {
     return index % 2 == 0
@@ -67,6 +68,7 @@ class ruler {
         this.clickIndex = 0
         this.width = 32
         this.height = 32
+        this.canvasGridSize = 32
         this.distanceX = 6
         this.distanceY = 6
         // 存储所有量尺线段 [{startGrid, endGrid, distance}]
@@ -98,6 +100,11 @@ class ruler {
                     }
                     this.selectedIndices = newSelected
                     this._redraw()
+                    return
+                }
+
+                if (!this._isInEffectiveArea(e)) {
+                    message.warning(i18n.t('measureInValidArea'))
                     return
                 }
 
@@ -165,14 +172,44 @@ class ruler {
     }
 
     _toGrid(pointInfo) {
-        const startX = this.canvas.getBoundingClientRect().left
-        const startY = this.canvas.getBoundingClientRect().top
-        const propW = this.canvas.width / this.width
-        const propH = this.canvas.height / this.height
+        const rect = this.canvas.getBoundingClientRect()
+        const startX = rect.left + window.scrollX
+        const startY = rect.top + window.scrollY
+        const { propW, propH, offsetGridX, offsetGridY } = this._getGridMetrics()
         return {
-            x: Math.floor((pointInfo.pageX - startX) / propW),
-            y: Math.floor((pointInfo.pageY - startY) / propH)
+            x: Math.floor((pointInfo.pageX - startX) / propW - offsetGridX),
+            y: Math.floor((pointInfo.pageY - startY) / propH - offsetGridY)
         }
+    }
+
+    _getGridMetrics() {
+        const gridSize = this.canvasGridSize || Math.max(this.width, this.height)
+        const propW = this.canvas.width / gridSize
+        const propH = this.canvas.height / gridSize
+        return {
+            gridSize,
+            propW,
+            propH,
+            offsetGridX: (gridSize - this.width) / 2,
+            offsetGridY: (gridSize - this.height) / 2,
+        }
+    }
+
+    _gridToCanvasCenter(grid) {
+        const { propW, propH, offsetGridX, offsetGridY } = this._getGridMetrics()
+        return {
+            x: (grid.x + offsetGridX + 0.5) * propW,
+            y: (grid.y + offsetGridY + 0.5) * propH,
+        }
+    }
+
+    _isGridInEffectiveArea(grid) {
+        return grid.x >= 0 && grid.x < this.width && grid.y >= 0 && grid.y < this.height
+    }
+
+    _isInEffectiveArea(e) {
+        if (!this.canvas) return false
+        return this._isGridInEffectiveArea(this._toGrid({ pageX: e.pageX, pageY: e.pageY }))
     }
 
     /**
@@ -183,17 +220,19 @@ class ruler {
         if (this.rulerLines.length === 0 || this.selectedIndices.size === 0) return -1
 
         const grid = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
-        const propW = this.canvas.width / this.width
-        const propH = this.canvas.height / this.height
-        const px = (grid.x + 0.5) * propW
-        const py = (grid.y + 0.5) * propH
+        const { propW } = this._getGridMetrics()
+        const point = this._gridToCanvasCenter(grid)
+        const px = point.x
+        const py = point.y
 
         for (const i of this.selectedIndices) {
             if (i >= this.rulerLines.length) continue
             const line = this.rulerLines[i]
             // 删除按钮位置（与_drawRulerLine中一致）
-            const midX = ((line.startGrid.x + line.endGrid.x) / 2 + 0.5) * propW
-            const midY = ((line.startGrid.y + line.endGrid.y) / 2 + 0.5) * propH - propH * 1.2
+            const startPoint = this._gridToCanvasCenter(line.startGrid)
+            const endPoint = this._gridToCanvasCenter(line.endGrid)
+            const midX = (startPoint.x + endPoint.x) / 2
+            const midY = (startPoint.y + endPoint.y) / 2 - propW * 1.2
             const btnSize = propW * 1.2 // 加大点击区域
 
             const dist = Math.sqrt((px - midX) ** 2 + (py - midY) ** 2)
@@ -213,10 +252,10 @@ class ruler {
         if (this.rulerLines.length === 0) return -1
 
         const grid = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
-        const propW = this.canvas.width / this.width
-        const propH = this.canvas.height / this.height
-        const px = (grid.x + 0.5) * propW
-        const py = (grid.y + 0.5) * propH
+        const { propW, propH } = this._getGridMetrics()
+        const point = this._gridToCanvasCenter(grid)
+        const px = point.x
+        const py = point.y
         // 线条点击容差：3个格子宽度
         const lineThreshold = propW * 3
 
@@ -225,10 +264,12 @@ class ruler {
 
         for (let i = 0; i < this.rulerLines.length; i++) {
             const line = this.rulerLines[i]
-            const x1 = (line.startGrid.x + 0.5) * propW
-            const y1 = (line.startGrid.y + 0.5) * propH
-            const x2 = (line.endGrid.x + 0.5) * propW
-            const y2 = (line.endGrid.y + 0.5) * propH
+            const startPoint = this._gridToCanvasCenter(line.startGrid)
+            const endPoint = this._gridToCanvasCenter(line.endGrid)
+            const x1 = startPoint.x
+            const y1 = startPoint.y
+            const x2 = endPoint.x
+            const y2 = endPoint.y
 
             // 检查是否点击了线条
             const dist = pointToSegmentDistance(px, py, x1, y1, x2, y2)
@@ -240,8 +281,8 @@ class ruler {
             // 检查是否点击了距离标签区域
             const labelWidth = line.distance.length * propH * 0.7
             const labelHeight = propH + 4
-            const labelX = (line.endGrid.x + 1) * propW
-            const labelY = (line.endGrid.y - 0.5) * propH + 2
+            const labelX = endPoint.x + propW / 2
+            const labelY = endPoint.y - propH + 2
             if (isPointInLabel(px, py, labelX, labelY, labelWidth, labelHeight)) {
                 clickedIndex = i
                 break // 标签命中优先
@@ -273,8 +314,7 @@ class ruler {
         const ctx = this.canvas.getContext('2d')
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
 
-        const propW = this.canvas.width / this.width
-        const propH = this.canvas.height / this.height
+        const { propW, propH } = this._getGridMetrics()
 
         // 绘制所有已完成的量尺
         for (let i = 0; i < this.rulerLines.length; i++) {
@@ -285,13 +325,14 @@ class ruler {
 
         // 绘制正在绘制的临时起点
         if (this.tempStart) {
+            const startPoint = this._gridToCanvasCenter(this.tempStart)
             ctx.beginPath();
-            ctx.arc((this.tempStart.x + 0.5) * propW, (this.tempStart.y + 0.5) * propH, propW / 3, 0, Math.PI * 2);
+            ctx.arc(startPoint.x, startPoint.y, propW / 3, 0, Math.PI * 2);
             ctx.fillStyle = '#fff';
             ctx.fill();
             ctx.font = `bold ${propH * 1.2}px sans-serif`;
             ctx.fillStyle = '#fff';
-            ctx.fillText(`S`, (this.tempStart.x - 0.8) * propW, (this.tempStart.y + 0.5) * propH);
+            ctx.fillText(`S`, startPoint.x - propW * 1.3, startPoint.y);
         }
     }
 
@@ -305,10 +346,12 @@ class ruler {
         // 线宽：普通3px，选中4.5px
         const normalLineWidth = 3
         const selectedLineWidth = 4.5
+        const startPoint = this._gridToCanvasCenter(startGrid)
+        const endPoint = this._gridToCanvasCenter(endGrid)
 
         // 绘制起点圆点
         ctx.beginPath();
-        ctx.arc((startGrid.x + 0.5) * propW, (startGrid.y + 0.5) * propH, propW / 3, 0, Math.PI * 2);
+        ctx.arc(startPoint.x, startPoint.y, propW / 3, 0, Math.PI * 2);
         ctx.fillStyle = pointColor;
         ctx.fill();
 
@@ -317,11 +360,11 @@ class ruler {
         ctx.fillStyle = pointColor;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`S`, (startGrid.x - 0.8) * propW, (startGrid.y + 0.5) * propH);
+        ctx.fillText(`S`, startPoint.x - propW * 1.3, startPoint.y);
 
         // 绘制终点圆点
         ctx.beginPath();
-        ctx.arc((endGrid.x + 0.5) * propW, (endGrid.y + 0.5) * propH, propW / 3, 0, Math.PI * 2);
+        ctx.arc(endPoint.x, endPoint.y, propW / 3, 0, Math.PI * 2);
         ctx.fillStyle = pointColor;
         ctx.fill();
 
@@ -329,8 +372,8 @@ class ruler {
         ctx.beginPath();
         ctx.strokeStyle = lineColor;
         ctx.lineWidth = isSelected ? selectedLineWidth : normalLineWidth;
-        ctx.moveTo((startGrid.x + 0.5) * propW, (startGrid.y + 0.5) * propH);
-        ctx.lineTo((endGrid.x + 0.5) * propW, (endGrid.y + 0.5) * propH);
+        ctx.moveTo(startPoint.x, startPoint.y);
+        ctx.lineTo(endPoint.x, endPoint.y);
         ctx.stroke();
         ctx.lineWidth = 1;
 
@@ -338,12 +381,12 @@ class ruler {
         const labelWidth = distance.length * propH * 0.7
         const labelBg = isSelected ? SELECTED_LABEL_BG : '#fff'
         const labelColor = isSelected ? SELECTED_LABEL_TEXT : '#000'
-        drawRoundRectWithText(ctx, (endGrid.x + 1) * propW, (endGrid.y - 0.5) * propH + 2, labelWidth, propH + 4, (propH + 4) / 2, labelBg, distance, labelColor, propH)
+        drawRoundRectWithText(ctx, endPoint.x + propW / 2, endPoint.y - propH + 2, labelWidth, propH + 4, (propH + 4) / 2, labelBg, distance, labelColor, propH)
 
         // 如果选中，绘制删除按钮和高亮边框
         if (isSelected) {
-            const midX = ((startGrid.x + endGrid.x) / 2 + 0.5) * propW
-            const midY = ((startGrid.y + endGrid.y) / 2 + 0.5) * propH - propH * 1.2
+            const midX = (startPoint.x + endPoint.x) / 2
+            const midY = (startPoint.y + endPoint.y) / 2 - propH * 1.2
             const btnSize = propW * 0.8
 
             // 删除按钮背景（红色圆形）
@@ -372,12 +415,13 @@ class ruler {
             const minY = Math.min(startGrid.y, endGrid.y)
             const maxY = Math.max(startGrid.y, endGrid.y)
             const pad = 1
+            const { offsetGridX, offsetGridY } = this._getGridMetrics()
             ctx.strokeStyle = SELECTED_BORDER_COLOR;
             ctx.lineWidth = 2;
             ctx.setLineDash([4, 4]);
             ctx.strokeRect(
-                (minX - pad) * propW,
-                (minY - pad) * propH,
+                (minX + offsetGridX - pad) * propW,
+                (minY + offsetGridY - pad) * propH,
                 (maxX - minX + 2 * pad + 1) * propW,
                 (maxY - minY + 2 * pad + 1) * propH
             );
@@ -406,9 +450,10 @@ class ruler {
         return this.selectedIndices.size
     }
 
-    startRuler({ num, widthDistance, heightDistance }) {
-        this.width = num
-        this.height = num
+    startRuler({ num, width, height, widthDistance, heightDistance }) {
+        this.width = width || num
+        this.height = height || num
+        this.canvasGridSize = num || Math.max(this.width, this.height)
         this.distanceX = widthDistance
         this.distanceY = heightDistance
         this.rulersFlag = true
@@ -417,7 +462,7 @@ class ruler {
             this.canvas.addEventListener('mousedown', this.onMouseDown)
             this.canvas.addEventListener('contextmenu', this.onContextMenu)
         } else {
-            message.info('请在2D模式下使用')
+            message.info(i18n.t('useIn2DMode'))
         }
     }
 

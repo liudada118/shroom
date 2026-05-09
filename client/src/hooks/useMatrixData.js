@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import { getDisplayType, getSelectArr, getSettingValue, getSysType, useEquipStore } from '../store/equipStore'
 import { systemPointConfig } from '../util/constant'
 import { backYToX, calcCentroidRatio, colSelectMatrix, kurtosis, mean, normalPDF, sitYToX, skewness, variance } from '../util/util'
-import { matrixGenBox, removeHistoryBox } from '../assets/util/selectMatrix'
+import { matrixGenBox, removeHistoryBox, transformMatrixByDirection } from '../assets/util/selectMatrix'
 import { isMoreMatrix } from '../assets/util/util'
 
 /**
@@ -28,6 +28,8 @@ export function useMatrixData() {
   const chartRef = useRef({})
   const wsLocalDataRef = useRef({ data: {}, flag: false })
   const dataDirection = useRef({ left: true, up: true })
+  const lastFrameFullKeyArrRef = useRef([])
+  const lastFramePayloadRef = useRef({})
 
   /**
    * 限制 endi 类型数据值上限为 255
@@ -66,15 +68,17 @@ export function useMatrixData() {
       const boxes = []
       for (let i = 0; i < select.length; i++) {
         const sel = select[i]
-        const matrix = colSelectMatrix('canvasThree', sel, systemPointConfig[fullKey])
-        if (matrix) {
+        const displayMatrix = colSelectMatrix('canvasThree', sel, systemPointConfig[fullKey])
+        if (displayMatrix) {
+          const matrix = transformMatrixByDirection(displayMatrix, config, dataDirection.current)
           const data = extractSelectData(arr, matrix, width)
           if (data) {
             boxes.push({
               data,
               colorIndex: sel.colorIndex != null ? sel.colorIndex : i,
               bgc: sel.bgc || '#FF6B6B',
-              matrix,
+              matrix: displayMatrix,
+              sourceMatrix: matrix,
             })
           }
         }
@@ -91,7 +95,7 @@ export function useMatrixData() {
     // 回放框选
     if (sitDataItem?.select) {
       const matrixObj = sitDataItem.select
-      const { xStart, xEnd, yStart, yEnd } = matrixObj
+      const displayMatrixObj = transformMatrixByDirection(matrixObj, config, dataDirection.current)
 
       if (displayType.includes(key) && displayType.includes('2D')) {
         const canvas = document.querySelector('.canvasThree')
@@ -102,7 +106,7 @@ export function useMatrixData() {
             canvasY1: canvasInfo.top, canvasY2: canvasInfo.bottom
           }
           const max = Math.max(width, height)
-          matrixGenBox(matrixObj, canvasObj, max, config)
+          matrixGenBox(displayMatrixObj, canvasObj, max, config)
         }
       } else {
         removeHistoryBox()
@@ -120,7 +124,8 @@ export function useMatrixData() {
       }
     }
 
-    // 无框选，使用全部数据
+    // 无框选，使用全部数据，并清掉上一帧历史框选留下的 DOM
+    removeHistoryBox()
     return { default: [...arr], boxes: [] }
   }
 
@@ -364,6 +369,32 @@ export function useMatrixData() {
     return res
   }
 
+  function buildDisplayFrame(sourceArr, keyArr, sitDataPayload = lastFramePayloadRef.current) {
+    let resArr = {}
+    for (let i = 0; i < keyArr.length; i++) {
+      const key = keyArr[i].includes('-') ? keyArr[i].split('-')[1] : keyArr[i]
+      if (!sourceArr[key]) continue
+      const wsLocalData = wsLocalDataRef.current.data
+      const flag = wsLocalDataRef.current.flag
+      resArr[key] = sourceArr[key].map((a, index) => {
+        if (!flag || !wsLocalData[key]) return a
+        return Math.max(0, a - wsLocalData[key][index])
+      })
+    }
+
+    const settingValue = getSettingValue()
+    const { filter } = settingValue
+    if (filter) {
+      for (const fullKey of keyArr) {
+        const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
+        if (!resArr[key]) continue
+        resArr[key] = resArr[key].map(a => a < filter ? 0 : a)
+      }
+    }
+
+    return applyDisplayDirection(resArr, keyArr, sitDataPayload || {})
+  }
+
   /**
    * 处理传感器数据帧（实时或回放）
    */
@@ -377,6 +408,12 @@ export function useMatrixData() {
     const select = getSelectArr()
     const displayType = getDisplayType()
     const keyArr = Object.keys(sitData)
+    lastFrameFullKeyArrRef.current = keyArr
+    lastFramePayloadRef.current = sitData
+    const hasHistorySelect = keyArr.some((key) => sitData[key]?.select)
+    if (!hasHistorySelect) {
+      removeHistoryBox()
+    }
     const arr = {}
     const selectedArr = {}
 
@@ -435,34 +472,7 @@ export function useMatrixData() {
     useEquipStore.getState().setEquipStamp(stamp)
     if (cop) useEquipStore.getState().setEquipCop(cop)
 
-    // 3. 预压力置零
-    let resArr = {}
-    for (let i = 0; i < keyArr.length; i++) {
-      const key = keyArr[i].includes('-') ? keyArr[i].split('-')[1] : keyArr[i]
-      if (!arr[key]) continue
-      const wsLocalData = wsLocalDataRef.current.data
-      const flag = wsLocalDataRef.current.flag
-      resArr[key] = arr[key].map((a, index) => {
-        if (!flag || !wsLocalData[key]) return a
-        return Math.max(0, a - wsLocalData[key][index])
-      })
-      disPlayDataRef.current = resArr
-    }
-
-    // 4. 噪点过滤
-    const settingValue = getSettingValue()
-    const { filter } = settingValue
-    if (filter) {
-      for (const fullKey of keyArr) {
-        const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
-        if (!resArr[key]) continue
-        resArr[key] = resArr[key].map(a => a < filter ? 0 : a)
-        disPlayDataRef.current = resArr
-      }
-    }
-
-    // 5. 翻转处理：实时帧按当前方向翻转；历史帧按保存方向和当前方向的差异修正，避免重复翻转
-    resArr = applyDisplayDirection(resArr, keyArr, sitData)
+    const resArr = buildDisplayFrame(arr, keyArr, sitData)
     disPlayDataRef.current = resArr
 
     useEquipStore.getState().setDisplayStatus(resArr)
@@ -476,6 +486,13 @@ export function useMatrixData() {
       dataDirection.current.left = !dataDirection.current.left
     } else {
       dataDirection.current.up = !dataDirection.current.up
+    }
+    const currentFrame = sitDataRef.current
+    const keyArr = lastFrameFullKeyArrRef.current
+    if (currentFrame && Object.keys(currentFrame).length && Array.isArray(keyArr) && keyArr.length) {
+      const resArr = buildDisplayFrame(currentFrame, keyArr, lastFramePayloadRef.current)
+      disPlayDataRef.current = resArr
+      useEquipStore.getState().setDisplayStatus(resArr)
     }
     return normalizeDataDirection(dataDirection.current)
   }

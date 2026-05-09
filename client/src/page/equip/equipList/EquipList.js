@@ -1,6 +1,7 @@
 import { Space, Table, Tag } from 'antd';
 import axios from 'axios'
 import React, { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { serverAddress } from '../../../util/constant';
@@ -8,24 +9,24 @@ import { serverAddress } from '../../../util/constant';
 dayjs.extend(customParseFormat);
 const dateFormat = 'YYYY-MM-DD';
 
-const columns = [
+const getColumns = (t) => [
     {
-        title: 'mac地址',
+        title: t('macAddress'),
         dataIndex: 'uniqueId',
         key: 'uniqueId',
     },
     {
-        title: '备注',
+        title: t('remark'),
         dataIndex: 'remarkInfo',
         key: 'remarkInfo',
     },
     {
-        title: '截至时间',
+        title: t('expireDate'),
         dataIndex: 'dateInfo',
         key: 'dateInfo',
     },
     {
-        title: '设备类型',
+        title: t('deviceType'),
         dataIndex: 'typeInfo',
         key: 'typeInfo',
     },
@@ -87,7 +88,8 @@ const columns = [
 
 
 export default function EquipList() {
-
+    const { t } = useTranslation()
+    const columns = getColumns(t)
     const [data, setData] = useState([])
     useEffect(() => {
         axios.post(`${serverAddress}/device-manage/device/get`, {}).then((res) => {

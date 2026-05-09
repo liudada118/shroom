@@ -1,28 +1,38 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import './index.scss'
 
-// 全局 z-index 管理器
-let globalMaxZIndex = 2000
+const PANEL_Z_INDEX_BASE = 120
+const PANEL_Z_INDEX_TOP = 180
+let globalMaxZIndex = PANEL_Z_INDEX_BASE
+
+function nextPanelZIndex() {
+    if (globalMaxZIndex >= PANEL_Z_INDEX_TOP) {
+        globalMaxZIndex = PANEL_Z_INDEX_BASE
+    }
+    globalMaxZIndex += 1
+    return globalMaxZIndex
+}
 
 /**
  * 可拖拽、可缩放、置顶的面板组件
  * - 不可关闭
  * - 鼠标拖拽移动
  * - 可放大/缩小
- * - 始终在最上层（点击时置顶）
+ * - 在浮窗层内置顶，但保持低于历史/调节抽屉
  */
 export default function DraggablePanel({ children, defaultPosition, title, className = '' }) {
+    const { t } = useTranslation()
     const panelRef = useRef(null)
     const [position, setPosition] = useState(defaultPosition || { x: 0, y: 0 })
     const [scale, setScale] = useState(1)
-    const [zIndex, setZIndex] = useState(globalMaxZIndex)
+    const [zIndex, setZIndex] = useState(nextPanelZIndex)
     const [isDragging, setIsDragging] = useState(false)
     const dragOffset = useRef({ x: 0, y: 0 })
 
     // 点击面板时置顶
     const bringToFront = useCallback(() => {
-        globalMaxZIndex += 1
-        setZIndex(globalMaxZIndex)
+        setZIndex(nextPanelZIndex())
     }, [])
 
     // 拖拽开始
@@ -61,28 +71,28 @@ export default function DraggablePanel({ children, defaultPosition, title, class
         }
     }, [isDragging])
 
-    // 缩放（10%~1000%），根据当前缩放比例动态调整步长
-    const getStep = (s) => {
-        if (s <= 0.5) return 0.05
-        if (s <= 1.0) return 0.1
-        if (s <= 2.0) return 0.25
-        if (s <= 5.0) return 0.5
-        return 1.0
-    }
+    // 缩放（10%~1000%），固定 10% 步长，只保留 10 的倍数
+    const ZOOM_MIN = 10
+    const ZOOM_MAX = 1000
+    const ZOOM_STEP = 10
+
+    const percentToScale = (percent) => parseFloat((percent / 100).toFixed(1))
 
     const zoomIn = useCallback((e) => {
         e.stopPropagation()
         setScale(s => {
-            const step = getStep(s)
-            return Math.min(parseFloat((s + step).toFixed(2)), 10.0)
+            const currentPercent = Math.round(s * 100)
+            const nextPercent = Math.min(Math.floor(currentPercent / ZOOM_STEP) * ZOOM_STEP + ZOOM_STEP, ZOOM_MAX)
+            return percentToScale(nextPercent)
         })
     }, [])
 
     const zoomOut = useCallback((e) => {
         e.stopPropagation()
         setScale(s => {
-            const step = getStep(s)
-            return Math.max(parseFloat((s - step).toFixed(2)), 0.1)
+            const currentPercent = Math.round(s * 100)
+            const nextPercent = Math.max(Math.ceil(currentPercent / ZOOM_STEP) * ZOOM_STEP - ZOOM_STEP, ZOOM_MIN)
+            return percentToScale(nextPercent)
         })
     }, [])
 
@@ -112,10 +122,10 @@ export default function DraggablePanel({ children, defaultPosition, title, class
                 style={{ cursor: isDragging ? 'grabbing' : 'grab' }}>
                 <span className='draggable-panel-title'>{title}</span>
                 <div className='draggable-panel-controls'>
-                    <span className='panel-ctrl-btn' onClick={zoomOut} title='缩小'>-</span>
-                    <span className='panel-ctrl-btn' onClick={resetZoom} title='重置'
+                    <span className='panel-ctrl-btn' onClick={zoomOut} title={t('zoomOut')}>-</span>
+                    <span className='panel-ctrl-btn' onClick={resetZoom} title={t('resetZoom')}
                         style={{ fontSize: '0.65rem' }}>{Math.round(scale * 100)}%</span>
-                    <span className='panel-ctrl-btn' onClick={zoomIn} title='放大'>+</span>
+                    <span className='panel-ctrl-btn' onClick={zoomIn} title={t('zoomIn')}>+</span>
                 </div>
             </div>
             <div className='draggable-panel-body'>

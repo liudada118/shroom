@@ -493,6 +493,37 @@ function updateArrList(dataItem, data, maxLength = 3) {
  * Each frame updates lastDataTime[path] for zombie detection.
  */
 function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, allPorts) {
+  let portClosedHandled = false
+  const handlePortClosed = (reason) => {
+    if (portClosedHandled) return
+    portClosedHandled = true
+
+    console.warn(`[Serial] Port disconnected: ${portPath}${reason ? ` (${reason})` : ''}`)
+    if (state.parserArr[portPath] === parserItem) {
+      delete state.parserArr[portPath]
+      delete state.dataMap[portPath]
+      delete state.lastDataTime[portPath]
+      state.portHistory = state.portHistory.filter(p => p.path !== portPath)
+    }
+
+    const activePorts = Object.keys(state.parserArr).filter((key) => state.parserArr[key]?.port?.isOpen)
+    broadcastFn(JSON.stringify({
+      connectResult: {
+        success: activePorts.length > 0,
+        ports: activePorts.map((key) => ({ path: key, status: 'already_connected' })),
+        macInfo: state.macInfo,
+        authMode: constantObj.AUTH_MODE,
+      }
+    }))
+
+    if (!activePorts.length) {
+      broadcastFn(JSON.stringify({ sitData: {} }))
+    }
+  }
+
+  parserItem.port.on('close', () => handlePortClosed('close'))
+  parserItem.port.on('error', (err) => handlePortClosed(err?.message || 'error'))
+
   parserItem.parser.on('data', async (data) => {
     const buffer = Buffer.from(data)
     const pointArr = Array.from(buffer)
@@ -707,6 +738,24 @@ async function connectPort(broadcastFn, onTimerStart) {
   for (const portInfo of ports) {
     const { path: portPath } = portInfo
     if (state.parserArr[portPath]?.port?.isOpen) {
+      const lastTime = state.lastDataTime[portPath] || 0
+      if (Date.now() - lastTime > ZOMBIE_THRESHOLD) {
+        console.log(`[Connect] ${portPath} was open but stale, cleaning before reconnect`)
+        try {
+          state.parserArr[portPath].parser?.removeAllListeners()
+          state.parserArr[portPath].port?.removeAllListeners()
+          state.parserArr[portPath].port?.close(() => {})
+        } catch (e) {
+          console.warn(`[Connect] Error cleaning stale port ${portPath}: ${e.message}`)
+        }
+        delete state.parserArr[portPath]
+        delete state.dataMap[portPath]
+        delete state.lastDataTime[portPath]
+        state.portHistory = state.portHistory.filter(p => p.path !== portPath)
+        await new Promise(r => setTimeout(r, POST_DETECT_DELAY))
+        portsToDetect.push(portInfo)
+        continue
+      }
       console.log(`[Connect] ${portPath} already connected and open, skipping`)
       connectedPorts.push({ path: portPath, status: 'already_connected' })
       continue
@@ -856,10 +905,12 @@ async function connectPort(broadcastFn, onTimerStart) {
     console.log(`[Connect] All MAC resolutions complete`)
   }
 
+  const connectedCount = connectedPorts.filter(p => p.status === 'connected' || p.status === 'already_connected').length
+
   // Broadcast final connect result with macInfo
   broadcastFn(JSON.stringify({
     connectResult: {
-      success: true,
+      success: connectedCount > 0,
       ports: connectedPorts,
       macInfo: state.macInfo,
       authMode: constantObj.AUTH_MODE,
@@ -871,7 +922,7 @@ async function connectPort(broadcastFn, onTimerStart) {
     broadcastFn(JSON.stringify({ macInfo: state.macInfo }))
   }
 
-  console.log(`[Connect] One-click connect done, connected ${connectedPorts.filter(p => p.status === 'connected').length}/${ports.length} device(s)`)
+  console.log(`[Connect] One-click connect done, connected ${connectedCount}/${ports.length} device(s)`)
   return connectedPorts
 }
 

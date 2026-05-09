@@ -157,7 +157,9 @@ export function matrixGenBox(matrixObj, canvasArea, max, matrixConfig) {
         closeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
+            window.__historySelectCleared = true;
             removeHistoryBox();
+            window.dispatchEvent(new CustomEvent('history-select-clear'));
         });
         box.appendChild(closeBtn);
     }
@@ -166,6 +168,40 @@ export function matrixGenBox(matrixObj, canvasArea, max, matrixConfig) {
     box.style.top = boxY + 'px';
     box.style.width = `${boxWidth}px`;
     box.style.height = `${boxHeight}px`;
+}
+
+export function transformMatrixByDirection(matrixObj, matrixConfig, direction = {}) {
+    if (!matrixObj || !matrixConfig) return matrixObj
+
+    const width = matrixObj.width || matrixConfig.width
+    const height = matrixObj.height || matrixConfig.height
+    let { xStart, xEnd, yStart, yEnd } = matrixObj
+
+    if ([xStart, xEnd, yStart, yEnd, width, height].some((v) => typeof v !== 'number')) {
+        return matrixObj
+    }
+
+    if (direction.left === false) {
+        const oldXStart = xStart
+        xStart = width - xEnd
+        xEnd = width - oldXStart
+    }
+
+    if (direction.up === false) {
+        const oldYStart = yStart
+        yStart = height - yEnd
+        yEnd = height - oldYStart
+    }
+
+    return {
+        ...matrixObj,
+        xStart,
+        xEnd,
+        yStart,
+        yEnd,
+        width,
+        height,
+    }
 }
 
 export function removeHistoryBox() {

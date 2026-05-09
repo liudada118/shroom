@@ -34,8 +34,11 @@
       }
 
       .back-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
         color: #888;
-        padding: 4px;
+        padding: 4px 8px;
 
         &:hover {
           color: #fff;
@@ -177,6 +180,26 @@
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
+  position: relative;
+
+  .mac-fullscreen-exit {
+    position: absolute;
+    top: 18px;
+    right: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.04);
+    color: #d8dee6;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 13px;
+    cursor: pointer;
+
+    &:hover {
+      color: #fff;
+      border-color: rgba(22, 104, 220, 0.65);
+      background: rgba(22, 104, 220, 0.12);
+    }
+  }
 
   .fullscreen-title {
     text-align: center;

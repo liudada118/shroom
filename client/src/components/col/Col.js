@@ -9,8 +9,13 @@ import { colSelectMatrix } from '../../util/util'
 import { isMoreMatrix } from '../../assets/util/util'
 import { buildFallbackParams } from '../../util/request'
 import { pageContext } from '../../page/test/Test'
+import { useTranslation } from 'react-i18next'
+
+const COL_NAME_MAX_LENGTH = 20
+const COL_REMARK_MAX_LENGTH = 100
 
 export default function Col(props) {
+    const { t } = useTranslation()
     const { colName, remark, HZ, setStartTime, col, setCol } = props
     const pageInfo = useContext(pageContext)
 
@@ -96,13 +101,13 @@ export default function Col(props) {
                 if (res.data.message == 'error') {
                     message.error(res.data.data)
                 } else {
-                    message.success('开始采集')
+                    message.success(t('collectStart'))
                     setCol(!col)
                     setStartTime(startStamp)
 
                     // 始终调用 upsertRemark 保存框选数据（即使没有 alias 和 remark）
-                    const alias = colName ? colName.trim() : ''
-                    const remarkText = remark ? remark.trim().slice(0, 400) : ''
+                    const alias = colName ? colName.trim().slice(0, COL_NAME_MAX_LENGTH) : ''
+                    const remarkText = remark ? remark.trim().slice(0, COL_REMARK_MAX_LENGTH) : ''
 
                     const remarkData = {
                         date: String(startStamp),
@@ -136,7 +141,7 @@ export default function Col(props) {
 
             }).catch((err) => {
                 console.error('[Col] startCol failed:', err)
-                message.error('采集失败')
+                message.error(t('collectFailed'))
             })
 
         } else {
@@ -147,7 +152,7 @@ export default function Col(props) {
                 if (res.data.message == 'error') {
                     message.error(res.data.data)
                 } else {
-                    message.success('采集成功')
+                    message.success(t('collectSuccess'))
                     setCol(!col)
                 }
             })

@@ -34,8 +34,24 @@ export default function PlaybackBar(props) {
     }, [dataLength, history.index]);
 
     const maxIndex = Math.max(0, (Number(dataLength) || 0) - 1);
+    const hasPlaybackFile = Boolean(name);
+
+    const prepareHistorySelect = () => {
+        if (window.__historySelectCleared) {
+            return axios.post(`${localAddress}/clearDbHistorySelect`, {}).catch(() => {});
+        }
+        if (typeof window.__syncHistorySelect === 'function') {
+            return Promise.resolve(window.__syncHistorySelect()).catch(() => {});
+        }
+        return Promise.resolve();
+    };
 
     const handleSliderChange = (index) => {
+        if (!hasPlaybackFile) {
+            message.warning('请选择回放文件');
+            return;
+        }
+
         if ((Number(dataLength) || 0) <= 0) {
             message.error('No playback data found for the selected time');
             return;
@@ -45,12 +61,12 @@ export default function PlaybackBar(props) {
             index,
         };
 
-        axios({
+        prepareHistorySelect().then(() => axios({
             method: 'post',
             url: `${localAddress}/getDbHistoryIndex`,
             params: buildFallbackParams(payload),
             data: payload,
-        })
+        }))
             .then((res) => {
                 if (res.data?.code !== 0) {
                     message.error(res.data?.message || 'Load playback frame failed');
@@ -64,15 +80,20 @@ export default function PlaybackBar(props) {
     };
 
     const handlePlay = () => {
+        if (!hasPlaybackFile) {
+            message.warning('请选择回放文件');
+            return;
+        }
+
         if ((Number(dataLength) || 0) <= 0) {
             message.error('No playback data found for the selected time');
             return;
         }
 
-        axios({
+        prepareHistorySelect().then(() => axios({
             method: 'post',
             url: `${localAddress}/getDbHistoryPlay`,
-        })
+        }))
             .then((res) => {
                 if (res.data?.code !== 0) {
                     message.error(res.data?.message || 'Playback start failed');
