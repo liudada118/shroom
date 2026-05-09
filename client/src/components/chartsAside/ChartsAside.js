@@ -52,11 +52,12 @@ function ChartsAside(props) {
             const key = keyArr[i]
             const chartData = props.chartData.current
             const deviceData = chartData[key]
-            if (!deviceData) continue
+            const historyLine = Array.isArray(dataMap[key]) ? dataMap[key] : null
+            if (!deviceData && !historyLine) continue
 
             // 检查是否有多框选统计
-            const boxStats = deviceData.boxStats
-            if (useBoxStats && boxStats && boxStats.length > 0) {
+            const boxStats = deviceData?.boxStats
+            if (!historyLine && useBoxStats && boxStats && boxStats.length > 0) {
                 // 多框选模式：每个框一条线
                 for (let b = 0; b < boxStats.length; b++) {
                     const box = boxStats[b]
@@ -77,7 +78,7 @@ function ChartsAside(props) {
                 const color = colorMap[colorKey] || Object.values(colorMap)[i]
                 series.push({
                     symbol: 'none',
-                    data: dataMap[key],
+                    data: historyLine || dataMap[key],
                     type: 'line',
                     smooth: true,
                     color: color,

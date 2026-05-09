@@ -43,22 +43,20 @@ function jet(min, max, x) {
   return rgb;
 }
 
+function normalizeDisplayValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(255, Math.round(numeric)));
+}
+
 let oldColor = 0
 
 function drawCellValue(ctx, value, cx, cy, cellSize) {
   const text = String(value);
-  const fontSize = Math.max(10, Math.floor(cellSize * 0.34));
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(cx + 1, cy + 1, cellSize - 2, cellSize - 2);
-  ctx.clip();
+  const fontSize = value >= 100 ? 32 : 40;
   ctx.font = `bold ${fontSize}px monospace`;
-  ctx.lineWidth = Math.max(2, Math.floor(cellSize * 0.05));
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
-  ctx.strokeText(text, cx + cellSize / 2, cy + cellSize / 2);
   ctx.fillStyle = "white";
   ctx.fillText(text, cx + cellSize / 2, cy + cellSize / 2);
-  ctx.restore();
 }
 
 export default function NumThree(props) {
@@ -431,7 +429,7 @@ export default function NumThree(props) {
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
 
-        const d = data[i]//Math.floor(Math.random() * 256);
+        const d = normalizeDisplayValue(data[i])//Math.floor(Math.random() * 256);
         uvOffsets[i * 2] = (d % 16) / 16;
         uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
 
@@ -519,6 +517,7 @@ export default function NumThree(props) {
           if (gx >= 0 && gx < width && gy >= 0 && gy < height) {
             value = dataArr[gy * width + gx] ?? 0;
           }
+          value = normalizeDisplayValue(value);
           const [r, g, b] = applyMatrixColor(value, colorMax);
           ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
           ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);

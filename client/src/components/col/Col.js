@@ -82,11 +82,13 @@ export default function Col(props) {
             }).then((res) => {
 
                 if (res.data.message == 'error') {
+                    useEquipStore.getState().setCollecting(false)
                     message.error(res.data.data)
                 } else {
                     message.success('开始采集')
                     setCol(!col)
                     setStartTime(startStamp)
+                    useEquipStore.getState().setCollecting(true)
 
                     // 始终调用 upsertRemark 保存框选数据（即使没有 alias 和 remark）
                     const alias = colName ? colName.trim() : ''
@@ -124,6 +126,7 @@ export default function Col(props) {
 
             }).catch((err) => {
                 console.error('[Col] startCol failed:', err)
+                useEquipStore.getState().setCollecting(false)
                 message.error('采集失败')
             })
 
@@ -137,10 +140,12 @@ export default function Col(props) {
                 } else {
                     message.success('采集成功')
                     setCol(!col)
+                    useEquipStore.getState().setCollecting(false)
                 }
             })
             setStartTime(0)
             setCol(!col)
+            useEquipStore.getState().setCollecting(false)
         }
     }
 

@@ -3,15 +3,15 @@
     "344637300F50323802": {
       "type": "endi-back",
       "deviceClass": "foot",
-      "lastSeen": "2026-05-09T11:22:21.332Z",
+      "lastSeen": "2026-05-09T11:30:58.519Z",
       "alias": ""
     },
     "344637300F5032398C": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-05-09T11:22:21.859Z",
+      "lastSeen": "2026-05-09T11:30:59.042Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-05-09T11:22:21.859Z"
+  "updatedAt": "2026-05-09T11:30:59.042Z"
 }
