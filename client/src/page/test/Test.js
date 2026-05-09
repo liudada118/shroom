@@ -25,7 +25,7 @@ import ChartsAside from '../../components/chartsAside/ChartsAside'
 import { Scheduler } from '../../scheduler/scheduler'
 import { newRuler } from '../../components/ruler/newRuler'
 import { backYToX, calcCentroidRatio, colSelectMatrix, endiBackPressFn, endiSitPressFn, graCenter, kurtosis, mean, normalPDF, sitYToX, skewness, variance } from '../../util/util'
-import { removeHistoryBox, transformMatrixByDirection } from '../../assets/util/selectMatrix'
+import { matrixGenBox, removeHistoryBox } from '../../assets/util/selectMatrix'
 import NumThresContrast from '../../components/contrast/NumThresContrast'
 import { gaussianBlur1D, pressFN } from './util'
 import { isMoreMatrix } from '../../assets/util/util'
@@ -69,7 +69,7 @@ function Test() {
         chartRef,
         dataDirection,
         processSensorFrame,
-        changeDataDirection: changeMatrixDataDirection,
+        changeDataDirection,
         changeWsLocalData,
     } = useMatrixData()
 
@@ -98,147 +98,53 @@ function Test() {
             const history = useEquipStore.getState().history
             useEquipStore.getState().setHistoryStatus({ ...history, timestamp })
         },
+        onMacInfo: (macInfo) => {
+            useEquipStore.getState().setMacInfo(macInfo)
+        },
         onConnectResult: (result) => {
-            const store = useEquipStore.getState()
             if (result?.success) {
-                store.setConnectState('connected')
-                return
+                useEquipStore.getState().setConnectState('connected')
+                useEquipStore.getState().setConnectionError(null)
+                if (result.macInfo) useEquipStore.getState().setMacInfo(result.macInfo)
+            } else if (result?.code || result?.message) {
+                useEquipStore.getState().setConnectState('failed')
+                useEquipStore.getState().setConnectionError(result)
             }
-            store.setConnectState('idle')
-            store.setEquipStatus({})
-            store.setStatus(new Array(4096).fill(0))
-            store.setDisplayStatus(new Array(4096).fill(0))
         },
     })
-
-    const clearHistorySelect = useCallback(() => {
-        window.__historySelectCleared = true
-        const store = useEquipStore.getState()
-        store.setSelectArr([])
-        removeHistoryBox()
-
-        if (store.dataStatus !== 'replay') return Promise.resolve()
-
-        return axios.post(`${localAddress}/clearDbHistorySelect`, {}).then((res) => {
-            const data = res.data?.data || {}
-            const { areaArr, pressArr } = data
-            if (areaArr || pressArr) {
-                useEquipStore.getState().setHistoryChart({
-                    areaArr: areaArr || {},
-                    pressArr: pressArr || {}
-                })
-            }
-            if ((Number(data.length) || 0) > 0) {
-                const history = useEquipStore.getState().history || {}
-                const payload = { index: Number(history.index) || 0 }
-                return axios({
-                    method: 'post',
-                    url: `${localAddress}/getDbHistoryIndex`,
-                    params: buildFallbackParams(payload),
-                    data: payload,
-                }).catch(() => {})
-            }
-            return null
-        }).catch((err) => {
-            console.warn('clear history select failed:', err)
-        })
-    }, [])
-
-    const syncHistorySelect = useCallback((arr = useEquipStore.getState().selectArr) => {
-        useEquipStore.getState().setSelectArr(arr)
-        if (!Array.isArray(arr) || arr.length === 0) {
-            return clearHistorySelect()
-        }
-        window.__historySelectCleared = false
-
-        const status = useEquipStore.getState().dataStatus
-        if (status !== 'replay') return Promise.resolve()
-
-        const systemType = getSysType()
-        const displayType = getDisplayType()
-        let typeKey = systemType
-        if (isMoreMatrix(systemType)) {
-            typeKey = `${systemType}-${displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : 'back'}`
-        }
-
-        const range = arr[0]
-        const matrixConfig = systemPointConfig[typeKey]
-        if (!range || !matrixConfig) return Promise.resolve()
-        const displayMatrix = colSelectMatrix('canvasThree', range, matrixConfig)
-        if (!displayMatrix) return Promise.resolve()
-        const matrix = transformMatrixByDirection(displayMatrix, matrixConfig, dataDirection.current)
-        const selectJson = {}
-        selectJson[typeKey] = {
-            xStart: matrix.xStart,
-            xEnd: matrix.xEnd,
-            yStart: matrix.yStart,
-            yEnd: matrix.yEnd,
-            width: matrixConfig.width,
-            height: matrixConfig.height
-        }
-
-        return axios({
-            method: 'post',
-            url: `${localAddress}/getDbHistorySelect`,
-            params: { selectJson: JSON.stringify(selectJson) },
-            data: { selectJson }
-        }).then((res) => {
-            const data = res.data?.data || {}
-            const { areaArr, pressArr } = data
-            if (areaArr || pressArr) {
-                useEquipStore.getState().setHistoryChart({
-                    areaArr: areaArr || {},
-                    pressArr: pressArr || {}
-                })
-            }
-        })
-    }, [clearHistorySelect, dataDirection])
-
-    const handleChangeDataDirection = useCallback((dir) => {
-        changeMatrixDataDirection(dir)
-        const arr = useEquipStore.getState().selectArr
-        if (Array.isArray(arr) && arr.length) {
-            Promise.resolve(syncHistorySelect(arr)).catch((err) => {
-                console.warn('sync history select failed:', err)
-            })
-        }
-    }, [changeMatrixDataDirection, syncHistorySelect])
 
     // ─── 框选订阅（支持多框选） ─────────────────────────────
     useEffect(() => {
         const cb = (arr) => {
-            useEquipStore.getState().setSelectArr(arr)
-            if (!Array.isArray(arr) || arr.length === 0) {
-                clearHistorySelect()
-                return
-            }
-            window.__historySelectCleared = false
-
+            const safeArr = Array.isArray(arr)
+                ? arr.map(({ _element, ...range }) => range)
+                : []
+            useEquipStore.getState().setSelectArr(safeArr)
             const status = useEquipStore.getState().dataStatus
-            if (status !== 'replay') return
+            if (status !== 'replay' || safeArr.length === 0) return
 
             const systemType = getSysType()
             const displayType = getDisplayType()
-            let typeKey = systemType
+            const range = safeArr[0]
+            let typeKey = range.matrixKey || systemType
             if (isMoreMatrix(systemType)) {
-                typeKey = `${systemType}-${displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : 'back'}`
+                typeKey = range.matrixKey || `${systemType}-${displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : 'back'}`
             }
 
             // 使用第一个框作为回放查询的选区（后端目前只支持单选区）
-            const range = arr[0]
-            const matrixConfig = systemPointConfig[typeKey]
-            if (!range || !matrixConfig) return
-            const displayMatrix = colSelectMatrix('canvasThree', range, matrixConfig)
-            if (!displayMatrix) return
-            const matrix = transformMatrixByDirection(displayMatrix, matrixConfig, dataDirection.current)
+            if (!range) return
+            if (!systemPointConfig[typeKey]) return
+            const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[typeKey])
+            if (!matrix) return
             const selectJson = {}
             selectJson[typeKey] = {
                 xStart: matrix.xStart,
                 xEnd: matrix.xEnd,
                 yStart: matrix.yStart,
                 yEnd: matrix.yEnd,
-                width: matrixConfig.width,
-                height: matrixConfig.height
+                width: systemPointConfig[typeKey].width,
+                height: systemPointConfig[typeKey].height,
+                name: range.name || '框选1'
             }
 
             axios({
@@ -257,18 +163,8 @@ function Test() {
                 }
             })
         }
-        const clearHistorySelectHandler = () => clearHistorySelect()
         brushInstance.subscribe(cb)
-        window.addEventListener('history-select-clear', clearHistorySelectHandler)
-        window.__syncHistorySelect = syncHistorySelect
-        return () => {
-            brushInstance.unsubscribe(cb)
-            window.removeEventListener('history-select-clear', clearHistorySelectHandler)
-            if (window.__syncHistorySelect === syncHistorySelect) {
-                delete window.__syncHistorySelect
-            }
-        }
-    }, [clearHistorySelect, syncHistorySelect])
+    }, [])
 
     // ─── 调度器启动 ──────────────────────────────────────
     useEffect(() => {
@@ -381,7 +277,7 @@ function Test() {
                 changeWsLocalData,
                 wsLocalData,
                 dataDirection,
-                changeDataDirection: handleChangeDataDirection,
+                changeDataDirection,
                 setDisplay,
                 display,
                 newRuler,
@@ -389,13 +285,12 @@ function Test() {
                 setDisplayType,
                 displayType,
                 onRuler, setOnRuler, onSelect, setOnSelect,
-                onMagnifier, setOnMagnifier,
-                clearHistorySelect
+                onMagnifier, setOnMagnifier
             }} >
-                <Title />
-                <ViewSetting showProp={showProp} setShowProp={setShowProp} three={threeRef} />
-                <ColAndHistory playBack={playBack} />
-                <ChartsAside sitData={disPlayDataRef} chartData={chartRef} />
+                {display !== 'contrast' ? <Title /> : null}
+                {display !== 'contrast' ? <ViewSetting showProp={showProp} setShowProp={setShowProp} three={threeRef} /> : null}
+                {display !== 'contrast' ? <ColAndHistory playBack={playBack} /> : null}
+                {display !== 'contrast' ? <ChartsAside sitData={disPlayDataRef} chartData={chartRef} /> : null}
 
                 {display === 'contrast' ?
                     <NumThresContrast sitData={disPlayDataRef} displayType={displayType} />

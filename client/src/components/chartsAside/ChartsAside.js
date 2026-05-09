@@ -60,6 +60,7 @@ function ChartsAside(props) {
                 // 多框选模式：每个框一条线
                 for (let b = 0; b < boxStats.length; b++) {
                     const box = boxStats[b]
+                    const seriesName = box.name || `框选${b + 1}${keyArr.length > 1 ? `-${key}` : ''}`
                     series.push({
                         symbol: 'none',
                         data: box[dataField] || [],
@@ -67,7 +68,7 @@ function ChartsAside(props) {
                         smooth: true,
                         color: box.bgc || SELECT_COLORS[box.colorIndex] || SELECT_COLORS[b],
                         lineStyle: { width: 2 },
-                        name: `${t('boxShort')}${b + 1}${keyArr.length > 1 ? `-${key}` : ''}`,
+                        name: seriesName,
                     })
                 }
             } else {
@@ -225,17 +226,17 @@ function ChartsAside(props) {
                 trigger: 'axis',
                 formatter: p => {
                     const { value } = p[0];
-                    return `${t('grayValue')}: ${value[0]}<br>${t('probabilityDensity')}: ${value[1].toFixed(6)}`;
+                    return `灰度值: ${value[0]}<br>(概率密度): ${value[1].toFixed(6)}`;
                 }
             },
             xAxis: {
                 type: 'value', min: 0, max: 255,
-                name: `${t('grayValue')} (0–255)`, splitNumber: 5,
+                name: '灰度值 (0–255)', splitNumber: 5,
                 axisTick: { lineStyle: { width: 0.5 } },
                 splitLine: { lineStyle: { width: 0.5, color: '#32373E' } }
             },
             yAxis: {
-                type: 'value', name: t('probabilityDensity'), splitNumber: 3,
+                type: 'value', name: '概率密度', splitNumber: 3,
                 axisLabel: { formatter: (value) => value * 100 + '%' },
                 axisTick: { lineStyle: { width: 0.5, color: '#32373E' } },
                 splitLine: { lineStyle: { width: 0.5, color: '#32373E' } },
@@ -303,6 +304,7 @@ function ChartsAside(props) {
                                 return {
                                     colorIndex: box.colorIndex,
                                     bgc: box.bgc,
+                                    name: box.name || `框选${idx + 1}`,
                                     pointTotal: box.data.areaTotal || 0,
                                     areaTotal: Math.round(bPreciseArea),
                                     pressAver: Number(box.data.pressAver || 0).toFixed(2),
@@ -357,7 +359,7 @@ function ChartsAside(props) {
             return allBoxes.map((box, idx) => (
                 <div className='chartTypeItem' key={`box-${box.colorIndex}`}>
                     <div className='cirlce' style={{ backgroundColor: box.bgc || SELECT_COLORS[box.colorIndex] }}></div>
-                    {`${t('boxSelection')}${box.colorIndex + 1}`}
+                    {box.name || `框选${box.colorIndex + 1}`}
                 </div>
             ))
         }
@@ -390,7 +392,7 @@ function ChartsAside(props) {
                                 <div style={{ width: '4rem', display: 'flex', justifyContent: 'flex-end' }}>
                                     <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: '2.8rem', textAlign: 'right', display: 'inline-block' }}>{value}</span>
                                     <span style={{ width: '1.6rem', textAlign: 'left', flexShrink: 0 }}>
-                                        {system === 'carY' ? '' : (item === 'total' ? 'N' : item === 'pointTotal' ? t('pointUnit') : item === 'areaTotal' ? t('areaUnit') : t('pressureUnit'))}
+                                        {system === 'carY' ? '' : (item === 'total' ? 'N' : item === 'pointTotal' ? '个' : item === 'areaTotal' ? 'cm²' : 'Kpa')}
                                     </span>
                                 </div>
                             </div>
@@ -409,7 +411,7 @@ function ChartsAside(props) {
                     <div style={{ width: '4rem', display: 'flex', justifyContent: 'flex-end' }}>
                         <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: '2.8rem', textAlign: 'right', display: 'inline-block' }}>{data[a][item]}</span>
                         <span style={{ width: '1.6rem', textAlign: 'left', flexShrink: 0 }}>
-                            {system === 'carY' ? '' : (item === 'total' ? 'N' : item === 'pointTotal' ? t('pointUnit') : item === 'areaTotal' ? t('areaUnit') : t('pressureUnit'))}
+                            {system === 'carY' ? '' : (item === 'total' ? 'N' : item === 'pointTotal' ? '个' : item === 'areaTotal' ? 'cm²' : 'Kpa')}
                         </span>
                     </div>
                 </div>

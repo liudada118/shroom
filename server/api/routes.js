@@ -18,6 +18,135 @@ const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('.
 
 const router = express.Router()
 
+const CONTRAST_MATRIX_DIMENSIONS = {
+  'endi-back': { width: 50, height: 64 },
+  'endi-sit': { width: 46, height: 46 },
+  'carY-back': { width: 32, height: 32 },
+  'carY-sit': { width: 32, height: 32 },
+  'car-back': { width: 32, height: 32 },
+  'car-sit': { width: 32, height: 32 },
+  bed: { width: 32, height: 32 },
+  hand: { width: 32, height: 32 },
+  foot: { width: 32, height: 32 },
+  bigHand: { width: 64, height: 64 },
+}
+
+function parseMatrixFrame(row) {
+  if (!row || !row.data) return {}
+  if (typeof row.data === 'object') return row.data
+  try {
+    return JSON.parse(row.data)
+  } catch {
+    return {}
+  }
+}
+
+function getComparableKeys(frame) {
+  return Object.keys(frame || {})
+    .filter((key) => key && key !== 'null' && key !== 'undefined' && Array.isArray(frame[key]?.arr))
+    .sort()
+}
+
+function getContrastCommonKeys(leftFrame, rightFrame) {
+  const leftKeys = getComparableKeys(leftFrame)
+  const rightKeySet = new Set(getComparableKeys(rightFrame))
+  return leftKeys.filter((key) => {
+    if (!rightKeySet.has(key)) return false
+    const leftArr = leftFrame[key]?.arr
+    const rightArr = rightFrame[key]?.arr
+    if (!Array.isArray(leftArr) || !Array.isArray(rightArr)) return false
+    if (leftArr.length !== rightArr.length) return false
+    const size = inferMatrixSize(key, leftArr)
+    return size.width * size.height === leftArr.length
+  })
+}
+
+function inferMatrixSize(key, arr) {
+  if (CONTRAST_MATRIX_DIMENSIONS[key]) return CONTRAST_MATRIX_DIMENSIONS[key]
+  const length = Array.isArray(arr) ? arr.length : 0
+  const side = Math.sqrt(length)
+  if (Number.isInteger(side) && side > 0) return { width: side, height: side }
+  return { width: length, height: 1 }
+}
+
+function normalizeContrastFrame(row, keys) {
+  const frame = parseMatrixFrame(row)
+  const result = {}
+  keys.forEach((key) => {
+    const source = frame[key] || {}
+    const arr = Array.isArray(source.arr) ? source.arr.map((value) => Number(value) || 0) : []
+    const size = inferMatrixSize(key, arr)
+    result[key] = {
+      ...source,
+      arr,
+      width: size.width,
+      height: size.height,
+    }
+  })
+  return result
+}
+
+function buildDiffFrame(leftFrame, rightFrame, keys) {
+  const diff = {}
+  keys.forEach((key) => {
+    const leftArr = leftFrame[key]?.arr || []
+    const rightArr = rightFrame[key]?.arr || []
+    const size = inferMatrixSize(key, leftArr.length ? leftArr : rightArr)
+    const length = Math.min(leftArr.length, rightArr.length)
+    diff[key] = {
+      arr: Array.from({ length }, (_, index) => (Number(rightArr[index]) || 0) - (Number(leftArr[index]) || 0)),
+      width: size.width,
+      height: size.height,
+      diff: true,
+    }
+  })
+  return diff
+}
+
+function buildContrastFrame(leftRows, rightRows, keys, progress = 0) {
+  const safeProgress = Math.min(100, Math.max(0, Number(progress) || 0))
+  const leftIndex = leftRows.length > 1 ? Math.round((leftRows.length - 1) * safeProgress / 100) : 0
+  const rightIndex = rightRows.length > 1 ? Math.round((rightRows.length - 1) * safeProgress / 100) : 0
+  const left = normalizeContrastFrame(leftRows[leftIndex], keys)
+  const right = normalizeContrastFrame(rightRows[rightIndex], keys)
+  return {
+    progress: safeProgress,
+    leftIndex,
+    rightIndex,
+    left,
+    right,
+    diff: buildDiffFrame(left, right, keys),
+    leftTimestamp: leftRows[leftIndex]?.timestamp ?? '',
+    rightTimestamp: rightRows[rightIndex]?.timestamp ?? '',
+  }
+}
+
+function validateContrastResults(leftResult, rightResult, leftId, rightId) {
+  if (!leftId) return '请先选择基准数据 A。'
+  if (!rightId) return '请先选择对比数据 B。'
+  if (String(leftId) === String(rightId)) return 'A 和 B 不能是同一条历史记录。'
+  if (!leftResult.rows.length || !rightResult.rows.length) return '数据为空，不能对比。'
+
+  const leftFirst = parseMatrixFrame(leftResult.rows[0])
+  const rightFirst = parseMatrixFrame(rightResult.rows[0])
+  const leftKeys = getComparableKeys(leftFirst)
+  const rightKeys = getComparableKeys(rightFirst)
+  if (!leftKeys.length || !rightKeys.length) return '数据缺少全量矩阵，不能对比。'
+  const commonKeys = getContrastCommonKeys(leftFirst, rightFirst)
+  if (!commonKeys.length) return '请分别选择坐垫对坐垫、靠背对靠背。'
+
+  for (const key of commonKeys) {
+    const leftArr = leftFirst[key]?.arr
+    const rightArr = rightFirst[key]?.arr
+    if (!Array.isArray(leftArr) || !Array.isArray(rightArr)) return '数据缺少全量矩阵，不能对比。'
+    if (leftArr.length !== rightArr.length) return '两组数据矩阵尺寸不同，不能直接对比。'
+    const size = inferMatrixSize(key, leftArr)
+    if (size.width * size.height !== leftArr.length) return '两组数据矩阵尺寸不同，不能直接对比。'
+  }
+
+  return ''
+}
+
 function readSystemConfig() {
   const configPath = state._configPath || path.join(__dirname, '..', '..', 'config.txt')
   const config = fs.readFileSync(configPath, 'utf-8')
@@ -326,28 +455,38 @@ router.get('/getPort', asyncHandler(async (req, res) => {
 }))
 
 router.get('/connPort', asyncHandler(async (req, res) => {
-  const port = await connectPort(broadcast, colAndSendData)
-  const hasConnectedPort = Array.isArray(port) && port.some((item) => item?.status === 'connected' || item?.status === 'already_connected')
-  if (!hasConnectedPort) {
-    res.json(new HttpResult(1, port, port?.length ? 'No serial devices connected' : 'No serial ports found'))
-    return
+  try {
+    const result = await connectPort(broadcast, colAndSendData)
+    res.json(new HttpResult(0, result, 'Connect success'))
+  } catch (err) {
+    res.json(new HttpResult(1, {
+      success: false,
+      code: err.code || 'OPEN_FAIL',
+      stage: err.stage || 'connect',
+      message: err.userMessage || err.message,
+      detail: err.message,
+    }, err.userMessage || err.message))
   }
-  res.json(new HttpResult(0, port, 'Connect success'))
 }))
 
 router.get('/rescanPort', asyncHandler(async (req, res) => {
-  const result = await rescanPort(broadcast, colAndSendData)
-  const hasConnectedPort = Array.isArray(result) && result.some((item) => item?.status === 'connected' || item?.status === 'already_connected')
-  if (!hasConnectedPort) {
-    res.json(new HttpResult(1, result, result?.length ? 'No serial devices connected' : 'No serial ports found'))
-    return
+  try {
+    const result = await rescanPort(broadcast, colAndSendData)
+    res.json(new HttpResult(0, result, 'Rescan complete'))
+  } catch (err) {
+    res.json(new HttpResult(1, {
+      success: false,
+      code: err.code || 'OPEN_FAIL',
+      stage: err.stage || 'rescan',
+      message: err.userMessage || err.message,
+      detail: err.message,
+    }, err.userMessage || err.message))
   }
-  res.json(new HttpResult(0, result, 'Rescan complete'))
 }))
 
 router.get('/stopPort', asyncHandler(async (req, res) => {
-  await stopPort()
-  res.json(new HttpResult(0, {}, 'All ports stopped'))
+  const result = await stopPort()
+  res.json(new HttpResult(0, result, 'All ports stopped'))
 }))
 
 router.get('/sendMac', asyncHandler(async (req, res) => {
@@ -710,42 +849,6 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
   res.json(new HttpResult(0, { length: rows.length, pressArr, areaArr }, 'success'))
 }))
 
-router.post('/clearDbHistorySelect', asyncHandler(async (req, res) => {
-  state.historySelectCache = null
-
-  if (!state.historyDbArr || !state.historyDbArr.length) {
-    res.json(new HttpResult(0, { length: 0, pressArr: {}, areaArr: {} }, 'success'))
-    return
-  }
-
-  const rows = state.historyDbArr
-  const keyArr = Object.keys(JSON.parse(rows[0].data || '{}'))
-  const pressArr = {}
-  const areaArr = {}
-  keyArr.forEach((key) => {
-    pressArr[key] = []
-    areaArr[key] = []
-  })
-
-  for (let i = 0; i < rows.length; i++) {
-    const dataObj = JSON.parse(rows[i].data || '{}')
-    for (const key of keyArr) {
-      const item = dataObj[key]
-      const arr = item && item.arr ? item.arr : []
-      let press = 0, area = 0
-      for (let j = 0; j < arr.length; j++) {
-        const v = arr[j] || 0
-        press += v
-        if (v > 0) area++
-      }
-      pressArr[key].push(press)
-      areaArr[key].push(area)
-    }
-  }
-
-  res.json(new HttpResult(0, { length: rows.length, pressArr, areaArr }, 'success'))
-}))
-
 router.post('/getContrastData', asyncHandler(async (req, res) => {
   const left = resolveRequestValue(req, ['left'])
   const right = resolveRequestValue(req, ['right'])
@@ -756,25 +859,82 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
     return
   }
 
+  if (!left) {
+    res.json(new HttpResult(1, {}, '请先选择基准数据 A。'))
+    return
+  }
+  if (!right) {
+    res.json(new HttpResult(1, {}, '请先选择对比数据 B。'))
+    return
+  }
+  if (String(left) === String(right)) {
+    res.json(new HttpResult(1, {}, 'A 和 B 不能是同一条历史记录。'))
+    return
+  }
+
   const [leftResult, rightResult] = await Promise.all([
     dbGetData({ db, params: [left] }),
     dbGetData({ db, params: [right] })
   ])
 
+  const validateMessage = validateContrastResults(leftResult, rightResult, left, right)
+  if (validateMessage) {
+    res.json(new HttpResult(1, {}, validateMessage))
+    return
+  }
+
   state.leftDbArr = leftResult.rows
   state.rightDbArr = rightResult.rows
+  state.historyDbArr = null
+  state.historySelectCache = null
+
+  const keys = getContrastCommonKeys(parseMatrixFrame(leftResult.rows[0]), parseMatrixFrame(rightResult.rows[0]))
+  const leftFrames = leftResult.rows.map((row) => normalizeContrastFrame(row, keys))
+  const rightFrames = rightResult.rows.map((row) => normalizeContrastFrame(row, keys))
+  const initialFrame = buildContrastFrame(leftResult.rows, rightResult.rows, keys, 0)
+  const payload = {
+    mode: 'history-ab',
+    keys,
+    left: {
+      id: left,
+      name: leftResult.rows[0]?.name || left,
+      date: left,
+      length: leftResult.length,
+      pressArr: leftResult.pressArr,
+      areaArr: leftResult.areaArr,
+      frames: leftFrames,
+    },
+    right: {
+      id: right,
+      name: rightResult.rows[0]?.name || right,
+      date: right,
+      length: rightResult.length,
+      pressArr: rightResult.pressArr,
+      areaArr: rightResult.areaArr,
+      frames: rightFrames,
+    },
+    frame: initialFrame,
+    warnings: leftResult.length !== rightResult.length ? ['两组数据帧数不同，已按进度百分比对齐。'] : [],
+  }
 
   broadcast(JSON.stringify({
-    contrastData: {
-      left: JSON.parse(state.leftDbArr[0].data),
-      right: JSON.parse(state.rightDbArr[0].data)
-    }
+    contrastData: initialFrame
   }))
 
-  res.json(new HttpResult(0, {
-    left: { length: leftResult.length, pressArr: leftResult.pressArr, areaArr: leftResult.areaArr },
-    right: { length: rightResult.length, pressArr: rightResult.pressArr, areaArr: rightResult.areaArr }
-  }, 'success'))
+  res.json(new HttpResult(0, payload, 'success'))
+}))
+
+router.post('/getContrastIndex', asyncHandler(async (req, res) => {
+  const progress = resolveRequestValue(req, ['progress', 'index'])
+  if (!Array.isArray(state.leftDbArr) || !Array.isArray(state.rightDbArr) || !state.leftDbArr.length || !state.rightDbArr.length) {
+    res.json(new HttpResult(1, {}, '请先选择 A/B 数据并开始对比。'))
+    return
+  }
+
+  const keys = getContrastCommonKeys(parseMatrixFrame(state.leftDbArr[0]), parseMatrixFrame(state.rightDbArr[0]))
+  const frame = buildContrastFrame(state.leftDbArr, state.rightDbArr, keys, progress)
+  broadcast(JSON.stringify({ contrastData: frame }))
+  res.json(new HttpResult(0, frame, 'success'))
 }))
 
 // ─── 回放控制 ────────────────────────────────────────────
@@ -815,10 +975,9 @@ router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
     return
   }
 
-  state.playIndex = index
-  const snapshot = getPlaybackSnapshot(state.playIndex)
+  const snapshot = getPlaybackSnapshot(index)
   if (!snapshot) {
-    res.json(new HttpResult(1, {}, 'No playback data found for the selected time'))
+    res.json(new HttpResult(1, {}, 'Playback frame not found'))
     return
   }
 
@@ -1148,282 +1307,6 @@ const csvUpload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB限制
 })
 
-const CSV_IMPORT_ERROR_MESSAGE = '\u5bfc\u5165\u6587\u4ef6\u683c\u5f0f\u4e0d\u6b63\u786e\uff0c\u8bf7\u9009\u62e9\u7cfb\u7edf\u5bfc\u51fa\u7684CSV\u6587\u4ef6'
-const CSV_SENSOR_POINT_COUNTS = new Set([32 * 32, 46 * 46, 50 * 64])
-
-function cleanCsvHeader(value) {
-  return normalizeRequestString(value).replace(/^\ufeff/, '').trim()
-}
-
-function parseCsvNumericArray(value) {
-  if (Array.isArray(value)) {
-    const values = value.map((item) => Number(item))
-    return values.every((item) => Number.isFinite(item)) ? values : null
-  }
-
-  if (typeof value !== 'string') {
-    return null
-  }
-
-  const trimmed = value.trim()
-  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) {
-    return null
-  }
-
-  try {
-    const parsed = JSON.parse(trimmed)
-    if (!Array.isArray(parsed)) {
-      return null
-    }
-    const values = parsed.map((item) => Number(item))
-    return values.every((item) => Number.isFinite(item)) ? values : null
-  } catch {
-    return null
-  }
-}
-
-function isCsvSensorArray(arr) {
-  return Array.isArray(arr) && CSV_SENSOR_POINT_COUNTS.has(arr.length)
-}
-
-function isPreferredCsvDataHeader(header) {
-  const normalized = cleanCsvHeader(header)
-  const lower = normalized.toLowerCase()
-  if (!normalized || normalized === 'file' || lower.includes('select') || normalized.includes('\u6846\u9009')) {
-    return false
-  }
-
-  return /\bdata\b/i.test(normalized)
-    || lower.endsWith('realdata')
-    || lower.includes('raw data')
-    || normalized.includes('\u539f\u59cb\u6570\u636e')
-}
-
-function normalizeCsvMatrixKey(key, sampleArr, fileName) {
-  let normalized = normalizeRequestString(key)
-  const basename = path.basename(fileName || '').toLowerCase()
-
-  if (/^carcushion-(back|sit)$/i.test(normalized)) {
-    normalized = normalized.replace(/^carcushion-/i, 'car-')
-  }
-
-  if (/^car-(sit|back)$/i.test(normalized)) {
-    const isEndiFromFile = basename.startsWith('endi-')
-    const isEndiFromShape = sampleArr.length === 46 * 46 || sampleArr.length === 50 * 64
-    if (isEndiFromFile || isEndiFromShape) {
-      normalized = normalized.replace(/^car-/i, 'endi-')
-    }
-  }
-
-  return normalized
-}
-
-function deriveCsvMatrixKey(header, sampleArr, fileName) {
-  const key = cleanCsvHeader(header)
-    .replace(/\s*\u6846\u9009.*$/u, '')
-    .replace(/\s*\u539f\u59cb\u6570\u636e.*$/u, '')
-    .replace(/\s+raw\s+data$/i, '')
-    .replace(/\s+data$/i, '')
-    .replace(/realdata$/i, '')
-    .trim()
-
-  return normalizeCsvMatrixKey(key, sampleArr, fileName)
-}
-
-function findCsvDataColumns(rows, fileName) {
-  const headers = Object.keys(rows[0] || {}).filter((header) => cleanCsvHeader(header) !== 'file')
-  const columns = []
-  const seen = new Set()
-
-  for (const header of headers) {
-    if (!isPreferredCsvDataHeader(header)) {
-      continue
-    }
-
-    const sampleArr = rows.slice(0, 20)
-      .map((row) => parseCsvNumericArray(row[header]))
-      .find((arr) => isCsvSensorArray(arr))
-    if (!sampleArr) {
-      continue
-    }
-
-    const key = deriveCsvMatrixKey(header, sampleArr, fileName)
-    if (!key || seen.has(key)) {
-      continue
-    }
-
-    seen.add(key)
-    columns.push({ header, key })
-  }
-
-  return columns
-}
-
-function getCsvField(row, names) {
-  const normalizedNames = new Set(names.map((name) => cleanCsvHeader(name).toLowerCase()))
-  for (const key of Object.keys(row || {})) {
-    if (normalizedNames.has(cleanCsvHeader(key).toLowerCase())) {
-      return row[key]
-    }
-  }
-  return ''
-}
-
-function parseCsvTimestampValue(value) {
-  const text = normalizeRequestString(value)
-  if (!text) {
-    return null
-  }
-
-  const numericValue = Number(text)
-  if (Number.isFinite(numericValue) && numericValue > 1000000000) {
-    return numericValue
-  }
-
-  const normalized = text
-    .replace(/^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2})-(\d{1,2})-(\d{1,2})$/, '$1/$2/$3 $4:$5:$6')
-    .replace(/^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/, '$1/$2/$3 $4:$5:$6')
-  const parsed = Date.parse(normalized)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function parseCsvSecondValue(row) {
-  const value = getCsvField(row, ['sec', 'sec(s)', 'sec\uff08s\uff09'])
-  const second = Number(value)
-  return Number.isFinite(second) ? second : null
-}
-
-function resolveCsvRowTimestamp(row, index, baseTimestamp) {
-  const second = parseCsvSecondValue(row)
-  if (Number.isFinite(baseTimestamp) && Number.isFinite(second)) {
-    return baseTimestamp + Math.round(second * 1000)
-  }
-
-  const parsedTimestamp = parseCsvTimestampValue(getCsvField(row, ['timestamp', 'time', 'date', '\u65f6\u95f4']))
-  if (Number.isFinite(parsedTimestamp)) {
-    return parsedTimestamp
-  }
-
-  return index
-}
-
-function parseStoredTimestamp(value) {
-  if (value === undefined || value === null || value === '') {
-    return null
-  }
-  if (typeof value === 'number') {
-    return value
-  }
-  try {
-    return JSON.parse(value)
-  } catch {
-    const numericValue = Number(value)
-    return Number.isFinite(numericValue) ? numericValue : value
-  }
-}
-
-function buildCsvPlaybackRows(csvRows, dataColumns, fileName) {
-  const firstRow = csvRows[0] || {}
-  const baseTimestamp = parseCsvTimestampValue(getCsvField(firstRow, ['timestamp', 'time', 'date', '\u65f6\u95f4']))
-
-  return csvRows.map((row, index) => {
-    const frameData = {}
-
-    for (const column of dataColumns) {
-      const arr = parseCsvNumericArray(row[column.header])
-      if (!isCsvSensorArray(arr)) {
-        continue
-      }
-      frameData[column.key] = { arr, status: 'online' }
-    }
-
-    if (!Object.keys(frameData).length) {
-      return null
-    }
-
-    return {
-      date: fileName,
-      timestamp: JSON.stringify(resolveCsvRowTimestamp(row, index, baseTimestamp)),
-      data: JSON.stringify(frameData),
-      select: null
-    }
-  }).filter(Boolean)
-}
-
-function summarizePlaybackRows(rows) {
-  const pressArr = {}
-  const areaArr = {}
-
-  for (const row of rows) {
-    let frameData
-    try {
-      frameData = JSON.parse(row.data || '{}')
-    } catch {
-      frameData = {}
-    }
-
-    for (const key of Object.keys(frameData)) {
-      const arr = Array.isArray(frameData[key]?.arr) ? frameData[key].arr : []
-      if (!pressArr[key]) {
-        pressArr[key] = []
-        areaArr[key] = []
-      }
-
-      pressArr[key].push(arr.reduce((sum, item) => sum + (Number(item) || 0), 0))
-      areaArr[key].push(arr.filter((item) => Number(item) > 0).length)
-    }
-  }
-
-  return { length: rows.length, pressArr, areaArr }
-}
-
-function resolveCsvPlaybackHz(rows) {
-  if (!Array.isArray(rows) || rows.length < 2) {
-    return 1
-  }
-
-  const first = Number(parseStoredTimestamp(rows[0].timestamp))
-  const second = Number(parseStoredTimestamp(rows[1].timestamp))
-  const diff = second - first
-  if (!Number.isFinite(diff) || diff <= 0) {
-    return 1
-  }
-
-  return 1000 / diff
-}
-
-async function loadCsvPlaybackData(fileName) {
-  const csvRows = await getCsvData(fileName)
-  if (!Array.isArray(csvRows) || !csvRows.length) {
-    throw new Error(CSV_IMPORT_ERROR_MESSAGE)
-  }
-
-  const dataColumns = findCsvDataColumns(csvRows, fileName)
-  if (!dataColumns.length) {
-    throw new Error(CSV_IMPORT_ERROR_MESSAGE)
-  }
-
-  const rows = buildCsvPlaybackRows(csvRows, dataColumns, fileName)
-  if (!rows.length) {
-    throw new Error(CSV_IMPORT_ERROR_MESSAGE)
-  }
-
-  return {
-    rows,
-    dataColumns,
-    summary: summarizePlaybackRows(rows),
-    sourceRows: csvRows.length
-  }
-}
-
-function removeUploadedCsv(filePath) {
-  try {
-    fs.rmSync(filePath, { force: true })
-  } catch (err) {
-    console.warn('[CSV] Failed to remove invalid uploaded CSV:', err.message)
-  }
-}
-
 router.post('/uploadCsv', csvUpload.single('file'), asyncHandler(async (req, res) => {
   if (!req.file) {
     res.json(new HttpResult(1, {}, 'No file uploaded'))
@@ -1431,53 +1314,20 @@ router.post('/uploadCsv', csvUpload.single('file'), asyncHandler(async (req, res
   }
   const filePath = req.file.path
   const fileName = req.file.filename
-  try {
-    const validation = await validateImportedCsv(filePath)
-    if (!validation.valid) {
-      throw new Error(validation.reason || CSV_IMPORT_ERROR_MESSAGE)
-    }
-    const playbackData = await loadCsvPlaybackData(filePath)
-    res.json(new HttpResult(0, {
-      fileName,
-      filePath,
-      length: playbackData.summary.length,
-      dataColumns: playbackData.dataColumns.map((column) => column.key)
-    }, 'Upload success'))
-  } catch (err) {
-    console.warn('[CSV] Invalid import file:', err.message)
-    removeUploadedCsv(filePath)
-    res.json(new HttpResult(1, {}, CSV_IMPORT_ERROR_MESSAGE))
+  const validation = await validateImportedCsv(filePath)
+  if (!validation.valid) {
+    fs.rm(filePath, { force: true }, () => {})
+    console.warn('[CSV] Import validation failed:', validation.reason || 'invalid data')
+    res.json(new HttpResult(1, {}, '数据有误'))
+    return
   }
+  res.json(new HttpResult(0, { fileName, filePath }, 'Upload success'))
 }))
 
 router.post('/getCsvData', asyncHandler(async (req, res) => {
   const fileName = resolveRequestValue(req, ['fileName'])
-  state.historyFlag = false
-  state.historyPlayFlag = false
-  state.historyDbArr = null
-  state.historySelectCache = null
-  clearPlayTimer()
-  try {
-    const playbackData = await loadCsvPlaybackData(fileName)
-    state.historyDbArr = playbackData.rows
-    state.colMaxHZ = resolveCsvPlaybackHz(playbackData.rows)
-    state.colplayHZ = state.colMaxHZ
-    state.historyFlag = true
-    state.playIndex = 0
-
-    res.json(new HttpResult(0, {
-      length: playbackData.summary.length,
-      pressArr: playbackData.summary.pressArr,
-      areaArr: playbackData.summary.areaArr,
-      initialIndex: 0,
-      initialTimestamp: parseStoredTimestamp(playbackData.rows[0]?.timestamp),
-      dataColumns: playbackData.dataColumns.map((column) => column.key),
-      sourceRows: playbackData.sourceRows
-    }, 'success'))
-  } catch (err) {
-    console.warn('[CSV] Failed to load import file:', err.message)
-    res.json(new HttpResult(1, {}, CSV_IMPORT_ERROR_MESSAGE))
-  }
+  const data = await getCsvData(fileName)
+  res.json(new HttpResult(0, data, 'success'))
 }))
 
 router.post('/getSysconfig', (req, res) => {

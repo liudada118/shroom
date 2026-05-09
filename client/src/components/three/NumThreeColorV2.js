@@ -43,6 +43,22 @@ function jet(min, max, x) {
   return rgb;
 }
 
+function drawCellValue(ctx, value, cx, cy, cellSize) {
+  const text = String(value);
+  const fontSize = Math.max(10, Math.floor(cellSize * 0.34));
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(cx + 1, cy + 1, cellSize - 2, cellSize - 2);
+  ctx.clip();
+  ctx.font = `bold ${fontSize}px monospace`;
+  ctx.lineWidth = Math.max(2, Math.floor(cellSize * 0.05));
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+  ctx.strokeText(text, cx + cellSize / 2, cy + cellSize / 2);
+  ctx.fillStyle = "white";
+  ctx.fillText(text, cx + cellSize / 2, cy + cellSize / 2);
+  ctx.restore();
+}
+
 export default function NumThree(props) {
   let animationRequestId
   const pageInfo = useContext(pageContext);
@@ -101,14 +117,7 @@ export default function NumThree(props) {
       ctx.lineWidth = 1;
       ctx.strokeRect(cx, cy, cellSize, cellSize);
 
-      // ✅ 白色数字（加黑色描边增强可读性）
-      const fontSize = i >= 100 ? 32 : 40;
-      ctx.font = `bold ${fontSize}px monospace`;
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-      ctx.strokeText(i.toString(), cx + cellSize / 2, cy + cellSize / 2);
-      ctx.fillStyle = "white";
-      ctx.fillText(i.toString(), cx + cellSize / 2, cy + cellSize / 2);
+      drawCellValue(ctx, i, cx, cy, cellSize);
     }
 
     const tex = new THREE.CanvasTexture(canvas);

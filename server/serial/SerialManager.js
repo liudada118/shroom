@@ -42,6 +42,91 @@ const STABLE_CONN_RETRIES = 3        // max 3 retries
 const STABLE_CONN_RETRY_DELAY = 500  // 500ms between retries
 const POST_DETECT_DELAY = 500        // 500ms after baud detection close
 const POST_ALL_DETECT_DELAY = 1000   // 1s after all ports detected
+const CONNECT_TIMEOUT = 20000
+const CONNECTION_LOCK_MAX_AGE = 25000
+const SCAN_TIMEOUT = 3000
+const MAC_CONNECT_TIMEOUT = 3000
+const TYPE_RESOLVE_TIMEOUT = 2000
+
+const CONNECTION_ERROR_META = {
+  CONN_BUSY: { stage: 'lock', message: '正在连接中，请稍后再试' },
+  NO_PORT: { stage: 'scan', message: '未检测到设备，请检查 USB 连接' },
+  NO_CH340: { stage: 'filter', message: '未检测到 CH340 设备' },
+  BAUD_FAIL: { stage: 'detect_baud', message: '设备波特率识别失败，请重新插拔设备后重试' },
+  PORT_BUSY: { stage: 'open_port', message: '串口被占用，请关闭其他程序后重试' },
+  OPEN_FAIL: { stage: 'open_port', message: '串口打开失败，请重新插拔设备后重试' },
+  MAC_FAIL: { stage: 'mac', message: '设备 MAC 读取失败，请重新插拔设备后重试' },
+  TYPE_UNKNOWN: { stage: 'type_resolve', message: '设备类型识别失败，请在 MAC 配置中添加设备' },
+  AUTH_FAIL: { stage: 'auth', message: '设备授权失败，请检查设备授权信息' },
+  CONNECT_TIMEOUT: { stage: 'timeout', message: '连接超时，请重新插拔设备后重试' },
+  CLEANUP_FAIL: { stage: 'cleanup', message: '串口资源释放失败，请重新插拔设备后重试' },
+}
+
+function createConnectionError(code, stage, detail) {
+  const meta = CONNECTION_ERROR_META[code] || CONNECTION_ERROR_META.OPEN_FAIL
+  const err = new Error(detail || meta.message)
+  err.code = code
+  err.stage = stage || meta.stage
+  err.userMessage = meta.message
+  return err
+}
+
+function normalizeConnectionError(err, fallbackCode = 'OPEN_FAIL', fallbackStage) {
+  if (err?.code && err?.userMessage) return err
+  return createConnectionError(fallbackCode, fallbackStage, err?.message)
+}
+
+function withTimeout(promise, timeoutMs, timeoutError) {
+  let timer
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(timeoutError), timeoutMs)
+    }),
+  ])
+}
+
+function isPortBusyError(err) {
+  const message = String(err?.message || err || '').toLowerCase()
+  return message.includes('busy') || message.includes('access denied') || message.includes('permission') || message.includes('denied') || message.includes('already open')
+}
+
+async function runWithConnectionLock(mode, task) {
+  const now = Date.now()
+  if (state.connectionTask && now - state.connectionTaskStartedAt < CONNECTION_LOCK_MAX_AGE) {
+    throw createConnectionError('CONN_BUSY')
+  }
+
+  if (state.connectionTask) {
+    console.warn(`[ConnectLock] Releasing stale ${state.connectionMode} task`)
+  }
+
+  const currentTask = (async () => task())()
+  state.connectionTask = currentTask
+  state.connectionTaskStartedAt = now
+  state.connectionMode = mode
+  state.lastConnectionError = null
+
+  try {
+    return await withTimeout(currentTask, CONNECT_TIMEOUT, createConnectionError('CONNECT_TIMEOUT'))
+  } catch (err) {
+    const normalized = normalizeConnectionError(err)
+    state.lastConnectionError = {
+      code: normalized.code,
+      stage: normalized.stage,
+      message: normalized.userMessage,
+      detail: normalized.message,
+      at: Date.now(),
+    }
+    throw normalized
+  } finally {
+    if (state.connectionTask === currentTask) {
+      state.connectionTask = null
+      state.connectionTaskStartedAt = 0
+      state.connectionMode = null
+    }
+  }
+}
 
 /**
  * Valid frame lengths for double-validation during baud detection.
@@ -58,6 +143,62 @@ function trackPortAndCleanup(newPortPath) {
   console.log(`[PortTrack] Port history updated: [${state.portHistory.map(p => p.path).join(', ')}] (${state.portHistory.length} ports active)`)
 }
 
+function clearRuntimeTimers() {
+  if (state.playtimer) {
+    clearInterval(state.playtimer)
+    state.playtimer = null
+  }
+  state.MaxHZ = undefined
+  state.HZ = 30
+  state.sendDataLength = 0
+  state.oldTimeObj = {}
+}
+
+function closePortItem(portPath, item) {
+  return new Promise((resolve) => {
+    if (!item) {
+      resolve(false)
+      return
+    }
+
+    try {
+      item.parser?.removeAllListeners?.()
+      item.port?.removeAllListeners?.()
+      if (item.port?.isOpen) {
+        item.port.close((err) => {
+          if (err) console.warn(`[Serial] Error closing port ${portPath}: ${err.message}`)
+          else console.log(`[Serial] Port closed: ${portPath}`)
+          resolve(!err)
+        })
+        return
+      }
+    } catch (err) {
+      console.warn(`[Serial] Error cleaning port ${portPath}: ${err.message}`)
+    }
+
+    resolve(false)
+  }).finally(() => {
+    delete state.parserArr[portPath]
+    delete state.dataMap[portPath]
+    delete state.lastDataTime[portPath]
+    delete state.macInfo[portPath]
+    state.portHistory = state.portHistory.filter(p => p.path !== portPath)
+  })
+}
+
+async function cleanupSerialResources() {
+  const portPaths = Object.keys(state.parserArr)
+  await Promise.all(portPaths.map(portPath => closePortItem(portPath, state.parserArr[portPath])))
+  state.parserArr = {}
+  state.dataMap = {}
+  state.macInfo = {}
+  state.linkIngPort = []
+  state.portHistory = []
+  state.lastDataTime = {}
+  clearRuntimeTimers()
+  return { cleaned: portPaths.length }
+}
+
 // ═══════════════════════════════════════════════════════════
 //  Phase 1: Baud Rate Auto-Detection (with frame length validation)
 // ═══════════════════════════════════════════════════════════
@@ -70,6 +211,7 @@ function trackPortAndCleanup(newPortPath) {
 async function detectBaudRate(portPath) {
   const { BAUD_CANDIDATES, BAUD_DETECT_TIMEOUT, splitArr } = constantObj
   const splitBuffer = Buffer.from(splitArr)
+  let busyError = null
 
   for (const baud of BAUD_CANDIDATES) {
     try {
@@ -79,8 +221,16 @@ async function detectBaudRate(portPath) {
         return baud
       }
     } catch (err) {
+      if (isPortBusyError(err)) {
+        busyError = err
+        break
+      }
       console.warn(`[BaudDetect] ${portPath} @ ${baud} error: ${err.message}`)
     }
+  }
+
+  if (busyError) {
+    throw createConnectionError('PORT_BUSY', 'detect_baud', busyError.message)
   }
 
   console.warn(`[BaudDetect] ${portPath} -> all candidate baud rates failed`)
@@ -93,7 +243,7 @@ async function detectBaudRate(portPath) {
  * ALWAYS closes the port when done.
  */
 function tryBaudRate(portPath, baudRate, delimiter, timeout) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let port = null
     let timer = null
     let resolved = false
@@ -102,21 +252,26 @@ function tryBaudRate(portPath, baudRate, delimiter, timeout) {
     let delimiterFound = false
     let frameBytesAfterDelimiter = 0
 
-    function finish(success) {
+    function finish(success, err) {
       if (resolved) return
       resolved = true
       if (timer) clearTimeout(timer)
+
+      const settle = () => {
+        if (err) reject(err)
+        else resolve(success)
+      }
 
       if (port) {
         port.removeAllListeners('data')
         port.removeAllListeners('error')
         if (port.isOpen) {
-          port.close(() => resolve(success))
+          port.close(() => settle())
         } else {
-          resolve(success)
+          settle()
         }
       } else {
-        resolve(success)
+        settle()
       }
     }
 
@@ -135,7 +290,7 @@ function tryBaudRate(portPath, baudRate, delimiter, timeout) {
       port.open((err) => {
         if (err) {
           console.log(`[BaudDetect] ${portPath} @ ${baudRate} open failed: ${err.message}`)
-          finish(false)
+          finish(false, isPortBusyError(err) ? err : null)
           return
         }
 
@@ -290,10 +445,11 @@ function openStableConnection(portPath, baudRate, delimiter) {
 /**
  * Send AT command repeatedly to get MAC address.
  * Listens on RAW port (not parser) because AT response is plain text.
- * Send every 300ms, timeout 60s.
+ * Send every 300ms, timeout defaults to config and can be overridden per connection flow.
  */
-function sendMacCommand(port) {
+function sendMacCommand(port, options = {}) {
   const { AT_MAC_COMMAND, MAC_SEND_INTERVAL, MAC_WAIT_TIMEOUT } = constantObj
+  const waitTimeout = options.timeoutMs || MAC_WAIT_TIMEOUT
 
   return new Promise((resolve) => {
     let timer = null
@@ -360,20 +516,20 @@ function sendMacCommand(port) {
     timer = setTimeout(() => {
       port.removeListener('data', onData)
       cleanup()
-      console.warn(`[MAC] Timeout after ${MAC_WAIT_TIMEOUT}ms, device may not support MAC query`)
+      console.warn(`[MAC] Timeout after ${waitTimeout}ms, device may not support MAC query`)
       resolve({ uniqueId: null, version: null })
-    }, MAC_WAIT_TIMEOUT)
+    }, waitTimeout)
   })
 }
 
 /**
  * Resolve device type via online server query
  */
-async function resolveDeviceTypeOnline(uniqueId) {
+async function resolveDeviceTypeOnline(uniqueId, timeoutMs = 5000) {
   try {
     const [response, time] = await Promise.all([
-      axios.get(`${constantObj.backendAddress}/device-manage/device/getDetail/${uniqueId}`, { timeout: 5000 }),
-      axios.get(`${constantObj.timeServerAddress}/rcv/login/getSystemTime`, { timeout: 5000 }),
+      axios.get(`${constantObj.backendAddress}/device-manage/device/getDetail/${uniqueId}`, { timeout: timeoutMs }),
+      axios.get(`${constantObj.timeServerAddress}/rcv/login/getSystemTime`, { timeout: timeoutMs }),
     ])
 
     if (!response.data.data) {
@@ -416,7 +572,7 @@ function resolveDeviceTypeLocal(uniqueId) {
  * Unified device type resolution.
  * Strategy: local cache first -> online fallback (if AUTH_MODE = 'online')
  */
-async function resolveDeviceType(uniqueId) {
+async function resolveDeviceType(uniqueId, options = {}) {
   const localResult = resolveDeviceTypeLocal(uniqueId)
   if (localResult.type) {
     return localResult
@@ -424,7 +580,7 @@ async function resolveDeviceType(uniqueId) {
 
   if (constantObj.AUTH_MODE === 'online') {
     console.log(`[Auth] Local cache miss, querying online for ${uniqueId}...`)
-    return resolveDeviceTypeOnline(uniqueId)
+    return resolveDeviceTypeOnline(uniqueId, options.timeoutMs)
   }
 
   console.warn(`[Auth] Local mode, ${uniqueId} not in cache, please add manually`)
@@ -493,37 +649,6 @@ function updateArrList(dataItem, data, maxLength = 3) {
  * Each frame updates lastDataTime[path] for zombie detection.
  */
 function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, allPorts) {
-  let portClosedHandled = false
-  const handlePortClosed = (reason) => {
-    if (portClosedHandled) return
-    portClosedHandled = true
-
-    console.warn(`[Serial] Port disconnected: ${portPath}${reason ? ` (${reason})` : ''}`)
-    if (state.parserArr[portPath] === parserItem) {
-      delete state.parserArr[portPath]
-      delete state.dataMap[portPath]
-      delete state.lastDataTime[portPath]
-      state.portHistory = state.portHistory.filter(p => p.path !== portPath)
-    }
-
-    const activePorts = Object.keys(state.parserArr).filter((key) => state.parserArr[key]?.port?.isOpen)
-    broadcastFn(JSON.stringify({
-      connectResult: {
-        success: activePorts.length > 0,
-        ports: activePorts.map((key) => ({ path: key, status: 'already_connected' })),
-        macInfo: state.macInfo,
-        authMode: constantObj.AUTH_MODE,
-      }
-    }))
-
-    if (!activePorts.length) {
-      broadcastFn(JSON.stringify({ sitData: {} }))
-    }
-  }
-
-  parserItem.port.on('close', () => handlePortClosed('close'))
-  parserItem.port.on('error', (err) => handlePortClosed(err?.message || 'error'))
-
   parserItem.parser.on('data', async (data) => {
     const buffer = Buffer.from(data)
     const pointArr = Array.from(buffer)
@@ -716,86 +841,82 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
  * Phase 4: Init lastDataTime[path], sendMacCommand, bindDataHandler
  */
 async function connectPort(broadcastFn, onTimerStart) {
+  try {
+    return await runWithConnectionLock('connect', async () => connectPortUnlocked(broadcastFn, onTimerStart, {
+      cleanupBeforeConnect: true,
+    }))
+  } catch (err) {
+    const normalized = normalizeConnectionError(err)
+    broadcastFn(JSON.stringify({ connectResult: serializeConnectionError(normalized) }))
+    await cleanupSerialResources().catch((cleanupErr) => {
+      console.warn(`[Connect] Cleanup after failure failed: ${cleanupErr.message}`)
+    })
+    throw normalized
+  }
+}
+
+async function connectPortUnlocked(broadcastFn, onTimerStart, options = {}) {
   state.macInfo = {}
   const { splitArr, BAUD_DEVICE_MAP } = constantObj
   const splitBuffer = Buffer.from(splitArr)
+  const connectedPorts = []
+  const failedPorts = []
 
-  // -- Phase 1: Enumerate & filter --
-  let ports = await SerialPort.list()
-  ports = getPort(ports)
+  if (options.cleanupBeforeConnect !== false) {
+    broadcastFn(JSON.stringify({ connectProgress: { stage: 'cleaning' } }))
+    await cleanupSerialResources()
+  }
+
+  const rawPorts = await withTimeout(
+    SerialPort.list(),
+    SCAN_TIMEOUT,
+    createConnectionError('NO_PORT', 'scan', 'SerialPort.list timeout')
+  )
+
+  if (!rawPorts.length) {
+    throw createConnectionError('NO_PORT')
+  }
+
+  const ports = getPort(rawPorts)
   console.log(`[Connect] Found ${ports.length} CH340 serial port(s)`)
 
   if (!ports.length) {
-    broadcastFn(JSON.stringify({ connectResult: { success: false, message: 'No CH340 serial ports found' } }))
-    return []
+    throw createConnectionError('NO_CH340')
   }
 
-  const connectedPorts = []
-  const macResolveTasks = []
-  const portsToDetect = []
-
-  // Separate already-connected ports from new ports
+  const detectedPorts = []
   for (const portInfo of ports) {
     const { path: portPath } = portInfo
-    if (state.parserArr[portPath]?.port?.isOpen) {
-      const lastTime = state.lastDataTime[portPath] || 0
-      if (Date.now() - lastTime > ZOMBIE_THRESHOLD) {
-        console.log(`[Connect] ${portPath} was open but stale, cleaning before reconnect`)
-        try {
-          state.parserArr[portPath].parser?.removeAllListeners()
-          state.parserArr[portPath].port?.removeAllListeners()
-          state.parserArr[portPath].port?.close(() => {})
-        } catch (e) {
-          console.warn(`[Connect] Error cleaning stale port ${portPath}: ${e.message}`)
-        }
-        delete state.parserArr[portPath]
-        delete state.dataMap[portPath]
-        delete state.lastDataTime[portPath]
-        state.portHistory = state.portHistory.filter(p => p.path !== portPath)
-        await new Promise(r => setTimeout(r, POST_DETECT_DELAY))
-        portsToDetect.push(portInfo)
-        continue
-      }
-      console.log(`[Connect] ${portPath} already connected and open, skipping`)
-      connectedPorts.push({ path: portPath, status: 'already_connected' })
-      continue
-    }
-    portsToDetect.push(portInfo)
-  }
-
-  // -- Phase 2: Baud rate detection for each new port --
-  const detectedPorts = []
-  for (let i = 0; i < portsToDetect.length; i++) {
-    const portInfo = portsToDetect[i]
-    const { path: portPath } = portInfo
-
     console.log(`[Connect] Detecting baud rate for ${portPath}...`)
     broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'detecting_baud' } }))
 
-    const detectedBaud = await detectBaudRate(portPath)
+    let detectedBaud = null
+    try {
+      detectedBaud = await detectBaudRate(portPath)
+    } catch (err) {
+      const normalized = normalizeConnectionError(err, 'BAUD_FAIL', 'detect_baud')
+      failedPorts.push({ path: portPath, status: normalized.code === 'PORT_BUSY' ? 'port_busy' : 'baud_detect_failed', code: normalized.code, message: normalized.userMessage })
+      continue
+    }
+
     if (!detectedBaud) {
-      console.warn(`[Connect] ${portPath} baud rate detection failed, skipping`)
-      connectedPorts.push({ path: portPath, status: 'baud_detect_failed' })
+      console.warn(`[Connect] ${portPath} baud rate detection failed`)
+      failedPorts.push({ path: portPath, status: 'baud_detect_failed', code: 'BAUD_FAIL', message: CONNECTION_ERROR_META.BAUD_FAIL.message })
       continue
     }
 
     detectedPorts.push({ portInfo, detectedBaud })
-
-    // Wait 500ms after each port detection close (avoid driver port lock conflict)
     await new Promise(r => setTimeout(r, POST_DETECT_DELAY))
   }
 
-  // Wait 1000ms after all detections complete
   if (detectedPorts.length > 0) {
     await new Promise(r => setTimeout(r, POST_ALL_DETECT_DELAY))
   }
 
-  // -- Phase 3: Establish stable connections --
   for (const { portInfo, detectedBaud } of detectedPorts) {
     const { path: portPath } = portInfo
     const deviceClass = BAUD_DEVICE_MAP[detectedBaud] || 'unknown'
     console.log(`[Connect] ${portPath} -> baud: ${detectedBaud}, device class: ${deviceClass}`)
-
     broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'connecting', baudRate: detectedBaud, deviceClass } }))
 
     let stablePort, stableParser
@@ -804,12 +925,12 @@ async function connectPort(broadcastFn, onTimerStart) {
       stablePort = conn.port
       stableParser = conn.parser
     } catch (err) {
+      const code = isPortBusyError(err) ? 'PORT_BUSY' : 'OPEN_FAIL'
       console.error(`[Connect] ${portPath} all connection attempts failed: ${err.message}`)
-      connectedPorts.push({ path: portPath, status: 'open_failed' })
+      failedPorts.push({ path: portPath, status: code === 'PORT_BUSY' ? 'port_busy' : 'open_failed', code, message: CONNECTION_ERROR_META[code].message })
       continue
     }
 
-    // Store in state
     const parserItem = state.parserArr[portPath] = {
       port: stablePort,
       parser: stableParser,
@@ -818,33 +939,62 @@ async function connectPort(broadcastFn, onTimerStart) {
     const dataItem = state.dataMap[portPath] = state.dataMap[portPath] || {}
     dataItem.deviceClass = deviceClass
     dataItem.baudRate = detectedBaud
-
-    // Initialize lastDataTime for zombie detection
+    dataItem.type = null
+    dataItem.premission = false
     state.lastDataTime[portPath] = Date.now()
-
     trackPortAndCleanup(portPath)
 
-    // -- Phase 4: Bind data handler & prepare MAC resolution --
-    bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
-
     if (deviceClass === 'sit' || deviceClass === 'foot') {
-      dataItem.type = null
-      dataItem.premission = false
-      console.log(`[Connect] ${portPath} -> ${deviceClass} device, will query type via MAC...`)
-      broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'getting_mac' } }))
-      macResolveTasks.push({ portPath, stablePort, dataItem, deviceClass })
+      try {
+        console.log(`[Connect] ${portPath} -> ${deviceClass} device, querying MAC...`)
+        broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'getting_mac' } }))
+        const { uniqueId, version } = await sendMacCommand(stablePort, { timeoutMs: MAC_CONNECT_TIMEOUT })
+        if (!uniqueId) {
+          failedPorts.push({ path: portPath, status: 'mac_failed', code: 'MAC_FAIL', message: CONNECTION_ERROR_META.MAC_FAIL.message })
+          await closePortItem(portPath, parserItem)
+          continue
+        }
+
+        state.macInfo[portPath] = { uniqueId, version }
+        broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'resolving_type', uniqueId } }))
+        const { type: deviceType, premission } = await resolveDeviceType(uniqueId, { timeoutMs: TYPE_RESOLVE_TIMEOUT })
+
+        if (!deviceType) {
+          failedPorts.push({ path: portPath, status: 'type_unknown', code: 'TYPE_UNKNOWN', message: CONNECTION_ERROR_META.TYPE_UNKNOWN.message })
+          await closePortItem(portPath, parserItem)
+          continue
+        }
+
+        if (!premission) {
+          failedPorts.push({ path: portPath, status: 'auth_failed', code: 'AUTH_FAIL', message: CONNECTION_ERROR_META.AUTH_FAIL.message })
+          await closePortItem(portPath, parserItem)
+          continue
+        }
+
+        dataItem.type = deviceType
+        dataItem.premission = true
+        bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
+        broadcastFn(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission: true } }))
+      } catch (err) {
+        const normalized = normalizeConnectionError(err, 'MAC_FAIL', 'mac')
+        failedPorts.push({ path: portPath, status: 'mac_or_type_failed', code: normalized.code, message: normalized.userMessage })
+        await closePortItem(portPath, parserItem)
+        continue
+      }
     } else if (deviceClass === 'hand') {
       dataItem.type = 'hand'
       dataItem.premission = true
-      console.log(`[Connect] ${portPath} -> glove, waiting for frame to determine HL/HR`)
-
-      // MAC read for hand is non-blocking
-      sendMacCommand(stablePort).then(({ uniqueId, version }) => {
+      bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
+      sendMacCommand(stablePort, { timeoutMs: MAC_CONNECT_TIMEOUT }).then(({ uniqueId, version }) => {
         if (uniqueId) {
           state.macInfo[portPath] = { uniqueId, version }
           console.log(`[Connect] ${portPath} hand MAC: ${uniqueId}`)
         }
       }).catch(() => {})
+    } else {
+      failedPorts.push({ path: portPath, status: 'type_unknown', code: 'TYPE_UNKNOWN', message: CONNECTION_ERROR_META.TYPE_UNKNOWN.message })
+      await closePortItem(portPath, parserItem)
+      continue
     }
 
     connectedPorts.push({
@@ -867,63 +1017,43 @@ async function connectPort(broadcastFn, onTimerStart) {
     }))
   }
 
-  // -- Phase 5: Parallel MAC read + type resolution for sit/foot devices --
-  if (macResolveTasks.length > 0) {
-    console.log(`[Connect] Starting parallel MAC resolution for ${macResolveTasks.length} device(s)...`)
-
-    await Promise.all(macResolveTasks.map(async ({ portPath, stablePort, dataItem, deviceClass }) => {
-      try {
-        const { uniqueId, version } = await sendMacCommand(stablePort)
-        state.macInfo[portPath] = { uniqueId, version }
-
-        if (uniqueId) {
-          console.log(`[Connect] ${portPath} MAC: ${uniqueId}, version: ${version}`)
-          // Local cache first, then online fallback
-          const { type: deviceType, premission } = await resolveDeviceType(uniqueId)
-          if (deviceType) {
-            dataItem.type = deviceType
-            dataItem.premission = premission
-            console.log(`[Connect] ${portPath} final type: ${deviceType}, auth: ${premission}`)
-            broadcastFn(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission } }))
-          } else {
-            dataItem.type = deviceClass
-            dataItem.premission = false
-            console.warn(`[Connect] ${portPath} MAC ${uniqueId} type not resolved, fallback to ${deviceClass}`)
-          }
-        } else {
-          dataItem.type = deviceClass
-          dataItem.premission = false
-          console.warn(`[Connect] ${portPath} failed to get MAC, fallback to ${deviceClass}`)
-        }
-      } catch (err) {
-        console.error(`[Connect] ${portPath} MAC resolution error:`, err.message)
-        dataItem.type = deviceClass
-        dataItem.premission = false
-      }
-    }))
-
-    console.log(`[Connect] All MAC resolutions complete`)
+  if (!connectedPorts.length) {
+    const code = pickConnectionErrorCode(failedPorts)
+    throw createConnectionError(code)
   }
 
-  const connectedCount = connectedPorts.filter(p => p.status === 'connected' || p.status === 'already_connected').length
+  const result = {
+    success: true,
+    ports: connectedPorts,
+    failedPorts,
+    macInfo: state.macInfo,
+    authMode: constantObj.AUTH_MODE,
+  }
 
-  // Broadcast final connect result with macInfo
-  broadcastFn(JSON.stringify({
-    connectResult: {
-      success: connectedCount > 0,
-      ports: connectedPorts,
-      macInfo: state.macInfo,
-      authMode: constantObj.AUTH_MODE,
-    }
-  }))
-
-  // Also broadcast macInfo separately for frontend
+  broadcastFn(JSON.stringify({ connectResult: result }))
   if (Object.keys(state.macInfo).length > 0) {
     broadcastFn(JSON.stringify({ macInfo: state.macInfo }))
   }
 
-  console.log(`[Connect] One-click connect done, connected ${connectedCount}/${ports.length} device(s)`)
-  return connectedPorts
+  console.log(`[Connect] One-click connect done, connected ${connectedPorts.length}/${ports.length} device(s)`)
+  return result
+}
+
+function pickConnectionErrorCode(failedPorts) {
+  const priority = ['PORT_BUSY', 'MAC_FAIL', 'TYPE_UNKNOWN', 'AUTH_FAIL', 'OPEN_FAIL', 'BAUD_FAIL']
+  const codes = new Set(failedPorts.map(item => item.code))
+  return priority.find(code => codes.has(code)) || 'OPEN_FAIL'
+}
+
+function serializeConnectionError(err) {
+  const normalized = normalizeConnectionError(err)
+  return {
+    success: false,
+    code: normalized.code,
+    stage: normalized.stage,
+    message: normalized.userMessage,
+    detail: normalized.message,
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -945,72 +1075,30 @@ async function connectPort(broadcastFn, onTimerStart) {
  *   → Reconnects cleaned-up ports through full flow
  */
 async function rescanPort(broadcastFn, onTimerStart) {
-  console.log('[Rescan] Starting rescan...')
-  broadcastFn(JSON.stringify({ rescanProgress: { stage: 'cleaning' } }))
+  try {
+    return await runWithConnectionLock('rescan', async () => {
+      console.log('[Rescan] Starting full reconnect...')
+      broadcastFn(JSON.stringify({ rescanProgress: { stage: 'cleaning' } }))
+      const cleanupResult = await cleanupSerialResources()
+      await new Promise(r => setTimeout(r, 1000))
 
-  const now = Date.now()
-  let cleanedCount = 0
+      console.log(`[Rescan] Cleaned ${cleanupResult.cleaned} port(s), reconnecting...`)
+      broadcastFn(JSON.stringify({ rescanProgress: { stage: 'reconnecting', cleaned: cleanupResult.cleaned } }))
 
-  // -- Step 1: Clean dead ports (port.isOpen === false) --
-  for (const portPath of Object.keys(state.parserArr)) {
-    const item = state.parserArr[portPath]
-    if (item && !item.port.isOpen) {
-      console.log(`[Rescan] Step 1: Cleaning dead port: ${portPath}`)
-      try {
-        item.parser.removeAllListeners()
-        item.port.removeAllListeners()
-        if (item.port.isOpen) item.port.close(() => {})
-      } catch (e) {
-        console.warn(`[Rescan] Error cleaning dead port ${portPath}: ${e.message}`)
-      }
-      delete state.parserArr[portPath]
-      delete state.dataMap[portPath]
-      delete state.lastDataTime[portPath]
-      state.portHistory = state.portHistory.filter(p => p.path !== portPath)
-      cleanedCount++
-    }
+      const result = await connectPortUnlocked(broadcastFn, onTimerStart, { cleanupBeforeConnect: false })
+      broadcastFn(JSON.stringify({ rescanProgress: { stage: 'done', cleaned: cleanupResult.cleaned, result } }))
+      console.log('[Rescan] Rescan complete')
+      return result
+    })
+  } catch (err) {
+    const normalized = normalizeConnectionError(err)
+    broadcastFn(JSON.stringify({ rescanProgress: { stage: 'failed', error: serializeConnectionError(normalized) } }))
+    broadcastFn(JSON.stringify({ connectResult: serializeConnectionError(normalized) }))
+    await cleanupSerialResources().catch((cleanupErr) => {
+      console.warn(`[Rescan] Cleanup after failure failed: ${cleanupErr.message}`)
+    })
+    throw normalized
   }
-
-  // -- Step 1.5: Clean zombie devices (isOpen but no data for >5s) --
-  let hasZombie = false
-  for (const portPath of Object.keys(state.parserArr)) {
-    const item = state.parserArr[portPath]
-    const lastTime = state.lastDataTime[portPath] || 0
-
-    if (item && item.port.isOpen && (now - lastTime > ZOMBIE_THRESHOLD)) {
-      console.log(`[Rescan] Step 1.5: Cleaning zombie device: ${portPath} (last data ${now - lastTime}ms ago)`)
-      hasZombie = true
-      try {
-        item.parser.removeAllListeners()
-        item.port.removeAllListeners()
-        item.port.close(() => {})
-      } catch (e) {
-        console.warn(`[Rescan] Error cleaning zombie ${portPath}: ${e.message}`)
-      }
-      delete state.parserArr[portPath]
-      delete state.dataMap[portPath]
-      delete state.lastDataTime[portPath]
-      state.portHistory = state.portHistory.filter(p => p.path !== portPath)
-      cleanedCount++
-    }
-  }
-
-  // Wait 1s for port lock release if zombies were cleaned
-  if (hasZombie) {
-    console.log('[Rescan] Waiting 1s for port lock release after zombie cleanup...')
-    await new Promise(r => setTimeout(r, 1000))
-  }
-
-  console.log(`[Rescan] Cleaned ${cleanedCount} dead/zombie port(s), proceeding to reconnect...`)
-  broadcastFn(JSON.stringify({ rescanProgress: { stage: 'reconnecting', cleaned: cleanedCount } }))
-
-  // -- Step 2: Call connectPort() to reconnect --
-  // connectPort() will skip still-working ports (already connected & open)
-  const result = await connectPort(broadcastFn, onTimerStart)
-
-  broadcastFn(JSON.stringify({ rescanProgress: { stage: 'done', cleaned: cleanedCount, result } }))
-  console.log(`[Rescan] Rescan complete`)
-  return result
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1018,29 +1106,11 @@ async function rescanPort(broadcastFn, onTimerStart) {
 // ═══════════════════════════════════════════════════════════
 
 async function stopPort() {
-  Object.keys(state.parserArr).forEach((portPath) => {
-    const item = state.parserArr[portPath]
-    if (item?.port?.isOpen) {
-      try {
-        item.parser.removeAllListeners()
-        item.port.removeAllListeners()
-        item.port.close((err) => {
-          if (!err) console.log(`[Serial] Port closed: ${portPath}`)
-        })
-      } catch (e) {
-        console.warn(`[Serial] Error closing port ${portPath}: ${e.message}`)
-      }
-    }
-  })
-
-  state.parserArr = {}
-  state.dataMap = {}
-  state.macInfo = {}
-  state.oldTimeObj = {}
-  state.portHistory = []
-  state.lastDataTime = {}
-  if (state.playtimer) clearInterval(state.playtimer)
-  state.MaxHZ = undefined
+  const result = await cleanupSerialResources()
+  state.connectionTask = null
+  state.connectionTaskStartedAt = 0
+  state.connectionMode = null
+  return result
 }
 
 // ═══════════════════════════════════════════════════════════

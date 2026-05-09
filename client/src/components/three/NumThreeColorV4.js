@@ -46,6 +46,22 @@ function jet(min, max, x) {
 
 let oldColor = 0
 
+function drawCellValue(ctx, value, cx, cy, cellSize) {
+  const text = String(value);
+  const fontSize = Math.max(10, Math.floor(cellSize * 0.34));
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(cx + 1, cy + 1, cellSize - 2, cellSize - 2);
+  ctx.clip();
+  ctx.font = `bold ${fontSize}px monospace`;
+  ctx.lineWidth = Math.max(2, Math.floor(cellSize * 0.05));
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+  ctx.strokeText(text, cx + cellSize / 2, cy + cellSize / 2);
+  ctx.fillStyle = "white";
+  ctx.fillText(text, cx + cellSize / 2, cy + cellSize / 2);
+  ctx.restore();
+}
+
 export default function NumThree(props) {
   console.log(props)
   let animationRequestId
@@ -96,13 +112,12 @@ export default function NumThree(props) {
   function createDigitSpriteSheetWithJet(value = 22) {
     const canvas = document.createElement("canvas");
     // document.body.appendChild(canvas)
-    canvas.width = canvas.height = 512;
+    canvas.width = canvas.height = 1024;
     const ctx = canvas.getContext("2d");
 
     const gridSize = 16;
-    const cellSize = 32;
+    const cellSize = canvas.width / gridSize;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.font = "bold 20px monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
@@ -122,9 +137,7 @@ export default function NumThree(props) {
       ctx.lineWidth = 1;
       ctx.strokeRect(cx, cy, cellSize, cellSize);
 
-      // ✅ 白色数字
-      ctx.fillStyle = "white";
-      ctx.fillText(i.toString(), cx + cellSize / 2, cy + cellSize / 2);
+      drawCellValue(ctx, i, cx, cy, cellSize);
     }
 
     const tex = new THREE.CanvasTexture(canvas);

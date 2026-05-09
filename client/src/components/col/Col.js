@@ -9,13 +9,8 @@ import { colSelectMatrix } from '../../util/util'
 import { isMoreMatrix } from '../../assets/util/util'
 import { buildFallbackParams } from '../../util/request'
 import { pageContext } from '../../page/test/Test'
-import { useTranslation } from 'react-i18next'
-
-const COL_NAME_MAX_LENGTH = 20
-const COL_REMARK_MAX_LENGTH = 100
 
 export default function Col(props) {
-    const { t } = useTranslation()
     const { colName, remark, HZ, setStartTime, col, setCol } = props
     const pageInfo = useContext(pageContext)
 
@@ -30,47 +25,35 @@ export default function Col(props) {
         const displayType = getDisplayType()
         const selectObj = {}
 
-        if (select.length && select[0]) {
-            // 去掉DOM引用，只保留坐标数据
-            const range = { x1: select[0].x1, y1: select[0].y1, x2: select[0].x2, y2: select[0].y2 }
+        if (Array.isArray(select) && select.length) {
+            for (let i = 0; i < select.length; i++) {
+                const range = select[i]
+                let typeKey = range.matrixKey || system
+                if (isMoreMatrix(system)) {
+                    typeKey = range.matrixKey || `${system}-${displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : 'back'}`
+                }
+                if (!systemPointConfig[typeKey]) continue
 
-            if (isMoreMatrix(system)) {
-                // 多矩阵系统（如 carY）：根据 displayType 决定保存哪个
-                if (displayType === 'all' || displayType.includes('back')) {
-                    try {
-                        const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[`${system}-back`])
-                        if (matrix) {
-                            matrix.width = systemPointConfig[`${system}-back`].width
-                            matrix.height = systemPointConfig[`${system}-back`].height
-                            selectObj[`${system}-back`] = matrix
-                        }
-                    } catch (e) {
-                        console.warn('[Col] Failed to compute back select matrix:', e.message)
-                    }
-                }
-                if (displayType === 'all' || displayType.includes('sit')) {
-                    try {
-                        const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[`${system}-sit`])
-                        if (matrix) {
-                            matrix.width = systemPointConfig[`${system}-sit`].width
-                            matrix.height = systemPointConfig[`${system}-sit`].height
-                            selectObj[`${system}-sit`] = matrix
-                        }
-                    } catch (e) {
-                        console.warn('[Col] Failed to compute sit select matrix:', e.message)
-                    }
-                }
-            } else {
-                // 单矩阵系统
                 try {
-                    const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[system])
-                    if (matrix) {
-                        matrix.width = systemPointConfig[system].width
-                        matrix.height = systemPointConfig[system].height
-                        selectObj[system] = matrix
+                    const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[typeKey])
+                    if (!matrix) continue
+                    const region = {
+                        xStart: matrix.xStart,
+                        xEnd: matrix.xEnd,
+                        yStart: matrix.yStart,
+                        yEnd: matrix.yEnd,
+                        width: systemPointConfig[typeKey].width,
+                        height: systemPointConfig[typeKey].height,
+                        region_id: i + 1,
+                        name: range.name || `框选${i + 1}`,
+                        colorIndex: range.colorIndex,
                     }
+                    if (!selectObj[typeKey]) {
+                        selectObj[typeKey] = { ...region, regions: [] }
+                    }
+                    selectObj[typeKey].regions.push(region)
                 } catch (e) {
-                    console.warn('[Col] Failed to compute select matrix:', e.message)
+                    console.warn(`[Col] Failed to compute ${typeKey} select matrix:`, e.message)
                 }
             }
         }
@@ -101,13 +84,13 @@ export default function Col(props) {
                 if (res.data.message == 'error') {
                     message.error(res.data.data)
                 } else {
-                    message.success(t('collectStart'))
+                    message.success('开始采集')
                     setCol(!col)
                     setStartTime(startStamp)
 
                     // 始终调用 upsertRemark 保存框选数据（即使没有 alias 和 remark）
-                    const alias = colName ? colName.trim().slice(0, COL_NAME_MAX_LENGTH) : ''
-                    const remarkText = remark ? remark.trim().slice(0, COL_REMARK_MAX_LENGTH) : ''
+                    const alias = colName ? colName.trim() : ''
+                    const remarkText = remark ? remark.trim().slice(0, 400) : ''
 
                     const remarkData = {
                         date: String(startStamp),
@@ -141,7 +124,7 @@ export default function Col(props) {
 
             }).catch((err) => {
                 console.error('[Col] startCol failed:', err)
-                message.error(t('collectFailed'))
+                message.error('采集失败')
             })
 
         } else {
@@ -152,7 +135,7 @@ export default function Col(props) {
                 if (res.data.message == 'error') {
                     message.error(res.data.data)
                 } else {
-                    message.success(t('collectSuccess'))
+                    message.success('采集成功')
                     setCol(!col)
                 }
             })

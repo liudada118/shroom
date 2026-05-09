@@ -168,7 +168,22 @@ export function colSelectMatrix(className, select, matrixConfig) {
 
     // console.log(className, select)
     if (!select) return
+    if (select.matrixRect) {
+        const { xStart, xEnd, yStart, yEnd, width, height } = select.matrixRect
+        const maxW = matrixConfig?.width || width
+        const maxH = matrixConfig?.height || height
+        if (
+            Number.isFinite(xStart) && Number.isFinite(xEnd) &&
+            Number.isFinite(yStart) && Number.isFinite(yEnd) &&
+            xStart >= 0 && yStart >= 0 && xEnd <= maxW && yEnd <= maxH &&
+            xEnd > xStart && yEnd > yStart
+        ) {
+            return { xStart, xEnd, yStart, yEnd, width: maxW, height: maxH }
+        }
+        return null
+    }
     const canvas = document.querySelector(`.${className}`)
+    if (!canvas) return null
     const canvasInfo = canvas.getBoundingClientRect()
 
     const canvasObj = {

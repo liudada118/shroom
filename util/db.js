@@ -62,7 +62,8 @@ function colArrData(arr) {
   const area = arr.filter((a) => a > 0).length
   const max = Math.max(...arr)
   const maxIndex = arr.indexOf(max)
-  const min = Math.min(...arr.filter((a) => a > 0))
+  const positiveArr = arr.filter((a) => a > 0)
+  const min = positiveArr.length ? Math.min(...positiveArr) : 0
   const aver = area > 0 ? Number((press / area).toFixed(1)) : 0
   return { press, area, max, min, aver, maxIndex }
 }
@@ -951,7 +952,6 @@ async function getCsvData(file) {
       .pipe(csv({ mapHeaders: ({ header }) => normalizeCsvHeader(header) }))
       .on("error", reject)
       .on("data", (data) => results.push({ ...data, file }))
-      .on("error", reject)
       .on("end", () => resolve(results))
   })
 }

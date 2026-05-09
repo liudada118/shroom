@@ -9,19 +9,16 @@ import { withTranslation } from 'react-i18next'
 import { getDisplayType, getSettingValue, getSettingValueOptimal, getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
-import { pointConfig, systemPointConfig } from '../../util/constant'
+import { pointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
-
-const ADJUST_DRAWER_Z_INDEX = 50
-const ADJUST_POPOVER_Z_INDEX = ADJUST_DRAWER_Z_INDEX * 100 + 1
 
 function SecondTitle(props) {
     const { t, i18n } = props;
 
     const pageInfo = useContext(pageContext);
-    const { display, onRuler, setOnRuler, onSelect, setOnSelect, onMagnifier, setOnMagnifier, clearHistorySelect } = pageInfo
+    const { display, onRuler, setOnRuler, onSelect, setOnSelect, onMagnifier, setOnMagnifier } = pageInfo
     const [show, setShow] = useState(true)
     const [setshow, setSetshow] = useState(false)
     // const { settingValue, setSettingValue, selectHelper } = pageInfo
@@ -29,6 +26,7 @@ function SecondTitle(props) {
     const settingValue = useEquipStore(s => s.settingValue, shallow);
     const settingValueMax = useEquipStore(s => s.settingValueMax, shallow);
     const systemType = useEquipStore(s => s.systemType, shallow);
+    const currentDisplayType = useEquipStore(s => s.displayType, shallow);
 
     const setSettingValue = useEquipStore.getState().setSettingValue
 
@@ -106,14 +104,13 @@ function SecondTitle(props) {
         // }else{
         //     selectHelper.isShiftPressed = false
         // }
-        if (display == 'num') {
+        if (display == 'num' || display == 'contrast') {
             setOnSelect(!onSelect)
             if (!onSelect) {
                 pageInfo?.brushInstance.startBrush();
             } else {
                 pageInfo?.brushInstance.stopBrush();
                 useEquipStore.getState().setSelectArr([])
-                clearHistorySelect?.()
             }
         } else {
             message.info(t('use2DMode'))
@@ -130,19 +127,11 @@ function SecondTitle(props) {
 
             if (isMoreMatrix(system)) {
                 const key = displayType.includes('sit') ? 'sit' : 'back'
-                const matrixKey = `${system}-${key}`
                 const pointLength = pointConfig[system][key].pointLength
                 const widthDistance = pointConfig[system][key].pointWidthDistance
                 const heightDistance = pointConfig[system][key].pointHeightDistance
-                const matrixConfig = systemPointConfig[matrixKey] || {}
                 console.log(pointConfig[system][key])
-                pageInfo?.newRuler.startRuler({
-                    num: pointLength,
-                    width: matrixConfig.width || pointLength,
-                    height: matrixConfig.height || pointLength,
-                    widthDistance,
-                    heightDistance
-                });
+                pageInfo?.newRuler.startRuler({ num: pointLength, widthDistance, heightDistance });
             }
 
             setOnRuler(!onRuler)
@@ -160,6 +149,20 @@ function SecondTitle(props) {
 
 
     }, [])
+    useEffect(() => {
+        if (!onSelect) return
+        if (display !== 'num' && display !== 'contrast') {
+            pageInfo?.brushInstance.stopBrush()
+            useEquipStore.getState().setSelectArr([])
+            setOnSelect(false)
+        }
+    }, [display, onSelect])
+
+    useEffect(() => {
+        if (!onSelect) return
+        pageInfo?.brushInstance.deleteAll()
+        useEquipStore.getState().setSelectArr([])
+    }, [systemType, currentDisplayType])
     // const brush = useContext(BrushContext);
 
     const [onZero, setOnZero] = useState(false)
@@ -199,7 +202,7 @@ function SecondTitle(props) {
     return (
 
         <>
-            <Drawer zindex={ADJUST_DRAWER_Z_INDEX} show={setshow} title={t('adjust')} setShow={setSetshow}>
+            <Drawer zindex={3} show={setshow} title={t('adjust')} setShow={setSetshow}>
                 <div className="setContent">
                     {/* <div className="setItem">
                         <Row align='middle'>
@@ -231,7 +234,7 @@ function SecondTitle(props) {
                         setType.map((a, index) => {
                             return (
                                 <div className="setItem">
-                                    <Popover color='#32373E' className='set-popover' placement="bottomLeft" zIndex={ADJUST_POPOVER_Z_INDEX} content={a.content} >
+                                    <Popover color='#32373E' className='set-popover' placement="bottomLeft" content={a.content} >
                                         <div>{a.title}</div>
                                     </Popover>
 
@@ -320,6 +323,10 @@ function SecondTitle(props) {
                         }
                     }} text={t('ruler')} show={show} icon={<div className='iconContentBox'> <i style={{ color: onRuler ? '#fff' : '#D1D9E1' }} className='iconfont fs16'>&#xe610;</i></div>} />
                     <IconAndText onClickStatus={onMagnifier} onClick={() => {
+                        if (onSelect) {
+                            message.info(t('noSimultaneousUse'))
+                            return
+                        }
                         if (display == 'num') {
                             setOnMagnifier(!onMagnifier)
                         } else {

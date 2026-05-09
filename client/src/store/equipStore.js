@@ -32,7 +32,8 @@ export const useEquipStore = create((set) => ({
 
   // 设备状态
   equipStatus: {},
-  connectState: 'idle',  // 'idle' | 'connecting' | 'connected' | 'rescanning'
+  connectState: 'idle',  // 'idle' | 'connecting' | 'connected' | 'rescanning' | 'failed' | 'deviceError'
+  connectionError: null,
   macInfo: {},              // 设备 MAC 信息 { portPath: { uniqueId, version } }
 
   // 可视化设置
@@ -46,7 +47,7 @@ export const useEquipStore = create((set) => ({
   // 历史数据
   history: {},
   historyChart: { pressArr: {}, areaArr: {} },
-  dataStatus: 'realtime',  // 'realtime' | 'history' | 'contrast'
+  dataStatus: 'realtime',  // 'realtime' | 'history' | 'replay' | 'contrast'
 
   // 对比数据
   contrast: {},
@@ -64,6 +65,7 @@ export const useEquipStore = create((set) => ({
 
   setEquipStatus: (s) => set({ equipStatus: s }),
   setConnectState: (s) => set({ connectState: s }),
+  setConnectionError: (s) => set({ connectionError: s }),
   setMacInfo: (s) => set({ macInfo: s }),
 
   setSettingValue: (s) => set({ settingValue: s }),

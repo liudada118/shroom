@@ -46,6 +46,12 @@ const state = {
 
   // ─── 数据库 ──────────────────────────────────────────
   currentDb: null,
+
+  // Connection lifecycle guard for one-click connect/rescan.
+  connectionTask: null,
+  connectionTaskStartedAt: 0,
+  connectionMode: null,
+  lastConnectionError: null,
 }
 
 /**
