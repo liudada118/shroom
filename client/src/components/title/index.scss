@@ -165,11 +165,9 @@
 }
 
 .selectHistoryBox {
-    border: 1px solid #55aaff;
-    background-color: rgba(75, 160, 255, 0.3);
     position: fixed;
     overflow: visible;
-    z-index: 999;
+    z-index: 998;
 }
 
 .connectButton:active {
@@ -390,6 +388,11 @@
 
     .selectInputTitleInfo {
         margin-right: 0.5rem;
+    }
+
+    .templateNameInput::placeholder,
+    .templateNameInput.ant-input::placeholder {
+        color: #B4C0CA;
     }
 
     .selectInputItemName {

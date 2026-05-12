@@ -502,23 +502,44 @@
     color: #9aa8b7;
 }
 
-@media (max-width: 1100px) {
-    .contrastGrid {
-        grid-template-columns: 1fr;
+@media (max-width: 1400px) {
+    // 小屏：保留桌面三栏布局，.contrastPage 自身出现滚动条（上下+左右）
+    .contrastPage {
+        width: 100vw;
+        height: 100vh;
+        max-height: 100vh;
+        overflow: auto;
+        padding: 1rem;
     }
 
+    // 取消 flex 撑高度，按内容自然高度，超出后由 .contrastPage 滚动
     .contrastWorkspace {
-        grid-template-columns: 1fr;
+        min-width: 80rem;
+        flex: 0 0 auto;
+        min-height: auto;
+    }
+
+    .contrastMain {
+        min-height: auto;
+    }
+
+    .contrastGrid {
+        flex: 0 0 auto;
+        min-height: auto;
     }
 
     .contrastLineCharts {
-        grid-template-columns: 1fr;
+        min-width: 36rem;
     }
 
-    .contrastPage {
-        min-height: 100vh;
-        height: auto;
-        overflow: auto;
-        padding: 1rem;
+    // 侧栏不限高，跟主区一起被 .contrastPage 滚动
+    .contrastSidePanel {
+        max-height: none;
+        overflow: visible;
+    }
+
+    // 热力图区保留最小高度，防止被压扁
+    .contrastCanvasWrap {
+        min-height: 16rem;
     }
 }

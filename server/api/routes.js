@@ -860,13 +860,24 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
     return
   }
 
+  // ─── [PERF-PLAYBACK-OPT] 开始 ──────────────────────────────────
+  // 长时录制框选回放卡死优化：pressArr/areaArr 降采样到 ~500 点
+  // 如需回滚：删除标记区段，恢复原循环（直接 push 到 pressArr/areaArr）
+  const PLAYBACK_CHART_TARGET_POINTS = 500
   const rows = state.historyDbArr
   const keyArr = Object.keys(JSON.parse(rows[0].data || '{}'))
   const pressArr = {}
   const areaArr = {}
+  const pressBucket = {}
+  const areaBucket = {}
+  const bucketCount = {}
+  const bucketSize = Math.max(1, Math.ceil(rows.length / PLAYBACK_CHART_TARGET_POINTS))
   keyArr.forEach((key) => {
     pressArr[key] = []
     areaArr[key] = []
+    pressBucket[key] = 0
+    areaBucket[key] = 0
+    bucketCount[key] = 0
   })
 
   for (let i = 0; i < rows.length; i++) {
@@ -876,31 +887,42 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
       const arr = item && item.arr ? item.arr : []
       const sel = selectJson[key]
 
-      if (!sel || typeof sel !== 'object') {
-        pressArr[key].push(0)
-        areaArr[key].push(0)
-        continue
-      }
-
-      const { xStart, xEnd, yStart, yEnd, width } = sel
-      if ([xStart, xEnd, yStart, yEnd, width].some((v) => typeof v !== 'number')) {
-        pressArr[key].push(0)
-        areaArr[key].push(0)
-        continue
-      }
-
-      let press = 0, area = 0
-      for (let y = yStart; y < yEnd; y++) {
-        for (let x = xStart; x < xEnd; x++) {
-          const v = arr[y * width + x] || 0
-          press += v
-          if (v > 0) area++
+      let press = 0
+      let area = 0
+      if (sel && typeof sel === 'object') {
+        const { xStart, xEnd, yStart, yEnd, width } = sel
+        if ([xStart, xEnd, yStart, yEnd, width].every((v) => typeof v === 'number')) {
+          for (let y = yStart; y < yEnd; y++) {
+            for (let x = xStart; x < xEnd; x++) {
+              const v = arr[y * width + x] || 0
+              press += v
+              if (v > 0) area++
+            }
+          }
         }
       }
-      pressArr[key].push(press)
-      areaArr[key].push(area)
+
+      pressBucket[key] += press
+      areaBucket[key] += area
+      bucketCount[key]++
+      if (bucketCount[key] >= bucketSize) {
+        pressArr[key].push(pressBucket[key] / bucketCount[key])
+        areaArr[key].push(areaBucket[key] / bucketCount[key])
+        pressBucket[key] = 0
+        areaBucket[key] = 0
+        bucketCount[key] = 0
+      }
     }
   }
+
+  // flush 尾部
+  for (const key of keyArr) {
+    if (bucketCount[key] > 0) {
+      pressArr[key].push(pressBucket[key] / bucketCount[key])
+      areaArr[key].push(areaBucket[key] / bucketCount[key])
+    }
+  }
+  // ─── [PERF-PLAYBACK-OPT] 结束 ──────────────────────────────────
 
   res.json(new HttpResult(0, { length: rows.length, pressArr, areaArr }, 'success'))
 }))

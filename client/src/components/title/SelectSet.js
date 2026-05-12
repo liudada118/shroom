@@ -322,8 +322,8 @@ export default function SelectSet(props) {
         <div className={`selectInputContent ${variant === 'embedded' ? 'selectInputEmbedded' : 'selectInputDrawer'}`}>
             <div className="selectInputTitle" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div className="selectInputTitleInfo">框选区域</div>
-                    <span style={{ fontSize: '0.7rem', color: '#6C7784' }}>({boxes.length}/4)</span>
+                    <div className="selectInputTitleInfo" style={{ color: '#E6EBF0' }}>框选区域</div>
+                    <span style={{ fontSize: '0.7rem', color: '#E6EBF0' }}>({boxes.length}/4)</span>
                     <Popover color='#32373E' placement="bottomLeft" content={selectInfoTip}>
                         <i className='iconfont cursor' style={{ fontSize: '0.85rem' }}>&#xe674;</i>
                     </Popover>
@@ -359,7 +359,7 @@ export default function SelectSet(props) {
                             fontSize: '0.7rem', padding: '0.1rem 0.3rem',
                         }}
                     />
-                    <span style={{ color: '#8C939D', fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ color: '#E6EBF0', fontVariantNumeric: 'tabular-nums' }}>
                         ({box.xStart},{box.yStart}) {box.width}x{box.height}
                     </span>
                     <i
@@ -372,11 +372,11 @@ export default function SelectSet(props) {
 
             {boxes.length < 4 && (
                 <div style={{ marginTop: '0.4rem', borderTop: '1px solid #2a2e33', paddingTop: '0.4rem' }}>
-                    <div style={{ fontSize: '0.7rem', color: '#6C7784', marginBottom: '0.25rem' }}>手动添加框选</div>
+                    <div style={{ fontSize: '0.7rem', color: '#E6EBF0', marginBottom: '0.25rem' }}>手动添加框选</div>
                     <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
                         {selectInputObj.map((a) => (
                             <div key={a.valueStr} style={{ display: 'flex', alignItems: 'center', gap: '0.15rem' }}>
-                                <span style={{ fontSize: '0.7rem', color: '#8C939D', minWidth: '0.8rem' }}>{a.name}</span>
+                                <span style={{ fontSize: '0.7rem', color: '#E6EBF0', minWidth: '0.8rem' }}>{a.name}</span>
                                 <Input
                                     value={inputRect[a.valueStr]}
                                     onChange={(e) => setInputRect(prev => ({ ...prev, [a.valueStr]: e.target.value }))}
@@ -404,22 +404,23 @@ export default function SelectSet(props) {
             )}
 
             <div style={{ marginTop: '0.5rem', borderTop: '1px solid #2a2e33', paddingTop: '0.45rem' }}>
-                <div style={{ fontSize: '0.7rem', color: '#6C7784', marginBottom: '0.25rem' }}>框选模板</div>
+                <div style={{ fontSize: '0.7rem', color: '#E6EBF0', marginBottom: '0.25rem' }}>框选模板</div>
                 <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.35rem' }}>
                     <Input
                         value={templateName}
                         onChange={(e) => setTemplateName(e.target.value)}
                         placeholder="模板名称"
+                        className='templateNameInput'
                         style={{
                             flex: 1, backgroundColor: '#202327',
                             border: '1px solid #32373E', color: '#E6EBF0',
-                            fontSize: '0.7rem', padding: '0.1rem 0.3rem',
+                            fontSize: '0.875rem', padding: '0.35rem 0.55rem',
                         }}
                     />
                     <div
                         className="selectInputButton connectButton cursor"
                         onClick={handleSaveTemplate}
-                        style={{ fontSize: '0.7rem', padding: '0.15rem 0.6rem', whiteSpace: 'nowrap' }}
+                        style={{ fontSize: '0.875rem', padding: '0.35rem 0.85rem', whiteSpace: 'nowrap' }}
                     >
                         保存模板
                     </div>
@@ -429,6 +430,7 @@ export default function SelectSet(props) {
                     value={selectedTemplateId || undefined}
                     onChange={setSelectedTemplateId}
                     placeholder="选择模板"
+                    notFoundContent="暂无数据"
                     style={{ width: '100%', marginBottom: '0.35rem' }}
                     options={templates.map(template => ({
                         label: `${template.templateName}${isTemplateMatched(template) ? '' : '（不匹配）'}`,

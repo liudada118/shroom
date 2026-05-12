@@ -42,7 +42,7 @@ function ChartsAside(props) {
      * 当有多框选时，每个框一条线（颜色与框对应）
      * 无框选时，按设备（back/sit）分色
      */
-    const buildSeries = (dataMap, type, useBoxStats) => {
+    const buildSeries = (dataMap, type, useBoxStats, isHistory = false) => {
         const series = []
         const keyArr = Object.keys(dataMap)
         const colorMap = type === 'press' ? pressColorArr : areaColorArr
@@ -52,7 +52,7 @@ function ChartsAside(props) {
             const key = keyArr[i]
             const chartData = props.chartData.current
             const deviceData = chartData[key]
-            const historyLine = Array.isArray(dataMap[key]) ? dataMap[key] : null
+            const historyLine = isHistory && Array.isArray(dataMap[key]) ? dataMap[key] : null
             if (!deviceData && !historyLine) continue
 
             // 检查是否有多框选统计
@@ -113,9 +113,9 @@ function ChartsAside(props) {
         option && props.myChart.setOption(option, { notMerge: true });
     };
 
-    const handleCharts = (pressObj, value) => {
+    const handleCharts = (pressObj, value, isHistory = false) => {
         if (!myChart1.current) return
-        const series = buildSeries(pressObj, 'press', true)
+        const series = buildSeries(pressObj, 'press', true, isHistory)
         initCharts1({
             series,
             xData: Array.from({ length: 20 }, (_, i) => i + 1),
@@ -124,9 +124,9 @@ function ChartsAside(props) {
         });
     }
 
-    const handleChartsArea = (areaObj, value) => {
+    const handleChartsArea = (areaObj, value, isHistory = false) => {
         if (!myChart2.current) return
-        const series = buildSeries(areaObj, 'area', true)
+        const series = buildSeries(areaObj, 'area', true, isHistory)
         initCharts1({
             series,
             xData: Array.from({ length: 20 }, (_, i) => i + 1),
@@ -157,7 +157,7 @@ function ChartsAside(props) {
                 }
             }
             const max = Math.max(...allArr)
-            handleCharts(areaObj, max + 5000)
+            handleCharts(areaObj, max + 5000, !!useHistory)
         }
     }
 
@@ -183,7 +183,7 @@ function ChartsAside(props) {
                 }
             }
             const max = Math.max(...allArr)
-            handleChartsArea(areaObj, 3200)
+            handleChartsArea(areaObj, 3200, !!useHistory)
         }
     }
 

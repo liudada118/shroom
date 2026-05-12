@@ -6,6 +6,7 @@ import { withTranslation } from 'react-i18next';
 import { getSysType, useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 import { isMoreMatrix } from '../../assets/util/util';
+import { pointConfig } from '../../util/constant';
 import { APP_VERSION } from '../../util/version';
 
 let xvalue = localStorage.getItem('bedz') ? Number(localStorage.getItem('bedz')) : 0
@@ -85,10 +86,33 @@ const ViewSetting = (props) => {
     const car3DArr = ['back3D', 'sit3D']
 
     const hasDisplayData = (type) => {
-        const displayStatus = useEquipStore.getState().displayStatus || {}
-        if (type.includes('back')) return Array.isArray(displayStatus.back) && displayStatus.back.length > 0
-        if (type.includes('sit')) return Array.isArray(displayStatus.sit) && displayStatus.sit.length > 0
-        return ['back', 'sit'].some(key => Array.isArray(displayStatus[key]) && displayStatus[key].length > 0)
+        const displayStatus = useEquipStore.getState().displayStatus
+        // 1) 优先按实时数据判断
+        if (displayStatus && typeof displayStatus === 'object' && !Array.isArray(displayStatus)) {
+            const backHas = Array.isArray(displayStatus.back) && displayStatus.back.length > 0
+            const sitHas = Array.isArray(displayStatus.sit) && displayStatus.sit.length > 0
+            if (backHas || sitHas) {
+                if (type.includes('back')) return backHas
+                if (type.includes('sit')) return sitHas
+                return backHas || sitHas
+            }
+        }
+        // 2) 兜底：实时数据被重置或还没到 → 按设备配置允许
+        const systemType = useEquipStore.getState().systemType
+        const config = systemType ? pointConfig[systemType] : null
+        if (!config) return true
+        if (type.includes('back')) return !!config.back
+        if (type.includes('sit')) return !!config.sit
+        return !!(config.back || config.sit)
+    }
+
+    const guard3D = () => {
+        const s = useEquipStore.getState()
+        if (s.dataStatus === 'replay' && s.playbackHasSelection) {
+            message.warning('当前回放数据带有框选，不支持 3D 视图')
+            return false
+        }
+        return true
     }
 
     const warnMissingDisplayData = (type) => {
@@ -107,6 +131,7 @@ const ViewSetting = (props) => {
         {
             carArr.map((type, index) => {
                 return <div className='cursor' onClick={() => {
+                    if (!guard3D()) return
                     if (type !== 'all' && !hasDisplayData(type)) {
                         warnMissingDisplayData(type)
                         return
@@ -153,6 +178,7 @@ const ViewSetting = (props) => {
         {
             car3DArr.map((type, index) => {
                 return <div className='cursor' onClick={() => {
+                    if (!guard3D()) return
                     setCarType(type)
                     if (display != 'num3D') {
                         setDisplay('num3D')
@@ -171,6 +197,7 @@ const ViewSetting = (props) => {
     const changeMoreViewContent = <div style={{ color: '#E6EBF0' }}>
         <Popover trigger='click' color='#32373E' placement="right" content={changeCarViewContent}>
             <div className='cursor' onClick={() => {
+                if (!guard3D()) return
                 setShowProp(100)
                 setDisplay('point3D')
                 useEquipStore.getState().setDisplayType('all')
@@ -205,6 +232,7 @@ const ViewSetting = (props) => {
     const changeViewContent = <div style={{ color: '#E6EBF0' }}>
 
         <div className='cursor' onClick={() => {
+            if (!guard3D()) return
             setShowProp(100)
             setDisplay('point3D')
             changeAllFun()

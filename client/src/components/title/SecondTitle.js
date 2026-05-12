@@ -108,6 +108,12 @@ function SecondTitle(props) {
         // }
         if (display == 'num' || display == 'contrast') {
             if (!onSelect) {
+                // 若回放中，先暂停回放（PlaybackBar 仍保留在底部，可继续控制）
+                if (useEquipStore.getState().dataStatus === 'replay') {
+                    window.dispatchEvent(new CustomEvent('pause-playback'))
+                }
+                // 关掉历史列表抽屉，避免挡画布；PlaybackBar 已独立显示，不受影响
+                window.dispatchEvent(new CustomEvent('close-history-drawer'))
                 setOnSelect(true)
                 pageInfo?.brushInstance.startBrush();
             } else {
@@ -173,6 +179,13 @@ function SecondTitle(props) {
             setOnSelect(false)
         }
     }, [display, onSelect])
+
+    // 放大镜只在 2D 数字模式有效, 切到其他模式时重置选中状态
+    useEffect(() => {
+        if (onMagnifier && display !== 'num') {
+            setOnMagnifier(false)
+        }
+    }, [display, onMagnifier])
 
     useEffect(() => {
         if (!onSelect) return

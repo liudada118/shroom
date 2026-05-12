@@ -85,7 +85,10 @@ export default function Col(props) {
 
                 if (res.data.message == 'error') {
                     useEquipStore.getState().setCollecting(false)
-                    message.error(res.data.data)
+                    const errorTextMap = {
+                        'Please select correct sensor type': '请先选择正确的传感器类型',
+                    }
+                    message.error(errorTextMap[res.data.data] || res.data.data)
                 } else {
                     message.success('开始采集')
                     setCol(!col)

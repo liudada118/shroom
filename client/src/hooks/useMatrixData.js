@@ -151,11 +151,11 @@ export function useMatrixData() {
 
     // 回放框选
     if (sitDataItem?.select) {
-      const matrixObj = Array.isArray(sitDataItem.select?.regions)
-        ? sitDataItem.select.regions[0]
-        : sitDataItem.select
-      if (!matrixObj) return { default: [...arr], boxes: [] }
-      const { xStart, xEnd, yStart, yEnd } = matrixObj
+      const regionsRaw = Array.isArray(sitDataItem.select?.regions)
+        ? sitDataItem.select.regions
+        : (sitDataItem.select ? [sitDataItem.select] : [])
+      const regions = regionsRaw.filter(Boolean)
+      if (!regions.length) return { default: [...arr], boxes: [] }
 
       if (displayType.includes(key) && displayType.includes('2D')) {
         const canvas = document.querySelector('.canvasThree')
@@ -166,22 +166,30 @@ export function useMatrixData() {
             canvasY1: canvasInfo.top, canvasY2: canvasInfo.bottom
           }
           const max = Math.max(width, height)
-          matrixGenBox(matrixObj, canvasObj, max, config)
+          matrixGenBox(regions, canvasObj, max, config)
         }
       } else {
         removeHistoryBox()
       }
 
-      const data = extractSelectData(arr, matrixObj, width)
+      const PLAYBACK_FALLBACK_COLORS = ['#FF6B6B', '#4ECDC4', '#FFD93D', '#6C5CE7']
+      const boxes = []
+      regions.forEach((region, index) => {
+        const data = extractSelectData(arr, region, width)
+        if (!data) return
+        const colorIndex = Number.isFinite(Number(region.colorIndex)) ? Number(region.colorIndex) : index
+        boxes.push({
+          data,
+          colorIndex,
+          bgc: region.bgc || region.color || PLAYBACK_FALLBACK_COLORS[colorIndex % PLAYBACK_FALLBACK_COLORS.length],
+          name: region.name || region.regionName || `框选${index + 1}`,
+          matrix: region,
+        })
+      })
+
       return {
-        default: data || [...arr],
-        boxes: [{
-          data: data || [...arr],
-          colorIndex: 0,
-          bgc: '#FF6B6B',
-          name: matrixObj.name || matrixObj.regionName || '框选1',
-          matrix: matrixObj,
-        }],
+        default: boxes.length > 0 ? boxes[0].data : [...arr],
+        boxes,
       }
     }
 

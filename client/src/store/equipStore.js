@@ -49,6 +49,7 @@ export const useEquipStore = create((set) => ({
   history: {},
   historyChart: { pressArr: {}, areaArr: {} },
   dataStatus: 'realtime',  // 'realtime' | 'history' | 'replay' | 'contrast'
+  playbackHasSelection: false,
   collecting: false,
 
   // 对比数据
@@ -80,6 +81,7 @@ export const useEquipStore = create((set) => ({
   setHistoryStatus: (history) => set({ history }),
   setHistoryChart: (s) => set({ historyChart: s }),
   setDataStatus: (s) => set({ dataStatus: s }),
+  setPlaybackHasSelection: (s) => set({ playbackHasSelection: Boolean(s) }),
   setCollecting: (s) => set({ collecting: Boolean(s) }),
 
   setContrast: (s) => set({ contrast: s }),

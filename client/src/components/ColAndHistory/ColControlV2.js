@@ -35,7 +35,7 @@ function ColControl(props) {
                     {
                         changeColInfo ? <> <div className="changeColInfoModal">
                             <div className="changeColInfoModalTitle">
-                                <div className="titleInfo fs18">{t('collectSettings')}</div>
+                                <div className="titleInfo fs14">{t('collectSettings')}</div>
                                 <i className="iconfont cursor" onClick={() => { setChangeColInfo(false) }}>&#xe625;</i>
                             </div>
                             <div>

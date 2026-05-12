@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { message, Popover, Slider } from 'antd';
+import { message, Popover, Slider, Tooltip } from 'antd';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { shallow } from 'zustand/shallow';
@@ -32,6 +32,20 @@ export default function PlaybackBar(props) {
             setDataPlay(true);
         }
     }, [dataLength, history.index]);
+
+    // 外部请求暂停回放（点框选工具时触发）
+    useEffect(() => {
+        const onPause = () => {
+            axios({
+                method: 'post',
+                url: `${localAddress}/getDbHistoryStop`,
+            }).then(() => {
+                setDataPlay(true);
+            }).catch(() => {});
+        };
+        window.addEventListener('pause-playback', onPause);
+        return () => window.removeEventListener('pause-playback', onPause);
+    }, []);
 
     const maxIndex = Math.max(0, (Number(dataLength) || 0) - 1);
     const hasPlaybackFile = Boolean(name);
@@ -131,7 +145,13 @@ export default function PlaybackBar(props) {
 
     return (
         <div style={style}>
-            <div className="colDate">{name}</div>
+            {name ? (
+                <Tooltip title={name} placement="top" mouseEnterDelay={0.3}>
+                    <div className="colDate">{name}</div>
+                </Tooltip>
+            ) : (
+                <div className="colDate">{name}</div>
+            )}
             <div className="playContent" style={contentStyle}>
                 <Slider defaultValue={0} value={history?.index} onChange={handleSliderChange} max={maxIndex} />
                 <div className="playControl">

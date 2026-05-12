@@ -106,29 +106,57 @@ export function calMatrixToSelect(className, selectConfig, matrixConfig) {
 }
 
 
-export function matrixGenBox(matrixObj, canvasArea, max, matrixConfig) {
-    const { xStart, xEnd, yStart, yEnd } = matrixObj
+const HISTORY_SELECT_COLORS = [
+    '#FF6B6B',
+    '#4ECDC4',
+    '#FFD93D',
+    '#6C5CE7',
+]
+const HISTORY_BOX_BRIGHTNESS_RATIO = 0.18
+const HISTORY_BOX_FILL_ALPHA = 0.24
+
+function parseHistoryBoxColor(color) {
+    if (typeof color !== 'string') return null
+    const c = color.replace('#', '')
+    if (c.length !== 6) return null
+    return {
+        r: parseInt(c.slice(0, 2), 16),
+        g: parseInt(c.slice(2, 4), 16),
+        b: parseInt(c.slice(4, 6), 16),
+    }
+}
+
+function historyDisplayColor(color) {
+    const rgb = parseHistoryBoxColor(color)
+    if (!rgb) return color
+    const brighten = (v) => Math.round(v + (255 - v) * HISTORY_BOX_BRIGHTNESS_RATIO)
+    return `rgb(${brighten(rgb.r)}, ${brighten(rgb.g)}, ${brighten(rgb.b)})`
+}
+
+function historyFillColor(color) {
+    const rgb = parseHistoryBoxColor(color)
+    if (!rgb) return color
+    return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${HISTORY_BOX_FILL_ALPHA})`
+}
+
+function buildSingleHistoryBox(region, index, canvasArea, max, matrixConfig) {
+    const { xStart, xEnd, yStart, yEnd } = region
     const { canvasX1, canvasX2, canvasY1, canvasY2 } = canvasArea
 
     const selectWidth = xEnd - xStart
     const selectHeight = yEnd - yStart
-
     const canvasWidth = canvasX2 - canvasX1
     const canvasHeight = canvasY2 - canvasY1
     const widthUtil = canvasWidth / max
     const heightUtil = canvasHeight / max
 
-    // 处理非正方形矩阵的偏移
     let offsetX = 0
     let offsetY = 0
     if (matrixConfig) {
         const mw = matrixConfig.width || max
         const mh = matrixConfig.height || max
-        if (mw < mh) {
-            offsetX = (mh - mw) / 2 * widthUtil
-        } else if (mh < mw) {
-            offsetY = (mw - mh) / 2 * heightUtil
-        }
+        if (mw < mh) offsetX = (mh - mw) / 2 * widthUtil
+        else if (mh < mw) offsetY = (mw - mh) / 2 * heightUtil
     }
 
     const boxX = canvasX1 + xStart * widthUtil + offsetX + 1
@@ -136,38 +164,75 @@ export function matrixGenBox(matrixObj, canvasArea, max, matrixConfig) {
     const boxWidth = selectWidth * widthUtil - 2
     const boxHeight = selectHeight * heightUtil - 2
 
-    let box = document.querySelector('.selectHistoryBox')
-    if (!box) {
-        box = document.createElement('div');
-        box.classList.add('selectHistoryBox');
-        box.style.pointerEvents = 'auto';
-        document.body.appendChild(box);
+    const colorIndex = Number.isFinite(Number(region.colorIndex)) ? Number(region.colorIndex) : index
+    const baseColor = region.bgc || region.color || HISTORY_SELECT_COLORS[colorIndex % HISTORY_SELECT_COLORS.length]
+    const borderColor = historyDisplayColor(baseColor)
+    const fillColor = historyFillColor(baseColor)
 
-        // 右上角叉号关闭按钮
-        const closeBtn = document.createElement('div');
-        closeBtn.textContent = '\u00D7';
-        Object.assign(closeBtn.style, {
-            position: 'absolute', top: '-12px', right: '-12px',
-            width: '22px', height: '22px', lineHeight: '20px', textAlign: 'center',
-            background: '#ff4444', color: '#fff', borderRadius: '50%',
-            fontSize: '14px', fontWeight: 'bold', cursor: 'pointer',
-            zIndex: '999', border: '2px solid #fff',
-            pointerEvents: 'auto', userSelect: 'none',
-        });
-        closeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            window.__historySelectCleared = true;
-            removeHistoryBox();
-            window.dispatchEvent(new CustomEvent('history-select-clear'));
-        });
-        box.appendChild(closeBtn);
-    }
-    box.style.opacity = 0.6
-    box.style.left = boxX + 'px';
-    box.style.top = boxY + 'px';
-    box.style.width = `${boxWidth}px`;
-    box.style.height = `${boxHeight}px`;
+    const box = document.createElement('div')
+    box.classList.add('selectHistoryBox')
+    box.dataset.historyBoxIndex = String(index)
+    Object.assign(box.style, {
+        position: 'fixed',
+        left: boxX + 'px',
+        top: boxY + 'px',
+        width: boxWidth + 'px',
+        height: boxHeight + 'px',
+        border: `2px solid ${borderColor}`,
+        backgroundColor: fillColor,
+        boxShadow: `0 0 0 1px ${borderColor}`,
+        opacity: 1,
+        zIndex: 998,
+        pointerEvents: 'auto',
+    })
+
+    const handlePositions = [
+        { top: '-5px', left: '-5px' },
+        { top: '-5px', right: '-5px' },
+        { bottom: '-5px', left: '-5px' },
+        { bottom: '-5px', right: '-5px' },
+        { top: '-5px', left: '50%', marginLeft: '-5px' },
+        { bottom: '-5px', left: '50%', marginLeft: '-5px' },
+        { top: '50%', left: '-5px', marginTop: '-5px' },
+        { top: '50%', right: '-5px', marginTop: '-5px' },
+    ]
+    handlePositions.forEach((pos) => {
+        const h = document.createElement('div')
+        h.classList.add('selectHistoryBox-handle')
+        Object.assign(h.style, {
+            position: 'absolute', width: '10px', height: '10px',
+            background: '#fff', border: `2px solid ${borderColor}`, borderRadius: '2px',
+            zIndex: '999', pointerEvents: 'none',
+            ...pos,
+        })
+        box.appendChild(h)
+    })
+
+    const badge = document.createElement('div')
+    badge.classList.add('selectHistoryBox-measure')
+    Object.assign(badge.style, {
+        position: 'absolute', left: '0', bottom: '-28px',
+        maxWidth: '18rem', padding: '3px 8px',
+        borderRadius: '999px', background: 'rgba(3, 5, 7, 0.88)',
+        color: '#fff', fontSize: '11px', fontWeight: '700',
+        lineHeight: '16px', whiteSpace: 'nowrap',
+        boxShadow: '0 6px 18px rgba(0, 0, 0, 0.35)',
+        pointerEvents: 'none', userSelect: 'none', zIndex: '1001',
+    })
+    badge.textContent = `X ${xStart}-${xEnd} / Y ${yStart}-${yEnd} · ${selectWidth} x ${selectHeight}`
+    box.appendChild(badge)
+
+    document.body.appendChild(box)
+    return box
+}
+
+export function matrixGenBox(matrixObjOrRegions, canvasArea, max, matrixConfig) {
+    const regions = Array.isArray(matrixObjOrRegions) ? matrixObjOrRegions : [matrixObjOrRegions]
+    removeHistoryBox()
+    regions.forEach((region, index) => {
+        if (!region) return
+        buildSingleHistoryBox(region, index, canvasArea, max, matrixConfig)
+    })
 }
 
 export function transformMatrixByDirection(matrixObj, matrixConfig, direction = {}) {
@@ -205,9 +270,8 @@ export function transformMatrixByDirection(matrixObj, matrixConfig, direction = 
 }
 
 export function removeHistoryBox() {
-    const historyBox = document.querySelector('.selectHistoryBox')
-    if (historyBox) {
-        console.log(1)
-        document.body.removeChild(historyBox)
-    }
+    const historyBoxes = document.querySelectorAll('.selectHistoryBox')
+    historyBoxes.forEach((node) => {
+        if (node.parentNode) node.parentNode.removeChild(node)
+    })
 }

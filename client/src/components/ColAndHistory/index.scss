@@ -45,10 +45,7 @@
         justify-content: space-between;
 
         .ant-input {
-            border: 1px solid #4E565F;
-            background-color: #32373E;
             width: 5rem;
-            color: #B4C0CA;
         }
 
         .changeColInfoModalTitle {
@@ -141,8 +138,10 @@
     justify-content: space-between;
     align-items: center;
 
-    .ant-input {
+    .ant-input,
+    textarea.ant-input {
         flex: 1;
+        font-size: 0.875rem;
     }
 }
 
@@ -400,6 +399,11 @@
 
 .colDate {
     color: #E6EBF0;
+    max-width: 37.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: default;
 }
 
 .playContent {

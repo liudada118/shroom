@@ -11,6 +11,7 @@ import ColControl from './ColControlV2'
 import { withTranslation } from 'react-i18next'
 import { useDebounce } from '../../hooks/useDebounce'
 import { useEquipStore } from '../../store/equipStore'
+import { shallow } from 'zustand/shallow'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import { localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
@@ -120,6 +121,7 @@ const ColAndHistory = memo((props) => {
     const pageInfo = useContext(pageContext);
     console.log('ViewSetting')
     const { setDisplay, display, setDisplayType, setOnRuler } = pageInfo
+    const dataStatus = useEquipStore(s => s.dataStatus, shallow)
 
     const [messageApi, contextHolder] = message.useMessage();
     const { t, i18n } = props;
@@ -259,7 +261,19 @@ const ColAndHistory = memo((props) => {
     }
 
     const getColHistory = () => {
+        const willOpen = !historyDrawer
         sethistoryDrawer((prev) => !prev)
+        if (willOpen) {
+            // 打开历史 → 重置框选工具的激活状态
+            if (pageInfo?.brushInstance) {
+                pageInfo.brushInstance.deleteAll()
+                pageInfo.brushInstance.stopBrush()
+            }
+            useEquipStore.getState().setSelectArr([])
+            if (pageInfo?.setOnSelect) {
+                pageInfo.setOnSelect(false)
+            }
+        }
         resetOperateState()
         axios({
             method: 'get',
@@ -294,6 +308,13 @@ const ColAndHistory = memo((props) => {
             useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
         })
     }
+
+    // 外部请求关闭历史抽屉
+    useEffect(() => {
+        const onClose = () => sethistoryDrawer(false)
+        window.addEventListener('close-history-drawer', onClose)
+        return () => window.removeEventListener('close-history-drawer', onClose)
+    }, [])
 
     // 获取下载路径
     useEffect(() => {
@@ -636,6 +657,7 @@ const ColAndHistory = memo((props) => {
         removeHistoryBox()
         useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
         useEquipStore.getState().setDataStatus('realtime')
+        useEquipStore.getState().setPlaybackHasSelection(false)
         setCurrentName('')
         setCurrentPlaybackKey('')
         setOperateStatus('')
@@ -1163,6 +1185,31 @@ const ColAndHistory = memo((props) => {
                                                         setCurrentName(dbInfo.name)
                                                         setCurrentPlaybackKey(historyItemKey)
                                                         useEquipStore.getState().setDataStatus('replay')
+                                                        useEquipStore.getState().setPlaybackHasSelection(!!dbInfo.selected)
+
+                                                        // 进入回放：清掉用户在采集模式下画的框，关掉框选工具
+                                                        if (pageInfo?.brushInstance) {
+                                                            pageInfo.brushInstance.deleteAll()
+                                                            pageInfo.brushInstance.stopBrush()
+                                                        }
+                                                        useEquipStore.getState().setSelectArr([])
+                                                        if (pageInfo?.setOnSelect) {
+                                                            pageInfo.setOnSelect(false)
+                                                        }
+
+                                                        if (dbInfo.selected && dbInfo.select && Object.keys(dbInfo.select).length > 0) {
+                                                            if (display !== 'num') {
+                                                                setDisplay('num')
+                                                            }
+                                                            const firstKey = Object.keys(dbInfo.select)[0] || ''
+                                                            let target2DType = ''
+                                                            if (firstKey.includes('back')) target2DType = 'back2D'
+                                                            else if (firstKey.includes('sit')) target2DType = 'sit2D'
+                                                            if (target2DType) {
+                                                                useEquipStore.getState().setDisplayType(target2DType)
+                                                                setDisplayType(target2DType)
+                                                            }
+                                                        }
                                                         setDataLength(length)
                                                         useEquipStore.getState().setHistoryStatus({
                                                             index: Number(payload.initialIndex) || 0,
@@ -1444,9 +1491,11 @@ const ColAndHistory = memo((props) => {
             <div className='colAndHContent'>
                 <div className='colAndHistory'>
                     {
-                        !historyDrawer ?
-                            <ColControl getColHistory={getColHistory} />
-                            : display != 'contrast' ? <DataPlay dataLength={dataLength} name={currentName} /> : ''
+                        dataStatus === 'replay' && display != 'contrast'
+                            ? <DataPlay dataLength={dataLength} name={currentName} />
+                            : !historyDrawer
+                                ? <ColControl getColHistory={getColHistory} />
+                                : display != 'contrast' ? <DataPlay dataLength={dataLength} name={currentName} /> : ''
                     }
                 </div>
             </div>

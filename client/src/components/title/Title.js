@@ -232,6 +232,7 @@ const Title = memo((props) => {
           ]}
 
             icon={<i className='iconfont' style={{ marginRight: '0.625rem', fontSize: '0.875rem', color: '#E6EBF0' }}>&#xe642;</i>}
+            dropdownStyle={{ zIndex: 99999 }}
             onChange={(value) => {
               i18n.changeLanguage(value)
             }}

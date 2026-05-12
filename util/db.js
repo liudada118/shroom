@@ -444,9 +444,17 @@ const initDb = async (fileStr, filePath) => {
 
 // ─── 数据查询 ────────────────────────────────────────────
 
+// ─── [PERF-PLAYBACK-OPT] 开始 ──────────────────────────────────
+// 长时录制（如 30 分钟 5 万+ 帧）回放卡死优化。如需回滚此优化：
+//   直接还原本函数到 git 历史中的版本（删除 PERF-PLAYBACK-OPT 标记区段，
+//   恢复原 dbGetData 与 /getDbHistory response 中的 rows 字段即可）。
+const PLAYBACK_CHART_TARGET_POINTS = 500
+
 /**
  * 获取历史数据并计算压力/面积统计
  * 核心优化：每行只解析一次 JSON，避免重复 JSON.parse
+ * [PERF-PLAYBACK-OPT] pressArr/areaArr 在长录制下按 bucket 降采样到约 500 点，
+ * 防止前端 echarts 一次性绘制几万点导致卡死。回放本身仍按原始帧逐帧推送，不丢精度。
  */
 async function dbGetData({ db, params }) {
   const rows = await dbAll(db, "SELECT * FROM matrix WHERE date=?", params)
@@ -460,11 +468,21 @@ async function dbGetData({ db, params }) {
   const firstData = JSON.parse(rows[0].data)
   const keyArr = Object.keys(firstData).filter(k => k && k !== 'null' && k !== 'undefined')
 
+  // [PERF-PLAYBACK-OPT] bucket 大小：当帧数 ≤ 500 时不降采样（bucket=1）；否则按比例聚合
+  const bucketSize = Math.max(1, Math.ceil(length / PLAYBACK_CHART_TARGET_POINTS))
+
   const pressValue = {}
   const areaValue = {}
+  // bucket 累加器
+  const pressBucket = {}
+  const areaBucket = {}
+  const bucketCount = {}
   keyArr.forEach((key) => {
     pressValue[key] = []
     areaValue[key] = []
+    pressBucket[key] = 0
+    areaBucket[key] = 0
+    bucketCount[key] = 0
   })
 
   for (let i = 0; i < rows.length; i++) {
@@ -479,13 +497,35 @@ async function dbGetData({ db, params }) {
       const normalizedPress = (key === 'carY-back' || key === 'carY-sit')
         ? press / (100 / 3)
         : press
-      pressValue[key].push(normalizedPress)
-      areaValue[key].push(arr.filter((a) => a > 0).length)
+      const area = arr.filter((a) => a > 0).length
+
+      // [PERF-PLAYBACK-OPT] 累加到当前 bucket
+      pressBucket[key] += normalizedPress
+      areaBucket[key] += area
+      bucketCount[key]++
+
+      // bucket 满了，写出平均值
+      if (bucketCount[key] >= bucketSize) {
+        pressValue[key].push(pressBucket[key] / bucketCount[key])
+        areaValue[key].push(areaBucket[key] / bucketCount[key])
+        pressBucket[key] = 0
+        areaBucket[key] = 0
+        bucketCount[key] = 0
+      }
+    }
+  }
+
+  // [PERF-PLAYBACK-OPT] flush 剩余不满一个 bucket 的尾部
+  for (const key of keyArr) {
+    if (bucketCount[key] > 0) {
+      pressValue[key].push(pressBucket[key] / bucketCount[key])
+      areaValue[key].push(areaBucket[key] / bucketCount[key])
     }
   }
 
   return { length, pressArr: pressValue, areaArr: areaValue, rows }
 }
+// ─── [PERF-PLAYBACK-OPT] 结束 ──────────────────────────────────
 
 // ─── CSV 导出 ────────────────────────────────────────────
 

@@ -1,9 +1,11 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react'
+import axios from 'axios'
 import { Button, Select, Slider, message } from 'antd'
 import dayjs from 'dayjs'
 import { shallow } from 'zustand/shallow'
 import { pageContext } from '../../page/test/Test'
 import { useEquipStore } from '../../store/equipStore'
+import { localAddress } from '../../util/constant'
 import ContrastHeatmap from './ContrastHeatmap'
 import SelectSet from '../title/SelectSet'
 import './contrast.scss'
@@ -218,7 +220,13 @@ export default function NumThresContrast() {
     useEffect(() => {
         if (!playing) return
         const timer = setInterval(() => {
-            setProgress((current) => current >= 100 ? 0 : Math.min(100, current + 1))
+            setProgress((current) => {
+                if (current >= 100) {
+                    setPlaying(false)
+                    return 100
+                }
+                return Math.min(100, current + 1)
+            })
         }, 120)
         return () => clearInterval(timer)
     }, [playing])
@@ -345,7 +353,9 @@ export default function NumThresContrast() {
     const exitContrast = () => {
         setPlaying(false)
         pageInfo?.setDisplay?.('num')
-        useEquipStore.getState().setDataStatus('history')
+        // 通知后端解除 historyFlag，恢复实时数据流（否则即使串口连着也收不到实时数据）
+        axios.post(`${localAddress}/cancalDbPlay`).catch(() => {})
+        useEquipStore.getState().setDataStatus('realtime')
         useEquipStore.getState().setContrast({})
     }
 
@@ -554,7 +564,10 @@ export default function NumThresContrast() {
             </div>
 
             <div className="contrastPlayback">
-                <Button size="small" onClick={() => setPlaying(!playing)}>{playing ? '暂停' : '播放'}</Button>
+                <Button size="small" onClick={() => {
+                    if (!playing && progress >= 100) setProgress(0)
+                    setPlaying(!playing)
+                }}>{playing ? '暂停' : '播放'}</Button>
                 <Slider value={progress} onChange={setProgress} min={0} max={100} style={{ flex: 1 }} />
                 <div className="contrastProgress">{progress}%</div>
             </div>
