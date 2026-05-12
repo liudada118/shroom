@@ -60,6 +60,7 @@ const SELECTED_LABEL_BG = '#FFD600'       // 选中标签背景（黄色）
 const SELECTED_LABEL_TEXT = '#000'         // 选中标签文字（黑色）
 const SELECTED_BORDER_COLOR = 'rgba(255, 214, 0, 0.5)' // 选中高亮边框
 const DELETE_BTN_COLOR = '#E53935'         // 删除按钮背景（红色）
+const MAX_RULERS = 8
 
 class ruler {
     constructor() {
@@ -111,6 +112,10 @@ class ruler {
                 // 2. 绘制逻辑：左键只负责绘制，不做选中检测
                 if (this.tempStart) {
                     // 正在绘制中（已有起点，等待终点），直接完成绘制
+                    if (this.rulerLines.length >= MAX_RULERS) {
+                        message.warning(`最多支持 ${MAX_RULERS} 条量尺`)
+                        return
+                    }
                     this.clickIndex++
                     this.listeners.push({ pageX: e.pageX, pageY: e.pageY })
 
@@ -120,12 +125,12 @@ class ruler {
                     const endGrid = this._toGrid(endPoint)
                     const x = Math.abs(endGrid.x - startGrid.x) * this.distanceX
                     const y = Math.abs(endGrid.y - startGrid.y) * this.distanceY
-                    const distance = (Math.sqrt(x * x + y * y)).toFixed(0)
+                    const distance = (Math.sqrt(x * x + y * y) / 10).toFixed(1)
 
                     this.rulerLines.push({
                         startGrid,
                         endGrid,
-                        distance: `${distance}mm`
+                        distance: `${distance}cm`
                     })
                     this.tempStart = null
                     this._redraw()

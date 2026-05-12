@@ -9,7 +9,7 @@ const { broadcast } = require('../websocket')
 
 const { blue } = constantObj
 const DEFAULT_PLAYBACK_HZ = 1
-const DEFAULT_DATA_DIRECTION = { left: true, up: true }
+const DEFAULT_DATA_DIRECTION = { left: true, up: true, rotateDegree: 0 }
 const MATRIX_DIMENSIONS = {
   'endi-back': { width: 50, height: 64 },
   'endi-sit': { width: 46, height: 46 },
@@ -23,11 +23,49 @@ const MATRIX_DIMENSIONS = {
   bigHand: { width: 64, height: 64 },
 }
 
+function normalizeRotateDegree(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  return ((Math.round(numeric / 90) * 90) % 360 + 360) % 360
+}
+
+function getDataDirectionName(direction) {
+  const rotateDegree = normalizeRotateDegree(direction?.rotateDegree ?? direction?.rotate_degree)
+  if (rotateDegree) return `rotate${rotateDegree}`
+  const left = direction?.left !== false
+  const up = direction?.up !== false
+  if (!left && !up) return 'both'
+  if (!left) return 'horizontal'
+  if (!up) return 'vertical'
+  return 'none'
+}
+
 function normalizeDataDirection(direction) {
-  return {
+  const rotateDegree = normalizeRotateDegree(direction?.rotateDegree ?? direction?.rotate_degree)
+  const normalized = {
     left: direction?.left !== false,
     up: direction?.up !== false,
+    rotateDegree,
+    rotate_degree: rotateDegree,
   }
+  normalized.data_direction = getDataDirectionName(normalized)
+  return normalized
+}
+
+function normalizeDataDirectionState(direction) {
+  const base = normalizeDataDirection(direction)
+  const byKey = {}
+  if (direction?.byKey && typeof direction.byKey === 'object') {
+    Object.keys(direction.byKey).forEach((key) => {
+      byKey[key] = normalizeDataDirection(direction.byKey[key])
+    })
+  }
+  return { ...base, byKey }
+}
+
+function getDirectionForKey(directionState, key) {
+  const state = normalizeDataDirectionState(directionState || DEFAULT_DATA_DIRECTION)
+  return normalizeDataDirection(state.byKey?.[key] || state)
 }
 
 function getMatrixDimensions(key, arr) {
@@ -42,6 +80,36 @@ function getMatrixDimensions(key, arr) {
   }
 
   return null
+}
+
+function cloneQuality(dataQuality) {
+  if (!dataQuality || typeof dataQuality !== 'object') return null
+  return {
+    status: dataQuality.status || 'ok',
+    totalFrames: dataQuality.totalFrames || 0,
+    badFrameCount: dataQuality.badFrameCount || 0,
+    consecutiveBadFrames: dataQuality.consecutiveBadFrames || 0,
+    badFrameRate: Number(dataQuality.badFrameRate || 0),
+    lastError: dataQuality.lastError || null,
+    hzAbnormal: Boolean(dataQuality.hzAbnormal),
+  }
+}
+
+function buildMatrixMeta(type, arr) {
+  const dimensions = getMatrixDimensions(type, arr)
+  if (!dimensions) return null
+  return {
+    matrix_key: type,
+    width: dimensions.width,
+    height: dimensions.height,
+    point_count: Array.isArray(arr) ? arr.length : 0,
+  }
+}
+
+function isValidMatrix(type, arr) {
+  if (!Array.isArray(arr)) return false
+  const dimensions = getMatrixDimensions(type, arr)
+  return Boolean(dimensions && dimensions.width * dimensions.height === arr.length)
 }
 
 function flipHorizontal(arr, width, height) {
@@ -64,6 +132,25 @@ function flipVertical(arr, width, height) {
   return result
 }
 
+function rotateClockwise(arr, width, height) {
+  const result = []
+  for (let x = 0; x < width; x++) {
+    for (let y = height - 1; y >= 0; y--) {
+      result.push(arr[y * width + x])
+    }
+  }
+  return result
+}
+
+function getDirectedDimensions(key, arr, direction) {
+  const dimensions = getMatrixDimensions(key, arr)
+  if (!dimensions) return null
+  const rotateDegree = normalizeRotateDegree(direction?.rotateDegree)
+  return rotateDegree === 90 || rotateDegree === 270
+    ? { width: dimensions.height, height: dimensions.width }
+    : dimensions
+}
+
 function applyCollectionDirection(key, arr, direction) {
   const dimensions = getMatrixDimensions(key, arr)
   if (!dimensions) {
@@ -77,7 +164,40 @@ function applyCollectionDirection(key, arr, direction) {
   if (!direction.up) {
     result = flipVertical(result, dimensions.width, dimensions.height)
   }
+  let currentWidth = dimensions.width
+  let currentHeight = dimensions.height
+  const turns = normalizeRotateDegree(direction.rotateDegree) / 90
+  for (let i = 0; i < turns; i++) {
+    result = rotateClockwise(result, currentWidth, currentHeight)
+    const oldWidth = currentWidth
+    currentWidth = currentHeight
+    currentHeight = oldWidth
+  }
   return result
+}
+
+function applyZeroBaseline(key, arr, zeroState) {
+  if (!zeroState?.enabled || !zeroState?.data || !Array.isArray(arr)) return [...arr]
+  const shortKey = key.includes('-') ? key.split('-')[1] : key
+  const baseline = zeroState.data[key] || zeroState.data[shortKey]
+  if (!Array.isArray(baseline) || baseline.length !== arr.length) return [...arr]
+  return arr.map((value, index) => Math.max(0, value - (Number(baseline[index]) || 0)))
+}
+
+function buildZeroMeta(zeroState, key) {
+  const shortKey = key.includes('-') ? key.split('-')[1] : key
+  const baseline = zeroState?.data?.[key] || zeroState?.data?.[shortKey]
+  return {
+    enabled: Boolean(zeroState?.enabled),
+    zero_enabled: Boolean(zeroState?.enabled),
+    zero_time: zeroState?.enabled ? (zeroState.zeroTime || null) : null,
+    has_baseline: Array.isArray(baseline),
+  }
+}
+
+function getDeviceMacForItem(item = {}) {
+  const port = item.rawFrame?.port
+  return port && state.macInfo?.[port]?.uniqueId ? state.macInfo[port].uniqueId : ''
 }
 
 /**
@@ -115,11 +235,32 @@ function parseData(parserArr, objs, type) {
     json[data.type] = {}
 
     if (dataStamp < ONLINE_THRESHOLD) {
-      json[data.type].status = 'online'
+      if (Array.isArray(blueArr) && blueArr.length && !isValidMatrix(data.type, blueArr)) {
+        json[data.type].status = 'matrix_error'
+        json[data.type].dataQuality = {
+          ...(cloneQuality(data.dataQuality) || {}),
+          status: 'device_error',
+          lastError: {
+            type: 'matrix_size_mismatch',
+            expected: getMatrixDimensions(data.type, blueArr),
+            actualLength: blueArr.length,
+          },
+        }
+        return
+      }
+
+      const quality = cloneQuality(data.dataQuality)
+      json[data.type].status = quality?.status === 'device_error' ? 'device_error' : 'online'
       json[data.type].arr = blueArr
       json[data.type].rotate = data.rotate
       json[data.type].stamp = data.stamp
       json[data.type].HZ = data.HZ
+      json[data.type].sampleRateHz = data.sampleRateHz || data.HZ
+      json[data.type].frameIntervalMs = data.frameIntervalMs
+      json[data.type].rawFrame = data.rawFrame
+      json[data.type].rawPointArray = data.rawPointArray
+      json[data.type].matrixMeta = buildMatrixMeta(data.type, blueArr)
+      if (quality) json[data.type].dataQuality = quality
       if (data.cop) json[data.type].cop = data.cop
       if (data.breatheData) json[data.type].cop = data.breatheData
     } else {
@@ -159,18 +300,36 @@ function sendData() {
  */
 function storageData(data) {
   const timestamp = Date.now()
-  const direction = normalizeDataDirection(state.dataDirection || DEFAULT_DATA_DIRECTION)
+  const directionState = normalizeDataDirectionState(state.dataDirection || DEFAULT_DATA_DIRECTION)
   const newData = {}
 
   Object.keys(data || {}).forEach((key) => {
     const item = data[key]
     if (!item || typeof item !== 'object') return
+    if (item.status && item.status !== 'online') return
+    if (item.dataQuality?.status === 'device_error') return
 
     const nextItem = { ...item }
     if (nextItem.status) delete nextItem.status
     if (Array.isArray(nextItem.arr)) {
+      const direction = getDirectionForKey(directionState, key)
+      nextItem.arr = applyZeroBaseline(key, nextItem.arr, state.zeroState)
       nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
       nextItem.dataDirection = direction
+      const directedDimensions = getDirectedDimensions(key, item.arr, direction)
+      if (directedDimensions) {
+        nextItem.matrixMeta = {
+          matrix_key: key,
+          width: directedDimensions.width,
+          height: directedDimensions.height,
+          point_count: nextItem.arr.length,
+        }
+      }
+      nextItem.zeroState = buildZeroMeta(state.zeroState, key)
+      nextItem.deviceMac = getDeviceMacForItem(item)
+      nextItem.deviceType = key
+      nextItem.softwareVersion = 'endi1.0.1'
+      nextItem.pressureUnit = 'software_unit'
     }
     newData[key] = nextItem
   })
@@ -243,6 +402,28 @@ function removePlaybackSelect(data) {
   return data
 }
 
+function validatePlaybackFrameData(sitDataPlay) {
+  const keys = Object.keys(sitDataPlay || {})
+  if (!keys.length) {
+    return { valid: false, reason: 'empty_frame' }
+  }
+
+  for (const key of keys) {
+    const item = sitDataPlay[key]
+    if (!item || !Array.isArray(item.arr) || !item.arr.length) {
+      return { valid: false, reason: 'missing_matrix', key }
+    }
+    if (!isValidMatrix(key, item.arr)) {
+      return { valid: false, reason: 'matrix_size_mismatch', key, actualLength: item.arr.length }
+    }
+    if (item.arr.some((value) => !Number.isFinite(Number(value)))) {
+      return { valid: false, reason: 'invalid_number', key }
+    }
+  }
+
+  return { valid: true }
+}
+
 function parsePlaybackTimestamp(value) {
   if (value === undefined || value === null || value === '') return null
   if (typeof value === 'number') return value
@@ -267,20 +448,62 @@ function normalizePlayIndex(index = state.playIndex, rows = getPlaybackRows()) {
   return state.playIndex
 }
 
-function getPlaybackSnapshot(index = state.playIndex) {
+function getPlaybackSnapshot(index = state.playIndex, options = {}) {
   const rows = getPlaybackRows()
-  const normalizedIndex = normalizePlayIndex(index, rows)
+  let normalizedIndex = normalizePlayIndex(index, rows)
 
   if (normalizedIndex < 0) {
     return null
   }
 
-  const row = rows[normalizedIndex]
-  if (!row) {
+  const maxSkips = options.skipBadFrames === false ? 0 : rows.length
+  let skippedInThisLookup = 0
+  let row = rows[normalizedIndex]
+  let sitDataPlay = removePlaybackSelect(parsePlaybackData(row?.data))
+  let validation = validatePlaybackFrameData(sitDataPlay)
+
+  while (!validation.valid && skippedInThisLookup < maxSkips) {
+    console.warn('[Playback] Skip bad frame:', {
+      index: normalizedIndex,
+      ...validation,
+    })
+    state.playbackSkippedFrameCount = (state.playbackSkippedFrameCount || 0) + 1
+    state.playbackConsecutiveBadFrames = (state.playbackConsecutiveBadFrames || 0) + 1
+    skippedInThisLookup += 1
+
+    if (state.playbackConsecutiveBadFrames >= 10) {
+      state.historyPlayFlag = false
+      return {
+        row,
+        payload: {
+          playError: {
+            type: 'too_many_bad_frames',
+            skipped_frame_count: state.playbackSkippedFrameCount,
+            message: '历史数据损坏较多，建议检查文件',
+          },
+          index: normalizedIndex,
+        }
+      }
+    }
+
+    if (normalizedIndex >= rows.length - 1) {
+      return null
+    }
+
+    normalizedIndex += 1
+    state.playIndex = normalizedIndex
+    row = rows[normalizedIndex]
+    sitDataPlay = removePlaybackSelect(parsePlaybackData(row?.data))
+    validation = validatePlaybackFrameData(sitDataPlay)
+  }
+
+  if (!validation.valid || !row) {
     return null
   }
 
-  const sitDataPlay = removePlaybackSelect(parsePlaybackData(row.data))
+  if (skippedInThisLookup === 0) {
+    state.playbackConsecutiveBadFrames = 0
+  }
 
   // 将缓存的框选信息注入到每帧数据中，供前端渲染框选框
   const selectCache = state.historySelectCache
@@ -297,7 +520,11 @@ function getPlaybackSnapshot(index = state.playIndex) {
     payload: {
       sitDataPlay,
       index: normalizedIndex,
-      timestamp: parsePlaybackTimestamp(row.timestamp)
+      timestamp: parsePlaybackTimestamp(row.timestamp),
+      playbackQuality: {
+        skipped_frame_count: state.playbackSkippedFrameCount || 0,
+        skipped_in_lookup: skippedInThisLookup,
+      }
     }
   }
 }
@@ -325,6 +552,11 @@ function runPlaybackTick() {
 
   broadcast(JSON.stringify(snapshot.payload))
 
+  if (snapshot.payload?.playError) {
+    finishPlayback()
+    return
+  }
+
   const rows = getPlaybackRows()
   if (state.playIndex < rows.length - 1) {
     state.playIndex++
@@ -349,6 +581,8 @@ function startPlayback() {
     state.playIndex = 0
   }
   state.historyPlayFlag = true
+  state.playbackSkippedFrameCount = 0
+  state.playbackConsecutiveBadFrames = 0
 
   clearPlayTimer()
   broadcast(JSON.stringify({ playEnd: true }))
@@ -368,7 +602,8 @@ function changePlaySpeed(speed) {
   const baseHz = Number(state.colMaxHZ)
   const safeBaseHz = Number.isFinite(baseHz) && baseHz > 0 ? baseHz : DEFAULT_PLAYBACK_HZ
   const speedValue = Number(speed)
-  const safeSpeed = Number.isFinite(speedValue) && speedValue > 0 ? speedValue : 1
+  const allowedSpeeds = [0.5, 1, 2, 4]
+  const safeSpeed = allowedSpeeds.includes(speedValue) ? speedValue : 1
 
   state.colplayHZ = safeBaseHz * safeSpeed
 

@@ -21,6 +21,7 @@ function diffColor(value, maxAbs) {
 export default function ContrastHeatmap(props) {
     const { title, subtitle, arr = [], width = 32, height = 32, mode = 'normal', className = '' } = props
     const canvasRef = useRef(null)
+    const maxAbs = Math.max(1, ...arr.map((value) => Math.abs(Number(value) || 0)))
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -33,16 +34,15 @@ export default function ContrastHeatmap(props) {
         canvas.height = drawHeight * cell
 
         ctx.clearRect(0, 0, canvas.width, canvas.height)
-        const max = Math.max(1, ...arr.map((value) => Math.abs(Number(value) || 0)))
         for (let y = 0; y < drawHeight; y++) {
             for (let x = 0; x < drawWidth; x++) {
                 const value = Number(arr[y * drawWidth + x]) || 0
-                const color = mode === 'diff' ? diffColor(value, max) : jetColor(value, max)
+                const color = mode === 'diff' ? diffColor(value, maxAbs) : jetColor(value, maxAbs)
                 ctx.fillStyle = `rgb(${color[0]}, ${color[1]}, ${color[2]})`
                 ctx.fillRect(x * cell, y * cell, cell, cell)
             }
         }
-    }, [arr, width, height, mode])
+    }, [arr, width, height, mode, maxAbs])
 
     return (
         <div className="contrastPanel">
@@ -52,6 +52,15 @@ export default function ContrastHeatmap(props) {
             </div>
             <div className="contrastCanvasWrap">
                 <canvas ref={canvasRef} className={`canvasThree contrastCanvas ${className}`} />
+                {mode === 'diff' ? (
+                    <div className="diffLegendOverlay">
+                        <div className="diffLegendTitle">B-A 差值</div>
+                        <div><span className="legendRed" />B 大于 A</div>
+                        <div><span className="legendWhite" />接近无变化</div>
+                        <div><span className="legendBlue" />B 小于 A</div>
+                        <div className="diffLegendRange">范围 ±{maxAbs.toFixed(maxAbs >= 100 ? 0 : 1)}</div>
+                    </div>
+                ) : null}
             </div>
         </div>
     )

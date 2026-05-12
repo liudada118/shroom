@@ -37,6 +37,12 @@ const MIN_HZ_INTERVAL = 50
 const ONLINE_THRESHOLD = 1000
 const DATA_SEND_INTERVAL = 80
 const ZOMBIE_THRESHOLD = 5000        // 5 seconds no data = zombie
+const BAD_FRAME_WINDOW_MS = 1000
+const BAD_FRAME_RATE_THRESHOLD = 0.1
+const CONSECUTIVE_BAD_FRAME_THRESHOLD = 10
+const DATA_QUALITY_NOTIFY_INTERVAL = 3000
+const HZ_ZERO_THRESHOLD_MS = 2000
+const HZ_JUMP_FACTOR = 3
 const STABLE_CONN_TIMEOUT = 2000     // 2s timeout per connection attempt
 const STABLE_CONN_RETRIES = 3        // max 3 retries
 const STABLE_CONN_RETRY_DELAY = 500  // 500ms between retries
@@ -133,6 +139,138 @@ async function runWithConnectionLock(mode, task) {
  * After finding delimiter AA 55 03 99, we also check the next frame's length.
  */
 const VALID_FRAME_LENGTHS = [18, 130, 146, 1024, 1025, 4096, 4097]
+
+const MATRIX_POINT_COUNTS = {
+  'car-back': 1024,
+  'car-sit': 1024,
+  bed: 1024,
+  'endi-back': 3200,
+  'endi-sit': 2116,
+  'carY-back': 1024,
+  'carY-sit': 1024,
+  hand: 1024,
+}
+
+function ensureDataQuality(dataItem) {
+  if (!dataItem.dataQuality) {
+    dataItem.dataQuality = {
+      status: 'ok',
+      totalFrames: 0,
+      badFrameCount: 0,
+      consecutiveBadFrames: 0,
+      windowTotal: 0,
+      windowBad: 0,
+      windowStartedAt: Date.now(),
+      badFrameRate: 0,
+      lastError: null,
+      lastBadFrameAt: null,
+      lastGoodFrameAt: null,
+      lastNotifyAt: 0,
+      hzAbnormal: false,
+    }
+  }
+  return dataItem.dataQuality
+}
+
+function resetQualityWindow(quality, now) {
+  if (now - quality.windowStartedAt >= BAD_FRAME_WINDOW_MS) {
+    quality.badFrameRate = quality.windowTotal ? quality.windowBad / quality.windowTotal : 0
+    quality.windowTotal = 0
+    quality.windowBad = 0
+    quality.windowStartedAt = now
+  }
+}
+
+function updateQualityStatus(quality, forcedStatus) {
+  if (forcedStatus) {
+    quality.status = forcedStatus
+    return
+  }
+  if (quality.consecutiveBadFrames >= CONSECUTIVE_BAD_FRAME_THRESHOLD) {
+    quality.status = 'device_error'
+  } else if (quality.badFrameRate > BAD_FRAME_RATE_THRESHOLD || quality.hzAbnormal) {
+    quality.status = 'degraded'
+  } else {
+    quality.status = 'ok'
+  }
+}
+
+function broadcastDataQualityIfNeeded(portPath, dataItem, broadcastFn, now = Date.now()) {
+  const quality = ensureDataQuality(dataItem)
+  if (quality.status === 'ok') return
+  if (now - quality.lastNotifyAt < DATA_QUALITY_NOTIFY_INTERVAL) return
+  quality.lastNotifyAt = now
+  broadcastFn(JSON.stringify({
+    dataQuality: {
+      port: portPath,
+      type: dataItem.type,
+      status: quality.status,
+      message: quality.status === 'device_error' ? '设备数据异常，请重新连接' : '设备数据不稳定，请检查连接',
+      totalFrames: quality.totalFrames,
+      badFrameCount: quality.badFrameCount,
+      consecutiveBadFrames: quality.consecutiveBadFrames,
+      badFrameRate: quality.badFrameRate,
+      lastError: quality.lastError,
+    }
+  }))
+}
+
+function recordBadFrame(portPath, dataItem, broadcastFn, errorType, detail = {}) {
+  const now = Date.now()
+  const quality = ensureDataQuality(dataItem)
+  resetQualityWindow(quality, now)
+  quality.totalFrames++
+  quality.badFrameCount++
+  quality.consecutiveBadFrames++
+  quality.windowTotal++
+  quality.windowBad++
+  quality.lastBadFrameAt = now
+  quality.lastError = {
+    type: errorType,
+    at: now,
+    ...detail,
+  }
+  updateQualityStatus(quality, detail.blocking ? 'device_error' : null)
+  broadcastDataQualityIfNeeded(portPath, dataItem, broadcastFn, now)
+}
+
+function recordGoodFrame(portPath, dataItem, frameLength, pointCount, receivedAt) {
+  const quality = ensureDataQuality(dataItem)
+  resetQualityWindow(quality, receivedAt)
+  quality.totalFrames++
+  quality.consecutiveBadFrames = 0
+  quality.windowTotal++
+  quality.lastGoodFrameAt = receivedAt
+  updateQualityStatus(quality)
+
+  state.frameSeq += 1
+  dataItem.rawFrame = {
+    frame_id: state.frameSeq,
+    received_at: receivedAt,
+    port: portPath,
+    baud_rate: dataItem.baudRate,
+    frame_length: frameLength,
+    hardware_sample_rate_hz: dataItem.hardwareSampleRateHz || null,
+  }
+  dataItem.rawPointArray = {
+    point_count: pointCount,
+    received_at: receivedAt,
+  }
+}
+
+function validateMatrixPointCount(portPath, dataItem, arr, broadcastFn) {
+  const expected = MATRIX_POINT_COUNTS[dataItem.type]
+  if (!expected || !Array.isArray(arr)) return true
+  if (arr.length === expected) return true
+  recordBadFrame(portPath, dataItem, broadcastFn, 'matrix_size_mismatch', {
+    expectedLength: expected,
+    actualLength: arr.length,
+    deviceType: dataItem.type,
+    blocking: true,
+  })
+  dataItem.status = 'matrix_error'
+  return false
+}
 
 /**
  * Track port connection history (record only, no auto-close)
@@ -610,13 +748,36 @@ function processTypedMatrixData(pointArr, dataItem) {
   return pointArr
 }
 
-function updateHZAndStartTimer(dataItem, stamp, onTimerStart) {
+function updateHZAndStartTimer(dataItem, stamp, onTimerStart, portPath, broadcastFn) {
   if (state.oldTimeObj[dataItem.type]) {
-    dataItem.HZ = stamp - state.oldTimeObj[dataItem.type]
-    if (dataItem.HZ < MIN_HZ_INTERVAL) return false
+    const intervalMs = stamp - state.oldTimeObj[dataItem.type]
+    if (intervalMs < MIN_HZ_INTERVAL) return false
+
+    const sampleRateHz = Math.max(1, Math.round(1000 / intervalMs))
+    const quality = ensureDataQuality(dataItem)
+    const previousHz = Number(dataItem.sampleRateHz)
+    dataItem.frameIntervalMs = intervalMs
+    dataItem.sampleRateHz = sampleRateHz
+    dataItem.HZ = sampleRateHz
+
+    if (intervalMs >= HZ_ZERO_THRESHOLD_MS || (previousHz > 0 && (sampleRateHz > previousHz * HZ_JUMP_FACTOR || sampleRateHz < previousHz / HZ_JUMP_FACTOR))) {
+      quality.hzAbnormal = true
+      quality.lastError = {
+        type: 'sample_rate_abnormal',
+        at: stamp,
+        previousHz,
+        sampleRateHz,
+        intervalMs,
+      }
+      updateQualityStatus(quality)
+      if (portPath && broadcastFn) broadcastDataQualityIfNeeded(portPath, dataItem, broadcastFn, stamp)
+    } else {
+      quality.hzAbnormal = false
+      updateQualityStatus(quality)
+    }
 
     if (!state.MaxHZ && state.oldTimeObj[dataItem.type]) {
-      state.MaxHZ = Math.floor(1000 / dataItem.HZ)
+      state.MaxHZ = sampleRateHz
       state.HZ = state.MaxHZ
       console.log(`[Serial] Frame rate detected: ${state.HZ} Hz`)
       if (state.playtimer) clearInterval(state.playtimer)
@@ -652,9 +813,15 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
   parserItem.parser.on('data', async (data) => {
     const buffer = Buffer.from(data)
     const pointArr = Array.from(buffer)
+    const receivedAt = Date.now()
+
+    if (!pointArr.length) {
+      recordBadFrame(portPath, dataItem, broadcastFn, 'empty_frame', { actualLength: 0 })
+      return
+    }
 
     // Update lastDataTime for zombie detection
-    state.lastDataTime[portPath] = Date.now()
+    state.lastDataTime[portPath] = receivedAt
 
     // -- MAC address response (fallback, in case delimiter follows AT response) --
     if (buffer.toString().includes('Unique ID')) {
@@ -686,6 +853,7 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
     // -- Gyroscope data (18 bytes) --
     if (pointArr.length === 18) {
       dataItem.rotate = bytes4ToInt10(pointArr.slice(2))
+      recordGoodFrame(portPath, dataItem, pointArr.length, pointArr.length, receivedAt)
       return
     }
 
@@ -696,7 +864,8 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       const arr = pointArr.slice(2)
       dataItem[constantObj.order[orderByte]] = arr
       dataItem.type = constantObj.handTypeMap[typeByte] || constantObj.type[typeByte]
-      dataItem.stamp = Date.now()
+      dataItem.stamp = receivedAt
+      recordGoodFrame(portPath, dataItem, pointArr.length, arr.length, receivedAt)
       return
     }
 
@@ -704,10 +873,12 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
     if (pointArr.length === 1024) {
       if (!dataItem.premission) return
       dataItem.arr = processMatrixData(pointArr, dataItem)
+      if (!validateMatrixPointCount(portPath, dataItem, dataItem.arr, broadcastFn)) return
 
-      const stamp = Date.now()
+      const stamp = receivedAt
       dataItem.stamp = stamp
-      if (!updateHZAndStartTimer(dataItem, stamp, onTimerStart)) return
+      recordGoodFrame(portPath, dataItem, pointArr.length, dataItem.arr.length, stamp)
+      if (!updateHZAndStartTimer(dataItem, stamp, onTimerStart, portPath, broadcastFn)) return
 
       if (state.file === 'foot') {
         updateArrList(dataItem, dataItem.arr, 60)
@@ -728,10 +899,12 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
 
       dataItem.type = constantObj.typeConfig[typeCode]
       dataItem.arr = processTypedMatrixData(matrixData, dataItem)
+      if (!validateMatrixPointCount(portPath, dataItem, dataItem.arr, broadcastFn)) return
 
-      const stamp = Date.now()
+      const stamp = receivedAt
       dataItem.stamp = stamp
-      if (!updateHZAndStartTimer(dataItem, stamp, onTimerStart)) return
+      recordGoodFrame(portPath, dataItem, pointArr.length, dataItem.arr.length, stamp)
+      if (!updateHZAndStartTimer(dataItem, stamp, onTimerStart, portPath, broadcastFn)) return
       return
     }
 
@@ -740,10 +913,11 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       const rotateData = pointArr.slice(pointArr.length - 16)
       const nextData = pointArr.slice(2, pointArr.length - 16)
       dataItem.next = nextData
-      dataItem.stamp = Date.now()
+      dataItem.stamp = receivedAt
       const typeByte = pointArr[1]
       dataItem.type = constantObj.handTypeMap[typeByte] || dataItem.type
       dataItem.rotate = bytes4ToInt10(rotateData)
+      recordGoodFrame(portPath, dataItem, pointArr.length, nextData.length, receivedAt)
       return
     }
 
@@ -765,14 +939,19 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       } else {
         dataItem.arr = pointArr
       }
+      if (!validateMatrixPointCount(portPath, dataItem, dataItem.arr, broadcastFn)) return
 
-      const stamp = Date.now()
+      const stamp = receivedAt
       if (state.sendDataLength < 20) state.sendDataLength++
 
       if (state.oldTimeObj[dataItem.type]) {
-        dataItem.HZ = stamp - state.oldTimeObj[dataItem.type]
+        const intervalMs = stamp - state.oldTimeObj[dataItem.type]
+        const sampleRateHz = Math.max(1, Math.round(1000 / intervalMs))
+        dataItem.frameIntervalMs = intervalMs
+        dataItem.sampleRateHz = sampleRateHz
+        dataItem.HZ = sampleRateHz
         if (!state.MaxHZ && state.sendDataLength === 20) {
-          state.MaxHZ = Math.floor(1000 / dataItem.HZ)
+          state.MaxHZ = sampleRateHz
           state.HZ = state.MaxHZ
           state.playtimer = setInterval(onTimerStart, 1000 / state.HZ)
           state.sendDataLength = 0
@@ -780,6 +959,7 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       }
       dataItem.stamp = stamp
       state.oldTimeObj[dataItem.type] = stamp
+      recordGoodFrame(portPath, dataItem, pointArr.length, dataItem.arr.length, stamp)
       updateArrList(dataItem, pointArr)
       return
     }
@@ -808,21 +988,33 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       } else {
         dataItem.arr = matrixData
       }
+      if (!validateMatrixPointCount(portPath, dataItem, dataItem.arr, broadcastFn)) return
 
-      const stamp = Date.now()
+      const stamp = receivedAt
       if (state.oldTimeObj[dataItem.type]) {
-        dataItem.HZ = stamp - state.oldTimeObj[dataItem.type]
+        const intervalMs = stamp - state.oldTimeObj[dataItem.type]
+        const sampleRateHz = Math.max(1, Math.round(1000 / intervalMs))
+        dataItem.frameIntervalMs = intervalMs
+        dataItem.sampleRateHz = sampleRateHz
+        dataItem.HZ = sampleRateHz
         if (!state.MaxHZ) {
-          state.MaxHZ = Math.floor(1000 / dataItem.HZ)
+          state.MaxHZ = sampleRateHz
           state.HZ = state.MaxHZ
           state.playtimer = setInterval(onTimerStart, 1000 / state.HZ)
         }
       }
       dataItem.stamp = stamp
       state.oldTimeObj[dataItem.type] = stamp
+      recordGoodFrame(portPath, dataItem, pointArr.length, dataItem.arr.length, stamp)
       updateArrList(dataItem, matrixData)
       return
     }
+
+    recordBadFrame(portPath, dataItem, broadcastFn, 'frame_length_mismatch', {
+      expectedLengths: VALID_FRAME_LENGTHS,
+      actualLength: pointArr.length,
+      deviceType: dataItem.type || dataItem.deviceClass || 'unknown',
+    })
   })
 }
 

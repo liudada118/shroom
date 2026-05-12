@@ -1,6 +1,6 @@
 import React, { forwardRef, useContext, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import './index.scss'
-import { Dropdown, Input, Popover } from 'antd'
+import { Dropdown, Input, Popover, message } from 'antd'
 import { pageContext } from '../../page/test/Test';
 import { withTranslation } from 'react-i18next';
 import { getSysType, useEquipStore } from '../../store/equipStore';
@@ -84,10 +84,33 @@ const ViewSetting = (props) => {
     const car2DArr = ['back2D', 'sit2D']
     const car3DArr = ['back3D', 'sit3D']
 
+    const hasDisplayData = (type) => {
+        const displayStatus = useEquipStore.getState().displayStatus || {}
+        if (type.includes('back')) return Array.isArray(displayStatus.back) && displayStatus.back.length > 0
+        if (type.includes('sit')) return Array.isArray(displayStatus.sit) && displayStatus.sit.length > 0
+        return ['back', 'sit'].some(key => Array.isArray(displayStatus[key]) && displayStatus[key].length > 0)
+    }
+
+    const warnMissingDisplayData = (type) => {
+        const label = type.includes('sit') ? '坐垫' : '靠背'
+        message.warning(`当前没有${label}数据`)
+    }
+
+    const getDefault2DDisplayType = () => {
+        if (hasDisplayData('back2D')) return 'back2D'
+        if (hasDisplayData('sit2D')) return 'sit2D'
+        message.warning('当前没有坐垫或靠背数据')
+        return null
+    }
+
     const changeCarViewContent = <div style={{ color: '#E6EBF0' }}>
         {
             carArr.map((type, index) => {
                 return <div className='cursor' onClick={() => {
+                    if (type !== 'all' && !hasDisplayData(type)) {
+                        warnMissingDisplayData(type)
+                        return
+                    }
                     setCarType(type)
                     if (display != 'point3D') {
                         setDisplay('point3D')
@@ -106,6 +129,10 @@ const ViewSetting = (props) => {
         {
             car2DArr.map((type, index) => {
                 return <div className='cursor' onClick={() => {
+                    if (!hasDisplayData(type)) {
+                        warnMissingDisplayData(type)
+                        return
+                    }
                     setCarType(type)
                     if (display != 'num') {
                         setDisplay('num')
@@ -162,10 +189,12 @@ const ViewSetting = (props) => {
         </Popover> */}
         <Popover trigger='click' color='#32373E' placement="right" content={changeCar2DViewContent}>
             <div className='cursor' onClick={() => {
+                const defaultType = getDefault2DDisplayType()
+                if (!defaultType) return
                 setShowProp(100)
                 setDisplay('num')
-                useEquipStore.getState().setDisplayType('back2D')
-                setCarType('back2D')
+                useEquipStore.getState().setDisplayType(defaultType)
+                setCarType(defaultType)
                 changeAllFun()
             }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: display == 'num' ? '#0072EF' : 'unset' }}>{t('num2D')}</div>
         </Popover>

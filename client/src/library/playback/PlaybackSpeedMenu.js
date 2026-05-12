@@ -1,6 +1,6 @@
 import React from 'react';
 
-const SPEEDS = ['0.5', '1.0', '2.0', '4.0', '8.0'];
+const SPEEDS = ['0.5', '1.0', '2.0', '4.0'];
 
 export default function PlaybackSpeedMenu({ value, onChange }) {
     return (

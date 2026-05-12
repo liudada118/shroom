@@ -19,6 +19,9 @@ const pointConfig = {
 };
 
 const CSV_IMPORT_INVALID_MESSAGE = '数据有误'
+const CSV_FORMAT_VERSION = '2.0'
+const SOFTWARE_VERSION = 'endi1.0.1'
+const PRESSURE_UNIT = 'software_unit'
 const validImportMatrixLengths = new Set([
   ...Object.values(pointConfig).map((config) => config.width * config.height),
   4096,
@@ -184,6 +187,66 @@ function sortExportKeys(keys) {
     if (rankDiff !== 0) return rankDiff
     return String(a).localeCompare(String(b))
   })
+}
+
+function inferExportMatrixSize(key, data, item = {}) {
+  if (item.matrixMeta?.width && item.matrixMeta?.height) {
+    return { width: item.matrixMeta.width, height: item.matrixMeta.height }
+  }
+  if (pointConfig[key]) {
+    return { width: pointConfig[key].width, height: pointConfig[key].height }
+  }
+
+  const length = Array.isArray(data) ? data.length : 0
+  const side = Math.sqrt(length)
+  if (Number.isInteger(side) && side > 0) {
+    return { width: side, height: side }
+  }
+
+  return { width: length, height: 1 }
+}
+
+function normalizeExportDirection(direction) {
+  const rotateDegree = ((Math.round(Number(direction?.rotateDegree ?? direction?.rotate_degree) / 90) * 90) % 360 + 360) % 360 || 0
+  const normalized = {
+    left: direction?.left !== false,
+    up: direction?.up !== false,
+    rotateDegree,
+    rotate_degree: rotateDegree,
+  }
+  if (rotateDegree) normalized.data_direction = `rotate${rotateDegree}`
+  else if (!normalized.left && !normalized.up) normalized.data_direction = 'both'
+  else if (!normalized.left) normalized.data_direction = 'horizontal'
+  else if (!normalized.up) normalized.data_direction = 'vertical'
+  else normalized.data_direction = 'none'
+  return normalized
+}
+
+function normalizeExportZeroState(zeroState) {
+  return {
+    zero_enabled: Boolean(zeroState?.zero_enabled ?? zeroState?.enabled),
+    zero_time: zeroState?.zero_time || zeroState?.zeroTime || '',
+    has_baseline: Boolean(zeroState?.has_baseline),
+  }
+}
+
+function getDeviceMacFromItem(item = {}) {
+  const port = item.rawFrame?.port
+  if (port && item.macInfo?.[port]?.uniqueId) return item.macInfo[port].uniqueId
+  return item.deviceMac || item.device_mac || item.uniqueId || ''
+}
+
+function getPressureConversion(key) {
+  if (key === 'carY-back' || key === 'carY-sit') {
+    return {
+      pressure_conversion: 'carY_100_div_3',
+      pressure_conversion_desc: 'carY 数据按 100/3 规则换算后用于展示、统计、采集和导出',
+    }
+  }
+  return {
+    pressure_conversion: 'none',
+    pressure_conversion_desc: '',
+  }
 }
 
 // ─── Promise 包装的 DB 操作 ──────────────────────────────
@@ -515,12 +578,50 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const { press: selectPress, area: selectArea, max: selectMax, min: selectMin, aver: selectAver, maxIndex: selectMaxIndex } = colArrData(selectArr)
 
           const pointInfo = pointConfig[key]
+          const matrixSize = inferExportMatrixSize(key, data, item)
+          const dataDirection = normalizeExportDirection(item.dataDirection)
+          const zeroState = normalizeExportZeroState(item.zeroState)
+          const pressureConversion = getPressureConversion(key)
           const pointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : null
           const pressureAreaValue = pointInfo ? (area * pointArea / 100) : area
 
           // 计算框选区域受力面积
           const selectAreaValue = pointInfo ? (selectArea * pointArea / 100) : selectArea
 
+          rowEntry.csv_format_version = CSV_FORMAT_VERSION
+          rowEntry.software_version = SOFTWARE_VERSION
+          rowEntry.record_id = String(param)
+          rowEntry.frame_index = i
+          rowEntry.created_at = new Date().toISOString()
+          rowEntry.device_mac = getDeviceMacFromItem(item)
+          rowEntry.device_type = key
+          rowEntry.system_type = String(file || '')
+          rowEntry.matrix_key = key
+          rowEntry.matrix_width = matrixSize.width
+          rowEntry.matrix_height = matrixSize.height
+          rowEntry.sample_rate_hz = detectedHz
+          rowEntry.hardware_sample_rate_hz = item.rawFrame?.hardware_sample_rate_hz || item.hardwareSampleRateHz || ''
+          rowEntry.baud_rate = item.rawFrame?.baud_rate || item.baudRate || ''
+          rowEntry.pressure_unit = PRESSURE_UNIT
+          rowEntry.pressure_conversion = pressureConversion.pressure_conversion
+          rowEntry.pressure_conversion_desc = pressureConversion.pressure_conversion_desc
+          rowEntry.noise_removed = Boolean(item.noiseRemoved || item.noise_removed)
+          rowEntry.data_direction_left = dataDirection.left
+          rowEntry.data_direction_up = dataDirection.up
+          rowEntry.rotate_degree = dataDirection.rotateDegree
+          rowEntry.data_direction = dataDirection.data_direction
+          rowEntry.zero_enabled = zeroState.zero_enabled
+          rowEntry.zero_time = zeroState.zero_time
+          rowEntry.zero_state = zeroState.has_baseline ? 'baseline_recorded' : (zeroState.zero_enabled ? 'enabled_no_baseline' : 'disabled')
+          rowEntry.timestamp = rows[i].timestamp
+          rowEntry.avg_pressure = aver
+          rowEntry.max_pressure = max
+          rowEntry.max_pressure_coord = indexToCoord(maxIndex, key)
+          rowEntry.min_pressure_non_zero = min
+          rowEntry.pressure_sum = press
+          rowEntry.contact_area = pressureAreaValue
+          rowEntry.active_sensor_count = area
+          rowEntry.real_data = JSON.stringify(data)
           rowEntry[`${key}max`] = max
           rowEntry[`${key}maxCoord`] = indexToCoord(maxIndex, key)
           rowEntry[`${key}aver`] = aver
@@ -533,6 +634,19 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry[`${key}selectAver`] = selectAver
           rowEntry[`${key}selectArea`] = selectAreaValue
           rowEntry[`${key}selectData`] = JSON.stringify(selectArr)
+          rowEntry.select_data = JSON.stringify(selectArr)
+          rowEntry.selection_1_id = obj ? (obj.region_id || 1) : ''
+          rowEntry.selection_1_name = obj ? (obj.name || obj.regionName || '框选1') : ''
+          rowEntry.selection_1_row_range = obj ? `${obj.yStart}-${obj.yEnd}` : ''
+          rowEntry.selection_1_column_range = obj ? `${obj.xStart}-${obj.xEnd}` : ''
+          rowEntry.selection_1_avg_pressure = selectAver
+          rowEntry.selection_1_max_pressure = selectMax
+          rowEntry.selection_1_max_pressure_coord = rowEntry[`${key}selectMaxCoord`]
+          rowEntry.selection_1_min_pressure_non_zero = selectMin
+          rowEntry.selection_1_pressure_sum = selectPress
+          rowEntry.selection_1_contact_area = selectAreaValue
+          rowEntry.selection_1_active_sensor_count = selectArea
+          rowEntry.selection_1_data = JSON.stringify(selectArr)
 
           // endi 类型需要做单位转换
           if (key === 'endi-back') {
@@ -583,6 +697,53 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       function buildSingleKeyHeaders(key) {
         const res = key.replace(/endi/g, "car")
         const headers = [
+          { id: 'csv_format_version', title: 'csv_format_version' },
+          { id: 'software_version', title: 'software_version' },
+          { id: 'record_id', title: 'record_id' },
+          { id: 'frame_index', title: 'frame_index' },
+          { id: 'created_at', title: 'created_at' },
+          { id: 'device_mac', title: 'device_mac' },
+          { id: 'device_type', title: 'device_type' },
+          { id: 'system_type', title: 'system_type' },
+          { id: 'matrix_key', title: 'matrix_key' },
+          { id: 'matrix_width', title: 'matrix_width' },
+          { id: 'matrix_height', title: 'matrix_height' },
+          { id: 'sample_rate_hz', title: 'sample_rate_hz' },
+          { id: 'hardware_sample_rate_hz', title: 'hardware_sample_rate_hz' },
+          { id: 'baud_rate', title: 'baud_rate' },
+          { id: 'pressure_unit', title: 'pressure_unit' },
+          { id: 'pressure_conversion', title: 'pressure_conversion' },
+          { id: 'pressure_conversion_desc', title: 'pressure_conversion_desc' },
+          { id: 'noise_removed', title: 'noise_removed' },
+          { id: 'data_direction_left', title: 'data_direction_left' },
+          { id: 'data_direction_up', title: 'data_direction_up' },
+          { id: 'rotate_degree', title: 'rotate_degree' },
+          { id: 'data_direction', title: 'data_direction' },
+          { id: 'zero_enabled', title: 'zero_enabled' },
+          { id: 'zero_time', title: 'zero_time' },
+          { id: 'zero_state', title: 'zero_state' },
+          { id: 'timestamp', title: 'timestamp' },
+          { id: 'avg_pressure', title: 'avg_pressure' },
+          { id: 'max_pressure', title: 'max_pressure' },
+          { id: 'max_pressure_coord', title: 'max_pressure_coord' },
+          { id: 'min_pressure_non_zero', title: 'min_pressure_non_zero' },
+          { id: 'pressure_sum', title: 'pressure_sum' },
+          { id: 'contact_area', title: 'contact_area' },
+          { id: 'active_sensor_count', title: 'active_sensor_count' },
+          { id: 'real_data', title: 'real_data' },
+          { id: 'select_data', title: 'select_data' },
+          { id: 'selection_1_id', title: 'selection_1_id' },
+          { id: 'selection_1_name', title: 'selection_1_name' },
+          { id: 'selection_1_row_range', title: 'selection_1_row_range' },
+          { id: 'selection_1_column_range', title: 'selection_1_column_range' },
+          { id: 'selection_1_avg_pressure', title: 'selection_1_avg_pressure' },
+          { id: 'selection_1_max_pressure', title: 'selection_1_max_pressure' },
+          { id: 'selection_1_max_pressure_coord', title: 'selection_1_max_pressure_coord' },
+          { id: 'selection_1_min_pressure_non_zero', title: 'selection_1_min_pressure_non_zero' },
+          { id: 'selection_1_pressure_sum', title: 'selection_1_pressure_sum' },
+          { id: 'selection_1_contact_area', title: 'selection_1_contact_area' },
+          { id: 'selection_1_active_sensor_count', title: 'selection_1_active_sensor_count' },
+          { id: 'selection_1_data', title: 'selection_1_data' },
           { id: 'sec', title: 'sec(s)' },
           { id: 'time', title: 'time' },
           { id: `${key}max`, title: `${res} ` + '\u539f\u59cb\u6700\u5927\u538b\u5f3a(Kpa)' },

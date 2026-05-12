@@ -40,7 +40,7 @@ function getDisplayObject(displayType = '') {
 }
 
 export default function SelectSet(props) {
-    const { onSelect } = props
+    const { onSelect, variant = 'floating' } = props
     const pageInfo = useContext(pageContext)
     const { displayType } = pageInfo
     const systemType = useEquipStore(s => s.systemType, shallow)
@@ -319,7 +319,7 @@ export default function SelectSet(props) {
     if (!onSelect) return null
 
     return (
-        <div className='selectInputContent' style={{ maxHeight: '24rem', overflowY: 'auto' }}>
+        <div className={`selectInputContent ${variant === 'embedded' ? 'selectInputEmbedded' : 'selectInputDrawer'}`}>
             <div className="selectInputTitle" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <div className="selectInputTitleInfo">框选区域</div>
@@ -347,7 +347,9 @@ export default function SelectSet(props) {
                     <div style={{
                         width: '12px', height: '12px', borderRadius: '3px',
                         backgroundColor: box.bgc, flexShrink: 0,
-                    }} />
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#071016', fontSize: '0.48rem', fontWeight: 900,
+                    }}>{idx + 1}</div>
                     <Input
                         value={box.name}
                         onChange={(e) => handleRenameBox(idx, e.target.value)}

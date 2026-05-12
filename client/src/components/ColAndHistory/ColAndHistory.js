@@ -504,7 +504,7 @@ const ColAndHistory = memo((props) => {
 
         axios({
             method: 'post',
-            url: `${localAddress}/downlaod`,
+            url: `${localAddress}/download`,
             params: buildFallbackParams(payload),
             data: payload,
         }).then((res) => {

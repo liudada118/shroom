@@ -65,6 +65,7 @@ const WS_RECONNECT_DELAY = 3000
  * @param {Function} handlers.onConnectResult - 连接结果回调 (connectResult)
  * @param {Function} handlers.onDeviceUpdate - 设备更新回调 (deviceUpdate)
  * @param {Function} handlers.onRescanProgress - 重扫进度回调 (rescanProgress)
+ * @param {Function} handlers.onDataQuality - 数据质量回调 (dataQuality)
  * @param {Function} handlers.onWsOpen - WebSocket 连接成功回调
  * @param {Function} handlers.onWsClose - WebSocket 断开回调
  */
@@ -180,6 +181,10 @@ export function useWebSocket(handlers = {}) {
           // 重扫进度
           if (jsonObj.rescanProgress && h.onRescanProgress) {
             h.onRescanProgress(jsonObj.rescanProgress)
+          }
+
+          if (jsonObj.dataQuality && h.onDataQuality) {
+            h.onDataQuality(jsonObj.dataQuality)
           }
         } catch (err) {
           console.error('[WS] 消息解析失败:', err)

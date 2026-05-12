@@ -19,6 +19,7 @@ import { jetWhite3, lineInterp } from "../../assets/util/line";
 import { getSettingValue, getStatus } from "../../store/equipStore";
 import { Scheduler } from "../../scheduler/scheduler";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
+import { getColorLimit, getDisplayColorValue } from "../../util/displayMapping";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -671,6 +672,7 @@ const Canvas =
             const {
                 gauss = 1, color, filter, height = 1, coherent = 1
             } = getSettingValue()//pageRef.current.settingValue
+            const colorLimit = getColorLimit(color)
             const numParticles = AMOUNTX * AMOUNTY;
             const positions = new Float32Array(numParticles * 3);
             const colors = new Float32Array(numParticles * 3);
@@ -715,7 +717,7 @@ const Canvas =
                     positions[k + 2] = ix * SEPARATION - (AMOUNTX * SEPARATION) / 2; // z
 
                     let rgb
-                    rgb = jetWhite3(0, color, smoothBig[l]);
+                    rgb = jetWhite3(0, colorLimit, getDisplayColorValue(smoothBig[l], colorLimit));
 
                     colors[k] = rgb[0] / 255;
                     colors[k + 1] = rgb[1] / 255;

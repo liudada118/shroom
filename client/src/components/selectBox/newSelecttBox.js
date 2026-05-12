@@ -193,6 +193,58 @@ export class BrushManager {
         return true;
     }
 
+    _getRangeMatrixRect(range) {
+        return this._rangeToMatrixRect(range) || range?.matrixRect || null;
+    }
+
+    _formatRangeLabel(range) {
+        const matrix = this._getRangeMatrixRect(range);
+        if (!matrix) return '拖拽中';
+        const width = matrix.xEnd - matrix.xStart;
+        const height = matrix.yEnd - matrix.yStart;
+        return `X ${matrix.xStart}-${matrix.xEnd} / Y ${matrix.yStart}-${matrix.yEnd} · ${width} x ${height}`;
+    }
+
+    _ensureMeasureBadge(el) {
+        let badge = el.querySelector('.selectBox-measure');
+        if (badge) return badge;
+        badge = document.createElement('div');
+        badge.classList.add('selectBox-measure');
+        Object.assign(badge.style, {
+            position: 'absolute',
+            left: '0',
+            bottom: '-28px',
+            maxWidth: '18rem',
+            padding: '3px 8px',
+            borderRadius: '999px',
+            background: 'rgba(3, 5, 7, 0.88)',
+            color: '#fff',
+            fontSize: '11px',
+            fontWeight: '700',
+            lineHeight: '16px',
+            whiteSpace: 'nowrap',
+            boxShadow: '0 6px 18px rgba(0, 0, 0, 0.35)',
+            pointerEvents: 'none',
+            userSelect: 'none',
+            zIndex: '1001',
+        });
+        el.appendChild(badge);
+        return badge;
+    }
+
+    _updateMeasureBadge(el, range) {
+        if (!el || !range) return;
+        const badge = this._ensureMeasureBadge(el);
+        badge.textContent = this._formatRangeLabel(range);
+    }
+
+    _refreshBoxLabels() {
+        this.rangeArr.forEach((range, index) => {
+            const label = range?._element?.querySelector('.selectBox-index');
+            if (label) label.textContent = `${index + 1}`;
+        });
+    }
+
     /**
      * 检查坐标是否在真实矩阵区域内
      */
@@ -200,6 +252,28 @@ export class BrushManager {
         const rect = this._getEffectiveCanvasRect();
         if (!rect) return true;
         return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    }
+
+    _isInCanvasRect(x, y, context = this._getMatrixContext()) {
+        const rect = context?.canvasRect;
+        if (!rect) return false;
+        return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    }
+
+    _shouldIgnorePointerTarget(target) {
+        return Boolean(target?.closest?.([
+            '.selectBox',
+            '.drawerContent',
+            '.titleContent',
+            '.secondTitle',
+            '.ant-popover',
+            '.ant-modal',
+            '.ant-message',
+            '.ant-select-dropdown',
+            '.ant-picker-dropdown',
+            '.colAndHContent',
+            '.ant-slider',
+        ].join(',')));
     }
 
     /**
@@ -240,6 +314,7 @@ export class BrushManager {
             el.style.left = obj.x1 + 'px';
             el.style.top = obj.y1 + 'px';
             this._syncRangeMetadata(obj);
+            this._updateMeasureBadge(el, obj);
             this.notify(this.rangeArr);
         };
 
@@ -296,29 +371,19 @@ export class BrushManager {
         const color = rangeObj.bgc;
 
         // 编号标签（左上角）
-        const label = document.createElement('div');
-        label.textContent = `${boxIndex + 1}`;
-        label.classList.add('selectBox-control');
-        Object.assign(label.style, {
-            position: 'absolute', top: '-12px', left: '-12px',
-            width: '22px', height: '22px', lineHeight: '20px', textAlign: 'center',
-            background: color, color: '#fff', borderRadius: '50%',
-            fontSize: '12px', fontWeight: 'bold', cursor: 'default',
-            zIndex: '999', border: '2px solid #fff',
-            pointerEvents: 'none', userSelect: 'none',
-        });
-        el.appendChild(label);
+        this._updateMeasureBadge(el, rangeObj);
 
         // 删除按钮（右上角）
         const closeBtn = document.createElement('div');
-        closeBtn.textContent = '×';
+        closeBtn.innerHTML = '<i class="iconfont">&#xe625;</i>';
         closeBtn.classList.add('selectBox-control');
         Object.assign(closeBtn.style, {
-            position: 'absolute', top: '-12px', right: '-12px',
-            width: '22px', height: '22px', lineHeight: '20px', textAlign: 'center',
-            background: '#ff4444', color: '#fff', borderRadius: '50%',
-            fontSize: '14px', fontWeight: 'bold', cursor: 'pointer',
-            zIndex: '999', border: '2px solid #fff',
+            position: 'absolute', top: '-24px', right: '-24px',
+            width: '20px', height: '20px', lineHeight: '20px', textAlign: 'center',
+            background: 'rgba(20, 20, 20, 0.92)', color: '#ff6b6b', borderRadius: '4px',
+            fontSize: '12px', fontWeight: '900', cursor: 'pointer',
+            zIndex: '1002', border: '1px solid rgba(255,107,107,0.75)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
             pointerEvents: 'auto', userSelect: 'none',
         });
         closeBtn.addEventListener('mousedown', (e) => {
@@ -358,6 +423,7 @@ export class BrushManager {
             h.addEventListener('mousedown', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
+                el.classList.add('selectBox-active');
                 this._startResize(e, el, rangeObj, dir);
             });
             el.appendChild(h);
@@ -368,6 +434,7 @@ export class BrushManager {
             if (e.target !== el) return;
             e.stopPropagation();
             e.preventDefault();
+            el.classList.add('selectBox-active');
             this._startDrag(e, el, rangeObj);
         });
     }
@@ -472,6 +539,7 @@ export class BrushManager {
 
         this.rangeArr.push(rangeObj);
         this._makeInteractive(element, rangeObj, this.rangeArr.length - 1);
+        this._refreshBoxLabels();
         this.notify(this.rangeArr);
         return true;
     }
@@ -520,11 +588,13 @@ export class BrushManager {
             el.style.top = rangeObj.y1 + 'px';
             el.style.width = (rangeObj.x2 - rangeObj.x1) + 'px';
             el.style.height = (rangeObj.y2 - rangeObj.y1) + 'px';
+            this._updateMeasureBadge(el, rangeObj);
         };
 
         const onUp = (ev) => {
             ev.stopPropagation();
             this._resizing = false;
+            el.classList.remove('selectBox-active');
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp, true);
             if (!this._syncRangeMetadata(rangeObj)) {
@@ -539,6 +609,7 @@ export class BrushManager {
                 el.style.height = (origY2 - origY1) + 'px';
                 this._syncRangeMetadata(rangeObj);
             }
+            this._updateMeasureBadge(el, rangeObj);
             this.notify(this.rangeArr);
         };
 
@@ -576,14 +647,17 @@ export class BrushManager {
 
             el.style.left = rangeObj.x1 + 'px';
             el.style.top = rangeObj.y1 + 'px';
+            this._updateMeasureBadge(el, rangeObj);
         };
 
         const onUp = (ev) => {
             ev.stopPropagation();
             this._dragging = false;
+            el.classList.remove('selectBox-active');
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp, true);
             this._syncRangeMetadata(rangeObj);
+            this._updateMeasureBadge(el, rangeObj);
             this.notify(this.rangeArr);
         };
 
@@ -593,15 +667,9 @@ export class BrushManager {
 
     onMouseDown = (e) => {
         // 如果点击的是已有的框选区域或其子控件，不创建新框
-        if (e.target.closest && e.target.closest('.selectBox')) return;
+        if (this._shouldIgnorePointerTarget(e.target)) return;
         // 如果正在拖拽或调整大小，不创建新框
         if (this._resizing || this._dragging) return;
-
-        // 检查是否已达到最大框数
-        if (this.rangeArr.length >= MAX_BOXES) {
-            message.warning(`最多只能创建 ${MAX_BOXES} 个框选区域`);
-            return;
-        }
 
         const matrixContext = this._getMatrixContext();
         if (!matrixContext?.matrixConfig) {
@@ -609,7 +677,18 @@ export class BrushManager {
             return;
         }
 
-        // 检查起点是否在 canvasThree 范围内
+        // 只有点击 2D canvas 时才进入框选逻辑，点击抽屉/工具栏/空白区域不提示。
+        if (!this._isInCanvasRect(e.clientX, e.clientY, matrixContext)) {
+            return;
+        }
+
+        // 检查是否已达到最大框数
+        if (this.rangeArr.length >= MAX_BOXES) {
+            message.warning(`最多只能创建 ${MAX_BOXES} 个框选区域`);
+            return;
+        }
+
+        // 检查起点是否在真实矩阵有效区域内。
         if (!this._isInCanvasRange(e.clientX, e.clientY)) {
             message.warning('请在有效区域框选');
             return;
@@ -624,6 +703,7 @@ export class BrushManager {
 
         this.element = document.createElement('div');
         this.element.classList.add('selectBox');
+        this.element.classList.add('selectBox-drawing');
         this.element.style.pointerEvents = 'none';
         document.body.appendChild(this.element);
 
@@ -665,6 +745,7 @@ export class BrushManager {
                     bgc: bgc,
                     colorIndex: colorIndex,
                 };
+                this._updateMeasureBadge(this.element, this.range);
             }
         }
     };
@@ -705,12 +786,14 @@ export class BrushManager {
                 return;
             }
             this.rangeArr.push(this.range);
+            this.element.classList.remove('selectBox-drawing');
             this.isBrushing = false;
             this.pointTopLeft = { x: 0, y: 0 };
             this.pointBottomRight = { x: 0, y: 0 };
 
             // 绘制完成后，为框添加交互控件
             this._makeInteractive(this.element, this.rangeArr[this.rangeArr.length - 1], this.rangeArr.length - 1);
+            this._refreshBoxLabels();
 
             this.notify(this.rangeArr);
         } else {
@@ -729,6 +812,7 @@ export class BrushManager {
         if (element && element.parentNode) {
             element.parentNode.removeChild(element);
         }
+        this._refreshBoxLabels();
         this.notify(this.rangeArr);
     }
 

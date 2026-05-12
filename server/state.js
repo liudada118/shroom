@@ -22,12 +22,14 @@ const state = {
   playtimer: null,          // 数据发送定时器
   sendDataLength: 0,
   oldTimeObj: {},            // 上一帧时间戳
+  frameSeq: 0,               // 后端生成的原始帧序号
 
   // ─── 数据采集 ────────────────────────────────────────
   colFlag: false,           // 采集开关
   colName: '',              // 采集命名
   selectArr: [],            // 框选区域
-  dataDirection: { left: true, up: true }, // collection save direction; false means the axis is flipped
+  dataDirection: { left: true, up: true, rotateDegree: 0 }, // collection save direction; false means the axis is flipped
+  zeroState: { enabled: false, zeroTime: null, data: {} },
 
   // ─── 历史回放 ────────────────────────────────────────
   historyFlag: false,       // 历史数据模式开关
@@ -38,6 +40,8 @@ const state = {
   colplayHZ: undefined,     // 回放频率
   historyDbArr: null,       // 历史回放数据
   historySelectCache: null, // 框选缓存
+  playbackSkippedFrameCount: 0,
+  playbackConsecutiveBadFrames: 0,
   leftDbArr: null,          // 对比数据-左
   rightDbArr: null,         // 对比数据-右
 
@@ -67,6 +71,7 @@ function resetSerialState() {
   state.MaxHZ = undefined
   state.sendDataLength = 0
   state.oldTimeObj = {}
+  state.frameSeq = 0
   if (state.playtimer) {
     clearInterval(state.playtimer)
     state.playtimer = null

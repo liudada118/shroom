@@ -21,6 +21,7 @@ const MAC_CONFIG_COPY = {
     syncSuccess: '已成功写入本地缓存文件 (serial_cache.json)',
     syncError: '写入失败，请确认后端服务已启动',
     invalidConfig: '请输入有效的 MAC 地址配置',
+    invalidConfigDetail: '配置存在错误，请修正后再保存',
     saveSuccess: (count) => `配置已保存，${count} 个设备已写入本地缓存`,
     saveFailed: '保存失败',
     unknownError: '未知错误',
@@ -39,6 +40,7 @@ const MAC_CONFIG_COPY = {
     syncSuccess: 'Saved to local cache file (serial_cache.json)',
     syncError: 'Write failed. Please confirm the backend service is running.',
     invalidConfig: 'Please enter a valid MAC address configuration',
+    invalidConfigDetail: 'The configuration contains errors. Fix them before saving.',
     saveSuccess: (count) => `Configuration saved. ${count} device${count === 1 ? '' : 's'} written to local cache.`,
     saveFailed: 'Save failed',
     unknownError: 'Unknown error',
@@ -46,6 +48,67 @@ const MAC_CONFIG_COPY = {
 }
 
 const getLanguageKey = (language) => String(language || '').toLowerCase().startsWith('en') ? 'en' : 'zh'
+
+const SUPPORTED_DEVICE_TYPES = ['car-back', 'car-sit', 'bed', 'endi-back', 'endi-sit', 'carY-back', 'carY-sit', 'hand']
+const CONTINUOUS_MAC_RE = /^[0-9A-F]{12,32}$/
+const COLON_MAC_RE = /^([0-9A-F]{2}:){5,15}[0-9A-F]{2}$/
+
+function normalizeMac(mac) {
+  return String(mac || '').trim().toUpperCase()
+}
+
+function isValidMac(mac) {
+  const normalized = normalizeMac(mac)
+  return CONTINUOUS_MAC_RE.test(normalized) || COLON_MAC_RE.test(normalized)
+}
+
+function inferDeviceClass(type) {
+  if (type === 'hand') return 'hand'
+  if (type === 'bed') return 'bed'
+  if (type.startsWith('carY-')) return 'carY'
+  if (type.startsWith('endi-') || type.startsWith('car-')) return 'foot'
+  return type
+}
+
+function validateConfigString(str) {
+  if (!str || !str.trim()) return { devices: [], errors: [] }
+
+  const items = str.split(',').map(s => s.trim()).filter(Boolean)
+  const devices = []
+  const errors = []
+  const seen = new Set()
+
+  items.forEach((item, index) => {
+    const lastColon = item.lastIndexOf(':')
+    if (lastColon <= 0 || lastColon === item.length - 1) {
+      errors.push(`第 ${index + 1} 项格式错误，应为 MAC地址:类型`)
+      return
+    }
+
+    const mac = normalizeMac(item.substring(0, lastColon))
+    const type = item.substring(lastColon + 1).trim()
+
+    if (!isValidMac(mac)) {
+      errors.push(`第 ${index + 1} 项 MAC/Unique ID 格式错误：${mac}`)
+      return
+    }
+
+    if (!SUPPORTED_DEVICE_TYPES.includes(type)) {
+      errors.push(`第 ${index + 1} 项设备类型不支持：${type}`)
+      return
+    }
+
+    if (seen.has(mac)) {
+      errors.push(`MAC/Unique ID 重复配置：${mac}`)
+      return
+    }
+
+    seen.add(mac)
+    devices.push({ mac, type, deviceClass: inferDeviceClass(type) })
+  })
+
+  return { devices, errors }
+}
 
 /**
  * 解析输入字符串为设备配置数组
@@ -55,19 +118,7 @@ const getLanguageKey = (language) => String(language || '').toLowerCase().starts
  * 解析规则：以最后一个冒号为分隔点，前面是 MAC 地址，后面是设备类型
  */
 function parseConfigString(str) {
-  if (!str || !str.trim()) return []
-  const items = str.split(',').map(s => s.trim()).filter(Boolean)
-  const result = []
-  for (const item of items) {
-    const lastColon = item.lastIndexOf(':')
-    if (lastColon <= 0) continue
-    const mac = item.substring(0, lastColon).trim()
-    const type = item.substring(lastColon + 1).trim()
-    if (mac && type) {
-      result.push({ mac: mac.toUpperCase(), type })
-    }
-  }
-  return result
+  return validateConfigString(str).devices
 }
 
 /**
@@ -116,26 +167,11 @@ async function saveToBackend(devices, retries = 2) {
   let lastErr = null
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      // 先清空后端缓存
-      await axios.post(`${localAddress}/cache/clear`, {}, { timeout: 3000 })
-
-      // 逐个写入
-      for (const device of devices) {
-        // 根据类型推断 deviceClass
-        let deviceClass
-        if (device.type.startsWith('endi-') || device.type.startsWith('car-')) {
-          deviceClass = 'foot'
-        } else if (device.type.startsWith('carY-')) {
-          deviceClass = 'carY'
-        } else {
-          deviceClass = device.type // hand, bed 等
-        }
-
-        await axios.post(`${localAddress}/cache/devices`, {
-          mac: device.mac.trim().toUpperCase(),
-          type: device.type,
-          deviceClass: deviceClass,
-        }, { timeout: 3000 })
+      const saveRes = await axios.post(`${localAddress}/cache/devices/bulk`, { devices }, { timeout: 3000 })
+      if (saveRes.data?.code !== 0) {
+        const serverMessage = saveRes.data?.data?.errors?.[0]?.message || saveRes.data?.message || '设备配置有误'
+        lastErr = new Error(serverMessage)
+        break
       }
 
       // 验证写入：读回来检查
@@ -169,6 +205,7 @@ export default function MacConfig({ onBack, showBackButton = Boolean(onBack) }) 
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [syncStatus, setSyncStatus] = useState(null) // null | 'success' | 'error'
+  const [validationErrors, setValidationErrors] = useState([])
 
   // 初始化：从后端 serial_cache.json 加载已有配置
   useEffect(() => {
@@ -179,8 +216,10 @@ export default function MacConfig({ onBack, showBackButton = Boolean(onBack) }) 
         const config = await getMacConfig()
         if (!cancelled && config && config.length > 0) {
           const str = configToString(config)
+          const validation = validateConfigString(str)
           setInputValue(str)
-          setParsed(config)
+          setParsed(validation.devices)
+          setValidationErrors(validation.errors)
         }
       } catch (e) {
         console.warn('[MacConfig] 加载配置失败:', e.message)
@@ -195,15 +234,25 @@ export default function MacConfig({ onBack, showBackButton = Boolean(onBack) }) 
   // 输入变化时实时解析
   const handleInputChange = (e) => {
     const val = e.target.value
+    const validation = validateConfigString(val)
     setInputValue(val)
-    setParsed(parseConfigString(val))
+    setParsed(validation.devices)
+    setValidationErrors(validation.errors)
     setSyncStatus(null)
   }
 
   // 保存配置到后端 serial_cache.json
   const handleSave = async () => {
-    const devices = parseConfigString(inputValue)
-    if (devices.length === 0) {
+    const validation = validateConfigString(inputValue)
+    setParsed(validation.devices)
+    setValidationErrors(validation.errors)
+
+    if (validation.errors.length > 0) {
+      message.warning(validation.errors[0] || copy.invalidConfigDetail)
+      return
+    }
+
+    if (validation.devices.length === 0) {
       message.warning(copy.invalidConfig)
       return
     }
@@ -211,7 +260,7 @@ export default function MacConfig({ onBack, showBackButton = Boolean(onBack) }) 
     setSaving(true)
     setSyncStatus(null)
     try {
-      const result = await saveToBackend(devices)
+      const result = await saveToBackend(validation.devices)
 
       if (result.success) {
         message.success(copy.saveSuccess(result.count))
@@ -301,6 +350,14 @@ export default function MacConfig({ onBack, showBackButton = Boolean(onBack) }) 
                 </Tag>
               ))}
             </div>
+          </div>
+        )}
+
+        {validationErrors.length > 0 && (
+          <div className="mac-validation-errors">
+            {validationErrors.map((error, index) => (
+              <div key={index}>{error}</div>
+            ))}
           </div>
         )}
 

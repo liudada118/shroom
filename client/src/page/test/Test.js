@@ -111,6 +111,15 @@ function Test() {
                 useEquipStore.getState().setConnectionError(result)
             }
         },
+        onDataQuality: (quality) => {
+            const key = quality?.type || quality?.port || 'unknown'
+            const prev = useEquipStore.getState().dataQuality || {}
+            useEquipStore.getState().setDataQuality({ ...prev, [key]: quality })
+            if (quality?.status === 'device_error') {
+                useEquipStore.getState().setConnectState('deviceError')
+                useEquipStore.getState().setConnectionError(quality)
+            }
+        },
     })
 
     // ─── 框选订阅（支持多框选） ─────────────────────────────

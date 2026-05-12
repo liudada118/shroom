@@ -15,6 +15,7 @@ const { broadcast } = require('../websocket')
 const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
 const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot } = require('../services/DataService')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
+const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES } = require('../../util/deviceConfigValidation')
 
 const router = express.Router()
 
@@ -366,17 +367,67 @@ function resolveRequestValue(req, keys) {
   return undefined
 }
 
-function normalizeDataDirection(value, fallback = { left: true, up: true }) {
+function normalizeRotateDegree(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  return ((Math.round(numeric / 90) * 90) % 360 + 360) % 360
+}
+
+function getDataDirectionName(direction) {
+  const rotateDegree = normalizeRotateDegree(direction?.rotateDegree ?? direction?.rotate_degree)
+  if (rotateDegree) return `rotate${rotateDegree}`
+  const left = direction?.left !== false
+  const up = direction?.up !== false
+  if (!left && !up) return 'both'
+  if (!left) return 'horizontal'
+  if (!up) return 'vertical'
+  return 'none'
+}
+
+function normalizeDataDirection(value, fallback = { left: true, up: true, rotateDegree: 0 }) {
   const parsedValue = tryParseRequestJson(value)
   const source = parsedValue && typeof parsedValue === 'object' ? parsedValue : fallback
-  return {
+  const byKey = {}
+  if (source?.byKey && typeof source.byKey === 'object') {
+    Object.keys(source.byKey).forEach((key) => {
+      const rotateDegree = normalizeRotateDegree(source.byKey[key]?.rotateDegree ?? source.byKey[key]?.rotate_degree)
+      byKey[key] = {
+        left: source.byKey[key]?.left !== false,
+        up: source.byKey[key]?.up !== false,
+        rotateDegree,
+        rotate_degree: rotateDegree,
+      }
+      byKey[key].data_direction = getDataDirectionName(byKey[key])
+    })
+  }
+  const rotateDegree = normalizeRotateDegree(source?.rotateDegree ?? source?.rotate_degree)
+  const normalized = {
     left: source?.left !== false,
     up: source?.up !== false,
+    rotateDegree,
+    rotate_degree: rotateDegree,
+    byKey,
+  }
+  normalized.data_direction = getDataDirectionName(normalized)
+  return {
+    ...normalized,
   }
 }
 
 function resolveDataDirection(req) {
   return normalizeDataDirection(resolveRequestValue(req, ['dataDirection', 'direction']), state.dataDirection)
+}
+
+function resolveZeroState(req) {
+  const parsedValue = tryParseRequestJson(resolveRequestValue(req, ['zeroState', 'zero']))
+  const source = parsedValue && typeof parsedValue === 'object' ? parsedValue : {}
+  const enabled = Boolean(source.enabled)
+  const data = source.data && typeof source.data === 'object' ? source.data : {}
+  return {
+    enabled,
+    zeroTime: enabled ? (source.zeroTime || Date.now()) : null,
+    data: enabled ? data : {},
+  }
 }
 
 // ─── 通用错误处理包装器 ──────────────────────────────────
@@ -697,6 +748,11 @@ router.post('/setDataDirection', asyncHandler(async (req, res) => {
   res.json(new HttpResult(0, { dataDirection: state.dataDirection }, 'success'))
 }))
 
+router.post('/setZeroBaseline', asyncHandler(async (req, res) => {
+  state.zeroState = resolveZeroState(req)
+  res.json(new HttpResult(0, { zeroState: state.zeroState }, 'success'))
+}))
+
 router.post('/startCol', asyncHandler(async (req, res) => {
   const fileName = resolveRequestValue(req, ['fileName', 'filename'])
   const select = resolveRequestValue(req, ['select', 'selectJson'])
@@ -982,12 +1038,16 @@ router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
   }
 
   broadcast(JSON.stringify(snapshot.payload))
+  if (snapshot.payload?.playError) {
+    res.json(new HttpResult(1, snapshot.payload.playError, snapshot.payload.playError.message))
+    return
+  }
   res.json(new HttpResult(0, snapshot.row, 'success'))
 }))
 
 // ─── 数据操作 ────────────────────────────────────────────
 
-router.post('/downlaod', asyncHandler(async (req, res) => {
+const handleDownload = asyncHandler(async (req, res) => {
   const { fileArr, selectJson } = resolveDownloadRequest(req)
   const db = await ensureCurrentDb()
   const currentFile = resolveCurrentSystemFile()
@@ -1016,7 +1076,10 @@ router.post('/downlaod', asyncHandler(async (req, res) => {
     dataPath: state._dataPath
   })
   res.json(new HttpResult(0, data, 'Download'))
-}))
+})
+
+router.post('/downlaod', handleDownload)
+router.post('/download', handleDownload)
 
 // ─── 下载路径管理 ─────────────────────────────────────
 
@@ -1214,15 +1277,45 @@ router.get('/cache/devices', asyncHandler(async (req, res) => {
   res.json(new HttpResult(0, devices, 'success'))
 }))
 
+router.get('/cache/device-types', asyncHandler(async (req, res) => {
+  res.json(new HttpResult(0, SUPPORTED_DEVICE_TYPES, 'success'))
+}))
+
 // 添加/更新Device缓存
 router.post('/cache/devices', asyncHandler(async (req, res) => {
-  const { mac, type, deviceClass, alias } = req.body
-  if (!mac || !type) {
-    res.json(new HttpResult(1, {}, 'mac and type are required'))
+  const validation = validateDeviceAgainstCache(req.body, getAllCached())
+  if (!validation.valid) {
+    res.json(new HttpResult(1, {
+      code: validation.errors[0]?.code || 'INVALID_DEVICE_CONFIG',
+      errors: validation.errors,
+    }, validation.errors[0]?.message || '设备配置有误'))
     return
   }
-  setTypeToCache(mac, type, deviceClass || 'foot', alias || '')
-  res.json(new HttpResult(0, {}, 'Device cache updated'))
+
+  const device = validation.devices[0]
+  setTypeToCache(device.mac, device.type, device.deviceClass, device.alias)
+  res.json(new HttpResult(0, device, 'Device cache updated'))
+}))
+
+router.post('/cache/devices/bulk', asyncHandler(async (req, res) => {
+  const validation = validateDeviceList(req.body?.devices)
+  if (!validation.valid) {
+    res.json(new HttpResult(1, {
+      code: validation.errors[0]?.code || 'INVALID_DEVICE_CONFIG',
+      errors: validation.errors,
+    }, validation.errors[0]?.message || '设备配置有误'))
+    return
+  }
+
+  clearCache()
+  validation.devices.forEach((device) => {
+    setTypeToCache(device.mac, device.type, device.deviceClass, device.alias)
+  })
+
+  res.json(new HttpResult(0, {
+    count: validation.devices.length,
+    devices: validation.devices,
+  }, 'Device cache updated'))
 }))
 
 // 删除单个Device缓存

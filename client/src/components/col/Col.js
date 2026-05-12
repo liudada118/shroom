@@ -14,10 +14,12 @@ export default function Col(props) {
     const { colName, remark, HZ, setStartTime, col, setCol } = props
     const pageInfo = useContext(pageContext)
 
-    const getCurrentDataDirection = () => ({
-        left: pageInfo?.dataDirection?.current?.left !== false,
-        up: pageInfo?.dataDirection?.current?.up !== false,
-    })
+    const getCurrentDataDirection = () => {
+        const current = pageInfo?.dataDirection?.current
+        return current && typeof current === 'object'
+            ? current
+            : { left: true, up: true, rotateDegree: 0 }
+    }
 
     const colButtonClick = () => {
         const select = useEquipStore.getState().selectArr;

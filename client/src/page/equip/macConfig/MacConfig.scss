@@ -151,6 +151,16 @@
     }
   }
 
+  .mac-validation-errors {
+    padding: 10px 14px;
+    color: #ff7875;
+    background: rgba(255, 77, 79, 0.08);
+    border: 1px solid rgba(255, 77, 79, 0.18);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.8;
+  }
+
   .mac-sync-status {
     font-size: 12px;
     padding: 8px 14px;
@@ -167,6 +177,12 @@
       color: #d89614;
       background: rgba(216, 150, 20, 0.08);
       border: 1px solid rgba(216, 150, 20, 0.15);
+    }
+
+    &.error {
+      color: #ff7875;
+      background: rgba(255, 77, 79, 0.08);
+      border: 1px solid rgba(255, 77, 79, 0.15);
     }
   }
 }

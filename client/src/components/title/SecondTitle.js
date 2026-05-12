@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useState } from 'react'
+import axios from 'axios'
 import IconAndText from '../iconAndText/IconAndText'
 import IconAndTextAndSelect from '../iconAndTextAndSelect/IconAndTextAndSelect'
 import Drawer from '../Drawer/Drawer'
@@ -9,8 +10,9 @@ import { withTranslation } from 'react-i18next'
 import { getDisplayType, getSettingValue, getSettingValueOptimal, getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
-import { pointConfig } from '../../util/constant'
+import { localAddress, pointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
+import { buildFallbackParams } from '../../util/request'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
@@ -105,17 +107,31 @@ function SecondTitle(props) {
         //     selectHelper.isShiftPressed = false
         // }
         if (display == 'num' || display == 'contrast') {
-            setOnSelect(!onSelect)
             if (!onSelect) {
+                setOnSelect(true)
                 pageInfo?.brushInstance.startBrush();
             } else {
-                pageInfo?.brushInstance.stopBrush();
-                useEquipStore.getState().setSelectArr([])
+                closeSelectDrawer()
             }
         } else {
             message.info(t('use2DMode'))
         }
 
+    }
+
+    const closeSelectDrawer = () => {
+        pageInfo?.brushInstance.stopBrush();
+        useEquipStore.getState().setSelectArr([])
+        setOnSelect(false)
+    }
+
+    const setSelectDrawerShow = (nextShow) => {
+        if (nextShow) {
+            setOnSelect(true)
+            pageInfo?.brushInstance.startBrush();
+            return
+        }
+        closeSelectDrawer()
     }
     const system = useEquipStore(s => s.systemType, shallow);
     const rulerClick = () => {
@@ -168,8 +184,21 @@ function SecondTitle(props) {
     const [onZero, setOnZero] = useState(false)
 
     const wsDataZero = () => {
-        setOnZero(!onZero)
-        pageInfo.changeWsLocalData()
+        const zeroState = pageInfo.changeWsLocalData()
+        if (zeroState?.error === 'no_data') {
+            message.warning('暂无有效压力矩阵，不能置零')
+            return
+        }
+        setOnZero(Boolean(zeroState?.enabled))
+        const payload = { zeroState }
+        axios({
+            method: 'post',
+            url: `${localAddress}/setZeroBaseline`,
+            params: buildFallbackParams(payload),
+            data: payload,
+        }).catch(() => {
+            message.warning('置零状态同步失败，采集数据可能不会记录置零口径')
+        })
     }
 
     const selectInputObj = [
@@ -303,6 +332,8 @@ function SecondTitle(props) {
                         label: t('flipV'), value: 'up'
                     }, {
                         label: t('flipH'), value: 'left'
+                    }, {
+                        label: t('rotate90'), value: 'rotate'
                     },
                     ]}
                         icon={<div className='iconContentBox'><i className='iconfont fs18'>&#xe60c;</i></div>}
@@ -351,8 +382,10 @@ function SecondTitle(props) {
                     <div className="selectInputButtonContent">
                         <div className="selectInputButton connectButton cursor">确认</div></div>
                 </div> : ''} */}
-               {onSelect ? <SelectSet onSelect={onSelect}  selectArr={selectArr}/> : ''}
             </div>
+            <Drawer zindex={2} title={t('select')} show={onSelect} setShow={setSelectDrawerShow}>
+                <SelectSet onSelect={onSelect} selectArr={selectArr} variant="embedded" />
+            </Drawer>
 
         </>
     )

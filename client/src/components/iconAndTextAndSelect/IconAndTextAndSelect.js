@@ -41,7 +41,7 @@ export default function IconAndTextAndSelect(props) {
                     return (
                         <div className='dropItem fs14 cursor' onClick={() => {
                             if (useEquipStore.getState().collecting) {
-                                message.warning('采集中禁止翻转，请停止采集后再修改方向')
+                                message.warning('采集中禁止翻转/旋转，请停止采集后再修改方向')
                                 return
                             }
                             // setValue(a.label)
@@ -49,8 +49,10 @@ export default function IconAndTextAndSelect(props) {
                             let nextDirection
                             if (a.value == 'up') {
                                 nextDirection = changeDataDirection('up')
-                            } else {
+                            } else if (a.value == 'left') {
                                 nextDirection = changeDataDirection('left')
+                            } else {
+                                nextDirection = changeDataDirection('rotate')
                             }
                             syncDataDirection(nextDirection)
 

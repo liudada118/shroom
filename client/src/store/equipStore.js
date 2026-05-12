@@ -35,6 +35,7 @@ export const useEquipStore = create((set) => ({
   connectState: 'idle',  // 'idle' | 'connecting' | 'connected' | 'rescanning' | 'failed' | 'deviceError'
   connectionError: null,
   macInfo: {},              // 设备 MAC 信息 { portPath: { uniqueId, version } }
+  dataQuality: {},          // 数据质量状态 { type/port: dataQuality }
 
   // 可视化设置
   settingValue: initialSettings,
@@ -68,6 +69,7 @@ export const useEquipStore = create((set) => ({
   setConnectState: (s) => set({ connectState: s }),
   setConnectionError: (s) => set({ connectionError: s }),
   setMacInfo: (s) => set({ macInfo: s }),
+  setDataQuality: (s) => set({ dataQuality: s }),
 
   setSettingValue: (s) => set({ settingValue: s }),
   setSettingValueMax: (s) => set({ settingValueMax: s }),

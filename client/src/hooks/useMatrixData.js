@@ -4,6 +4,7 @@ import { systemPointConfig } from '../util/constant'
 import { backYToX, calcCentroidRatio, colSelectMatrix, kurtosis, mean, normalPDF, sitYToX, skewness, variance } from '../util/util'
 import { matrixGenBox, removeHistoryBox } from '../assets/util/selectMatrix'
 import { isMoreMatrix } from '../assets/util/util'
+import { message } from 'antd'
 
 /**
  * 矩阵数据处理 Hook
@@ -13,13 +14,62 @@ import { isMoreMatrix } from '../assets/util/util'
  */
 
 const divisor = 100 / 3
-const DEFAULT_DATA_DIRECTION = { left: true, up: true }
+const DEFAULT_DATA_DIRECTION = { left: true, up: true, rotateDegree: 0 }
+const DATA_DIRECTION_STORAGE_KEY = 'matrixDataDirection'
+const DATA_QUALITY_MESSAGE_INTERVAL = 3000
+
+function normalizeRotateDegree(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  return ((Math.round(numeric / 90) * 90) % 360 + 360) % 360
+}
+
+function getDataDirectionName(direction) {
+  const rotateDegree = normalizeRotateDegree(direction?.rotateDegree ?? direction?.rotate_degree)
+  if (rotateDegree) return `rotate${rotateDegree}`
+  const left = direction?.left !== false
+  const up = direction?.up !== false
+  if (!left && !up) return 'both'
+  if (!left) return 'horizontal'
+  if (!up) return 'vertical'
+  return 'none'
+}
 
 function normalizeDataDirection(direction) {
-  return {
+  const rotateDegree = normalizeRotateDegree(direction?.rotateDegree ?? direction?.rotate_degree)
+  const normalized = {
     left: direction?.left !== false,
     up: direction?.up !== false,
+    rotateDegree,
+    rotate_degree: rotateDegree,
   }
+  normalized.data_direction = getDataDirectionName(normalized)
+  return normalized
+}
+
+function normalizeDataDirectionState(direction) {
+  const base = normalizeDataDirection(direction)
+  const byKey = {}
+  if (direction?.byKey && typeof direction.byKey === 'object') {
+    Object.keys(direction.byKey).forEach((key) => {
+      byKey[key] = normalizeDataDirection(direction.byKey[key])
+    })
+  }
+  return { ...base, byKey }
+}
+
+function loadStoredDataDirection() {
+  try {
+    return normalizeDataDirectionState(JSON.parse(localStorage.getItem(DATA_DIRECTION_STORAGE_KEY) || '{}'))
+  } catch {
+    return normalizeDataDirectionState(DEFAULT_DATA_DIRECTION)
+  }
+}
+
+function persistDataDirection(direction) {
+  try {
+    localStorage.setItem(DATA_DIRECTION_STORAGE_KEY, JSON.stringify(normalizeDataDirectionState(direction)))
+  } catch { }
 }
 
 export function useMatrixData() {
@@ -27,7 +77,7 @@ export function useMatrixData() {
   const disPlayDataRef = useRef({})
   const chartRef = useRef({})
   const wsLocalDataRef = useRef({ data: {}, flag: false })
-  const dataDirection = useRef({ left: true, up: true })
+  const dataDirection = useRef(loadStoredDataDirection())
 
   /**
    * 限制 endi 类型数据值上限为 255
@@ -366,23 +416,57 @@ export function useMatrixData() {
     return res
   }
 
+  function rotateClockwiseArray(arr, width, height) {
+    const res = []
+    for (let x = 0; x < width; x++) {
+      for (let y = height - 1; y >= 0; y--) {
+        res.push(arr[y * width + x])
+      }
+    }
+    return res
+  }
+
+  function applyDirectionToArray(arr, width, height, direction) {
+    const normalized = normalizeDataDirection(direction)
+    let nextArr = [...arr]
+    let currentWidth = width
+    let currentHeight = height
+
+    if (!normalized.left) {
+      nextArr = flipHorizontalArray(nextArr, currentWidth, currentHeight)
+    }
+    if (!normalized.up) {
+      nextArr = flipVerticalArray(nextArr, currentWidth, currentHeight)
+    }
+
+    const turns = normalizeRotateDegree(normalized.rotateDegree) / 90
+    for (let i = 0; i < turns; i++) {
+      nextArr = rotateClockwiseArray(nextArr, currentWidth, currentHeight)
+      const oldWidth = currentWidth
+      currentWidth = currentHeight
+      currentHeight = oldWidth
+    }
+
+    return nextArr
+  }
+
   function applyDisplayDirection(resArr, keyArr, sitData) {
     const res = { ...resArr }
-    const currentDirection = normalizeDataDirection(dataDirection.current)
 
     for (const fullKey of keyArr) {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       if (!res[key] || !systemPointConfig[fullKey]) continue
 
+      const currentDirection = getCurrentDirectionForKey(fullKey)
       const frameDirection = normalizeDataDirection(sitData[fullKey]?.dataDirection || DEFAULT_DATA_DIRECTION)
       const { width, height } = systemPointConfig[fullKey]
       let nextArr = res[key]
 
-      if (currentDirection.left !== frameDirection.left) {
-        nextArr = flipHorizontalArray(nextArr, width, height)
-      }
-      if (currentDirection.up !== frameDirection.up) {
-        nextArr = flipVerticalArray(nextArr, width, height)
+      const frameMatchesDefault = frameDirection.left === true
+        && frameDirection.up === true
+        && normalizeRotateDegree(frameDirection.rotateDegree) === 0
+      if (frameMatchesDefault) {
+        nextArr = applyDirectionToArray(nextArr, width, height, currentDirection)
       }
       res[key] = nextArr
     }
@@ -431,10 +515,35 @@ export function useMatrixData() {
       if (sitData[k]?.cop != null) { cop = sitData[k].cop; break }
     }
     const newObj = {}
+    const dataQualityObj = {}
     for (const fullKey of keyArr) {
       newObj[fullKey] = sitData[fullKey]?.status
+      if (sitData[fullKey]?.dataQuality) {
+        dataQualityObj[fullKey] = sitData[fullKey].dataQuality
+      }
     }
     useEquipStore.getState().setEquipStatus(newObj)
+    if (Object.keys(dataQualityObj).length) {
+      const prevQuality = useEquipStore.getState().dataQuality || {}
+      useEquipStore.getState().setDataQuality({ ...prevQuality, ...dataQualityObj })
+
+      const severeEntry = Object.entries(dataQualityObj).find(([, quality]) => quality?.status === 'device_error')
+      const degradedEntry = severeEntry || Object.entries(dataQualityObj).find(([, quality]) => quality?.status === 'degraded' || quality?.hzAbnormal)
+      if (degradedEntry) {
+        const now = Date.now()
+        const [qualityKey, quality] = degradedEntry
+        if (!window.__dataQualityMessageAt || now - window.__dataQualityMessageAt > DATA_QUALITY_MESSAGE_INTERVAL) {
+          window.__dataQualityMessageAt = now
+          message.warning(quality?.status === 'device_error'
+            ? `${qualityKey} 设备数据异常，请重新连接`
+            : `${qualityKey} 数据不稳定，请检查设备连接`)
+        }
+        if (quality?.status === 'device_error') {
+          useEquipStore.getState().setConnectState('deviceError')
+          useEquipStore.getState().setConnectionError(quality)
+        }
+      }
+    }
 
     // 检测设备断开：5 秒防抖
     const allOffline = Object.values(newObj).every(s => s === 'offline' || s === undefined)
@@ -497,21 +606,75 @@ export function useMatrixData() {
   /**
    * 切换翻转方向
    */
+  function getCurrentDirectionForKey(fullKey) {
+    const state = normalizeDataDirectionState(dataDirection.current)
+    return normalizeDataDirection(state.byKey?.[fullKey] || state)
+  }
+
+  function getDirectionTargetKeys() {
+    const system = getSysType()
+    const displayType = getDisplayType()
+    if (!isMoreMatrix(system)) return []
+    if (displayType.includes('back')) return [`${system}-back`]
+    if (displayType.includes('sit')) return [`${system}-sit`]
+    return [`${system}-back`, `${system}-sit`]
+  }
+
   function changeDataDirection(dir) {
-    if (dir === 'left') {
-      dataDirection.current.left = !dataDirection.current.left
-    } else {
-      dataDirection.current.up = !dataDirection.current.up
+    const state = normalizeDataDirectionState(dataDirection.current)
+    const targetKeys = getDirectionTargetKeys()
+    const applyChange = (direction) => {
+      const next = normalizeDataDirection(direction)
+      if (dir === 'rotate') {
+        next.rotateDegree = normalizeRotateDegree(next.rotateDegree + 90)
+      } else {
+        const prop = dir === 'left' ? 'left' : 'up'
+        next[prop] = !next[prop]
+      }
+      next.rotate_degree = next.rotateDegree
+      next.data_direction = getDataDirectionName(next)
+      return normalizeDataDirection(next)
     }
-    return normalizeDataDirection(dataDirection.current)
+
+    if (targetKeys.length) {
+      const byKey = { ...state.byKey }
+      targetKeys.forEach((key) => {
+        byKey[key] = applyChange(byKey[key] || state)
+      })
+      const first = byKey[targetKeys[0]]
+      dataDirection.current = { ...first, byKey }
+      persistDataDirection(dataDirection.current)
+      return normalizeDataDirectionState(dataDirection.current)
+    }
+
+    dataDirection.current = applyChange(state)
+    persistDataDirection(dataDirection.current)
+    return normalizeDataDirectionState(dataDirection.current)
   }
 
   /**
    * 预压力置零：记录当前帧作为基准
    */
   function changeWsLocalData() {
-    wsLocalDataRef.current.data = { ...sitDataRef.current }
-    wsLocalDataRef.current.flag = !wsLocalDataRef.current.flag
+    const enabled = !wsLocalDataRef.current.flag
+    if (enabled && !Object.values(sitDataRef.current || {}).some((arr) => Array.isArray(arr) && arr.length > 0)) {
+      return {
+        enabled: false,
+        error: 'no_data',
+        data: {},
+      }
+    }
+    const zeroTime = enabled ? Date.now() : null
+    wsLocalDataRef.current = {
+      data: enabled ? { ...sitDataRef.current } : {},
+      flag: enabled,
+      zeroTime,
+    }
+    return {
+      enabled,
+      zeroTime,
+      data: wsLocalDataRef.current.data,
+    }
   }
 
   return {

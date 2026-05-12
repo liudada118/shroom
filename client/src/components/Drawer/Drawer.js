@@ -1,17 +1,39 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import './index.scss'
+
+let topDrawerZIndex = 1000
+
+function getNextDrawerZIndex(baseZIndex) {
+    topDrawerZIndex = Math.max(topDrawerZIndex + 1, baseZIndex)
+    return topDrawerZIndex
+}
 
 const Drawer = React.memo(function Drawer(props) {
     const { show, title, setShow, children, asideClose, zindex, close, direction = 'right' } = props
+    const baseZIndex = zindex ? zindex * 100 : 100
+    const [activeZIndex, setActiveZIndex] = useState(baseZIndex)
 
-    return (
-        <div className='drawerContent' style={{
+    const bringToFront = () => {
+        if (show) {
+            setActiveZIndex(getNextDrawerZIndex(baseZIndex))
+        }
+    }
+
+    useEffect(() => {
+        if (show) {
+            setActiveZIndex(getNextDrawerZIndex(baseZIndex))
+        }
+    }, [show, baseZIndex])
+
+    const drawerNode = (
+        <div className='drawerContent' onMouseDown={bringToFront} style={{
 
             right: direction == 'left' ? 'unset' : show ? 0 : 'calc(-18% - 5px)',
             left: direction == 'right' ? 'unset' : show ? 0 : 'calc(-18% - 5px)',
 
 
-            zIndex: zindex ? zindex * 100 : 100
+            zIndex: activeZIndex
         }}>
             {asideClose ? <div className='asideClose' style={{
                 right: direction == 'left' ? 'unset' : '100%',
@@ -36,5 +58,8 @@ const Drawer = React.memo(function Drawer(props) {
             </div>
         </div>
     )
+
+    if (typeof document === 'undefined') return drawerNode
+    return createPortal(drawerNode, document.body)
 })
 export default Drawer

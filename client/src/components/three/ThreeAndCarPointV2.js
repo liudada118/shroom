@@ -20,6 +20,7 @@ import { jetWhite3, lineInterp } from "../../assets/util/line";
 import { getDisplayType, getSettingValue, getStatus } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
+import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -1089,6 +1090,7 @@ const Canvas =
             const {
                 gauss = 1, color, filter, height = 1, coherent = 1
             } = getSettingValue() //pageRef.current.settingValue
+            const colorLimit = getColorLimit(color)
 
             // height , width , heightInterp , widthInterp
             // export function interpSmall(smallMat, width, height, interp1, interp2)
@@ -1139,12 +1141,12 @@ const Canvas =
                     //     }
                     // }
 
-                    const isHidden = value < color * 0.3;
+                    const isHidden = shouldHideDisplayPoint(value, filter);
                     scales[j] = isHidden ? 0 : 1;
 
 
 
-                    rgb = jetWhite3(0, color, smoothBig[l]);
+                    rgb = jetWhite3(0, colorLimit, getDisplayColorValue(smoothBig[l], colorLimit));
 
 
 
