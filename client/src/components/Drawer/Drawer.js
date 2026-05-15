@@ -3,9 +3,11 @@ import { createPortal } from 'react-dom'
 import './index.scss'
 
 let topDrawerZIndex = 1000
+const DRAWER_Z_INDEX_CAP = 99000
 
 function getNextDrawerZIndex(baseZIndex) {
     topDrawerZIndex = Math.max(topDrawerZIndex + 1, baseZIndex)
+    if (topDrawerZIndex > DRAWER_Z_INDEX_CAP) topDrawerZIndex = baseZIndex
     return topDrawerZIndex
 }
 

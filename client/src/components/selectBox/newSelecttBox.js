@@ -1,9 +1,11 @@
 import React from 'react';
 import { message } from 'antd';
+import i18n from 'i18next';
 import { getDisplayType, getSysType } from '../../store/equipStore';
 import { systemPointConfig } from '../../util/constant';
 import { isMoreMatrix } from '../../assets/util/util';
 import { calMatrixToSelect } from '../../assets/util/selectMatrix';
+import { getDefaultSelectionName } from '../../util/selectionName';
 
 // ─── 4 个框选的固定颜色 ──────────────────────────────────────
 export const SELECT_COLORS = [
@@ -42,6 +44,8 @@ export function getSelectBoxFillColor(color, alpha = SELECT_BOX_FILL_ALPHA) {
 }
 
 const MAX_BOXES = 4;
+const tr = (key, options) => i18n.t(key, options);
+const defaultSelectName = (index) => getDefaultSelectionName(index, tr);
 
 export class BrushManager {
     constructor() {
@@ -442,11 +446,11 @@ export class BrushManager {
     addMatrixRange(matrixRect, options = {}) {
         const context = this._getMatrixContext();
         if (!context?.matrixConfig) {
-            message.warning('请在 2D 数字视图下使用框选');
+            message.warning(tr('useIn2DMode'));
             return false;
         }
         if (this.rangeArr.length >= MAX_BOXES) {
-            message.warning(`最多只能创建 ${MAX_BOXES} 个框选区域`);
+            message.warning(tr('maxSelectBoxes', { count: MAX_BOXES }));
             return false;
         }
 
@@ -456,11 +460,11 @@ export class BrushManager {
         const yEnd = Number(matrixRect?.yEnd);
         const values = [xStart, yStart, xEnd, yEnd];
         if (!values.every(Number.isFinite)) {
-            message.warning('框选坐标必须为数字');
+            message.warning(tr('selectionCoordinatesMustBeNumbers'));
             return false;
         }
         if (!values.every(Number.isInteger)) {
-            message.warning('框选坐标必须为整数');
+            message.warning(tr('selectionCoordinatesMustBeIntegers'));
             return false;
         }
 
@@ -469,11 +473,11 @@ export class BrushManager {
         const selectWidth = xEnd - xStart;
         const selectHeight = yEnd - yStart;
         if (xStart < 0 || yStart < 0 || selectWidth <= 0 || selectHeight <= 0) {
-            message.warning('框选区域无效');
+            message.warning(tr('selectionCoordinatesInvalid'));
             return false;
         }
         if (xEnd > width || yEnd > height) {
-            message.warning('框选区域超出有效范围');
+            message.warning(tr('selectionOutOfValidRange'));
             return false;
         }
 
@@ -484,7 +488,7 @@ export class BrushManager {
             sHeight: selectHeight,
         }, context.matrixConfig);
         if (!selectInfo) {
-            message.warning('无法计算框选位置');
+            message.warning(tr('selectionPositionCalcFailed'));
             return false;
         }
 
@@ -530,7 +534,7 @@ export class BrushManager {
             },
             systemType: context.systemType,
             displayType: context.displayType,
-            name: options.name || `框选${this.rangeArr.length + 1}`,
+            name: options.name || defaultSelectName(this.rangeArr.length + 1),
             templateId: options.templateId,
             createdAt: options.createdAt || now,
             updatedAt: now,
@@ -547,7 +551,7 @@ export class BrushManager {
     updateSelectName(index, name) {
         const rangeItem = this.rangeArr[index];
         if (!rangeItem) return;
-        rangeItem.name = name || `框选${index + 1}`;
+        rangeItem.name = name || defaultSelectName(index + 1);
         rangeItem.updatedAt = Date.now();
         this.notify(this.rangeArr);
     }
@@ -598,7 +602,7 @@ export class BrushManager {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp, true);
             if (!this._syncRangeMetadata(rangeObj)) {
-                message.warning('框选区域超出有效范围');
+                message.warning(tr('selectionOutOfValidRange'));
                 rangeObj.x1 = origX1;
                 rangeObj.y1 = origY1;
                 rangeObj.x2 = origX2;
@@ -673,7 +677,7 @@ export class BrushManager {
 
         const matrixContext = this._getMatrixContext();
         if (!matrixContext?.matrixConfig) {
-            message.warning('请在 2D 数字视图下使用框选');
+            message.warning(tr('useIn2DMode'));
             return;
         }
 
@@ -684,13 +688,13 @@ export class BrushManager {
 
         // 检查是否已达到最大框数
         if (this.rangeArr.length >= MAX_BOXES) {
-            message.warning(`最多只能创建 ${MAX_BOXES} 个框选区域`);
+            message.warning(tr('maxSelectBoxes', { count: MAX_BOXES }));
             return;
         }
 
         // 检查起点是否在真实矩阵有效区域内。
         if (!this._isInCanvasRange(e.clientX, e.clientY)) {
-            message.warning('请在有效区域框选');
+            message.warning(tr('selectInValidArea'));
             return;
         }
 
@@ -763,7 +767,7 @@ export class BrushManager {
         if (w > 5 && h > 5) {
             // 检查框选区域是否完整落在真实矩阵区域内
             if (!this._isSelectionInCanvasRange(this.range.x1, this.range.y1, this.range.x2, this.range.y2)) {
-                message.warning('请在有效区域框选');
+                message.warning(tr('selectInValidArea'));
                 if (this.element && this.element.parentNode) {
                     this.element.parentNode.removeChild(this.element);
                 }
@@ -774,9 +778,9 @@ export class BrushManager {
             }
 
             this.range._element = this.element;
-            this.range.name = this.range.name || `框选${this.rangeArr.length + 1}`;
+            this.range.name = this.range.name || defaultSelectName(this.rangeArr.length + 1);
             if (!this._syncRangeMetadata(this.range)) {
-                message.warning('框选区域超出有效范围');
+                message.warning(tr('selectionOutOfValidRange'));
                 if (this.element && this.element.parentNode) {
                     this.element.parentNode.removeChild(this.element);
                 }

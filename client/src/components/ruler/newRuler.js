@@ -113,7 +113,7 @@ class ruler {
                 if (this.tempStart) {
                     // 正在绘制中（已有起点，等待终点），直接完成绘制
                     if (this.rulerLines.length >= MAX_RULERS) {
-                        message.warning(`最多支持 ${MAX_RULERS} 条量尺`)
+                        message.warning(i18n.t('maxRulers', { count: MAX_RULERS }))
                         return
                     }
                     this.clickIndex++

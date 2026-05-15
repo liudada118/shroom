@@ -4,8 +4,10 @@ import { pageContext } from '../../../page/test/Test';
 import { calMatrixArea } from '../../../assets/util/selectMatrix';
 import { getStatus, useEquipStore } from '../../../store/equipStore';
 import { shallow } from 'zustand/shallow';
+import { useTranslation } from 'react-i18next';
 
 export default function SelectChart(props) {
+    const { t } = useTranslation()
     const { index, select } = props
     const pageInfo = useContext(pageContext);
 
@@ -75,16 +77,16 @@ export default function SelectChart(props) {
         <div className='selectContent'>
             <div className="colorContent" style={{ backgroundColor: select.bgc }}></div>
             <div className="selectTitle">
-                <div className="selectInfo">框选{index + 1}  <i className='iconfont selectEdit' >&#xe623;</i></div>
+                <div className="selectInfo">{t('boxSelection')}{index + 1}  <i className='iconfont selectEdit' >&#xe623;</i></div>
                 <i className='iconfont selectClose' onClick={deleteSelect}>&#xe625;</i>
             </div>
             <div className="selectDatas">
                 <div className="selectData">
-                    <div className="selectDataTitle">传感面积</div>
+                    <div className="selectDataTitle">{t('sensorArea')}</div>
                     <div className="selectDataValue">{area}</div>
                 </div>
                 <div className="selectData">
-                    <div className="selectDataTitle">传感压力</div>
+                    <div className="selectDataTitle">{t('sensorPressure')}</div>
                     <div className="selectDataValue">{press}</div>
                 </div>
             </div>

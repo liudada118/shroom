@@ -5,6 +5,7 @@ import { backYToX, calcCentroidRatio, colSelectMatrix, kurtosis, mean, normalPDF
 import { matrixGenBox, removeHistoryBox } from '../assets/util/selectMatrix'
 import { isMoreMatrix } from '../assets/util/util'
 import { message } from 'antd'
+import { formatSelectionName, getDefaultSelectionName } from '../util/selectionName'
 
 /**
  * 矩阵数据处理 Hook
@@ -134,7 +135,7 @@ export function useMatrixData() {
               data,
               colorIndex: sel.colorIndex != null ? sel.colorIndex : i,
               bgc: sel.bgc || '#FF6B6B',
-              name: sel.name || `框选${i + 1}`,
+              name: formatSelectionName(sel.name, i + 1),
               matrix,
             })
           }
@@ -182,7 +183,7 @@ export function useMatrixData() {
           data,
           colorIndex,
           bgc: region.bgc || region.color || PLAYBACK_FALLBACK_COLORS[colorIndex % PLAYBACK_FALLBACK_COLORS.length],
-          name: region.name || region.regionName || `框选${index + 1}`,
+          name: formatSelectionName(region.name || region.regionName, index + 1),
           matrix: region,
         })
       })
@@ -333,7 +334,7 @@ export function useMatrixData() {
         data[key].boxStats.push({
           colorIndex: 0,
           bgc: '#FF6B6B',
-          name: `框选${data[key].boxStats.length + 1}`,
+          name: getDefaultSelectionName(data[key].boxStats.length + 1),
           pressArr: [],
           areaArr: [],
           data: {},
@@ -349,7 +350,7 @@ export function useMatrixData() {
         const boxStat = data[key].boxStats[i]
         boxStat.colorIndex = box.colorIndex
         boxStat.bgc = box.bgc
-        boxStat.name = box.name || `框选${i + 1}`
+        boxStat.name = formatSelectionName(box.name, i + 1)
 
         const { area: bArea, press: bPress, stats } = computeSingleStats(arr, box.data, fullKey)
         boxStat.data = stats

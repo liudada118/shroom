@@ -2,6 +2,9 @@ import logo from './logo.svg';
 import './App.css';
 import { HashRouter, Route, Routes, Navigate } from 'react-router-dom';
 import React, { useState, useCallback, useEffect } from 'react';
+import { ConfigProvider } from 'antd';
+import enUS from 'antd/locale/en_US';
+import zhCN from 'antd/locale/zh_CN';
 import Test from './page/test/Test';
 import './locale/index'; // 在这里导入
 import i18next from "i18next";
@@ -155,6 +158,7 @@ i18next.init({
         probabilityDensity: 'Probability Density',
         boxShort: 'Box',
         boxSelection: 'Selection',
+        selectionDefaultName: 'Selection {{index}}',
         pointUnit: '',
         areaUnit: 'cm²',
         pressureUnit: 'kPa',
@@ -275,7 +279,78 @@ i18next.init({
         pressMin: 'Min Pressure',
         pressTotal: 'Press Total',
         areaTotal: 'Area',
-        pointTotal: 'Points'
+        pointTotal: 'Points',
+        inputPath: 'Enter storage path...',
+        startCompare: 'Start Compare',
+        compareDataNotReady: 'Data cannot be compared',
+        compareStartFailed: 'Failed to start comparison',
+        selectBaseDataFirst: 'Please select baseline data A first.',
+        selectCompareDataFirst: 'Please select comparison data B first.',
+        compareSameRecordInvalid: 'A and B cannot be the same history record.',
+        selectionUnsupportedView: 'The current view does not support selection',
+        completeSelectionCoordinates: 'Please fill in all coordinates',
+        selectionCoordinatesMustBeNumbers: 'Coordinates must be numbers',
+        selectionCoordinatesMustBeIntegers: 'Coordinates must be integers',
+        selectionCoordinatesMinZero: 'Coordinates cannot be less than 0',
+        selectionTooSmall: 'Selection area is too small. Please select again',
+        selectionXOutOfRange: 'X({{x}}) + Length({{w}}) exceeds horizontal sensor points ({{maxW}})',
+        selectionYOutOfRange: 'Y({{y}}) + Width({{h}}) exceeds vertical sensor points ({{maxH}})',
+        createSelectionFirst: 'Please create a selection area first',
+        enterTemplateName: 'Please enter a template name',
+        noSelectionToSave: 'No selection area can be saved',
+        templateSaved: 'Template saved',
+        templateNotForCurrentView: 'The template is not applicable to the current view',
+        templateApplied: 'Template applied',
+        applyTemplateOverwriteTitle: 'Applying this template will overwrite the current selection',
+        continueQuestion: 'Continue?',
+        overwrite: 'Overwrite',
+        selectTemplate: 'Please select a template',
+        deleteSelectionTemplate: 'Delete selection template',
+        deleteTemplateConfirm: 'Delete "{{name}}"? The current canvas selection will not be cleared.',
+        templateDeleted: 'Template deleted',
+        selectionRegion: 'Selection Area',
+        clearAll: 'Clear All',
+        manualAddSelection: 'Add Selection Manually',
+        add: 'Add',
+        selectionTemplate: 'Selection Template',
+        templateName: 'Template Name',
+        saveTemplate: 'Save Template',
+        chooseTemplate: 'Choose Template',
+        noData: 'No data',
+        templateMismatch: 'Not matched',
+        applyTemplate: 'Apply Template',
+        deleteTemplate: 'Delete Template',
+        selectionTipX: 'X: horizontal start point (from 0)',
+        selectionTipY: 'Y: vertical start point (from 0)',
+        selectionTipLength: 'Length: horizontal point count',
+        selectionTipWidth: 'Width: vertical point count',
+        selectionTipLimit: 'Up to 4 selections, X + Length <= {{width}}, Y + Width <= {{height}}',
+        horizontalStart: 'Horizontal start',
+        verticalStart: 'Vertical start',
+        horizontalPoints: 'Horizontal points',
+        verticalPoints: 'Vertical points',
+        collectingDirectionLocked: 'Direction cannot be changed while collecting. Stop collection first.',
+        noValidPressureMatrix: 'No valid pressure matrix. Cannot zero.',
+        zeroSyncFailed: 'Zero state sync failed. Collection data may not record the zero baseline.',
+        duplicateConnectionOperation: 'The device is connecting or already connected. Please do not repeat the operation.',
+        deviceConnectingWait: 'The device is connecting. Please try again later.',
+        connectTimeoutCheckDevice: 'Connection timed out. Please re-plug the device and try again.',
+        connectFailedCheckDevice: 'Connection failed. Please check the device and try again.',
+        reconnectFailedCheckDevice: 'Reconnect failed. Please check the device and try again.',
+        disconnectFailed: 'Disconnect failed',
+        selectCorrectSensorType: 'Please select the correct sensor type first',
+        replaySelectionNo3D: 'This playback data contains selections and does not support 3D view',
+        missingDisplayData: 'No {{label}} data available',
+        missingSeatOrBackData: 'No seat or back data available',
+        seatPad: 'Seat',
+        backPad: 'Back',
+        selectionCoordinatesInvalid: 'Invalid selection area',
+        selectionOutOfValidRange: 'Selection area is out of the valid range',
+        selectionPositionCalcFailed: 'Unable to calculate selection position',
+        maxRulers: 'Up to {{count}} rulers are supported',
+        allDevicesDisconnected: 'All devices disconnected',
+        deviceDisconnectedSuffix: 'disconnected',
+        deviceDisconnected: 'Device disconnected',
       },
     },
     zh: {
@@ -414,6 +489,7 @@ i18next.init({
         probabilityDensity: '概率密度',
         boxShort: '框',
         boxSelection: '框选',
+        selectionDefaultName: '框选{{index}}',
         pointUnit: '个',
         areaUnit: 'cm²',
         pressureUnit: 'Kpa',
@@ -529,6 +605,77 @@ i18next.init({
         selectInValidArea: '请在有效区域内框选',
         macAddress: 'MAC地址',
         deviceType: '设备类型',
+        inputPath: '输入存储路径...',
+        startCompare: '开始对比',
+        compareDataNotReady: '数据不可对比',
+        compareStartFailed: '开始对比失败',
+        selectBaseDataFirst: '请先选择基准数据 A。',
+        selectCompareDataFirst: '请先选择对比数据 B。',
+        compareSameRecordInvalid: 'A 和 B 不能是同一条历史记录。',
+        selectionUnsupportedView: '当前视图不支持框选',
+        completeSelectionCoordinates: '请填写完整坐标',
+        selectionCoordinatesMustBeNumbers: '坐标必须为数字',
+        selectionCoordinatesMustBeIntegers: '坐标必须为整数',
+        selectionCoordinatesMinZero: '坐标不能小于 0',
+        selectionTooSmall: '框选区域过小，请重新框选',
+        selectionXOutOfRange: 'X({{x}}) + 长({{w}}) 超过横向传感点数({{maxW}})',
+        selectionYOutOfRange: 'Y({{y}}) + 宽({{h}}) 超过纵向传感点数({{maxH}})',
+        createSelectionFirst: '请先创建框选区域',
+        enterTemplateName: '请输入模板名称',
+        noSelectionToSave: '当前没有可保存的框选区域',
+        templateSaved: '模板保存成功',
+        templateNotForCurrentView: '模板不适用于当前视图',
+        templateApplied: '模板已应用',
+        applyTemplateOverwriteTitle: '应用模板会覆盖当前框选',
+        continueQuestion: '是否继续？',
+        overwrite: '覆盖',
+        selectTemplate: '请选择模板',
+        deleteSelectionTemplate: '删除框选模板',
+        deleteTemplateConfirm: '确认删除「{{name}}」？当前画布框选不会被清除。',
+        templateDeleted: '模板已删除',
+        selectionRegion: '框选区域',
+        clearAll: '清除全部',
+        manualAddSelection: '手动添加框选',
+        add: '添加',
+        selectionTemplate: '框选模板',
+        templateName: '模板名称',
+        saveTemplate: '保存模板',
+        chooseTemplate: '选择模板',
+        noData: '暂无数据',
+        templateMismatch: '不匹配',
+        applyTemplate: '应用模板',
+        deleteTemplate: '删除模板',
+        selectionTipX: 'X: 横向起点（从0开始）',
+        selectionTipY: 'Y: 纵向起点（从0开始）',
+        selectionTipLength: '长: 框选横向点数',
+        selectionTipWidth: '宽: 框选纵向点数',
+        selectionTipLimit: '最多4个框选，X+长 ≤ {{width}}，Y+宽 ≤ {{height}}',
+        horizontalStart: '横向起点',
+        verticalStart: '纵向起点',
+        horizontalPoints: '横向点数',
+        verticalPoints: '纵向点数',
+        collectingDirectionLocked: '采集中禁止翻转/旋转，请停止采集后再修改方向',
+        noValidPressureMatrix: '暂无有效压力矩阵，不能置零',
+        zeroSyncFailed: '置零状态同步失败，采集数据可能不会记录置零口径',
+        duplicateConnectionOperation: '设备正在连接或已连接，请勿重复操作',
+        deviceConnectingWait: '设备正在连接，请稍后再试',
+        connectTimeoutCheckDevice: '连接超时，请重新插拔设备后重试',
+        connectFailedCheckDevice: '连接失败，请检查设备后重试',
+        reconnectFailedCheckDevice: '重新连接失败，请检查设备后重试',
+        disconnectFailed: '断开连接失败',
+        selectCorrectSensorType: '请先选择正确的传感器类型',
+        replaySelectionNo3D: '当前回放数据带有框选，不支持 3D 视图',
+        missingDisplayData: '当前没有{{label}}数据',
+        missingSeatOrBackData: '当前没有坐垫或靠背数据',
+        seatPad: '坐垫',
+        backPad: '靠背',
+        selectionCoordinatesInvalid: '框选区域无效',
+        selectionOutOfValidRange: '框选区域超出有效范围',
+        selectionPositionCalcFailed: '无法计算框选位置',
+        maxRulers: '最多支持 {{count}} 条量尺',
+        allDevicesDisconnected: '全部设备断开',
+        deviceDisconnectedSuffix: '已断开',
+        deviceDisconnected: '设备断开',
       },
     },
   },
@@ -655,45 +802,50 @@ function MacConfigFullscreen() {
 }
 
 function App() {
+  const { i18n } = useTranslation()
+  const antdLocale = getLanguageKey(i18n.language || localStorage.getItem('language')) === 'en' ? enUS : zhCN
+
   return (
-    <HashRouter>
-      <Routes>
+    <ConfigProvider locale={antdLocale} theme={{ token: { zIndexPopupBase: 200000 } }}>
+      <HashRouter>
+        <Routes>
 
-        <Route
-          path="/data"
-          exact
-          element={
-            <Data i18n={i18next} />
-          }
-        />
+          <Route
+            path="/data"
+            exact
+            element={
+              <Data i18n={i18next} />
+            }
+          />
 
-        <Route
-          path="/addMac"
-          exact
-          element={
-            <Equip i18n={i18next} />
-          }
-        />
+          <Route
+            path="/addMac"
+            exact
+            element={
+              <Equip i18n={i18next} />
+            }
+          />
 
-        <Route
-          path="/macConfig"
-          exact
-          element={
-            <MacConfigFullscreen />
-          }
-        />
+          <Route
+            path="/macConfig"
+            exact
+            element={
+              <MacConfigFullscreen />
+            }
+          />
 
-        <Route
-          exact
-          path="/"
-          element={
-            <RequireMacConfig>
-              <Test i18n={i18next} />
-            </RequireMacConfig>
-          }
-        />
-      </Routes>
-    </HashRouter>
+          <Route
+            exact
+            path="/"
+            element={
+              <RequireMacConfig>
+                <Test i18n={i18next} />
+              </RequireMacConfig>
+            }
+          />
+        </Routes>
+      </HashRouter>
+    </ConfigProvider>
   );
 }
 

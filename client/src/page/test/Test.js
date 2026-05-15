@@ -33,6 +33,7 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { useMatrixData } from '../../hooks/useMatrixData'
 import NumThres from '../../components/three/NumThres'
 import { buildFallbackParams } from '../../util/request'
+import { formatSelectionName } from '../../util/selectionName'
 
 export const pageContext = createContext(null)
 
@@ -153,7 +154,7 @@ function Test() {
                 yEnd: matrix.yEnd,
                 width: systemPointConfig[typeKey].width,
                 height: systemPointConfig[typeKey].height,
-                name: range.name || '框选1'
+                name: formatSelectionName(range.name, 1, t)
             }
 
             axios({

@@ -9,8 +9,11 @@ import { colSelectMatrix } from '../../util/util'
 import { isMoreMatrix } from '../../assets/util/util'
 import { buildFallbackParams } from '../../util/request'
 import { pageContext } from '../../page/test/Test'
+import { useTranslation } from 'react-i18next'
+import { formatSelectionName } from '../../util/selectionName'
 
 export default function Col(props) {
+    const { t } = useTranslation()
     const { colName, remark, HZ, setStartTime, col, setCol } = props
     const pageInfo = useContext(pageContext)
 
@@ -47,7 +50,7 @@ export default function Col(props) {
                         width: systemPointConfig[typeKey].width,
                         height: systemPointConfig[typeKey].height,
                         region_id: i + 1,
-                        name: range.name || `框选${i + 1}`,
+                        name: formatSelectionName(range.name, i + 1, t),
                         colorIndex: range.colorIndex,
                     }
                     if (!selectObj[typeKey]) {
@@ -86,11 +89,11 @@ export default function Col(props) {
                 if (res.data.message == 'error') {
                     useEquipStore.getState().setCollecting(false)
                     const errorTextMap = {
-                        'Please select correct sensor type': '请先选择正确的传感器类型',
+                        'Please select correct sensor type': t('selectCorrectSensorType'),
                     }
                     message.error(errorTextMap[res.data.data] || res.data.data)
                 } else {
-                    message.success('开始采集')
+                    message.success(t('collectStart'))
                     setCol(!col)
                     setStartTime(startStamp)
                     useEquipStore.getState().setCollecting(true)
@@ -132,7 +135,7 @@ export default function Col(props) {
             }).catch((err) => {
                 console.error('[Col] startCol failed:', err)
                 useEquipStore.getState().setCollecting(false)
-                message.error('采集失败')
+                message.error(t('collectFailed'))
             })
 
         } else {
@@ -143,7 +146,7 @@ export default function Col(props) {
                 if (res.data.message == 'error') {
                     message.error(res.data.data)
                 } else {
-                    message.success('采集成功')
+                    message.success(t('collectSuccess'))
                     setCol(!col)
                     useEquipStore.getState().setCollecting(false)
                 }

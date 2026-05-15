@@ -171,9 +171,22 @@ function SecondTitle(props) {
 
 
     }, [])
+
+    useEffect(() => {
+        const handleClearSelectionMode = () => {
+            pageInfo?.brushInstance.deleteAll()
+            pageInfo?.brushInstance.stopBrush()
+            useEquipStore.getState().setSelectArr([])
+            setOnSelect(false)
+        }
+        window.addEventListener('clear-selection-mode', handleClearSelectionMode)
+        return () => window.removeEventListener('clear-selection-mode', handleClearSelectionMode)
+    }, [pageInfo?.brushInstance, setOnSelect])
+
     useEffect(() => {
         if (!onSelect) return
         if (display !== 'num' && display !== 'contrast') {
+            pageInfo?.brushInstance.deleteAll()
             pageInfo?.brushInstance.stopBrush()
             useEquipStore.getState().setSelectArr([])
             setOnSelect(false)
@@ -199,7 +212,7 @@ function SecondTitle(props) {
     const wsDataZero = () => {
         const zeroState = pageInfo.changeWsLocalData()
         if (zeroState?.error === 'no_data') {
-            message.warning('暂无有效压力矩阵，不能置零')
+            message.warning(t('noValidPressureMatrix'))
             return
         }
         setOnZero(Boolean(zeroState?.enabled))
@@ -210,7 +223,7 @@ function SecondTitle(props) {
             params: buildFallbackParams(payload),
             data: payload,
         }).catch(() => {
-            message.warning('置零状态同步失败，采集数据可能不会记录置零口径')
+            message.warning(t('zeroSyncFailed'))
         })
     }
 

@@ -13,6 +13,7 @@ import { shallow } from 'zustand/shallow';
 import FootTrack from '../chart/Chart';
 import { graCenter } from '../../util/util';
 import DraggablePanel from '../draggablePanel/DraggablePanel';
+import { formatSelectionName } from '../../util/selectionName';
 
 function ChartsAside(props) {
 
@@ -61,7 +62,7 @@ function ChartsAside(props) {
                 // 多框选模式：每个框一条线
                 for (let b = 0; b < boxStats.length; b++) {
                     const box = boxStats[b]
-                    const seriesName = box.name || `框选${b + 1}${keyArr.length > 1 ? `-${key}` : ''}`
+                    const seriesName = `${formatSelectionName(box.name, b + 1, props.t)}${keyArr.length > 1 ? `-${key}` : ''}`
                     series.push({
                         symbol: 'none',
                         data: box[dataField] || [],
@@ -305,7 +306,7 @@ function ChartsAside(props) {
                                 return {
                                     colorIndex: box.colorIndex,
                                     bgc: box.bgc,
-                                    name: box.name || `框选${idx + 1}`,
+                                    name: formatSelectionName(box.name, idx + 1, props.t),
                                     pointTotal: box.data.areaTotal || 0,
                                     areaTotal: Math.round(bPreciseArea),
                                     pressAver: Number(box.data.pressAver || 0).toFixed(2),
@@ -360,7 +361,7 @@ function ChartsAside(props) {
             return allBoxes.map((box, idx) => (
                 <div className='chartTypeItem' key={`box-${box.colorIndex}`}>
                     <div className='cirlce' style={{ backgroundColor: box.bgc || SELECT_COLORS[box.colorIndex] }}></div>
-                    {box.name || `框选${box.colorIndex + 1}`}
+                    {formatSelectionName(box.name, box.colorIndex + 1, t)}
                 </div>
             ))
         }

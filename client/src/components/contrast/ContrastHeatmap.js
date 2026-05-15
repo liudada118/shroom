@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 
 function jetColor(value, max) {
     if (!value || max <= 0) return [8, 12, 16]
@@ -20,6 +21,21 @@ function diffColor(value, maxAbs) {
 
 export default function ContrastHeatmap(props) {
     const { title, subtitle, arr = [], width = 32, height = 32, mode = 'normal', className = '' } = props
+    const { i18n } = useTranslation()
+    const isEnglish = String(i18n.language || localStorage.getItem('language') || '').toLowerCase().startsWith('en')
+    const copy = isEnglish ? {
+        diffTitle: 'B-A Difference',
+        bGreater: 'B > A',
+        nearlyNoChange: 'Nearly no change',
+        bLess: 'B < A',
+        range: 'Range',
+    } : {
+        diffTitle: 'B-A 差值',
+        bGreater: 'B 大于 A',
+        nearlyNoChange: '接近无变化',
+        bLess: 'B 小于 A',
+        range: '范围',
+    }
     const canvasRef = useRef(null)
     const maxAbs = Math.max(1, ...arr.map((value) => Math.abs(Number(value) || 0)))
 
@@ -54,11 +70,11 @@ export default function ContrastHeatmap(props) {
                 <canvas ref={canvasRef} className={`canvasThree contrastCanvas ${className}`} />
                 {mode === 'diff' ? (
                     <div className="diffLegendOverlay">
-                        <div className="diffLegendTitle">B-A 差值</div>
-                        <div><span className="legendRed" />B 大于 A</div>
-                        <div><span className="legendWhite" />接近无变化</div>
-                        <div><span className="legendBlue" />B 小于 A</div>
-                        <div className="diffLegendRange">范围 ±{maxAbs.toFixed(maxAbs >= 100 ? 0 : 1)}</div>
+                        <div className="diffLegendTitle">{copy.diffTitle}</div>
+                        <div><span className="legendRed" />{copy.bGreater}</div>
+                        <div><span className="legendWhite" />{copy.nearlyNoChange}</div>
+                        <div><span className="legendBlue" />{copy.bLess}</div>
+                        <div className="diffLegendRange">{copy.range} ±{maxAbs.toFixed(maxAbs >= 100 ? 0 : 1)}</div>
                     </div>
                 ) : null}
             </div>

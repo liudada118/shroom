@@ -1,4 +1,4 @@
-import React, { memo, useContext, useState } from 'react'
+import React, { memo, useContext } from 'react'
 import './index.scss'
 import EquipStatus from '../EquipStatus/EquipStatus'
 import Select from '../select/Select'
@@ -18,12 +18,18 @@ import { SettingOutlined, ReloadOutlined, DisconnectOutlined } from '@ant-design
 
 const Title = memo((props) => {
   const { t, i18n } = props;
+  const languageKey = String(i18n.language || localStorage.getItem('language') || 'zh').toLowerCase().startsWith('en') ? 'en' : 'zh'
+  const languageOptions = [
+    { label: '中文', value: 'zh' },
+    { label: 'EN', value: 'en' },
+  ]
+  const languageLabel = languageOptions.find(item => item.value === languageKey)?.label || '中文'
 
   const connectState = useEquipStore(s => s.connectState, shallow);
   const CONNECT_TIMEOUT_MS = 15000
 
-  const getConnectErrorMessage = (err, fallback = '连接失败，请检查设备后重试') => {
-    if (err?.code === 'ECONNABORTED') return '连接超时，请重新插拔设备后重试'
+  const getConnectErrorMessage = (err, fallback = t('connectFailedCheckDevice')) => {
+    if (err?.code === 'ECONNABORTED') return t('connectTimeoutCheckDevice')
     return err?.response?.data?.message || err?.data?.message || err?.message || fallback
   }
 
@@ -54,7 +60,7 @@ const Title = memo((props) => {
   // connPort 已合并 MAC 查询，不再需要单独调用 /sendMac
   const connent = () => {
     if (connectState === 'connecting' || connectState === 'rescanning' || connectState === 'connected') {
-      message.info('设备正在连接或已连接，请勿重复操作')
+      message.info(t('duplicateConnectionOperation'))
       return
     }
 
@@ -62,7 +68,7 @@ const Title = memo((props) => {
 
     axios.get(`${localAddress}/connPort`, { timeout: CONNECT_TIMEOUT_MS }).then((res) => {
       console.log('[Connect] connPort result:', res.data)
-      applyConnectResult(res, '连接失败，请检查设备后重试')
+      applyConnectResult(res, t('connectFailedCheckDevice'))
     }).catch((err) => {
       console.error('[Connect] connPort failed:', err)
       setConnectFailed(err)
@@ -73,7 +79,7 @@ const Title = memo((props) => {
   // 清理死端口 + 僵尸设备 → 重新连接
   const rescan = () => {
     if (connectState === 'connecting' || connectState === 'rescanning') {
-      message.info('设备正在连接，请稍后再试')
+      message.info(t('deviceConnectingWait'))
       return
     }
 
@@ -81,7 +87,7 @@ const Title = memo((props) => {
 
     axios.get(`${localAddress}/rescanPort`, { timeout: CONNECT_TIMEOUT_MS }).then((res) => {
       console.log('[Rescan] result:', res.data)
-      applyConnectResult(res, '重新连接失败，请检查设备后重试')
+      applyConnectResult(res, t('reconnectFailedCheckDevice'))
     }).catch((err) => {
       console.error('[Rescan] failed:', err)
       setConnectFailed(err)
@@ -97,7 +103,7 @@ const Title = memo((props) => {
       console.log('[Disconnect] stopPort result:', res.data)
     }).catch((err) => {
       console.error('[Disconnect] stopPort failed:', err)
-      message.error(getConnectErrorMessage(err, '断开连接失败'))
+      message.error(getConnectErrorMessage(err, t('disconnectFailed')))
     })
 
     // 立即清空前端状态
@@ -136,8 +142,6 @@ const Title = memo((props) => {
     })
   }
 
-  const [language, setLanguage] = useState('中文')
-
   const equipStatus = useEquipStore(s => s.equipStatus, shallow);
 
   // 根据 connectState 决定主按钮样式和文本
@@ -175,6 +179,20 @@ const Title = memo((props) => {
   // 跳转到 MAC 地址配置页面
   const goToMacConfig = () => {
     window.location.hash = '#/macConfig'
+  }
+
+  const clearSelectionMode = () => {
+    pageInfo?.brushInstance?.deleteAll?.()
+    pageInfo?.brushInstance?.stopBrush?.()
+    pageInfo?.setOnSelect?.(false)
+    useEquipStore.getState().setSelectArr([])
+    window.dispatchEvent(new CustomEvent('clear-selection-mode'))
+  }
+
+  const changeLanguage = (value) => {
+    localStorage.setItem('language', value)
+    clearSelectionMode()
+    i18n.changeLanguage(value)
   }
 
   return (
@@ -220,22 +238,14 @@ const Title = memo((props) => {
               <SettingOutlined style={{ fontSize: '1.1rem', color: '#E6EBF0' }} />
             </div>
           </Tooltip>
-          <Select defaultValue='中文' options={[
-            {
-              label: '中文',
-              value: 'zh'
-            },
-            {
-              label: 'EN',
-              value: 'en'
-            },
-          ]}
+          <Select defaultValue={languageLabel} options={languageOptions}
 
             icon={<i className='iconfont' style={{ marginRight: '0.625rem', fontSize: '0.875rem', color: '#E6EBF0' }}>&#xe642;</i>}
-            dropdownStyle={{ zIndex: 99999 }}
-            onChange={(value) => {
-              i18n.changeLanguage(value)
-            }}
+            popupClassName="languageSelectDropdown"
+            dropdownStyle={{ zIndex: 2147483647 }}
+            styles={{ popup: { root: { zIndex: 2147483647 } } }}
+            getPopupContainer={() => document.body}
+            onChange={changeLanguage}
 
           />
         </div>

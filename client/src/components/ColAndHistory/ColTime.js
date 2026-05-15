@@ -2,15 +2,17 @@ import React from 'react'
 import { msToHMS } from '../../assets/util/date';
 import { useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
+import { useTranslation } from 'react-i18next';
 
 function labelOf(key) {
     if (typeof key !== 'string') return String(key)
-    if (key.includes('back')) return '靠垫'
-    if (key.includes('sit')) return '坐垫'
+    if (key.includes('back')) return 'backPad'
+    if (key.includes('sit')) return 'seatPad'
     return key
 }
 
 export default function ColTime(props) {
+    const { t } = useTranslation()
 
     const { startTime } = props
     const equipStamp = useEquipStore(s => s.equipStamp, shallow);
@@ -25,13 +27,13 @@ export default function ColTime(props) {
     })
 
     if (keys.length > 0 && offlineKeys.length === keys.length) {
-        return <>全部设备断开</>
+        return <>{t('allDevicesDisconnected')}</>
     }
     if (offlineKeys.length > 0) {
-        return <>{offlineKeys.map(labelOf).join('、')}已断开</>
+        return <>{offlineKeys.map(key => t(labelOf(key))).join('、')}{t('deviceDisconnectedSuffix')}</>
     }
 
     const elapsed = equipStamp - startTime
-    if (!Number.isFinite(elapsed)) return <>设备断开</>
+    if (!Number.isFinite(elapsed)) return <>{t('deviceDisconnected')}</>
     return <>{msToHMS(elapsed)}</>
 }

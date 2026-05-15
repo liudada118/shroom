@@ -220,7 +220,7 @@ const ColAndHistory = memo((props) => {
         setIsEditingPath(false)
 
         if (showSuccess) {
-            message.success(t('pathUpdated') || '路径已更新')
+            message.success(t('pathUpdated'))
         }
 
         return actualPath
@@ -356,7 +356,7 @@ const ColAndHistory = memo((props) => {
                         const actualPath = res.data?.data?.path || folder
                         setDownloadPath(actualPath)
                         setIsEditingPath(false)
-                        message.success(t('pathUpdated') || '路径已更新')
+                        message.success(t('pathUpdated'))
                     }
                 } catch (e) {
                     // 即使后端请求失败，也更新前端显示
@@ -418,7 +418,7 @@ const ColAndHistory = memo((props) => {
             ? folderPathOverride.trim()
             : downloadPath
         if (!targetPath) {
-            message.warning(t('noPath') || '路径为空')
+            message.warning(t('noPath'))
             return
         }
         // 优先使用 Electron API
@@ -430,7 +430,7 @@ const ColAndHistory = memo((props) => {
                 }
             } catch (err) {
                 console.error('Open folder error:', err)
-                message.error(err?.message || '打开文件夹失败')
+                message.error(err?.message || t('openFolderFailed'))
             }
         } else {
             const payload = { folderPath: targetPath }
@@ -438,11 +438,11 @@ const ColAndHistory = memo((props) => {
                 params: buildFallbackParams(payload)
             }).then((res) => {
                 if (res.data?.code !== 0) {
-                    message.error(res.data?.message || '打开文件夹失败')
+                    message.error(res.data?.message || t('openFolderFailed'))
                 }
             }).catch((err) => {
                 console.error('Open folder error:', err)
-                message.error('打开文件夹失败')
+                message.error(t('openFolderFailed'))
             })
         }
     }
@@ -462,7 +462,7 @@ const ColAndHistory = memo((props) => {
                     if (folderPath && folderPath !== filePath) {
                         handleOpenFolder(folderPath)
                     } else {
-                        message.error(res.data?.message || '打开文件失败')
+                        message.error(res.data?.message || t('openFileFailed'))
                     }
                 }
             }).catch((err) => {
@@ -672,15 +672,15 @@ const ColAndHistory = memo((props) => {
         const leftDate = contrastArr.left?.date
         const rightDate = contrastArr.right?.date
         if (!leftDate) {
-            message.error('请先选择基准数据 A。')
+            message.error(t('selectBaseDataFirst'))
             return
         }
         if (!rightDate) {
-            message.error('请先选择对比数据 B。')
+            message.error(t('selectCompareDataFirst'))
             return
         }
         if (leftDate === rightDate) {
-            message.error('A 和 B 不能是同一条历史记录。')
+            message.error(t('compareSameRecordInvalid'))
             return
         }
 
@@ -697,7 +697,7 @@ const ColAndHistory = memo((props) => {
         }).then((res) => {
             const result = res.data || {}
             if (result.code !== 0) {
-                message.error(result.message || '数据不可对比')
+                message.error(result.message || t('compareDataNotReady'))
                 return
             }
             const data = result.data || {}
@@ -716,7 +716,7 @@ const ColAndHistory = memo((props) => {
             sethistoryDrawer(false)
             setOperateStatus('')
         }).catch(() => {
-            message.error('开始对比失败')
+            message.error(t('compareStartFailed'))
         })
     }
 
@@ -872,6 +872,8 @@ const ColAndHistory = memo((props) => {
                 onOk={handleUpload}
                 onCancel={handleUploadCancel}
                 confirmLoading={uploadLoading}
+                okText={t('ok')}
+                cancelText={t('cancel')}
             >
                 <input ref={fileInputRef} type="file" accept=".csv" onChange={(e) => { fileChange(e) }} id="file" />
                 {fileName && <div style={{ marginTop: '8px', color: '#8794A1', fontSize: '0.8rem' }}>{fileName}</div>}
@@ -905,9 +907,9 @@ const ColAndHistory = memo((props) => {
                             }
                         }}
                         style={{ flex: 1 }}
-                        placeholder={t('inputPath') || '输入存储路径...'}
+                        placeholder={t('inputPath')}
                     />
-                    <Button onClick={handleSelectFolder}>{t('browse') || '浏览'}</Button>
+                    <Button onClick={handleSelectFolder}>{t('browse')}</Button>
                     <Button onClick={() => handleOpenFolder(editPathValue || downloadPath)}>{t('open')}</Button>
                 </div>
                 <div style={{ marginTop: '12px', color: '#999', fontSize: '0.8rem' }}>
@@ -924,13 +926,13 @@ const ColAndHistory = memo((props) => {
                         handleOpenFolder()
                         setDownloadProgress(null)
                         resetOperateState()
-                    }}>{t('openFolder') || '打开文件夹'}</Button>,
+                    }}>{t('openFolder')}</Button>,
                     <Button key="close" onClick={() => {
                         setDownloadProgress(null)
                         resetOperateState()
-                    }}>{t('close') || '关闭'}</Button>
+                    }}>{t('close')}</Button>
                 ] : downloadProgress?.status === 'error' ? [
-                    <Button key="close" onClick={() => setDownloadProgress(null)}>{t('close') || '关闭'}</Button>
+                    <Button key="close" onClick={() => setDownloadProgress(null)}>{t('close')}</Button>
                 ] : []}
                 closable={downloadProgress?.status !== 'downloading'}
                 onCancel={() => {
@@ -1052,7 +1054,7 @@ const ColAndHistory = memo((props) => {
                                     {
                                         operateStatus == 'delete' ? <div className='modalConfirmButton cursor' onClick={deleteData}>{t('delete')}</div> :
                                             operateStatus == 'download' ? <div className='modalConfirmButton cursor' onClick={download}>{t('download')}</div> :
-                                                operateStatus == 'contrast' ? <div className='modalConfirmButton cursor' onClick={startContrast}>开始对比</div> : ''
+                                                operateStatus == 'contrast' ? <div className='modalConfirmButton cursor' onClick={startContrast}>{t('startCompare')}</div> : ''
                                     }
 
                                     <div className='modalConfirmButton cursor' onClick={() => {
@@ -1475,7 +1477,7 @@ const ColAndHistory = memo((props) => {
                                     axios.post(`${localAddress}/setDownloadPath`, { path: val }).then((res) => {
                                         if (res.data?.code === 0) {
                                             setDownloadPath(val)
-                                            message.success(t('pathUpdated') || '路径已更新')
+                                            message.success(t('pathUpdated'))
                                         }
                                     }).catch(() => {})
                                 }

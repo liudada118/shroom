@@ -8,8 +8,10 @@ import { localAddress } from '../../util/constant';
 import { buildFallbackParams } from '../../util/request';
 import PlaybackSpeedMenu from './PlaybackSpeedMenu';
 import PlaybackPlayToggle from './PlaybackPlayToggle';
+import { useTranslation } from 'react-i18next';
 
 export default function PlaybackBar(props) {
+    const { t } = useTranslation();
     const {
         name,
         dataLength = 0,
@@ -62,7 +64,7 @@ export default function PlaybackBar(props) {
 
     const handleSliderChange = (index) => {
         if (!hasPlaybackFile) {
-            message.warning('请选择回放文件');
+            message.warning(t('playbackFileRequired'));
             return;
         }
 
@@ -95,7 +97,7 @@ export default function PlaybackBar(props) {
 
     const handlePlay = () => {
         if (!hasPlaybackFile) {
-            message.warning('请选择回放文件');
+            message.warning(t('playbackFileRequired'));
             return;
         }
 

@@ -4,12 +4,14 @@ import './index.scss'
 import { pageContext } from '../../page/test/Test'
 import axios from 'axios'
 import { message } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import { useEquipStore } from '../../store/equipStore'
 
 export default function IconAndTextAndSelect(props) {
     const { show, text, options, icon } = props
+    const { t } = useTranslation()
     const [selectShow, setSelectShow] = useState(false)
 
     const pageInfo = useContext(pageContext);
@@ -41,7 +43,7 @@ export default function IconAndTextAndSelect(props) {
                     return (
                         <div className='dropItem fs14 cursor' onClick={() => {
                             if (useEquipStore.getState().collecting) {
-                                message.warning('采集中禁止翻转/旋转，请停止采集后再修改方向')
+                                message.warning(t('collectingDirectionLocked'))
                                 return
                             }
                             // setValue(a.label)

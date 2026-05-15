@@ -8,19 +8,167 @@ import { useEquipStore } from '../../store/equipStore'
 import { localAddress } from '../../util/constant'
 import ContrastHeatmap from './ContrastHeatmap'
 import SelectSet from '../title/SelectSet'
+import { useTranslation } from 'react-i18next'
+import { formatSelectionName } from '../../util/selectionName'
 import './contrast.scss'
 
-const METRICS = [
-    { key: 'aver', label: '平均压强' },
-    { key: 'max', label: '最大压强' },
-    { key: 'min', label: '最小压强' },
-    { key: 'press', label: '压力总和' },
-    { key: 'area', label: '受压面积' },
-    { key: 'points', label: '有效点数' },
-    { key: 'center', label: '压力重心' },
-]
+const METRIC_KEYS = ['aver', 'max', 'min', 'press', 'area', 'points', 'center']
 
 const FULL_SELECTION_ID = '__full__'
+const CONTRAST_COPY = {
+    zh: {
+        metrics: {
+            aver: '平均压强',
+            max: '最大压强',
+            min: '最小压强',
+            press: '压力总和',
+            area: '受压面积',
+            points: '有效点数',
+            center: '压力重心',
+        },
+        region: '区域',
+        notRecorded: '未记录',
+        flippedBoth: '上下+左右',
+        flippedHorizontal: '左右翻转',
+        flippedVertical: '上下翻转',
+        originalDirection: '原始方向',
+        zeroNotApplied: '未置零',
+        zeroEnabled: '已开启',
+        zeroApplied: '已置零',
+        pressureHigher: '高',
+        pressureLower: '低',
+        pressureConclusion: 'B 总压力{{direction}} {{value}}',
+        pressureNA: 'B 总压力差异 N/A',
+        areaIncrease: '增加',
+        areaDecrease: '减少',
+        areaConclusion: '受压面积{{direction}} {{value}}',
+        areaNA: '受压面积差异 N/A',
+        exportScope: '导出范围',
+        exportObject: '导出对象',
+        exportFrames: '导出帧数',
+        exportFields: '导出字段',
+        fullMatrix: '全量矩阵',
+        exportFieldValue: 'A / B / B-A 指标',
+        noExportData: '暂无可导出的对比数据',
+        exportSuccess: '对比结果已导出',
+        empty: '暂无可对比数据，请先在历史数据中选择 A/B 后开始对比。',
+        title: '数据对比',
+        exportResult: '导出结果',
+        exit: '退出对比',
+        currentScope: '当前范围',
+        selectionRegion: '框选区域',
+        currentFrame: '当前帧',
+        filterValue: '过滤值',
+        object: '对象',
+        sampleRate: '采样率',
+        zero: '置零',
+        direction: '方向',
+        diffRange: '差值范围',
+        currentConclusion: '当前帧结论',
+        redBlueTip: '红色表示 B 大于 A，蓝色表示 B 小于 A',
+        baselineA: 'A 基准数据',
+        compareB: 'B 对比数据',
+        diffMap: 'B-A 差值图',
+        frame: '帧',
+        diffSubtitle: '红色升高，蓝色降低',
+        regionManage: '区域管理',
+        regionSub: '选择分析范围，不改变原始数据',
+        full: '全量',
+        fullMatrixMeta: '全部点位参与指标计算',
+        pressureDiff: '压力差',
+        areaDiff: '面积差',
+        noSelection: '当前没有框选区域，可在下方创建或套用模板。',
+        exportPreview: '导出预览',
+        pause: '暂停',
+        play: '播放',
+        bLess: 'B 小于 A',
+        nearlyNoChange: '接近无变化',
+        bGreater: 'B 大于 A',
+        currentMetricScope: '当前指标范围',
+        pressureChart: '压力变化曲线',
+        areaChart: '面积变化曲线',
+        metric: '指标',
+        rate: '变化率',
+        timeA: 'A 时间',
+        timeB: 'B 时间',
+    },
+    en: {
+        metrics: {
+            aver: 'Avg Pressure',
+            max: 'Max Pressure',
+            min: 'Min Pressure',
+            press: 'Pressure Sum',
+            area: 'Contact Area',
+            points: 'Valid Points',
+            center: 'Pressure Center',
+        },
+        region: 'Region',
+        notRecorded: 'Not recorded',
+        flippedBoth: 'Vertical + Horizontal',
+        flippedHorizontal: 'Horizontal Flip',
+        flippedVertical: 'Vertical Flip',
+        originalDirection: 'Original',
+        zeroNotApplied: 'Not zeroed',
+        zeroEnabled: 'Enabled',
+        zeroApplied: 'Zeroed',
+        pressureHigher: 'higher by',
+        pressureLower: 'lower by',
+        pressureConclusion: 'B total pressure is {{direction}} {{value}}',
+        pressureNA: 'B total pressure difference N/A',
+        areaIncrease: 'increased by',
+        areaDecrease: 'decreased by',
+        areaConclusion: 'Contact area {{direction}} {{value}}',
+        areaNA: 'Contact area difference N/A',
+        exportScope: 'Export Scope',
+        exportObject: 'Export Object',
+        exportFrames: 'Export Frames',
+        exportFields: 'Export Fields',
+        fullMatrix: 'Full Matrix',
+        exportFieldValue: 'A / B / B-A Metrics',
+        noExportData: 'No comparison data to export',
+        exportSuccess: 'Comparison result exported',
+        empty: 'No comparison data. Select A/B in history first.',
+        title: 'Data Comparison',
+        exportResult: 'Export Result',
+        exit: 'Exit Compare',
+        currentScope: 'Scope',
+        selectionRegion: 'Selection Area',
+        currentFrame: 'Frame',
+        filterValue: 'Filter',
+        object: 'Object',
+        sampleRate: 'Sample Rate',
+        zero: 'Zero',
+        direction: 'Direction',
+        diffRange: 'Diff Range',
+        currentConclusion: 'Current Frame',
+        redBlueTip: 'Red means B is greater than A; blue means B is less than A',
+        baselineA: 'A Baseline',
+        compareB: 'B Comparison',
+        diffMap: 'B-A Difference',
+        frame: 'Frame',
+        diffSubtitle: 'Red increased, blue decreased',
+        regionManage: 'Region Management',
+        regionSub: 'Choose an analysis scope without changing raw data',
+        full: 'Full',
+        fullMatrixMeta: 'All points are included in metric calculation',
+        pressureDiff: 'Pressure Diff',
+        areaDiff: 'Area Diff',
+        noSelection: 'No selection areas. Create one or apply a template below.',
+        exportPreview: 'Export Preview',
+        pause: 'Pause',
+        play: 'Play',
+        bLess: 'B < A',
+        nearlyNoChange: 'Nearly no change',
+        bGreater: 'B > A',
+        currentMetricScope: 'Metric Scope',
+        pressureChart: 'Pressure Curve',
+        areaChart: 'Area Curve',
+        metric: 'Metric',
+        rate: 'Rate',
+        timeA: 'A Time',
+        timeB: 'B Time',
+    },
+}
 
 function getFrameByProgress(frames = [], progress = 0) {
     if (!frames.length) return {}
@@ -124,8 +272,8 @@ function getSelectionRect(item) {
     return item?.matrixRect || item?.rect || null
 }
 
-function getSelectionName(item, index) {
-    return item?.name || item?.regionName || `区域 ${index + 1}`
+function getSelectionName(item, index, copy = CONTRAST_COPY.zh) {
+    return formatSelectionName(item?.name || item?.regionName, index + 1, (_, options) => `${copy.region} ${options.index}`)
 }
 
 function getSelectionColor(item, index) {
@@ -133,26 +281,26 @@ function getSelectionColor(item, index) {
     return item?.bgc || item?.color || palette[index % palette.length]
 }
 
-function formatDirection(direction) {
-    if (!direction) return '未记录'
+function formatDirection(direction, copy = CONTRAST_COPY.zh) {
+    if (!direction) return copy.notRecorded
     const rotateDegree = Number(direction.rotateDegree ?? direction.rotate_degree) || 0
     if (rotateDegree) return `${rotateDegree}°`
     const left = direction.left !== false
     const up = direction.up !== false
-    if (!left && !up) return '上下+左右'
-    if (!left) return '左右翻转'
-    if (!up) return '上下翻转'
-    return '原始方向'
+    if (!left && !up) return copy.flippedBoth
+    if (!left) return copy.flippedHorizontal
+    if (!up) return copy.flippedVertical
+    return copy.originalDirection
 }
 
-function formatZeroState(zeroState) {
-    if (!zeroState?.enabled && !zeroState?.zero_enabled) return '未置零'
-    return zeroState?.has_baseline === false ? '已开启' : '已置零'
+function formatZeroState(zeroState, copy = CONTRAST_COPY.zh) {
+    if (!zeroState?.enabled && !zeroState?.zero_enabled) return copy.zeroNotApplied
+    return zeroState?.has_baseline === false ? copy.zeroEnabled : copy.zeroApplied
 }
 
-function getSampleRateText(data = {}) {
+function getSampleRateText(data = {}, copy = CONTRAST_COPY.zh) {
     const sampleRate = data.sampleRateHz || data.rawFrame?.sample_rate_hz || data.rawFrame?.hardware_sample_rate_hz
-    return sampleRate ? `${formatValue(Number(sampleRate))}Hz` : '未记录'
+    return sampleRate ? `${formatValue(Number(sampleRate))}Hz` : copy.notRecorded
 }
 
 function buildSeriesByProgress(leftValues = [], rightValues = []) {
@@ -199,6 +347,10 @@ function MiniLineChart({ title, rows = [] }) {
 }
 
 export default function NumThresContrast() {
+    const { i18n } = useTranslation()
+    const isEnglish = String(i18n.language || localStorage.getItem('language') || '').toLowerCase().startsWith('en')
+    const copy = CONTRAST_COPY[isEnglish ? 'en' : 'zh']
+    const metrics = useMemo(() => METRIC_KEYS.map((key) => ({ key, label: copy.metrics[key] })), [copy])
     const pageInfo = useContext(pageContext)
     const contrast = useEquipStore(s => s.contrast, shallow)
     const selectArr = useEquipStore(s => s.selectArr, shallow)
@@ -248,13 +400,13 @@ export default function NumThresContrast() {
             .map((item, index) => ({
                 id: getSelectionId(item, index),
                 order: index + 1,
-                name: getSelectionName(item, index),
+                name: getSelectionName(item, index, copy),
                 color: getSelectionColor(item, index),
                 rect: getSelectionRect(item),
                 source: item,
             }))
             .filter((item) => item.rect)
-    }, [selectArr, activeKey])
+    }, [selectArr, activeKey, copy])
 
     useEffect(() => {
         if (!selectionItems?.length) {
@@ -280,7 +432,7 @@ export default function NumThresContrast() {
         const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : width
         const metricA = calcMetrics(sourceA, metricWidth, activeSelect)
         const metricB = calcMetrics(sourceB, metricWidth, activeSelect)
-        return METRICS.map((item) => {
+        return metrics.map((item) => {
             const a = metricA[item.key]
             const b = metricB[item.key]
             const diff = typeof a === 'number' && typeof b === 'number' ? b - a : 'N/A'
@@ -292,7 +444,7 @@ export default function NumThresContrast() {
                 rate: typeof a === 'number' && typeof b === 'number' ? formatRate(a, b) : 'N/A',
             }
         })
-    }, [leftArr, rightArr, width, activeSelect])
+    }, [leftArr, rightArr, width, activeSelect, metrics])
 
     const conclusion = useMemo(() => {
         const pressRow = metricRows.find((row) => row.key === 'press')
@@ -301,17 +453,17 @@ export default function NumThresContrast() {
         const pressDiff = Number(pressRow?.diff)
         const areaDiff = Number(areaRow?.diff)
         const pressText = Number.isFinite(pressDiff)
-            ? `B 总压力${pressDiff >= 0 ? '高' : '低'} ${formatValue(Math.abs(pressDiff))}`
-            : 'B 总压力差异 N/A'
+            ? copy.pressConclusion.replace('{{direction}}', pressDiff >= 0 ? copy.pressHigher : copy.pressLower).replace('{{value}}', formatValue(Math.abs(pressDiff)))
+            : copy.pressNA
         const areaText = Number.isFinite(areaDiff)
-            ? `受压面积${areaDiff >= 0 ? '增加' : '减少'} ${formatValue(Math.abs(areaDiff))}`
-            : '受压面积差异 N/A'
+            ? copy.areaConclusion.replace('{{direction}}', areaDiff >= 0 ? copy.areaIncrease : copy.areaDecrease).replace('{{value}}', formatValue(Math.abs(areaDiff)))
+            : copy.areaNA
         return {
             pressText,
             areaText,
             maxAbsDiff,
         }
-    }, [metricRows, diffArr])
+    }, [metricRows, diffArr, copy])
 
     const leftIndex = contrast?.left?.frames?.length > 1 ? Math.round((contrast.left.frames.length - 1) * progress / 100) : 0
     const rightIndex = contrast?.right?.frames?.length > 1 ? Math.round((contrast.right.frames.length - 1) * progress / 100) : 0
@@ -344,11 +496,11 @@ export default function NumThresContrast() {
     }, [selectionItems, leftArr, rightArr, width])
 
     const exportPreviewRows = useMemo(() => ([
-        { label: '导出范围', value: activeSelection ? activeSelection.name : '全量矩阵' },
-        { label: '导出对象', value: activeKey || '-' },
-        { label: '导出帧数', value: Math.max(contrast?.left?.frames?.length || 0, contrast?.right?.frames?.length || 0) },
-        { label: '导出字段', value: 'A / B / B-A 指标' },
-    ]), [activeSelection, activeKey, contrast])
+        { label: copy.exportScope, value: activeSelection ? activeSelection.name : copy.fullMatrix },
+        { label: copy.exportObject, value: activeKey || '-' },
+        { label: copy.exportFrames, value: Math.max(contrast?.left?.frames?.length || 0, contrast?.right?.frames?.length || 0) },
+        { label: copy.exportFields, value: copy.exportFieldValue },
+    ]), [activeSelection, activeKey, contrast, copy])
 
     const exitContrast = () => {
         setPlaying(false)
@@ -375,7 +527,7 @@ export default function NumThresContrast() {
         const rightFrames = contrast?.right?.frames || []
         const count = Math.max(leftFrames.length, rightFrames.length)
         if (!count || !activeKey) {
-            message.warning('暂无可导出的对比数据')
+            message.warning(copy.noExportData)
             return
         }
 
@@ -424,13 +576,13 @@ export default function NumThresContrast() {
         ].join('\n')
         const filename = `contrast_${activeKey}_${dayjs().format('YYYYMMDD_HHmmss')}.csv`
         downloadText(filename, csv)
-        message.success('对比结果已导出')
+        message.success(copy.exportSuccess)
     }
 
     if (!keys.length || !activeKey) {
         return (
             <div className="contrastPage">
-                <div className="contrastEmpty">暂无可对比数据，请先在历史数据中选择 A/B 后开始对比。</div>
+                <div className="contrastEmpty">{copy.empty}</div>
             </div>
         )
     }
@@ -439,7 +591,7 @@ export default function NumThresContrast() {
         <div className="contrastPage">
             <div className="contrastTopbar">
                 <div>
-                    <div className="contrastTitle">数据对比</div>
+                    <div className="contrastTitle">{copy.title}</div>
                     <div className="contrastMeta">
                         A: {contrast.left?.name || contrast.left?.date} ｜ B: {contrast.right?.name || contrast.right?.date}
                     </div>
@@ -452,8 +604,8 @@ export default function NumThresContrast() {
                         onChange={changeActiveKey}
                         style={{ width: 130 }}
                     />
-                    <Button size="small" onClick={exportContrastResult}>导出结果</Button>
-                    <Button size="small" onClick={exitContrast}>退出对比</Button>
+                    <Button size="small" onClick={exportContrastResult}>{copy.exportResult}</Button>
+                    <Button size="small" onClick={exitContrast}>{copy.exit}</Button>
                 </div>
             </div>
 
@@ -462,45 +614,45 @@ export default function NumThresContrast() {
             ) : null}
 
             <div className="contrastStatusBar">
-                <span>当前范围：{activeSelect ? '框选区域' : '全量矩阵'}</span>
-                <span>当前帧：A {leftIndex + 1}/{contrast.left?.length || 0}，B {rightIndex + 1}/{contrast.right?.length || 0}</span>
-                <span>过滤值：{settingValue?.filter ?? 0}</span>
-                <span>对象：{activeKey}</span>
-                <span>采样率：A {getSampleRateText(leftData)} / B {getSampleRateText(rightData)}</span>
-                <span>置零：A {formatZeroState(leftData.zeroState)} / B {formatZeroState(rightData.zeroState)}</span>
-                <span>方向：A {formatDirection(leftData.dataDirection)} / B {formatDirection(rightData.dataDirection)}</span>
-                <span>差值范围：±{formatValue(conclusion.maxAbsDiff)}</span>
+                <span>{copy.currentScope}: {activeSelect ? copy.selectionRegion || 'Selection Area' : copy.fullMatrix}</span>
+                <span>{copy.currentFrame}: A {leftIndex + 1}/{contrast.left?.length || 0}, B {rightIndex + 1}/{contrast.right?.length || 0}</span>
+                <span>{copy.filterValue}: {settingValue?.filter ?? 0}</span>
+                <span>{copy.object}: {activeKey}</span>
+                <span>{copy.sampleRate}: A {getSampleRateText(leftData, copy)} / B {getSampleRateText(rightData, copy)}</span>
+                <span>{copy.zero}: A {formatZeroState(leftData.zeroState, copy)} / B {formatZeroState(rightData.zeroState, copy)}</span>
+                <span>{copy.direction}: A {formatDirection(leftData.dataDirection, copy)} / B {formatDirection(rightData.dataDirection, copy)}</span>
+                <span>{copy.diffRange}: ±{formatValue(conclusion.maxAbsDiff)}</span>
             </div>
 
             <div className="contrastSummary">
-                <strong>当前帧结论</strong>
+                <strong>{copy.currentConclusion}</strong>
                 <span>{conclusion.pressText}</span>
                 <span>{conclusion.areaText}</span>
-                <span>红色表示 B 大于 A，蓝色表示 B 小于 A</span>
+                <span>{copy.redBlueTip}</span>
             </div>
 
             <div className="contrastWorkspace">
                 <div className="contrastMain">
                     <div className="contrastGrid">
                         <ContrastHeatmap
-                            title="A 基准数据"
-                            subtitle={`第 ${leftIndex + 1}/${contrast.left?.length || 0} 帧`}
+                            title={copy.baselineA}
+                            subtitle={`${copy.frame} ${leftIndex + 1}/${contrast.left?.length || 0}`}
                             arr={leftArr}
                             width={width}
                             height={height}
                             className="contrastCanvasA"
                         />
                         <ContrastHeatmap
-                            title="B-A 差值图"
-                            subtitle="红色升高，蓝色降低"
+                            title={copy.diffMap}
+                            subtitle={copy.diffSubtitle}
                             arr={diffArr}
                             width={width}
                             height={height}
                             mode="diff"
                         />
                         <ContrastHeatmap
-                            title="B 对比数据"
-                            subtitle={`第 ${rightIndex + 1}/${contrast.right?.length || 0} 帧`}
+                            title={copy.compareB}
+                            subtitle={`${copy.frame} ${rightIndex + 1}/${contrast.right?.length || 0}`}
                             arr={rightArr}
                             width={width}
                             height={height}
@@ -511,18 +663,18 @@ export default function NumThresContrast() {
                 <aside className="contrastSidePanel">
                     <div className="sidePanelHeader">
                         <div>
-                            <div className="sidePanelTitle">区域管理</div>
-                            <div className="sidePanelSub">选择分析范围，不改变原始数据</div>
+                            <div className="sidePanelTitle">{copy.regionManage}</div>
+                            <div className="sidePanelSub">{copy.regionSub}</div>
                         </div>
-                        <Button size="small" onClick={() => setActiveSelectionId(FULL_SELECTION_ID)}>全量</Button>
+                        <Button size="small" onClick={() => setActiveSelectionId(FULL_SELECTION_ID)}>{copy.full}</Button>
                     </div>
 
                     <div className={`selectionCard ${activeSelectionId === FULL_SELECTION_ID ? 'active' : ''}`} onClick={() => setActiveSelectionId(FULL_SELECTION_ID)}>
                         <div className="selectionCardTop">
                             <span className="selectionColor" style={{ background: '#e1e4e8' }} />
-                            <strong>全量矩阵</strong>
+                            <strong>{copy.fullMatrix}</strong>
                         </div>
-                        <div className="selectionMeta">{width} x {height}，全部点位参与指标计算</div>
+                        <div className="selectionMeta">{width} x {height}, {copy.fullMatrixMeta}</div>
                     </div>
 
                     {selectionStats.length ? selectionStats.map((item) => (
@@ -539,12 +691,12 @@ export default function NumThresContrast() {
                                 X {item.rect.xStart}-{item.rect.xEnd} / Y {item.rect.yStart}-{item.rect.yEnd}
                             </div>
                             <div className="selectionMetrics">
-                                <span>压力差 {formatValue(item.pressDiff)}</span>
-                                <span>面积差 {formatValue(item.areaDiff)}</span>
+                                <span>{copy.pressureDiff} {formatValue(item.pressDiff)}</span>
+                                <span>{copy.areaDiff} {formatValue(item.areaDiff)}</span>
                             </div>
                         </div>
                     )) : (
-                        <div className="selectionEmpty">当前没有框选区域，可在下方创建或套用模板。</div>
+                        <div className="selectionEmpty">{copy.noSelection}</div>
                     )}
 
                     <div className="contrastSelectPanel">
@@ -552,7 +704,7 @@ export default function NumThresContrast() {
                     </div>
 
                     <div className="exportPreview">
-                        <div className="sidePanelTitle">导出预览</div>
+                        <div className="sidePanelTitle">{copy.exportPreview}</div>
                         {exportPreviewRows.map((row) => (
                             <div className="exportPreviewRow" key={row.label}>
                                 <span>{row.label}</span>
@@ -567,30 +719,30 @@ export default function NumThresContrast() {
                 <Button size="small" onClick={() => {
                     if (!playing && progress >= 100) setProgress(0)
                     setPlaying(!playing)
-                }}>{playing ? '暂停' : '播放'}</Button>
+                }}>{playing ? copy.pause : copy.play}</Button>
                 <Slider value={progress} onChange={setProgress} min={0} max={100} style={{ flex: 1 }} />
                 <div className="contrastProgress">{progress}%</div>
             </div>
 
             <div className="contrastLegend">
-                <span className="legendBlue" />B 小于 A
-                <span className="legendWhite" />接近无变化
-                <span className="legendRed" />B 大于 A
-                <span className="legendScope">当前指标范围：{activeSelect ? '框选区域' : '全量矩阵'}</span>
+                <span className="legendBlue" />{copy.bLess}
+                <span className="legendWhite" />{copy.nearlyNoChange}
+                <span className="legendRed" />{copy.bGreater}
+                <span className="legendScope">{copy.currentMetricScope}: {activeSelect ? copy.selectionRegion || 'Selection Area' : copy.fullMatrix}</span>
             </div>
 
             <div className="contrastLineCharts">
-                <MiniLineChart title="压力变化曲线" rows={pressSeries} />
-                <MiniLineChart title="面积变化曲线" rows={areaSeries} />
+                <MiniLineChart title={copy.pressureChart} rows={pressSeries} />
+                <MiniLineChart title={copy.areaChart} rows={areaSeries} />
             </div>
 
             <div className="contrastMetricTable">
                 <div className="metricHeader">
-                    <span>指标</span>
+                    <span>{copy.metric}</span>
                     <span>A</span>
                     <span>B</span>
                     <span>B-A</span>
-                    <span>变化率</span>
+                    <span>{copy.rate}</span>
                 </div>
                 {metricRows.map((row) => (
                     <div className="metricRow" key={row.key}>
@@ -604,9 +756,9 @@ export default function NumThresContrast() {
             </div>
 
             <div className="contrastFooterMeta">
-                A 时间：{contrast.frame?.leftTimestamp ? dayjs(contrast.frame.leftTimestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}
+                {copy.timeA}: {contrast.frame?.leftTimestamp ? dayjs(contrast.frame.leftTimestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}
                 <span />
-                B 时间：{contrast.frame?.rightTimestamp ? dayjs(contrast.frame.rightTimestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}
+                {copy.timeB}: {contrast.frame?.rightTimestamp ? dayjs(contrast.frame.rightTimestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}
             </div>
         </div>
     )

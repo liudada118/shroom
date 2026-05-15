@@ -109,21 +109,21 @@ const ViewSetting = (props) => {
     const guard3D = () => {
         const s = useEquipStore.getState()
         if (s.dataStatus === 'replay' && s.playbackHasSelection) {
-            message.warning('当前回放数据带有框选，不支持 3D 视图')
+            message.warning(t('replaySelectionNo3D'))
             return false
         }
         return true
     }
 
     const warnMissingDisplayData = (type) => {
-        const label = type.includes('sit') ? '坐垫' : '靠背'
-        message.warning(`当前没有${label}数据`)
+        const label = type.includes('sit') ? t('seatPad') : t('backPad')
+        message.warning(t('missingDisplayData', { label }))
     }
 
     const getDefault2DDisplayType = () => {
         if (hasDisplayData('back2D')) return 'back2D'
         if (hasDisplayData('sit2D')) return 'sit2D'
-        message.warning('当前没有坐垫或靠背数据')
+        message.warning(t('missingSeatOrBackData'))
         return null
     }
 
