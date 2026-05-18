@@ -296,6 +296,7 @@ function endiBack1024(arr) {
     const lowHeight = 32
     const scale = 2
     const lowMatrix = new Array(lowWidth * lowHeight).fill(0)
+    const lowMask = new Array(lowWidth * lowHeight).fill(0)
 
     const readSource = (row, col) => {
         const value = arr[row * sourceWidth + col]
@@ -305,7 +306,9 @@ function endiBack1024(arr) {
 
     const writeMappedRow = (lowRow, sourceRow, sourceStartCol, count, lowStartCol) => {
         for (let i = 0; i < count; i++) {
-            lowMatrix[lowRow * lowWidth + lowStartCol + i] = readSource(sourceRow, sourceStartCol - i)
+            const index = lowRow * lowWidth + lowStartCol + i
+            lowMatrix[index] = readSource(sourceRow, sourceStartCol - i)
+            lowMask[index] = 1
         }
     }
 
@@ -321,19 +324,9 @@ function endiBack1024(arr) {
         writeMappedRow(17 + (14 - sourceRow), sourceRow, 24, 25, 0)
     }
 
-    const res = []
-    for (let row = 0; row < lowHeight; row++) {
-        for (let rowScale = 0; rowScale < scale; rowScale++) {
-            for (let col = 0; col < lowWidth; col++) {
-                const value = lowMatrix[row * lowWidth + col] / 1.5
-                for (let colScale = 0; colScale < scale; colScale++) {
-                    res.push(value)
-                }
-            }
-        }
-    }
-
-    return res
+    const interpolated = lineInterp(lowMatrix, lowWidth, lowHeight, scale, scale)
+    const interpolatedMask = lineInterp(lowMask, lowWidth, lowHeight, scale, scale)
+    return interpolated.map((value, index) => interpolatedMask[index] >= 1 ? value / 1.5 : 0)
 }
 
 function pressNew1220({ arr, width, height, type = "row", value }) {

@@ -834,7 +834,7 @@ router.get('/getColHistory', asyncHandler(async (req, res) => {
   const selectQuery = `
     SELECT 
       m.date, m.timestamp,
-      COALESCE(r.select_json, m.\`select\`) AS \`select\`,
+      r.select_json AS \`select\`,
       r.alias, r.remark
     FROM matrix m
     INNER JOIN (

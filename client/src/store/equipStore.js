@@ -3,7 +3,7 @@ import { maxObj } from '../assets/util/constant'
 import { loadVisualSettingValue } from '../util/visualSettingStorage'
 
 // ─── 持久化设置值 ────────────────────────────────────────
-const DEFAULT_SETTINGS = { gauss: 1, color: 200, filter: 1, height: 10, coherent: 1 }
+const DEFAULT_SETTINGS = { gauss: 1, color: 200, color3D: 200, color2D: 200, filter: 1, height: 10, coherent: 1 }
 
 function loadSettingValue() {
   return loadVisualSettingValue('default', DEFAULT_SETTINGS, maxObj.bed)
@@ -87,7 +87,16 @@ export const useEquipStore = create((set) => ({
 export const getStatus = () => useEquipStore.getState().status
 export const getsetDisplayStatus = () => useEquipStore.getState().displayStatus
 export const getSysType = () => useEquipStore.getState().systemType
-export const getSettingValue = () => useEquipStore.getState().settingValue
+export const getSettingValue = () => {
+  const { settingValue, display } = useEquipStore.getState()
+  const colorKey = display === 'num' ? 'color2D' : 'color3D'
+  const next = { ...(settingValue || {}) }
+  const colorValue = Number(next[colorKey])
+  if (Number.isFinite(colorValue)) {
+    next.color = colorValue
+  }
+  return next
+}
 export const getDisplayType = () => useEquipStore.getState().displayType
 export const getSettingValueOptimal = () => useEquipStore.getState().settingValueOptimal
 export const getSelectArr = () => useEquipStore.getState().selectArr

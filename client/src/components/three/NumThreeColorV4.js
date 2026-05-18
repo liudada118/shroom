@@ -6,6 +6,7 @@ import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
 import { NUMBER_TEXT_COLOR_ALPHA, jetWhite3NoWhite } from '../../assets/util/line';
+import { isEndiBackVisibleCell, isEndiBackVisibleIndex } from '../../util/endiBackVisibleMask';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -418,7 +419,11 @@ export default function NumThree(props) {
       for (let i = 0; i < count; i++) {
         const x = i % gridSize1;
         const y = Math.floor(i / gridSize1);
+        const isPaddingCell = systemType === 'endi'
+          && displayType === 'back2D'
+          && !isEndiBackVisibleIndex(i, gridSize1, gridSize2);
         dummy.position.set((((gridSize2 - gridSize1) / 2) + x - (gridSize2 / 2 - 0.5)) / (gridSize2 / 2), (y - (gridSize2 / 2 - 0.5)) / (gridSize2 / 2), 0); // 居中
+        dummy.scale.setScalar(isPaddingCell ? 0 : 1);
 
         // dummy.position.set((x ) / 32, (y ) / 32, 0);
         dummy.updateMatrix();
@@ -487,6 +492,14 @@ export default function NumThree(props) {
         for (let x = 0; x < cells; x++) {
           const gx = col + x - 2;
           const gy = row + y - 2;
+          const isPaddingCell = getSysType() === 'endi'
+            && getDisplayType() === 'back2D'
+            && gx >= 0 && gx < width
+            && gy >= 0 && gy < height
+            && !isEndiBackVisibleCell(gy, gx, width, height);
+          if (isPaddingCell) {
+            continue;
+          }
           let value = 0;
           if (gx >= 0 && gx < width && gy >= 0 && gy < height) {
             value = dataArr[gy * width + gx] ?? 0;

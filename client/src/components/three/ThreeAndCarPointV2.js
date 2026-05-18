@@ -21,6 +21,7 @@ import { getDisplayType, getSettingValue, getStatus } from "../../store/equipSto
 import { useWhyReRender } from "../../hooks/useWindowsize";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
 import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
+import { isEndiBackPointVisible } from "../../util/endiBackVisibleMask";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -1162,7 +1163,10 @@ const Canvas =
                     //     }
                     // }
 
-                    const isHidden = shouldHideDisplayPoint(value, filter);
+                    const sourceRow = (ix - sitOrder) / sitInterp
+                    const sourceCol = (iy - sitOrder) / sitInterp1
+                    const isPaddingPoint = name === 'back' && !isEndiBackPointVisible(sourceRow, sourceCol, sitnum2, sitnum1)
+                    const isHidden = isPaddingPoint || shouldHideDisplayPoint(value, filter);
                     scales[j] = isHidden ? 0 : 1;
 
 

@@ -246,6 +246,36 @@ export function useMatrixData() {
     return { area, press, stats }
   }
 
+  function normalizeSelectRegions(selectValue) {
+    if (!selectValue) return []
+    const regions = Array.isArray(selectValue?.regions)
+      ? selectValue.regions
+      : (Array.isArray(selectValue) ? selectValue : [selectValue])
+    return regions.filter(Boolean)
+  }
+
+  function maskMatrixBySelect(arr, regions, width, height) {
+    if (!Array.isArray(arr) || !regions.length || !width || !height) return arr
+    const masked = new Array(arr.length).fill(0)
+
+    regions.forEach((region) => {
+      const xStart = Math.max(0, Math.trunc(Number(region.xStart)))
+      const xEnd = Math.min(width, Math.trunc(Number(region.xEnd)))
+      const yStart = Math.max(0, Math.trunc(Number(region.yStart)))
+      const yEnd = Math.min(height, Math.trunc(Number(region.yEnd)))
+      if (xEnd <= xStart || yEnd <= yStart) return
+
+      for (let y = yStart; y < yEnd; y++) {
+        for (let x = xStart; x < xEnd; x++) {
+          const index = y * width + x
+          if (index < arr.length) masked[index] = arr[index]
+        }
+      }
+    })
+
+    return masked
+  }
+
   /**
    * 计算统计指标（压力、面积、重心、正态分布等）
    * 支持多框选：data[key].boxStats = [{colorIndex, bgc, pressArr, areaArr, data}]
@@ -512,6 +542,7 @@ export function useMatrixData() {
     const keyArr = Object.keys(sitData)
     const arr = {}
     const selectedArr = {}
+    const playbackSelectRegions = {}
 
     // 1. 解析矩阵数据 + 框选计算
     for (let i = 0; i < keyArr.length; i++) {
@@ -522,6 +553,11 @@ export function useMatrixData() {
       arr[key] = clampEndi([...sitData[fullKey].arr], fullKey, key)
       const selectResult = computeSelectArr(arr[key], key, fullKey, select, displayType, sitData[fullKey])
       selectedArr[key] = selectResult.default
+      playbackSelectRegions[key] = isRealtimeFrame
+        ? []
+        : (selectResult.boxes?.length
+          ? selectResult.boxes.map((box) => box.matrix).filter(Boolean)
+          : normalizeSelectRegions(sitData[fullKey]?.select))
       computeStats(data, arr[key], selectResult, key, fullKey)
     }
 
@@ -623,6 +659,16 @@ export function useMatrixData() {
 
     // 5. 翻转处理：实时帧按当前方向翻转；历史帧按保存方向和当前方向的差异修正，避免重复翻转
     resArr = applyDisplayDirection(resArr, keyArr, sitData)
+    if (!isRealtimeFrame) {
+      for (const fullKey of keyArr) {
+        const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
+        const regions = playbackSelectRegions[key]
+        const config = systemPointConfig[fullKey]
+        if (resArr[key] && regions?.length && config) {
+          resArr[key] = maskMatrixBySelect(resArr[key], regions, config.width, config.height)
+        }
+      }
+    }
     disPlayDataRef.current = resArr
 
     useEquipStore.getState().setDisplayStatus(resArr)

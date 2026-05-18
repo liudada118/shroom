@@ -410,7 +410,7 @@ function storageData(data) {
   const insertQuery = 'INSERT INTO matrix (data, timestamp, date, `select`) VALUES (?, ?, ?, ?)'
   state.currentDb.run(
     insertQuery,
-    [JSON.stringify(newData), timestamp, state.colName, JSON.stringify(state.selectArr)],
+    [JSON.stringify(newData), timestamp, state.colName, JSON.stringify([])],
     function (err) {
       if (err) {
         console.error('[DB] Data insert failed:', err)

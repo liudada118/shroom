@@ -35,14 +35,31 @@ function SecondTitle(props) {
     const setSettingValue = useEquipStore.getState().setSettingValue
     const setSettingValueMax = useEquipStore.getState().setSettingValueMax
 
+    const getSettingKey = (a) => {
+        if (a.type !== 'color') return a.type
+        return display === 'num' ? 'color2D' : 'color3D'
+    }
+
+    const getRowValue = (a) => {
+        const key = getSettingKey(a)
+        const value = Number(settingValue[key])
+        if (Number.isFinite(value)) return value
+        return Number(settingValue[a.type]) || 0
+    }
 
     const onChange = (newValue, a) => {
         console.log(newValue, settingValue)
         if (newValue === null || newValue === undefined) return
         const numericValue = Number(newValue)
         if (!Number.isFinite(numericValue)) return
+        const key = getSettingKey(a)
         let obj = { ...settingValue }
-        obj[a.type] = Math.max(a.min, Math.min(a.max, numericValue))
+        obj[key] = Math.max(a.min, Math.min(a.max, numericValue))
+        if (a.type !== 'color') {
+            obj[a.type] = obj[key]
+        } else if (obj.color === undefined) {
+            obj.color = obj[key]
+        }
 
         saveVisualSettingValue(systemType || getSysType(), obj)
         setSettingValue(obj);
@@ -55,11 +72,13 @@ function SecondTitle(props) {
         const currentSystem = systemType || getSysType()
         const nextMaxValue = Math.max(a.min, numericValue)
         const nextMax = { ...settingValueMax, [a.type]: nextMaxValue }
-        const currentValue = Number(settingValue[a.type])
+        const key = getSettingKey(a)
+        const currentValue = Number(settingValue[key] ?? settingValue[a.type])
         const nextSettingValue = {
             ...settingValue,
-            [a.type]: Number.isFinite(currentValue) ? Math.min(currentValue, nextMaxValue) : a.min,
+            [key]: Number.isFinite(currentValue) ? Math.min(currentValue, nextMaxValue) : a.min,
         }
+        if (a.type !== 'color') nextSettingValue[a.type] = nextSettingValue[key]
 
         setSettingValueMax(nextMax)
         setSettingValue(nextSettingValue)
@@ -81,7 +100,7 @@ function SecondTitle(props) {
     }
 
     const getSliderValue = (a) => {
-        const value = Number(settingValue[a.type])
+        const value = Number(getRowValue(a))
         if (!Number.isFinite(value)) return 0
         return a.sliderScale ? value * a.sliderScale : value
     }
@@ -392,7 +411,7 @@ function SecondTitle(props) {
                                             max={a.max}
                                             style={{ margin: '0 16px' }}
                                             className='setItemInput'
-                                            value={typeof settingValue[a.type] === 'number' ? settingValue[a.type] : 0}
+                                            value={getRowValue(a)}
                                             onChange={(value) => {
                                                 onChange(value, a)
                                             }}
@@ -420,8 +439,14 @@ function SecondTitle(props) {
                     <div style={{ display: 'flex', justifyContent: 'end' }}>
                         <div onClick={() => {
                             const optimalObj = getSettingValueOptimal()
-                            useEquipStore.getState().setSettingValue(optimalObj)
-                            saveVisualSettingValue(systemType || getSysType(), optimalObj)
+                            const color = optimalObj.color
+                            const nextOptimalObj = {
+                                ...optimalObj,
+                                color3D: optimalObj.color3D ?? color,
+                                color2D: optimalObj.color2D ?? color,
+                            }
+                            useEquipStore.getState().setSettingValue(nextOptimalObj)
+                            saveVisualSettingValue(systemType || getSysType(), nextOptimalObj)
                         }} className='connectPort cursor'>{t('restore')}</div>
                     </div>
                 </div>

@@ -191,7 +191,14 @@ function Test() {
     const [selectArr, setSelectArr] = useState([])
     const [wsLocalData, setWsLocalData] = useState(new Array(4096).fill(0))
 
-    const [display, setDisplay] = useState('point3D')
+    const [display, setDisplayState] = useState('point3D')
+    const setDisplay = useCallback((nextDisplay) => {
+        setDisplayState((prevDisplay) => {
+            const resolvedDisplay = typeof nextDisplay === 'function' ? nextDisplay(prevDisplay) : nextDisplay
+            useEquipStore.getState().setDisplay(resolvedDisplay)
+            return resolvedDisplay
+        })
+    }, [])
     const threeRef = useRef()
     const setting = useRef()
 
