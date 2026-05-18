@@ -291,33 +291,49 @@ function endiSit1024(arr) {
 }
 
 function endiBack1024(arr) {
-    let arrX = [[0, 24]]
-    // let arrY = [[0, 14], [31, 15]]
+    const sourceWidth = 32
+    const lowWidth = 25
+    const lowHeight = 32
+    const scale = 2
+    const lowMatrix = new Array(lowWidth * lowHeight).fill(0)
 
-    let arrY = [[15, 31], [14, 0]]
-
-
-    const pressArr = [...arr]//pressNew1220({ arr: arr, width: 32, height: 32, type: 'col', value: 683 }) //press([...arr], 32, 32, 700, 0.3, 'col')
-
-    let newArr = arrToRealLine(pressArr, arrX, arrY, 32)
-
-    newArr = lineInterp(newArr, 25, 32, 2, 2)
-
-    const yArr = []
-    for (let i = 0; i < 64; i++) {
-        yArr.push(63 - i)
+    const readSource = (row, col) => {
+        const value = arr[row * sourceWidth + col]
+        const numericValue = Number(value)
+        return Number.isFinite(numericValue) ? numericValue : 0
     }
 
-    const res = []
-    for (let i = 0; i < 64; i++) {
-        for (let j = 0; j < 50; j++) {
-            const width = yArr[i]
-            res.push(newArr[width * 50 + 49 - j]/1.5)
+    const writeMappedRow = (lowRow, sourceRow, sourceStartCol, count, lowStartCol) => {
+        for (let i = 0; i < count; i++) {
+            lowMatrix[lowRow * lowWidth + lowStartCol + i] = readSource(sourceRow, sourceStartCol - i)
         }
     }
 
-    // 线序旋转180度
-    return res.reverse()
+    for (let sourceRow = 15; sourceRow <= 23; sourceRow++) {
+        writeMappedRow(sourceRow - 15, sourceRow, 16, 11, 7)
+    }
+
+    for (let sourceRow = 24; sourceRow <= 31; sourceRow++) {
+        writeMappedRow(9 + sourceRow - 24, sourceRow, 24, 25, 0)
+    }
+
+    for (let sourceRow = 14; sourceRow >= 0; sourceRow--) {
+        writeMappedRow(17 + (14 - sourceRow), sourceRow, 24, 25, 0)
+    }
+
+    const res = []
+    for (let row = 0; row < lowHeight; row++) {
+        for (let rowScale = 0; rowScale < scale; rowScale++) {
+            for (let col = 0; col < lowWidth; col++) {
+                const value = lowMatrix[row * lowWidth + col] / 1.5
+                for (let colScale = 0; colScale < scale; colScale++) {
+                    res.push(value)
+                }
+            }
+        }
+    }
+
+    return res
 }
 
 function pressNew1220({ arr, width, height, type = "row", value }) {

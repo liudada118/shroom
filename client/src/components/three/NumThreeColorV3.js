@@ -3,8 +3,9 @@ import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
 import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
-import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
+import { getDisplayType, getSettingValue, getStatus, getSysType } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
+import { NUMBER_TEXT_COLOR_ALPHA, jetWhite3NoWhite } from '../../assets/util/line';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -51,10 +52,16 @@ function normalizeDisplayValue(value) {
 
 let oldColor = 0
 
+function getTextureColorMax(color) {
+  const value = Number(color);
+  return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
 function drawCellValue(ctx, value, cx, cy, cellSize) {
   const text = String(value);
   const fontSize = value >= 100 ? 32 : 40;
   ctx.font = `bold ${fontSize}px monospace`;
+  ctx.globalAlpha = 1;
   ctx.fillStyle = "white";
   ctx.fillText(text, cx + cellSize / 2, cy + cellSize / 2);
 }
@@ -125,8 +132,8 @@ export default function NumThree(props) {
       const cy = y * cellSize;
 
       // ✅ 计算背景颜色
-      const [r, g, b] = jet(0, value, i);
-      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      const [r, g, b] = jetWhite3NoWhite(0, value, i);
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
       // ✅ 黑色边框
@@ -257,19 +264,10 @@ export default function NumThree(props) {
         varying vec2 vUv;
         varying vec3 vColor;
 
-        vec3 linearToSRGB(vec3 color) {
-  return pow(color*1.5, vec3(1.0 / 2.2));  // Gamma 矫正
-}
-
         void main() {
           vec4 texColor = texture2D(map, vUv);
           if (texColor.a < 0.1) discard;
-
-           vec3 rgb = texColor.rgb * vColor; // 染色
-            rgb = linearToSRGB(rgb);   
-
-            // 乘以格子颜色
-          gl_FragColor = vec4(rgb, texColor.a);
+          gl_FragColor = vec4(texColor.rgb, texColor.a);
         }
       `,
       transparent: true,
@@ -400,11 +398,9 @@ export default function NumThree(props) {
       //   })
       // }
 
-      if(oldColor != color && oldColor){
-        const settingValueMax = useEquipStore.getState().settingValueMax
-        const max = settingValueMax.color
+      if (oldColor !== color) {
         console.log('colorChange')
-        const nextMax = parseInt(color / max * 255)
+        const nextMax = getTextureColorMax(color)
         const texture = createDigitSpriteSheetWithJet(nextMax)
         material.uniforms.map.value = texture
         textureMaxRef.current = nextMax
@@ -433,14 +429,9 @@ export default function NumThree(props) {
         uvOffsets[i * 2] = (d % 16) / 16;
         uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
 
-        // const d = Math.floor(Math.random() * 256);
-        const r = d / 255;
-        const g = 0.2;
-        const b = 1.0 - r;
-
-        colorArray[i * 3 + 0] = r;
-        colorArray[i * 3 + 1] = g;
-        colorArray[i * 3 + 2] = b;
+        colorArray[i * 3 + 0] = 1;
+        colorArray[i * 3 + 1] = 1;
+        colorArray[i * 3 + 2] = 1;
 
         // const rgb = jet(0 , 30 , d)
 
@@ -479,19 +470,7 @@ export default function NumThree(props) {
 
     const wheelTarget = canvasNum;
     const applyMatrixColor = (value, colorMax) => {
-      const [tr, tg, tb] = jet(0, colorMax, value).map((v) => v / 255);
-      const vr = value / 255;
-      let r = tr * vr;
-      let g = tg * 0.2;
-      let b = tb * (1 - vr);
-      r = Math.pow(Math.min(1, r * 1.5), 1 / 2.2);
-      g = Math.pow(Math.min(1, g * 1.5), 1 / 2.2);
-      b = Math.pow(Math.min(1, b * 1.5), 1 / 2.2);
-      return [
-        Math.round(r * 255),
-        Math.round(g * 255),
-        Math.round(b * 255)
-      ];
+      return jetWhite3NoWhite(0, colorMax, value);
     };
 
     const drawMagnifier = (col, row) => {
@@ -519,10 +498,11 @@ export default function NumThree(props) {
           }
           value = normalizeDisplayValue(value);
           const [r, g, b] = applyMatrixColor(value, colorMax);
-          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
           ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
           ctx.strokeStyle = 'rgba(0,0,0,0.4)';
           ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+          ctx.globalAlpha = 1;
           ctx.fillStyle = '#fff';
           ctx.fillText(Math.round(value), x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
         }

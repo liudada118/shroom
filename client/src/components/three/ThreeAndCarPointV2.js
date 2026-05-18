@@ -230,6 +230,23 @@ const Canvas =
         const controls = useRef()
         const camera = useRef()
         const baseCameraDistanceRef = useRef(null)
+        const suppressZoomSyncRef = useRef(false)
+        const restoreZoomSyncTimerRef = useRef(null)
+
+        function changeViewPropSafely(value) {
+            props.changeViewProp?.(value)
+        }
+
+        function holdStableZoomPercent(value = 100, releaseDelay = 120) {
+            suppressZoomSyncRef.current = true
+            if (restoreZoomSyncTimerRef.current) {
+                clearTimeout(restoreZoomSyncTimerRef.current)
+            }
+            changeViewPropSafely(value)
+            restoreZoomSyncTimerRef.current = setTimeout(() => {
+                suppressZoomSyncRef.current = false
+            }, releaseDelay)
+        }
 
         console.log('Canvas')
 
@@ -377,7 +394,9 @@ const Canvas =
                 camera: camera.current,
                 controls: controls.current,
                 baseDistance: baseCameraDistanceRef.current,
-                onChange: props.changeViewProp,
+                onChange: (value) => {
+                    if (!suppressZoomSyncRef.current) changeViewPropSafely(value)
+                },
             });
             window.addEventListener("resize", onWindowResize);
 
@@ -392,7 +411,9 @@ const Canvas =
                 camera: camera.current,
                 controls: controls.current,
                 baseDistance,
-                onChange: props.changeViewProp,
+                onChange: (value) => {
+                    if (!suppressZoomSyncRef.current) changeViewPropSafely(value)
+                },
             })
         }
 
@@ -418,7 +439,7 @@ const Canvas =
             controls.current.update()
             baseCameraDistanceRef.current = camera.current.position.distanceTo(nextTarget)
             rebindZoomSync(baseCameraDistanceRef.current)
-            props.changeViewProp(100)
+            holdStableZoomPercent(100)
             return true
         }
 
@@ -1114,7 +1135,7 @@ const Canvas =
             let dataArr = []
             for (let ix = 0; ix < AMOUNTX; ix++) {
                 for (let iy = 0; iy < AMOUNTY; iy++) {
-                    const value = bigArrg[l] * 10;
+                    const value = bigArrg[l];
                     //柔化处理smooth
                     smoothBig[l] = smoothBig[l] + (value - smoothBig[l]) / coherent;
 
@@ -1293,6 +1314,9 @@ const Canvas =
             console.log('three', value, group)
             const sitPointConfig = getPointConfig('sit')
             const backPointConfig = getPointConfig('back')
+            const rotationStep = Math.PI / 4
+            const focusedSingleRotation = -Math.PI * 13 / 24
+            const rotationOffset = Math.max(0, Math.min(2, Number(value) || 0)) * rotationStep
 
             const type = getDisplayType()
             console.log(type)
@@ -1303,7 +1327,6 @@ const Canvas =
                 const backParticles = pointGroup.children.find((a) => a.name == 'back')
                 const sitBorder = pointGroup.children.find((a) => a.name == 'sit_border')
                 const backBorder = pointGroup.children.find((a) => a.name == 'back_border')
-                const rotationOffset = (value * 2) / 12
                 if (sitParticles) {
                     sitParticles.rotation.x = sitPointConfig.rotation[0] + rotationOffset
                     if (sitBorder) sitBorder.rotation.x = sitParticles.rotation.x
@@ -1318,8 +1341,10 @@ const Canvas =
                 // 单独坐垫/靠背模式：与整体模式一致的旋转逻辑
                 const particles = pointGroup.children.find((a) => a.name == type)
                 if (!particles) return
-                const baseRotation = getPointConfig(type)?.rotation?.[0] ?? -Math.PI / 2
-                particles.rotation.x = baseRotation + (value * 2) / 12
+                const baseRotation = (type === 'sit' || type === 'back')
+                    ? focusedSingleRotation
+                    : (getPointConfig(type)?.rotation?.[0] ?? -Math.PI / 2)
+                particles.rotation.x = baseRotation + rotationOffset
                 // 同步边框旋转
                 const border = pointGroup.children.find((a) => a.name == type + '_border')
                 if (border) border.rotation.x = particles.rotation.x
@@ -1368,7 +1393,9 @@ const Canvas =
             if (wheelRAF) cancelAnimationFrame(wheelRAF)
             wheelRAF = requestAnimationFrame(() => {
                 if (camera.current && controls.current && baseCameraDistanceRef.current) {
-                    props.changeViewProp(getZoomValueFromCamera(camera.current, controls.current, baseCameraDistanceRef.current))
+                    if (!suppressZoomSyncRef.current) {
+                        changeViewPropSafely(getZoomValueFromCamera(camera.current, controls.current, baseCameraDistanceRef.current))
+                    }
                 }
                 wheelRAF = null
             })
@@ -1430,11 +1457,12 @@ const Canvas =
         }
 
         function reset3D() {
+            holdStableZoomPercent(100)
             controls.current?.reset()
-            props.changeViewProp(100)
         }
 
         function actionSit(type) {
+            holdStableZoomPercent(100, 900)
             const chair = chairRef.current
             const sitPointConfig = getPointConfig('sit')
             const backPointConfig = getPointConfig('back')
@@ -1590,6 +1618,7 @@ const Canvas =
             return () => {
                 renderer.setAnimationLoop(null);
                 cleanupZoomSync();
+                if (restoreZoomSyncTimerRef.current) clearTimeout(restoreZoomSyncTimerRef.current)
                 if (wheelRAF) cancelAnimationFrame(wheelRAF)
                 cleanupThree({ scene, renderer, controls: controls.current })
             };

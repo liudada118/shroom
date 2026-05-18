@@ -34,6 +34,7 @@ import { useMatrixData } from '../../hooks/useMatrixData'
 import NumThres from '../../components/three/NumThres'
 import { buildFallbackParams } from '../../util/request'
 import { formatSelectionName } from '../../util/selectionName'
+import { loadVisualSettingValue } from '../../util/visualSettingStorage'
 
 export const pageContext = createContext(null)
 
@@ -69,6 +70,7 @@ function Test() {
         disPlayDataRef,
         chartRef,
         dataDirection,
+        setDataDirection,
         processSensorFrame,
         changeDataDirection,
         changeWsLocalData,
@@ -83,10 +85,10 @@ function Test() {
     // ─── WebSocket 连接 ──────────────────────────────────
     useWebSocket({
         onSitData: (sitData) => {
-            processSensorFrame(sitData, persistentDataRef.current)
+            processSensorFrame(sitData, persistentDataRef.current, { source: 'realtime' })
         },
         onSitDataPlay: (sitDataPlay) => {
-            processSensorFrame(sitDataPlay, persistentDataRef.current)
+            processSensorFrame(sitDataPlay, persistentDataRef.current, { source: 'playback' })
         },
         onIndex: (index) => {
             useEquipStore.getState().setDataStatus('replay')
@@ -205,7 +207,7 @@ function Test() {
             const maxObj = result.maxObj
             setSystemType(type)
 
-            useEquipStore.getState().setSettingValue(optimalObj[type])
+            useEquipStore.getState().setSettingValue(loadVisualSettingValue(type, optimalObj[type], maxObj[type]))
             useEquipStore.getState().setSettingValueMax(maxObj[type])
             useEquipStore.getState().setSettingValueOptimal(optimalObj[type])
 
@@ -219,6 +221,10 @@ function Test() {
                 } catch (e) { }
             }
         })
+        axios.get(`${localAddress}/getDataDirection`, {}).then((res) => {
+            const direction = res.data?.data?.dataDirection
+            if (direction) setDataDirection(direction)
+        }).catch(() => { })
     }, [])
 
     const handleChangeViewProp = useCallback((value) => {

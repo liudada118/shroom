@@ -265,14 +265,7 @@ const ColAndHistory = memo((props) => {
         sethistoryDrawer((prev) => !prev)
         if (willOpen) {
             // 打开历史 → 重置框选工具的激活状态
-            if (pageInfo?.brushInstance) {
-                pageInfo.brushInstance.deleteAll()
-                pageInfo.brushInstance.stopBrush()
-            }
-            useEquipStore.getState().setSelectArr([])
-            if (pageInfo?.setOnSelect) {
-                pageInfo.setOnSelect(false)
-            }
+            window.dispatchEvent(new CustomEvent('clear-selection-mode'))
         }
         resetOperateState()
         axios({
@@ -1190,14 +1183,7 @@ const ColAndHistory = memo((props) => {
                                                         useEquipStore.getState().setPlaybackHasSelection(!!dbInfo.selected)
 
                                                         // 进入回放：清掉用户在采集模式下画的框，关掉框选工具
-                                                        if (pageInfo?.brushInstance) {
-                                                            pageInfo.brushInstance.deleteAll()
-                                                            pageInfo.brushInstance.stopBrush()
-                                                        }
-                                                        useEquipStore.getState().setSelectArr([])
-                                                        if (pageInfo?.setOnSelect) {
-                                                            pageInfo.setOnSelect(false)
-                                                        }
+                                                        window.dispatchEvent(new CustomEvent('clear-selection-mode'))
 
                                                         if (dbInfo.selected && dbInfo.select && Object.keys(dbInfo.select).length > 0) {
                                                             if (display !== 'num') {
@@ -1310,9 +1296,37 @@ const ColAndHistory = memo((props) => {
                                                     params: buildFallbackParams(payload),
                                                     data: payload,
                                                 }).then((res) => {
+                                                    const result = res.data || {}
+                                                    const payload = result.data || {}
+                                                    const length = Number(payload.length) || 0
+
+                                                    if (result.code !== 0) {
+                                                        message.error(result.message || 'Load playback failed')
+                                                        return
+                                                    }
+
+                                                    if (length <= 0) {
+                                                        message.error(result.message || 'No playback data found in CSV')
+                                                        return
+                                                    }
+
                                                     setCurrentName(a)
                                                     setCurrentPlaybackKey(localItemKey)
-                                                    console.log(res)
+                                                    setDataLength(length)
+                                                    useEquipStore.getState().setDataStatus('replay')
+                                                    useEquipStore.getState().setPlaybackHasSelection(false)
+                                                    useEquipStore.getState().setHistoryStatus({
+                                                        index: Number(payload.initialIndex) || 0,
+                                                        timestamp: payload.initialTimestamp || ''
+                                                    })
+                                                    useEquipStore.getState().setHistoryChart({
+                                                        areaArr: payload.areaArr || {},
+                                                        pressArr: payload.pressArr || {}
+                                                    })
+                                                    useEquipStore.getState().setStatus(new Array(4096).fill(0))
+                                                    useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
+                                                }).catch((err) => {
+                                                    message.error(err?.response?.data?.message || err.message || 'Load playback failed')
                                                 })
                                             }
 

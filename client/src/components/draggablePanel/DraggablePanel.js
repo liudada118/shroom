@@ -25,7 +25,7 @@ export default function DraggablePanel({ children, defaultPosition, title, class
     const { t } = useTranslation()
     const panelRef = useRef(null)
     const [position, setPosition] = useState(defaultPosition || { x: 0, y: 0 })
-    const [scale, setScale] = useState(1)
+    const [zoomPercent, setZoomPercent] = useState(100)
     const [zIndex, setZIndex] = useState(nextPanelZIndex)
     const [isDragging, setIsDragging] = useState(false)
     const dragOffset = useRef({ x: 0, y: 0 })
@@ -76,30 +76,22 @@ export default function DraggablePanel({ children, defaultPosition, title, class
     const ZOOM_MAX = 1000
     const ZOOM_STEP = 10
 
-    const percentToScale = (percent) => parseFloat((percent / 100).toFixed(1))
-
     const zoomIn = useCallback((e) => {
         e.stopPropagation()
-        setScale(s => {
-            const currentPercent = Math.round(s * 100)
-            const nextPercent = Math.min(Math.floor(currentPercent / ZOOM_STEP) * ZOOM_STEP + ZOOM_STEP, ZOOM_MAX)
-            return percentToScale(nextPercent)
-        })
+        setZoomPercent(percent => Math.min(percent + ZOOM_STEP, ZOOM_MAX))
     }, [])
 
     const zoomOut = useCallback((e) => {
         e.stopPropagation()
-        setScale(s => {
-            const currentPercent = Math.round(s * 100)
-            const nextPercent = Math.max(Math.ceil(currentPercent / ZOOM_STEP) * ZOOM_STEP - ZOOM_STEP, ZOOM_MIN)
-            return percentToScale(nextPercent)
-        })
+        setZoomPercent(percent => Math.max(percent - ZOOM_STEP, ZOOM_MIN))
     }, [])
 
     const resetZoom = useCallback((e) => {
         e.stopPropagation()
-        setScale(1)
+        setZoomPercent(100)
     }, [])
+
+    const scale = zoomPercent / 100
 
     return (
         <div
@@ -124,7 +116,7 @@ export default function DraggablePanel({ children, defaultPosition, title, class
                 <div className='draggable-panel-controls'>
                     <span className='panel-ctrl-btn' onClick={zoomOut} title={t('zoomOut')}>-</span>
                     <span className='panel-ctrl-btn' onClick={resetZoom} title={t('resetZoom')}
-                        style={{ fontSize: '0.65rem' }}>{Math.round(scale * 100)}%</span>
+                        style={{ fontSize: '0.65rem' }}>{zoomPercent}%</span>
                     <span className='panel-ctrl-btn' onClick={zoomIn} title={t('zoomIn')}>+</span>
                 </div>
             </div>

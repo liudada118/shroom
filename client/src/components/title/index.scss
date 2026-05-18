@@ -351,6 +351,19 @@
         backdrop-filter: blur(10px);
     }
 
+    &.selectInputFloating {
+        position: fixed;
+        width: 15.3rem;
+        max-height: calc(100vh - 7rem);
+        overflow-y: auto;
+        z-index: 170;
+        background:
+            radial-gradient(circle at 80% 0%, rgba(0, 114, 239, 0.14), transparent 10rem),
+            rgba(18, 21, 26, 0.96);
+        box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.42);
+        backdrop-filter: blur(10px);
+    }
+
     &.selectInputEmbedded {
         position: static;
         width: auto;

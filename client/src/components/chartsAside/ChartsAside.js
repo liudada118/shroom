@@ -48,6 +48,7 @@ function ChartsAside(props) {
         const keyArr = Object.keys(dataMap)
         const colorMap = type === 'press' ? pressColorArr : areaColorArr
         const dataField = type === 'press' ? 'pressArr' : 'areaArr'
+        const onlyBoxStats = !isHistory && useBoxStats && getBoxStats(props.chartData.current).length > 0
 
         for (let i = 0; i < keyArr.length; i++) {
             const key = keyArr[i]
@@ -75,6 +76,7 @@ function ChartsAside(props) {
                 }
             } else {
                 // 无框选模式：按设备分色
+                if (onlyBoxStats) continue
                 const colorKey = key.includes('back') ? 'back' : key.includes('sit') ? 'sit' : key
                 const color = colorMap[colorKey] || Object.values(colorMap)[i]
                 series.push({
@@ -136,6 +138,26 @@ function ChartsAside(props) {
         });
     }
 
+    const getBoxStats = (chartData = props.chartData.current) => {
+        const boxes = []
+        Object.keys(chartData || {}).forEach((key) => {
+            const list = chartData[key]?.boxStats
+            if (Array.isArray(list) && list.length) {
+                list.forEach((box, idx) => boxes.push({ ...box, key, boxIndex: idx }))
+            }
+        })
+        return boxes
+    }
+
+    const getBoxChartValues = (chartData, field) => getBoxStats(chartData)
+        .flatMap((box) => Array.isArray(box[field]) ? box[field] : [])
+
+    const getCenterValues = (center) => {
+        if (Array.isArray(center)) return center
+        if (center && typeof center === 'object') return Object.values(center)
+        return null
+    }
+
     function renderCharts1() {
         const historyData = historyChartRef.current
         const pressArrRaw = historyData && historyData.pressArr
@@ -144,6 +166,7 @@ function ChartsAside(props) {
 
         const chartData = useHistory ? pressArr : props.chartData.current
         const keyArr = Object.keys(chartData)
+        const onlyBoxStats = !useHistory && getBoxStats(chartData).length > 0
         let areaObj = {}
         let allArr = []
         if (keyArr.length) {
@@ -154,10 +177,15 @@ function ChartsAside(props) {
                     allArr = allArr.concat(chartData[key])
                 } else {
                     areaObj[key] = chartData[key].pressArr
-                    allArr = allArr.concat(chartData[key].pressArr)
+                    const boxValues = getBoxChartValues({ [key]: chartData[key] }, 'pressArr')
+                    if (boxValues.length) {
+                        allArr = allArr.concat(boxValues)
+                    } else if (!onlyBoxStats) {
+                        allArr = allArr.concat(chartData[key].pressArr)
+                    }
                 }
             }
-            const max = Math.max(...allArr)
+            const max = allArr.length ? Math.max(...allArr) : 0
             handleCharts(areaObj, max + 5000, !!useHistory)
         }
     }
@@ -170,6 +198,7 @@ function ChartsAside(props) {
 
         const chartData = useHistory ? areaArr : props.chartData.current
         const keyArr = Object.keys(chartData)
+        const onlyBoxStats = !useHistory && getBoxStats(chartData).length > 0
         let areaObj = {}
         let allArr = []
         if (keyArr.length) {
@@ -180,11 +209,16 @@ function ChartsAside(props) {
                     allArr = allArr.concat(chartData[key])
                 } else {
                     areaObj[key] = chartData[key].areaArr
-                    allArr = allArr.concat(chartData[key].areaArr)
+                    const boxValues = getBoxChartValues({ [key]: chartData[key] }, 'areaArr')
+                    if (boxValues.length) {
+                        allArr = allArr.concat(boxValues)
+                    } else if (!onlyBoxStats) {
+                        allArr = allArr.concat(chartData[key].areaArr)
+                    }
                 }
             }
-            const max = Math.max(...allArr)
-            handleChartsArea(areaObj, 3200, !!useHistory)
+            const max = allArr.length ? Math.max(...allArr) : 0
+            handleChartsArea(areaObj, Math.max(3200, max + 50), !!useHistory)
         }
     }
 
@@ -192,10 +226,18 @@ function ChartsAside(props) {
         const chartData = props.chartData.current
         const keys = Object.keys(chartData)
         if (!keys.length) return
+        const boxCenters = getBoxStats(chartData)
+            .map((box) => getCenterValues(box.center))
+            .filter(Boolean)
+        if (boxCenters.length) {
+            trackRef.current?.circleMove(...boxCenters.slice(0, 2))
+            return
+        }
         const centerArr = []
         for (let i = 0; i < keys.length; i++) {
             const key = keys[i]
-            centerArr.push(Object.values(chartData[key].center))
+            const center = getCenterValues(chartData[key].center)
+            if (center) centerArr.push(center)
         }
         trackRef.current?.circleMove(...centerArr);
     }
@@ -207,10 +249,19 @@ function ChartsAside(props) {
         const xData = Array.from({ length: 256 }, (_, i) => i);
 
         let series = [], Xmax = 0
-        for (let i = 0; i < keys.length; i++) {
-            let color = Object.values(pressColorArr)[i]
-            const key = keys[i]
-            const xDataRes = xData.map((x, idx) => [x, chartData[key].normalDis.yData[idx]])
+        const boxStats = getBoxStats(chartData).filter((box) => Array.isArray(box.normalDis?.yData))
+        const seriesSource = boxStats.length
+            ? boxStats
+            : keys.map((key, idx) => ({
+                key,
+                normalDis: chartData[key].normalDis,
+                bgc: Object.values(pressColorArr)[idx],
+            }))
+
+        for (let i = 0; i < seriesSource.length; i++) {
+            const item = seriesSource[i]
+            const color = item.bgc || SELECT_COLORS[item.colorIndex] || Object.values(pressColorArr)[i]
+            const xDataRes = xData.map((x, idx) => [x, item.normalDis?.yData?.[idx] || 0])
             series.push({
                 symbol: 'none',
                 data: xDataRes,
@@ -314,6 +365,12 @@ function ChartsAside(props) {
                                     pressMin: box.data.pressMin || 0,
                                     pressTotal: box.data.pressTotal || 0,
                                     total: (bPreciseArea * Number(box.data.pressAver || 0) / 10).toFixed(2),
+                                    pressureCenter: getCenterValues(box.center) || ['-', '-'],
+                                    normalDis: box.normalDis,
+                                    μ: box.normalDis?.['\u03bc'],
+                                    Var: box.normalDis?.Var,
+                                    Skew: box.normalDis?.Skew,
+                                    Kurt: box.normalDis?.Kurt,
                                 }
                             })
                         } else {
@@ -422,6 +479,39 @@ function ChartsAside(props) {
         })
     }
 
+    const renderCenterRows = () => {
+        if (hasBoxStats()) {
+            const rows = []
+            Object.keys(data).filter(a => a !== 't').forEach(key => {
+                data[key]?.boxStats?.forEach((box, idx) => {
+                    const color = box.bgc || SELECT_COLORS[box.colorIndex] || SELECT_COLORS[idx]
+                    const center = Array.isArray(box.pressureCenter) ? box.pressureCenter : ['-', '-']
+                    rows.push(
+                        <div className='chartTypeItem' key={`${key}-box-${box.colorIndex}-center-${idx}`}>
+                            <div className='cirlce' style={{ backgroundColor: color }}></div>
+                            <div style={{ display: 'flex', fontVariantNumeric: 'tabular-nums' }}>
+                                {`(${center[0]} , ${center[1]})`}
+                            </div>
+                        </div>
+                    )
+                })
+            })
+            return rows
+        }
+
+        return Object.keys(data).map((a) => {
+            if (a !== 't') {
+                return <div className='chartTypeItem' key={a}>
+                    <div className='cirlce' style={{ backgroundColor: areaColorArr[a] }}></div>
+                    <div style={{ display: 'flex', fontVariantNumeric: 'tabular-nums' }}>
+                        {`(${data[a].pressureCenter[0]} , ${data[a].pressureCenter[1]})`}
+                    </div>
+                </div>
+            }
+            return null
+        })
+    }
+
     return (
         <>
             <DraggablePanel title={t('pressureCurve') + ' / ' + t('areaCurve')} defaultPosition={{ x: 20, y: 80 }}>
@@ -458,31 +548,14 @@ function ChartsAside(props) {
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{t('pressureCenterCurve')}</div>
-                        <div className="chartType">
-                            {Object.keys(data).map((a) => {
-                                if (a !== 't') {
-                                    return <div className='chartTypeItem' key={a}><div className='cirlce' style={{ backgroundColor: areaColorArr[a] }}></div> {t(a)}</div>
-                                }
-                                return null
-                            })}
-                        </div>
+                        <div className="chartType">{renderLegend(areaColorArr)}</div>
                     </div>
                     <FootTrack ref={trackRef} />
                     <div style={{ marginBottom: '6px', color: '#E6EBF0', fontSize: '0.875rem' }}>{t('pressureCenter')}{`(X,Y)`}</div>
                     {centerDataArr.map((item) => (
                         <div className='chartData' key={item}>
                             <div className='chartTypeContent' style={{ height: '1.2rem' }}>
-                                {Object.keys(data).map((a) => {
-                                    if (a !== 't') {
-                                        return <div className='chartTypeItem' key={a}>
-                                            <div className='cirlce' style={{ backgroundColor: areaColorArr[a] }}></div>
-                                            <div style={{ display: 'flex', fontVariantNumeric: 'tabular-nums' }}>
-                                                {`(${data[a][item][0]} , ${data[a][item][1]})`}
-                                            </div>
-                                        </div>
-                                    }
-                                    return null
-                                })}
+                                {renderCenterRows()}
                             </div>
                         </div>
                     ))}
@@ -491,14 +564,7 @@ function ChartsAside(props) {
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{t('pressureNormalDist')}</div>
-                        <div className="chartType">
-                            {Object.keys(data).map((a) => {
-                                if (a !== 't') {
-                                    return <div className='chartTypeItem' key={a}><div className='cirlce' style={{ backgroundColor: areaColorArr[a] }}></div> {t(a)}</div>
-                                }
-                                return null
-                            })}
-                        </div>
+                        <div className="chartType">{renderLegend(areaColorArr)}</div>
                     </div>
                     <div style={{ margin: '1.5rem 0 1.2rem' }}>
                         <canvas id="chart" style={{ height: `9.5rem`, width: '18.35rem' }}></canvas>

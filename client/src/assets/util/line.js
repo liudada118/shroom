@@ -4,11 +4,11 @@ export function lineInterp(smallMat, width, height, interp1, interp2) {
   // return bigMat
   for (let i = 0; i < height; i++) {
     for (let j = 0; j < width - 1; j++) {
-      const realValue = smallMat[i * width + j] * 10
-      const rowValue = smallMat[i * width + j + 1] * 10 ? smallMat[i * width + j + 1] * 10 : 0
-      const colValue = smallMat[(i + 1) * width + j] * 10 ? smallMat[(i + 1) * width + j] * 10 : 0
+      const realValue = smallMat[i * width + j] 
+      const rowValue = smallMat[i * width + j + 1]  ? smallMat[i * width + j + 1]  : 0
+      const colValue = smallMat[(i + 1) * width + j]  ? smallMat[(i + 1) * width + j]  : 0
       bigMat[(width * interp1) * i * interp2 + (j * interp1)
-      ] = smallMat[i * width + j] * 10
+      ] = smallMat[i * width + j] 
       // for (let k = 0; k < interp1; k++) {
       //   // for (let z = 0; z < interp2; z++) {
       //   //   bigMat[(width * interp1) * (i * interp2 + k) + ((j * interp1) + z)
@@ -112,42 +112,51 @@ export function gaussBlur_return(scl, w, h, r) {
 
 
 export function jetWhite3(min, max, x) {
-  if (!x) {
-    return rainbowTextColorsxy[rainbowTextColorsxy.length - 1]
-  }
-  const length = rainbowTextColorsxy.length;
-  const count = (max - min) * 2 / length;
-  const num = Math.floor(x / count) >= length - 1 ? length - 1 : Math.floor(x / count) < 0 ? 0 : Math.floor(x / count);
-
-  return rainbowTextColorsxy[length - 1 - num];
+  return jetFromPalette(rainbowTextColorsxy, min, max, x)
 }
 
-  export const rainbowTextColorsxy = [
-    [255,0,0],
-    [255,69,0],
-    [255,136,0],
-    [255,170,0],
-    [255,204,0],
-    [255, 255, 0],
-    [204, 255, 0],
-    [153, 255, 0],
-    [102, 255, 0],
-    [51, 255, 0],
-    [0, 255, 0],
-    [0, 255, 51],
-    [0, 255, 102],
-    [0, 255, 153],
-    [0, 255, 204],
-    [0, 255, 255],
-    [0, 204, 255],
-    [0, 153, 255],
-    // ...new Array(1).fill([0, 102, 255]),
-    // ...new Array(1).fill([0, 255, 255]),
-    // ...new Array(1).fill([0, 204, 255]),
-    // ...new Array(1).fill([0, 153, 255]),
-    ...new Array(5).fill([0, 102, 255]),
-    [255, 255, 255],
-    [255, 255, 255],
-    [255, 255, 255],
-    // ...new Array(5).fill([255, 255, 255]),
-  ];
+function jetFromPalette(palette, min, max, x) {
+  const value = Number(x);
+  if (!Number.isFinite(value) || value <= 0) {
+    return palette[palette.length - 1]
+  }
+
+  const minValue = Number.isFinite(Number(min)) ? Number(min) : 0;
+  const maxValue = Number.isFinite(Number(max)) && Number(max) > minValue ? Number(max) : minValue + 1;
+  const ratio = Math.max(0, Math.min(1, (value - minValue) / (maxValue - minValue)));
+  const index = Math.round((1 - ratio) * (palette.length - 1));
+  return palette[index];
+}
+
+export function jetWhite3NoWhite(min, max, x) {
+  return jetFromPalette(rainbowTextColorsxyNoWhite, min, max, x)
+}
+
+export const rainbowTextColorsxy = [
+  [255, 0, 0],
+  [255, 69, 0],
+  [255, 136, 0],
+  [255, 170, 0],
+  [255, 204, 0],
+  [255, 255, 0],
+  [204, 255, 0],
+  [153, 255, 0],
+  [102, 255, 0],
+  [51, 255, 0],
+  [0, 255, 0],
+  [0, 255, 51],
+  [0, 255, 102],
+  [0, 255, 153],
+  [0, 255, 204],
+  [0, 255, 255],
+  [0, 204, 255],
+  [0, 153, 255],
+  ...new Array(5).fill([0, 102, 255]),
+  [255, 255, 255],
+  [255, 255, 255],
+  [255, 255, 255],
+];
+
+export const rainbowTextColorsxyNoWhite = rainbowTextColorsxy.slice(0, -3);
+export const NUMBER_TEXT_COLOR_ALPHA = 0.72;
+export const pressurePointColors = rainbowTextColorsxy;

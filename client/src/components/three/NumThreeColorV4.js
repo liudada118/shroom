@@ -3,9 +3,9 @@ import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
 import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
-import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
+import { getDisplayType, getSettingValue, getStatus, getSysType } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
-// jetWhite3 已统一为 jet 颜色方案，不再引用
+import { NUMBER_TEXT_COLOR_ALPHA, jetWhite3NoWhite } from '../../assets/util/line';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -52,10 +52,16 @@ function normalizeDisplayValue(value) {
 
 let oldColor = 0
 
+function getTextureColorMax(color) {
+  const value = Number(color);
+  return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
 function drawCellValue(ctx, value, cx, cy, cellSize) {
   const text = String(value);
   const fontSize = value >= 100 ? 32 : 40;
   ctx.font = `bold ${fontSize}px monospace`;
+  ctx.globalAlpha = 1;
   ctx.fillStyle = "white";
   ctx.fillText(text, cx + cellSize / 2, cy + cellSize / 2);
 }
@@ -126,8 +132,8 @@ export default function NumThree(props) {
       const cy = y * cellSize;
 
       // ✅ 计算背景颜色（与坐垫统一使用 jet 颜色映射）
-      const [r, g, b] = jet(0, value, i);
-      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      const [r, g, b] = jetWhite3NoWhite(0, value, i);
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
       // ✅ 黑色边框
@@ -258,19 +264,10 @@ export default function NumThree(props) {
         varying vec2 vUv;
         varying vec3 vColor;
 
-        vec3 linearToSRGB(vec3 color) {
-  return pow(color*1.5, vec3(1.0 / 2.2));  // Gamma 矫正
-}
-
         void main() {
           vec4 texColor = texture2D(map, vUv);
           if (texColor.a < 0.1) discard;
-
-           vec3 rgb = texColor.rgb * vColor; // 染色
-            rgb = linearToSRGB(rgb);   
-
-            // 乘以格子颜色
-          gl_FragColor = vec4(rgb, texColor.a);
+          gl_FragColor = vec4(texColor.rgb, texColor.a);
         }
       `,
       transparent: true,
@@ -380,11 +377,9 @@ export default function NumThree(props) {
         gauss, color, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
 
-      if(oldColor != color && oldColor){
-        const settingValueMax = useEquipStore.getState().settingValueMax
-        const max = settingValueMax.color
+      if (oldColor !== color) {
         console.log('colorChange')
-        const nextMax = parseInt(color / max * 255)
+        const nextMax = getTextureColorMax(color)
         const texture = createDigitSpriteSheetWithJet(nextMax)
         material.uniforms.map.value = texture
         textureMaxRef.current = nextMax
@@ -434,13 +429,9 @@ export default function NumThree(props) {
         uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
 
         // 与坐垫统一的颜色映射
-        const r = d / 255;
-        const g = 0.2;
-        const b = 1.0 - r;
-
-        colorArray[i * 3 + 0] = r;
-        colorArray[i * 3 + 1] = g;
-        colorArray[i * 3 + 2] = b;
+        colorArray[i * 3 + 0] = 1;
+        colorArray[i * 3 + 1] = 1;
+        colorArray[i * 3 + 2] = 1;
 
         geometry.setAttribute("instanceColor", new THREE.InstancedBufferAttribute(colorArray, 3));
         geometry.attributes.instanceColor.needsUpdate = true;
@@ -474,7 +465,7 @@ export default function NumThree(props) {
     const wheelTarget = canvasNum;
     const applyMatrixColor = (value, colorMax) => {
       // 使用与3D统一的颜色映射
-      return jet(0, colorMax, value);
+      return jetWhite3NoWhite(0, colorMax, value);
     };
 
     const drawMagnifier = (col, row) => {
@@ -502,10 +493,11 @@ export default function NumThree(props) {
           }
           value = normalizeDisplayValue(value);
           const [r, g, b] = applyMatrixColor(value, colorMax);
-          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
           ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
           ctx.strokeStyle = 'rgba(0,0,0,0.4)';
           ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+          ctx.globalAlpha = 1;
           ctx.fillStyle = '#fff';
           ctx.fillText(Math.round(value), x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
         }

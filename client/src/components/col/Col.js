@@ -2,15 +2,11 @@ import React, { useContext, useState } from 'react'
 import './index.scss'
 import axios from 'axios'
 import { message } from 'antd'
-import { getDisplayType, getSelectArr, getSysType, useEquipStore } from '../../store/equipStore'
-import { shallow } from 'zustand/shallow'
-import { systemPointConfig, localAddress } from '../../util/constant'
-import { colSelectMatrix } from '../../util/util'
-import { isMoreMatrix } from '../../assets/util/util'
+import { useEquipStore } from '../../store/equipStore'
+import { localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import { pageContext } from '../../page/test/Test'
 import { useTranslation } from 'react-i18next'
-import { formatSelectionName } from '../../util/selectionName'
 
 export default function Col(props) {
     const { t } = useTranslation()
@@ -25,58 +21,14 @@ export default function Col(props) {
     }
 
     const colButtonClick = () => {
-        const select = useEquipStore.getState().selectArr;
-        const system = getSysType()
-        const displayType = getDisplayType()
-        const selectObj = {}
-
-        if (Array.isArray(select) && select.length) {
-            for (let i = 0; i < select.length; i++) {
-                const range = select[i]
-                let typeKey = range.matrixKey || system
-                if (isMoreMatrix(system)) {
-                    typeKey = range.matrixKey || `${system}-${displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : 'back'}`
-                }
-                if (!systemPointConfig[typeKey]) continue
-
-                try {
-                    const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[typeKey])
-                    if (!matrix) continue
-                    const region = {
-                        xStart: matrix.xStart,
-                        xEnd: matrix.xEnd,
-                        yStart: matrix.yStart,
-                        yEnd: matrix.yEnd,
-                        width: systemPointConfig[typeKey].width,
-                        height: systemPointConfig[typeKey].height,
-                        region_id: i + 1,
-                        name: formatSelectionName(range.name, i + 1, t),
-                        colorIndex: range.colorIndex,
-                    }
-                    if (!selectObj[typeKey]) {
-                        selectObj[typeKey] = { ...region, regions: [] }
-                    }
-                    selectObj[typeKey].regions.push(region)
-                } catch (e) {
-                    console.warn(`[Col] Failed to compute ${typeKey} select matrix:`, e.message)
-                }
-            }
-        }
-
-        console.log('[Col] selectObj:', selectObj)
-
         if (!col) {
             const startStamp = Date.now()
             const fileName = startStamp
             const hz = HZ ? HZ : 30
-            const hasSelect = Object.keys(selectObj).length > 0
             const startPayload = {
                 fileName: fileName,
                 HZ: hz,
                 dataDirection: getCurrentDataDirection(),
-            }
-            if (hasSelect) {
-                startPayload.select = selectObj
             }
 
             axios({
@@ -107,10 +59,9 @@ export default function Col(props) {
                     }
                     if (alias) remarkData.alias = alias
                     if (remarkText) remarkData.remark = remarkText
-                    if (hasSelect) remarkData.select = selectObj
 
                     // 只要有任何需要保存的信息就调用
-                    if (alias || remarkText || hasSelect) {
+                    if (alias || remarkText) {
                         axios({
                             method: 'post',
                             url: `${localAddress}/upsertRemark`,
@@ -118,7 +69,6 @@ export default function Col(props) {
                                 date: remarkData.date,
                                 alias: remarkData.alias,
                                 remark: remarkData.remark,
-                                select: remarkData.select ? JSON.stringify(remarkData.select) : undefined,
                             },
                             data: remarkData
                         }).then((remarkRes) => {

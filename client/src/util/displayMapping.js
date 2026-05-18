@@ -13,9 +13,6 @@ export function getDisplayColorValue(value, colorLimit) {
 
 export function shouldHideDisplayPoint(value, filter) {
   const pointValue = Number(value);
-  const threshold = Number(filter);
-
   if (!Number.isFinite(pointValue)) return true;
-  if (!Number.isFinite(threshold) || threshold <= 0) return false;
-  return pointValue < threshold;
+  return false;
 }

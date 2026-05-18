@@ -1,16 +1,12 @@
 import { create } from 'zustand'
 import { maxObj } from '../assets/util/constant'
+import { loadVisualSettingValue } from '../util/visualSettingStorage'
 
 // ─── 持久化设置值 ────────────────────────────────────────
-const DEFAULT_SETTINGS = { gauss: 1, color: 200, filter: 1, height: 15, coherent: 1 }
+const DEFAULT_SETTINGS = { gauss: 1, color: 200, filter: 1, height: 10, coherent: 1 }
 
 function loadSettingValue() {
-  try {
-    const stored = localStorage.getItem('setValueData')
-    return stored ? JSON.parse(stored) : DEFAULT_SETTINGS
-  } catch {
-    return DEFAULT_SETTINGS
-  }
+  return loadVisualSettingValue('default', DEFAULT_SETTINGS, maxObj.bed)
 }
 
 const initialSettings = loadSettingValue()

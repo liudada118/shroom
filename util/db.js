@@ -1,4 +1,4 @@
-const sqlite3 = require("sqlite3").verbose();
+﻿const sqlite3 = require("sqlite3").verbose();
 const csv = require("csv-parser");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 const fs = require('fs');
@@ -575,14 +575,8 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         }
       }
 
-      // 判断是否为多矩阵系统（有 back 和 sit 两个 key）
-      const isMultiMatrix = keyArr.length > 1 && keyArr.some(k => k.includes('-back')) && keyArr.some(k => k.includes('-sit'))
-
-      // 按 key 分组存储数据
-      const csvDataByKey = {}
-      for (const key of keyArr) {
-        csvDataByKey[key] = []
-      }
+      // 合并导出：同一条记录内的 back/sit 行写入同一个 CSV，通过 matrix_key 区分来源
+      const csvDataRows = []
 
       for (let i = 0; i < rows.length; i++) {
         const rowData = JSON.parse(rows[i].data)
@@ -709,7 +703,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             rowEntry[`${key}pressTotal`] = (averValue * pointArea * pointValue) / 1000
           }
 
-          csvDataByKey[key].push(rowEntry)
+          csvDataRows.push(rowEntry)
         }
       }
 
@@ -807,6 +801,19 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         return headers
       }
 
+      function buildCombinedHeaders(keys) {
+        const headers = []
+        const seen = new Set()
+        sortExportKeys(keys).forEach((key) => {
+          buildSingleKeyHeaders(key).forEach((header) => {
+            if (seen.has(header.id)) return
+            seen.add(header.id)
+            headers.push(header)
+          })
+        })
+        return headers
+      }
+
       // 写入单个 CSV 文件的辅助函数
       async function writeSingleCsv(filePath, headers, records) {
         const csvWriter = createCsvWriter({ path: filePath, header: headers })
@@ -824,27 +831,11 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       }
 
       try {
-        if (isMultiMatrix) {
-          // 多矩阵系统：分别导出 back 和 sit
-          // back → carback{name}.csv, sit → carcushion{name}.csv
-          const filePaths = []
-          for (const key of sortExportKeys(keyArr)) {
-            const csvBaseName = buildCsvBaseName(file, key)
-            const csvFilePath = path.join(csvPath, `${csvBaseName}_${safeName}.csv`)
-            const headers = buildSingleKeyHeaders(key)
-            await writeSingleCsv(csvFilePath, headers, [...csvDataByKey[key]])
-            filePaths.push(csvFilePath)
-          }
-          resolve({ [param]: 'success', filePath: filePaths[0], filePaths })
-        } else {
-          // 单矩阵系统：根据矩阵类型区分文件名
-          const key = keyArr[0]
-          const csvBaseName = buildCsvBaseName(file, key)
-          const csvFilePath = path.join(csvPath, `${csvBaseName}_${safeName}.csv`)
-          const headers = buildSingleKeyHeaders(key)
-          await writeSingleCsv(csvFilePath, headers, [...csvDataByKey[key]])
-          resolve({ [param]: 'success', filePath: csvFilePath, filePaths: [csvFilePath] })
-        }
+        const csvBaseName = buildCsvBaseName(file)
+        const csvFilePath = path.join(csvPath, `${csvBaseName}_${safeName}.csv`)
+        const headers = buildCombinedHeaders(keyArr)
+        await writeSingleCsv(csvFilePath, headers, [...csvDataRows])
+        resolve({ [param]: 'success', filePath: csvFilePath, filePaths: [csvFilePath] })
       } catch (err) {
         console.error('[DB] CSV export failed:', err)
         reject(err)
@@ -1008,6 +999,53 @@ function hasImportMetricHeaders(headers, realDataHeader) {
   ].every(matches)
 }
 
+function isOriginalDataColumn(header) {
+  const normalized = normalizeCsvHeader(header)
+  if (!normalized) return false
+  if (/select\s*Data$/i.test(normalized) || /selectData$/i.test(normalized)) return false
+  return /realData$/i.test(normalized) || /\sData$/i.test(normalized) || /原始数据$/.test(normalized)
+}
+
+function getMetricPrefix(realDataHeader) {
+  const normalized = normalizeCsvHeader(realDataHeader)
+  if (/realData$/i.test(normalized)) {
+    return normalized.replace(/realData$/i, '')
+  }
+  if (/\sData$/i.test(normalized)) {
+    return normalized.replace(/\sData$/i, '').trim()
+  }
+  return normalized.replace(/\s*原始数据$/, '').trim()
+}
+
+function hasImportMetricHeaders(headers, realDataHeader) {
+  const normalizedHeaders = headers.map(normalizeCsvHeader)
+  const prefix = getMetricPrefix(realDataHeader)
+  if (!prefix) return false
+
+  if (/realData$/i.test(realDataHeader)) {
+    return [
+      `${prefix}max`,
+      `${prefix}maxCoord`,
+      `${prefix}aver`,
+      `${prefix}pressureArea`,
+    ].every((header) => normalizedHeaders.includes(header))
+  }
+
+  if (/\sData$/i.test(realDataHeader)) {
+    return [
+      (header) => header.startsWith(`${prefix} `) && /Max/i.test(header),
+      (header) => header.startsWith(`${prefix} `) && /Aver/i.test(header),
+      (header) => header.startsWith(`${prefix} `) && /Area/i.test(header),
+    ].every((tester) => normalizedHeaders.some(tester))
+  }
+
+  const matches = (tester) => normalizedHeaders.some((header) => header.startsWith(`${prefix} `) && tester(header))
+  return [
+    (header) => /最大|Max/i.test(header),
+    (header) => /平均|Aver/i.test(header),
+    (header) => /面积|Area/i.test(header),
+  ].every(matches)
+}
 function parseMatrixCsvValue(value) {
   if (Array.isArray(value)) {
     return value
@@ -1052,7 +1090,7 @@ function analyzeImportHeaders(headers) {
     .filter(isOriginalDataColumn)
     .filter((header) => hasImportMetricHeaders(normalizedHeaders, header))
 
-  if (!secHeader || !timeHeader || !realDataColumns.length) {
+  if (!timeHeader || !realDataColumns.length) {
     return { valid: false, reason: 'missing required headers' }
   }
 
@@ -1109,7 +1147,7 @@ async function validateImportedCsv(file) {
         return
       }
 
-      if (isEmptyCsvValue(row[headerInfo.secHeader]) || !Number.isFinite(Number(row[headerInfo.secHeader]))) {
+      if (headerInfo.secHeader && (isEmptyCsvValue(row[headerInfo.secHeader]) || !Number.isFinite(Number(row[headerInfo.secHeader])))) {
         fail('invalid sec value', input)
         return
       }
@@ -1159,6 +1197,164 @@ async function getCsvData(file) {
 
 // ─── 导出 ────────────────────────────────────────────────
 
+function normalizeCsvMatrixKey(value) {
+  const text = normalizeCsvHeader(value)
+  if (!text) return ''
+  return text.replace(/\s*原始数据$/, '').replace(/realData$/i, '').replace(/\sData$/i, '').trim()
+}
+
+function getCsvRowMatrixEntries(row) {
+  const entries = []
+  const fallbackKey = normalizeCsvMatrixKey(row.matrix_key || row.device_type)
+
+  if (!isEmptyCsvValue(row.real_data)) {
+    const arr = parseMatrixCsvValue(row.real_data)
+    if (arr && fallbackKey) {
+      entries.push({ key: fallbackKey, arr })
+    }
+  }
+
+  Object.keys(row || {}).forEach((header) => {
+    if (!isOriginalDataColumn(header) || isEmptyCsvValue(row[header])) return
+    const arr = parseMatrixCsvValue(row[header])
+    if (!arr) return
+    const key = fallbackKey || normalizeCsvMatrixKey(header)
+    if (!key || entries.some((entry) => entry.key === key)) return
+    entries.push({ key, arr })
+  })
+
+  return entries
+}
+
+function getCsvFrameGroupKey(row, rowIndex) {
+  const frameIndex = normalizeCsvHeader(row.frame_index)
+  if (frameIndex) return `frame:${frameIndex}`
+  const timestamp = normalizeCsvHeader(row.timestamp)
+  if (timestamp) return `timestamp:${timestamp}`
+  return `row:${rowIndex}`
+}
+
+function getCsvFrameTimestamp(row, rowIndex) {
+  const rawTimestamp = Number(row.timestamp)
+  if (Number.isFinite(rawTimestamp)) return rawTimestamp
+
+  const parsedTime = Date.parse(row.time)
+  if (Number.isFinite(parsedTime)) return parsedTime + rowIndex
+
+  return Date.now() + rowIndex
+}
+
+function buildCsvPlaybackData(csvRows) {
+  const groups = new Map()
+
+  csvRows.forEach((row, rowIndex) => {
+    const entries = getCsvRowMatrixEntries(row)
+    if (!entries.length) return
+
+    const groupKey = getCsvFrameGroupKey(row, rowIndex)
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, {
+        frameIndex: Number(row.frame_index),
+        timestamp: getCsvFrameTimestamp(row, rowIndex),
+        data: {},
+      })
+    }
+
+    const frame = groups.get(groupKey)
+    entries.forEach(({ key, arr }) => {
+      const numericArr = arr.map((value) => Number(value))
+      const matrixSize = inferExportMatrixSize(key, numericArr)
+      frame.data[key] = {
+        arr: numericArr,
+        matrixMeta: {
+          matrix_key: key,
+          width: Number(row.matrix_width) || matrixSize.width,
+          height: Number(row.matrix_height) || matrixSize.height,
+          point_count: numericArr.length,
+        },
+        dataDirection: normalizeExportDirection({
+          left: row.data_direction_left === '' ? undefined : row.data_direction_left !== 'false',
+          up: row.data_direction_up === '' ? undefined : row.data_direction_up !== 'false',
+          rotateDegree: row.rotate_degree,
+          data_direction: row.data_direction,
+        }),
+        deviceMac: row.device_mac || '',
+        deviceType: key,
+        pressureUnit: row.pressure_unit || PRESSURE_UNIT,
+      }
+    })
+  })
+
+  const rows = Array.from(groups.values())
+    .filter((frame) => Object.keys(frame.data).length)
+    .sort((a, b) => {
+      const aIndex = Number.isFinite(a.frameIndex) ? a.frameIndex : Number.MAX_SAFE_INTEGER
+      const bIndex = Number.isFinite(b.frameIndex) ? b.frameIndex : Number.MAX_SAFE_INTEGER
+      if (aIndex !== bIndex) return aIndex - bIndex
+      return a.timestamp - b.timestamp
+    })
+    .map((frame) => ({
+      data: JSON.stringify(frame.data),
+      timestamp: frame.timestamp,
+      date: 'csv-import',
+      select: '{}',
+    }))
+
+  if (!rows.length) {
+    return { length: 0, pressArr: {}, areaArr: {}, rows: [] }
+  }
+
+  const firstData = JSON.parse(rows[0].data)
+  const keyArr = Object.keys(firstData).filter(Boolean)
+  const bucketSize = Math.max(1, Math.ceil(rows.length / PLAYBACK_CHART_TARGET_POINTS))
+  const pressArr = {}
+  const areaArr = {}
+  const pressBucket = {}
+  const areaBucket = {}
+  const bucketCount = {}
+
+  keyArr.forEach((key) => {
+    pressArr[key] = []
+    areaArr[key] = []
+    pressBucket[key] = 0
+    areaBucket[key] = 0
+    bucketCount[key] = 0
+  })
+
+  rows.forEach((row) => {
+    const dataObj = JSON.parse(row.data)
+    keyArr.forEach((key) => {
+      const arr = dataObj[key]?.arr || []
+      const press = arr.reduce((sum, value) => sum + Number(value || 0), 0)
+      const normalizedPress = (key === 'carY-back' || key === 'carY-sit')
+        ? press / (100 / 3)
+        : press
+      const area = arr.filter((value) => Number(value) > 0).length
+
+      pressBucket[key] += normalizedPress
+      areaBucket[key] += area
+      bucketCount[key] += 1
+
+      if (bucketCount[key] >= bucketSize) {
+        pressArr[key].push(pressBucket[key] / bucketCount[key])
+        areaArr[key].push(areaBucket[key] / bucketCount[key])
+        pressBucket[key] = 0
+        areaBucket[key] = 0
+        bucketCount[key] = 0
+      }
+    })
+  })
+
+  keyArr.forEach((key) => {
+    if (bucketCount[key] > 0) {
+      pressArr[key].push(pressBucket[key] / bucketCount[key])
+      areaArr[key].push(areaBucket[key] / bucketCount[key])
+    }
+  })
+
+  return { length: rows.length, pressArr, areaArr, rows }
+}
+
 module.exports = {
   initDb,
   closeDb,
@@ -1167,6 +1363,7 @@ module.exports = {
   deleteDbData,
   dbGetData,
   getCsvData,
+  buildCsvPlaybackData,
   changeDbDataName,
   changeDbName,
   upsertRemark,
@@ -1175,3 +1372,4 @@ module.exports = {
   resolveWritableDownloadDir,
   validateImportedCsv,
 }
+

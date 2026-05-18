@@ -35,20 +35,22 @@ function syncControlsMotionState(controls) {
 }
 
 export function getZoomDistance(baseDistance, zoomValue) {
-  return (baseDistance * 100) / clampZoomValue(zoomValue);
+  return (baseDistance * clampZoomValue(zoomValue)) / 100;
 }
 
 export function applyZoomBounds(controls, baseDistance) {
   if (!controls || !baseDistance) return;
-  controls.minDistance = getZoomDistance(baseDistance, ZOOM_MAX);
-  controls.maxDistance = getZoomDistance(baseDistance, ZOOM_MIN);
+  const minZoomDistance = getZoomDistance(baseDistance, ZOOM_MIN);
+  const maxZoomDistance = getZoomDistance(baseDistance, ZOOM_MAX);
+  controls.minDistance = Math.min(minZoomDistance, maxZoomDistance);
+  controls.maxDistance = Math.max(minZoomDistance, maxZoomDistance);
 }
 
 export function getZoomValueFromCamera(camera, controls, baseDistance) {
   if (!camera || !baseDistance) return 100;
   const distance = camera.position.distanceTo(getTarget(controls));
   if (!Number.isFinite(distance) || distance < EPSILON) return 100;
-  return clampZoomValue(Math.round((baseDistance * 100) / distance));
+  return clampZoomValue(Math.round((distance * 100) / baseDistance));
 }
 
 export function bindZoomValueSync({

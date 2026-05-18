@@ -15,15 +15,16 @@ const path = require('path')
 const cors = require('cors')
 const http = require('http')
 const { listenWithRetry, DEFAULT_PORTS } = require('../util/portFinder')
-const { decryptStr } = require('../util/aes_ecb')
 const { initDb } = require('../util/db')
 const { setCachePath } = require('../util/serialCache')
+const { readEncryptedSystemConfig } = require('../util/systemConfig')
 
 // ─── 模块导入 ────────────────────────────────────────────
 const { state } = require('./state')
 const { createWsServer, getHttpServer } = require('./websocket')
 // SerialManager: no auto-reconnect, rescan is manual via /rescanPort
 const routes = require('./api/routes')
+const { loadPersistedDataDirection } = require('./services/DataService')
 
 // ─── Port配置 ────────────────────────────────────────────
 let API_PORT = parseInt(process.env.API_PORT, 10) || DEFAULT_PORTS.api
@@ -56,8 +57,7 @@ if (isPackaged) {
 }
 
 // ─── 配置文件读取 ─────────────────────────────────────────
-const config = fs.readFileSync(configPath, 'utf-8')
-const result = JSON.parse(decryptStr(config))
+const result = readEncryptedSystemConfig(configPath)
 console.log('[Server] Config loaded:', Object.keys(result))
 
 // ─── 初始化全局状态 ──────────────────────────────────────
@@ -67,6 +67,7 @@ state._dataPath = csvPath
 state._isPackaged = isPackaged
 state._configPath = configPath
 state._defaultDownloadPath = process.env.DEFAULT_DOWNLOAD_PATH || null
+loadPersistedDataDirection()
 
 
 // ─── Express 应用配置 ─────────────────────────────────────

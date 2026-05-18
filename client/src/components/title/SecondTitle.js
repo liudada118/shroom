@@ -1,9 +1,9 @@
-import React, { useContext, useEffect, useState } from 'react'
+import React, { useContext, useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import IconAndText from '../iconAndText/IconAndText'
 import IconAndTextAndSelect from '../iconAndTextAndSelect/IconAndTextAndSelect'
 import Drawer from '../Drawer/Drawer'
-import { Col, ConfigProvider, Input, InputNumber, message, Popover, Row, Slider } from 'antd'
+import { Col, ConfigProvider, Input, InputNumber, message, Modal, Popover, Row, Slider } from 'antd'
 import { pageContext } from '../../page/test/Test'
 import { SelectionHelper } from '../selectBox/SelectBox'
 import { withTranslation } from 'react-i18next'
@@ -13,6 +13,7 @@ import { isMoreMatrix } from '../../assets/util/util'
 import { localAddress, pointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
 import { buildFallbackParams } from '../../util/request'
+import { saveVisualSettingValue } from '../../util/visualSettingStorage'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
@@ -23,6 +24,7 @@ function SecondTitle(props) {
     const { display, onRuler, setOnRuler, onSelect, setOnSelect, onMagnifier, setOnMagnifier } = pageInfo
     const [show, setShow] = useState(true)
     const [setshow, setSetshow] = useState(false)
+    const selectionCloseConfirmingRef = useRef(false)
     // const { settingValue, setSettingValue, selectHelper } = pageInfo
     // const settingValue = getSettingValue()
     const settingValue = useEquipStore(s => s.settingValue, shallow);
@@ -31,20 +33,63 @@ function SecondTitle(props) {
     const currentDisplayType = useEquipStore(s => s.displayType, shallow);
 
     const setSettingValue = useEquipStore.getState().setSettingValue
+    const setSettingValueMax = useEquipStore.getState().setSettingValueMax
 
 
     const onChange = (newValue, a) => {
         console.log(newValue, settingValue)
+        if (newValue === null || newValue === undefined) return
+        const numericValue = Number(newValue)
+        if (!Number.isFinite(numericValue)) return
         let obj = { ...settingValue }
-        if (a.type == "press") {
-            obj[a.type] = newValue
-        } else {
-            obj[a.type] = newValue / 100 * a.max
-        }
+        obj[a.type] = Math.max(a.min, Math.min(a.max, numericValue))
 
-        localStorage.setItem('setValueData', JSON.stringify(obj))
+        saveVisualSettingValue(systemType || getSysType(), obj)
         setSettingValue(obj);
     };
+
+    const onMaxChange = (newValue, a) => {
+        if (newValue === null || newValue === undefined) return
+        const numericValue = Number(newValue)
+        if (!Number.isFinite(numericValue)) return
+        const currentSystem = systemType || getSysType()
+        const nextMaxValue = Math.max(a.min, numericValue)
+        const nextMax = { ...settingValueMax, [a.type]: nextMaxValue }
+        const currentValue = Number(settingValue[a.type])
+        const nextSettingValue = {
+            ...settingValue,
+            [a.type]: Number.isFinite(currentValue) ? Math.min(currentValue, nextMaxValue) : a.min,
+        }
+
+        setSettingValueMax(nextMax)
+        setSettingValue(nextSettingValue)
+        saveVisualSettingValue(currentSystem, nextSettingValue)
+
+        const payload = {
+            config: {
+                maxObj: { [currentSystem]: nextMax },
+            },
+        }
+        axios({
+            method: 'post',
+            url: `${localAddress}/setSystemConfig`,
+            params: buildFallbackParams(payload),
+            data: payload,
+        }).catch(() => {
+            message.warning('最大值保存失败')
+        })
+    }
+
+    const getSliderValue = (a) => {
+        const value = Number(settingValue[a.type])
+        if (!Number.isFinite(value)) return 0
+        return a.sliderScale ? value * a.sliderScale : value
+    }
+
+    const getSliderMin = (a) => a.sliderScale ? a.min * a.sliderScale : a.min
+    const getSliderMax = (a) => a.sliderScale ? a.max * a.sliderScale : a.max
+    const getSliderStep = (a) => a.sliderScale ? a.step * a.sliderScale : a.step
+    const getSettingValueFromSlider = (value, a) => a.sliderScale ? Number(value) / a.sliderScale : value
 
 
 
@@ -56,8 +101,8 @@ function SecondTitle(props) {
             title: t('blur'),
             type: 'gauss',
             max: settingValueMax.gauss,
-            min: 1,
-            step: 1,
+            min: 0.1,
+            step: 0.1,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoUniform')}</div>
         },
         {
@@ -80,17 +125,10 @@ function SecondTitle(props) {
             title: t('heightAdj'),
             type: 'height',
             max: settingValueMax.height,
-            min: 1,
-            step: 1,
+            min: 0.1,
+            step: 0.1,
+            sliderScale: 10,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('pointHeight')}</div>
-        },
-        {
-            title: t('continuity'),
-            type: 'coherent',
-            max: settingValueMax.coherent,
-            min: 10,
-            step: 10,
-            content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('sensitivity')}</div>
         },
     ]
 
@@ -126,19 +164,57 @@ function SecondTitle(props) {
     }
 
     const closeSelectDrawer = () => {
+        requestCloseSelection()
+    }
+
+    const forceCloseSelection = () => {
         pageInfo?.brushInstance.stopBrush();
         useEquipStore.getState().setSelectArr([])
         setOnSelect(false)
     }
 
-    const setSelectDrawerShow = (nextShow) => {
-        if (nextShow) {
-            setOnSelect(true)
-            pageInfo?.brushInstance.startBrush();
+    const requestCloseSelection = () => {
+        const ranges = pageInfo?.brushInstance?.rangeArr || []
+        if (!ranges.length || selectionCloseConfirmingRef.current) {
+            forceCloseSelection()
             return
         }
-        closeSelectDrawer()
+
+        selectionCloseConfirmingRef.current = true
+        let templateName = `${t('selectionTemplate')}${new Date().toLocaleString()}`
+        Modal.confirm({
+            title: '退出框选',
+            content: (
+                <div>
+                    <div style={{ marginBottom: 8 }}>是否需要将当前框选保存为模板？</div>
+                    <Input
+                        defaultValue={templateName}
+                        placeholder={t('templateName')}
+                        onChange={(event) => {
+                            templateName = event.target.value
+                        }}
+                    />
+                </div>
+            ),
+            okText: t('saveTemplate'),
+            cancelText: '不保存',
+            onOk: () => {
+                window.dispatchEvent(new CustomEvent('save-selection-template', {
+                    detail: { name: templateName }
+                }))
+                forceCloseSelection()
+                selectionCloseConfirmingRef.current = false
+            },
+            onCancel: () => {
+                forceCloseSelection()
+                selectionCloseConfirmingRef.current = false
+            },
+            afterClose: () => {
+                selectionCloseConfirmingRef.current = false
+            }
+        })
     }
+
     const system = useEquipStore(s => s.systemType, shallow);
     const rulerClick = () => {
         // const system =  getSysType()
@@ -174,10 +250,7 @@ function SecondTitle(props) {
 
     useEffect(() => {
         const handleClearSelectionMode = () => {
-            pageInfo?.brushInstance.deleteAll()
-            pageInfo?.brushInstance.stopBrush()
-            useEquipStore.getState().setSelectArr([])
-            setOnSelect(false)
+            requestCloseSelection()
         }
         window.addEventListener('clear-selection-mode', handleClearSelectionMode)
         return () => window.removeEventListener('clear-selection-mode', handleClearSelectionMode)
@@ -186,10 +259,7 @@ function SecondTitle(props) {
     useEffect(() => {
         if (!onSelect) return
         if (display !== 'num' && display !== 'contrast') {
-            pageInfo?.brushInstance.deleteAll()
-            pageInfo?.brushInstance.stopBrush()
-            useEquipStore.getState().setSelectArr([])
-            setOnSelect(false)
+            requestCloseSelection()
         }
     }, [display, onSelect])
 
@@ -294,14 +364,14 @@ function SecondTitle(props) {
                                     </Popover>
 
                                     <Slider
-                                        min={a.min}
-                                        max={a.type == 'press' ? a.max : 100}
-                                        step={a.step}
+                                        min={getSliderMin(a)}
+                                        max={getSliderMax(a)}
+                                        step={getSliderStep(a)}
                                         onChange={(value) => {
-                                            onChange(value, a)
+                                            onChange(getSettingValueFromSlider(value, a), a)
                                         }}
                                         className='setItemSlide'
-                                        value={typeof settingValue[a.type] === 'number' ? a.type == 'press' ? settingValue[a.type] : settingValue[a.type] * 100 / a.max : 0}
+                                        value={getSliderValue(a)}
                                     />
 
                                     <ConfigProvider
@@ -319,12 +389,24 @@ function SecondTitle(props) {
 
                                         <InputNumber
                                             min={a.min}
-                                            max={100}
+                                            max={a.max}
                                             style={{ margin: '0 16px' }}
                                             className='setItemInput'
-                                            value={typeof settingValue[a.type] === 'number' ? Math.round(settingValue[a.type] * 100 / a.max) : 0}
+                                            value={typeof settingValue[a.type] === 'number' ? settingValue[a.type] : 0}
                                             onChange={(value) => {
                                                 onChange(value, a)
+                                            }}
+
+                                        />
+                                        <span style={{ color: '#7f8a96', fontSize: '0.75rem', marginLeft: 4 }}>Max</span>
+                                        <InputNumber
+                                            min={a.min}
+                                            step={a.step}
+                                            style={{ margin: '0 0 0 6px' }}
+                                            className='setItemInput'
+                                            value={typeof settingValueMax[a.type] === 'number' ? settingValueMax[a.type] : a.max}
+                                            onChange={(value) => {
+                                                onMaxChange(value, a)
                                             }}
 
                                         />
@@ -339,6 +421,7 @@ function SecondTitle(props) {
                         <div onClick={() => {
                             const optimalObj = getSettingValueOptimal()
                             useEquipStore.getState().setSettingValue(optimalObj)
+                            saveVisualSettingValue(systemType || getSysType(), optimalObj)
                         }} className='connectPort cursor'>{t('restore')}</div>
                     </div>
                 </div>
@@ -355,11 +438,13 @@ function SecondTitle(props) {
                 >
                     {/* <IconAndText text='画布翻转' /> */}
                     <IconAndTextAndSelect text={t('flip')} show={show} options={[{
-                        label: t('flipV'), value: 'up'
+                        label: `${t('seatPad')}${t('flipV')}`, value: 'up', target: 'sit'
                     }, {
-                        label: t('flipH'), value: 'left'
+                        label: `${t('seatPad')}${t('flipH')}`, value: 'left', target: 'sit'
                     }, {
-                        label: t('rotate90'), value: 'rotate'
+                        label: `${t('seatPad')}${t('rotate90')}`, value: 'rotate', target: 'sit'
+                    }, {
+                        label: `${t('backPad')}${t('flipH')}`, value: 'left', target: 'back'
                     },
                     ]}
                         icon={<div className='iconContentBox'><i className='iconfont fs18'>&#xe60c;</i></div>}
@@ -409,9 +494,7 @@ function SecondTitle(props) {
                         <div className="selectInputButton connectButton cursor">确认</div></div>
                 </div> : ''} */}
             </div>
-            <Drawer zindex={2} title={t('select')} show={onSelect} setShow={setSelectDrawerShow}>
-                <SelectSet onSelect={onSelect} selectArr={selectArr} variant="embedded" />
-            </Drawer>
+            <SelectSet onSelect={onSelect} selectArr={selectArr} variant="floating" />
 
         </>
     )

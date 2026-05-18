@@ -9,7 +9,12 @@ import { isMoreMatrix } from '../../assets/util/util';
 import { pointConfig } from '../../util/constant';
 import { APP_VERSION } from '../../util/version';
 
-let xvalue = localStorage.getItem('bedz') ? Number(localStorage.getItem('bedz')) : 0
+const normalizeAngleIndex = (value) => {
+    const index = Number(value)
+    return Number.isFinite(index) && index >= 0 && index <= 2 ? Math.trunc(index) : 0
+}
+
+let xvalue = normalizeAngleIndex(localStorage.getItem('bedz'))
 
 
 // export default function ViewSetting(props) {
@@ -29,17 +34,19 @@ const ViewSetting = (props) => {
     // const display = useEquipStore(s => s.display, shallow);
     // const setDisplay = useEquipStore.getState().setDisplay
 
-    useEffect(() => {
+    const setPointRotationIndex = (index) => {
+        xvalue = normalizeAngleIndex(index)
+        localStorage.setItem('bedz', String(xvalue))
         props.three?.current?.changePointRotation(xvalue)
+    }
+
+    useEffect(() => {
+        setPointRotationIndex(xvalue)
     }, [])
 
     const threeViewChange = () => {
         console.log(111)
-        xvalue++;
-        if (xvalue > 2) {
-            xvalue = 0
-        }
-        props.three?.current?.changePointRotation(xvalue)
+        setPointRotationIndex(xvalue + 1)
 
     }
 
@@ -50,11 +57,11 @@ const ViewSetting = (props) => {
     // 等比例缩放：每次按固定比例（约10%）缩放，范围 10%~300%
     const ZOOM_MIN = 10
     const ZOOM_MAX = 300
-    const ZOOM_RATIO = 1.1  // 每次缩放 10%
+    const ZOOM_STEP = 10
 
     const subShow = () => {
         if (display == 'point3D') {
-            let newVal = Math.round(showProp / ZOOM_RATIO)
+            let newVal = showProp - ZOOM_STEP
             newVal = Math.max(ZOOM_MIN, newVal)
             if (newVal !== showProp) {
                 setShowProp(newVal)
@@ -65,7 +72,7 @@ const ViewSetting = (props) => {
 
     const addShow = () => {
         if (display == 'point3D') {
-            let newVal = Math.round(showProp * ZOOM_RATIO)
+            let newVal = showProp + ZOOM_STEP
             newVal = Math.min(ZOOM_MAX, newVal)
             if (newVal !== showProp) {
                 setShowProp(newVal)
@@ -143,7 +150,8 @@ const ViewSetting = (props) => {
 
                     props.three.current?.actionSit(type)
                     useEquipStore.getState().setDisplayType(type);
-                     changeAllFun()
+                    setPointRotationIndex(0)
+                    changeAllFun()
                 }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: carType == type ? '#0072EF' : 'unset' }}>{t(type)}</div>
 
             })
@@ -202,6 +210,7 @@ const ViewSetting = (props) => {
                 setDisplay('point3D')
                 useEquipStore.getState().setDisplayType('all')
                 setCarType('all')
+                setPointRotationIndex(0)
                 changeAllFun()
             }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: display == 'point3D' ? '#0072EF' : 'unset' }}>{t('point3D')}</div></Popover>
 
@@ -235,6 +244,7 @@ const ViewSetting = (props) => {
             if (!guard3D()) return
             setShowProp(100)
             setDisplay('point3D')
+            setPointRotationIndex(0)
             changeAllFun()
 
         }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: display == 'point3D' ? '#0072EF' : 'unset' }}>{t('point3D')}</div>

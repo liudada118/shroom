@@ -7,13 +7,13 @@ const fs = require('fs')
 const path = require('path')
 const HttpResult = require('../HttpResult')
 const constantObj = require('../../util/config')
-const { initDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir, validateImportedCsv } = require('../../util/db')
-const { decryptStr } = require('../../util/aes_ecb')
+const { initDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, buildCsvPlaybackData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir, validateImportedCsv } = require('../../util/db')
 const module2 = require('../../util/aes_ecb')
+const { readEncryptedSystemConfig } = require('../../util/systemConfig')
 const { state } = require('../state')
 const { broadcast } = require('../websocket')
 const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
-const { colAndSendData, clearPlayTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot } = require('../services/DataService')
+const { colAndSendData, sendData, clearPlayTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot, saveDataDirection } = require('../services/DataService')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES } = require('../../util/deviceConfigValidation')
 
@@ -150,8 +150,7 @@ function validateContrastResults(leftResult, rightResult, leftId, rightId) {
 
 function readSystemConfig() {
   const configPath = state._configPath || path.join(__dirname, '..', '..', 'config.txt')
-  const config = fs.readFileSync(configPath, 'utf-8')
-  return JSON.parse(decryptStr(config))
+  return readEncryptedSystemConfig(configPath)
 }
 
 function resolveCurrentSystemFile() {
@@ -173,6 +172,17 @@ function resolveCurrentSystemFile() {
   }
 
   return ''
+}
+
+function mergeSystemConfigGroup(currentGroup = {}, incomingGroup = {}) {
+  const nextGroup = { ...currentGroup }
+  Object.keys(incomingGroup || {}).forEach((system) => {
+    nextGroup[system] = {
+      ...(currentGroup?.[system] || {}),
+      ...(incomingGroup?.[system] || {}),
+    }
+  })
+  return nextGroup
 }
 
 async function ensureCurrentDb() {
@@ -467,6 +477,32 @@ router.get('/getSystem', asyncHandler(async (req, res) => {
   res.json(new HttpResult(0, configResult, 'Get device list success'))
 }))
 
+router.post('/setSystemConfig', asyncHandler(async (req, res) => {
+  const incoming = resolveRequestValue(req, ['config'])
+  if (!incoming || typeof incoming !== 'object') {
+    res.json(new HttpResult(1, {}, 'config required'))
+    return
+  }
+
+  const current = readSystemConfig()
+  const nextConfig = {
+    ...current,
+    ...incoming,
+    optimalObj: mergeSystemConfigGroup(current.optimalObj, incoming.optimalObj),
+    maxObj: mergeSystemConfigGroup(current.maxObj, incoming.maxObj),
+  }
+
+  const configPath = state._configPath || path.join(__dirname, '..', '..', 'config.txt')
+  fs.writeFileSync(configPath, module2.encStr(JSON.stringify(nextConfig)), 'utf-8')
+
+  if (nextConfig.value) {
+    state.file = nextConfig.value
+    state.baudRate = constantObj.baudRateObj[nextConfig.value] || 1000000
+  }
+
+  res.json(new HttpResult(0, nextConfig, 'System config updated'))
+}))
+
 router.post('/selectSystem', asyncHandler(async (req, res) => {
   const systemFile = resolveRequestValue(req, ['file'])
   if (!systemFile) {
@@ -744,7 +780,11 @@ router.get('/readMacOnly', asyncHandler(async (req, res) => {
 // ─── 数据采集 ────────────────────────────────────────────
 
 router.post('/setDataDirection', asyncHandler(async (req, res) => {
-  state.dataDirection = resolveDataDirection(req)
+  state.dataDirection = saveDataDirection(resolveDataDirection(req))
+  res.json(new HttpResult(0, { dataDirection: state.dataDirection }, 'success'))
+}))
+
+router.get('/getDataDirection', asyncHandler(async (req, res) => {
   res.json(new HttpResult(0, { dataDirection: state.dataDirection }, 'success'))
 }))
 
@@ -755,9 +795,8 @@ router.post('/setZeroBaseline', asyncHandler(async (req, res) => {
 
 router.post('/startCol', asyncHandler(async (req, res) => {
   const fileName = resolveRequestValue(req, ['fileName', 'filename'])
-  const select = resolveRequestValue(req, ['select', 'selectJson'])
-  state.selectArr = select && typeof select === 'object' ? select : []
-  state.dataDirection = resolveDataDirection(req)
+  state.selectArr = []
+  state.dataDirection = saveDataDirection(resolveDataDirection(req))
   state.historySelectCache = null
   const currentFile = resolveCurrentSystemFile()
   const db = await ensureCurrentDb()
@@ -1033,9 +1072,19 @@ router.post('/getDbHistoryStop', (req, res) => {
 
 router.post('/cancalDbPlay', (req, res) => {
   state.historyFlag = false
+  state.historyPlayFlag = false
   state.historyDbArr = null
+  state.leftDbArr = null
+  state.rightDbArr = null
   state.historySelectCache = null
   clearPlayTimer()
+  try {
+    if (Object.keys(state.parserArr || {}).length) {
+      sendData()
+    }
+  } catch (err) {
+    console.warn('[Playback] Failed to push realtime frame after cancel:', err.message)
+  }
   res.json(new HttpResult(0, {}, 'success'))
 })
 
@@ -1441,8 +1490,50 @@ router.post('/uploadCsv', csvUpload.single('file'), asyncHandler(async (req, res
 
 router.post('/getCsvData', asyncHandler(async (req, res) => {
   const fileName = resolveRequestValue(req, ['fileName'])
-  const data = await getCsvData(fileName)
-  res.json(new HttpResult(0, data, 'success'))
+  let csvFilePath = String(fileName || '').trim()
+  if (!csvFilePath) {
+    res.json(new HttpResult(1, {}, 'CSV file required'))
+    return
+  }
+  if (!fs.existsSync(csvFilePath)) {
+    const fallbackPath = path.join(state._dataPath || path.resolve('resources/data'), 'csv', path.basename(csvFilePath))
+    if (fs.existsSync(fallbackPath)) {
+      csvFilePath = fallbackPath
+    }
+  }
+  if (!fs.existsSync(csvFilePath)) {
+    res.json(new HttpResult(1, {}, 'CSV file not found'))
+    return
+  }
+
+  const data = await getCsvData(csvFilePath)
+  const playback = buildCsvPlaybackData(data)
+  if (!playback.length) {
+    res.json(new HttpResult(1, {}, 'No playback data found in CSV'))
+    return
+  }
+
+  state.historySelectCache = null
+  state.historyDbArr = playback.rows
+  state.colMaxHZ = state.historyDbArr.length > 1
+    ? 1000 / (state.historyDbArr[1].timestamp - state.historyDbArr[0].timestamp)
+    : 1
+  if (!Number.isFinite(state.colMaxHZ) || state.colMaxHZ <= 0) {
+    state.colMaxHZ = 1
+  }
+  state.colplayHZ = state.colMaxHZ
+  state.historyFlag = true
+  state.playIndex = 0
+  state.playbackSkippedFrameCount = 0
+  state.playbackConsecutiveBadFrames = 0
+
+  res.json(new HttpResult(0, {
+    length: playback.length,
+    pressArr: playback.pressArr,
+    areaArr: playback.areaArr,
+    initialIndex: 0,
+    initialTimestamp: state.historyDbArr[0]?.timestamp || '',
+  }, 'success'))
 }))
 
 router.post('/getSysconfig', (req, res) => {

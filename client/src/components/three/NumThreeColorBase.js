@@ -5,6 +5,7 @@ import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
+import { NUMBER_TEXT_COLOR_ALPHA, jetWhite3NoWhite } from '../../assets/util/line';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -94,8 +95,8 @@ export default function NumThree(props) {
       const cy = y * cellSize;
 
       // ✅ 计算背景颜色
-      const [r, g, b] = jet(0, 22, i);
-      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      const [r, g, b] = jetWhite3NoWhite(0, 22, i);
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
       // ✅ 黑色边框
@@ -104,6 +105,7 @@ export default function NumThree(props) {
       ctx.strokeRect(cx, cy, cellSize, cellSize);
 
       // ✅ 白色数字
+      ctx.globalAlpha = 1;
       ctx.fillStyle = "white";
       ctx.fillText(i.toString(), cx + cellSize / 2, cy + cellSize / 2);
     }
@@ -175,19 +177,10 @@ export default function NumThree(props) {
         varying vec2 vUv;
         varying vec3 vColor;
 
-        vec3 linearToSRGB(vec3 color) {
-  return pow(color*1.5, vec3(1.0 / 2.2));  // Gamma 矫正
-}
-
         void main() {
           vec4 texColor = texture2D(map, vUv);
           if (texColor.a < 0.1) discard;
-
-           vec3 rgb = texColor.rgb * vColor; // 染色
-            rgb = linearToSRGB(rgb);   
-
-            // 乘以格子颜色
-          gl_FragColor = vec4(rgb, texColor.a);
+          gl_FragColor = vec4(texColor.rgb, texColor.a);
         }
       `,
       transparent: true,
@@ -310,14 +303,9 @@ export default function NumThree(props) {
         uvOffsets[i * 2] = (d % 16) / 16;
         uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
 
-        // const d = Math.floor(Math.random() * 256);
-        const r = d / 255;
-        const g = 0.2;
-        const b = 1.0 - r;
-
-        colorArray[i * 3 + 0] = r;
-        colorArray[i * 3 + 1] = g;
-        colorArray[i * 3 + 2] = b;
+        colorArray[i * 3 + 0] = 1;
+        colorArray[i * 3 + 1] = 1;
+        colorArray[i * 3 + 2] = 1;
 
         // const rgb = jet(0 , 30 , d)
 

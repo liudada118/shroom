@@ -1,0 +1,26 @@
+{
+  "dataDirection": {
+    "left": true,
+    "up": true,
+    "rotateDegree": 0,
+    "rotate_degree": 0,
+    "data_direction": "none",
+    "byKey": {
+      "endi-back": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 0,
+        "rotate_degree": 0,
+        "data_direction": "none"
+      },
+      "endi-sit": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 270,
+        "rotate_degree": 270,
+        "data_direction": "rotate270"
+      }
+    }
+  },
+  "updatedAt": "2026-05-15T07:48:55.770Z"
+}

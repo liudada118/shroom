@@ -10,6 +10,7 @@ import { withTranslation } from "react-i18next";
 import { pageContext } from '../../page/test/Test'
 import { systemConfig, localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
+import { loadVisualSettingValue } from '../../util/visualSettingStorage'
 import { useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { Tooltip, message } from 'antd'
@@ -135,7 +136,7 @@ const Title = memo((props) => {
       useEquipStore.getState().setStatus(new Array(4096).fill(0))
       useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
       useEquipStore.getState().setDisplayType('all')
-      useEquipStore.getState().setSettingValue(optimalObj)
+      useEquipStore.getState().setSettingValue(loadVisualSettingValue(e, optimalObj, maxObj))
       useEquipStore.getState().setSettingValueMax(maxObj)
       useEquipStore.getState().setSettingValueOptimal(optimalObj)
     }).catch((err) => {
@@ -182,10 +183,6 @@ const Title = memo((props) => {
   }
 
   const clearSelectionMode = () => {
-    pageInfo?.brushInstance?.deleteAll?.()
-    pageInfo?.brushInstance?.stopBrush?.()
-    pageInfo?.setOnSelect?.(false)
-    useEquipStore.getState().setSelectArr([])
     window.dispatchEvent(new CustomEvent('clear-selection-mode'))
   }
 

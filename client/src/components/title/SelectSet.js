@@ -1,5 +1,5 @@
 import { Input, message, Modal, Popover, Select } from 'antd'
-import React, { useContext, useEffect, useState } from 'react'
+import React, { useContext, useEffect, useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
@@ -18,21 +18,63 @@ const selectInputObj = [
 ]
 
 const SELECTION_TEMPLATE_KEY = 'selectionTemplatesV1'
+const SELECTION_TEMPLATE_BACKUP_KEY = 'selectionTemplatesBackupV1'
 
 function normalizeTemplateList(value) {
-    return Array.isArray(value) ? value.filter(item => item && item.templateId && item.templateName) : []
+    if (!Array.isArray(value)) return []
+    return value.map((item) => {
+        if (!item) return null
+        const templateId = item.templateId || item.id || item.key
+        const templateName = item.templateName || item.name || item.title
+        const regionsRaw = item.regions || item.areas || item.selections || []
+        const regions = Array.isArray(regionsRaw) ? regionsRaw.map((region, index) => {
+            if (!region) return null
+            const source = region.matrixRect || region
+            const x = Number(source.x ?? source.xStart ?? source.columnStart ?? 0)
+            const y = Number(source.y ?? source.yStart ?? source.rowStart ?? 0)
+            const width = Number(source.width ?? (Number(source.xEnd) - x))
+            const height = Number(source.height ?? (Number(source.yEnd) - y))
+            if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null
+            return {
+                ...region,
+                x,
+                y,
+                width,
+                height,
+                regionId: region.regionId || region.id || `region-${index + 1}`,
+                regionName: region.regionName || region.name || getDefaultSelectionName(index + 1),
+                index: region.index || index + 1,
+            }
+        }).filter(Boolean) : []
+        if (!templateId || !templateName || !regions.length) return null
+        return {
+            ...item,
+            templateId,
+            templateName,
+            regions,
+            regionCount: item.regionCount || regions.length,
+        }
+    }).filter(Boolean)
 }
 
 function readSelectionTemplates() {
     try {
-        return normalizeTemplateList(JSON.parse(localStorage.getItem(SELECTION_TEMPLATE_KEY) || '[]'))
+        const primary = normalizeTemplateList(JSON.parse(localStorage.getItem(SELECTION_TEMPLATE_KEY) || '[]'))
+        const backup = normalizeTemplateList(JSON.parse(localStorage.getItem(SELECTION_TEMPLATE_BACKUP_KEY) || '[]'))
+        const map = new Map()
+        ;[...backup, ...primary].forEach((template) => {
+            map.set(template.templateId, template)
+        })
+        return Array.from(map.values())
     } catch (e) {
         return []
     }
 }
 
 function writeSelectionTemplates(templates) {
-    localStorage.setItem(SELECTION_TEMPLATE_KEY, JSON.stringify(normalizeTemplateList(templates)))
+    const normalized = normalizeTemplateList(templates)
+    localStorage.setItem(SELECTION_TEMPLATE_KEY, JSON.stringify(normalized))
+    localStorage.setItem(SELECTION_TEMPLATE_BACKUP_KEY, JSON.stringify(normalized))
 }
 
 function getDisplayObject(displayType = '') {
@@ -56,6 +98,69 @@ export default function SelectSet(props) {
     const [templateName, setTemplateName] = useState('')
     const [templates, setTemplates] = useState(() => readSelectionTemplates())
     const [selectedTemplateId, setSelectedTemplateId] = useState('')
+    const [floatingStyle, setFloatingStyle] = useState(null)
+
+    useEffect(() => {
+        if (onSelect) {
+            setTemplates(readSelectionTemplates())
+        }
+    }, [onSelect])
+
+    useLayoutEffect(() => {
+        if (!onSelect || variant !== 'floating') return
+
+        const updateFloatingPosition = () => {
+            const canvas = document.querySelector('.canvasThree:not(.canvasRuler)')
+                || document.querySelector('.canvasThree')
+            if (!canvas) return
+
+            const canvasRect = canvas.getBoundingClientRect()
+            const rightPanelRects = Array.from(document.querySelectorAll('.draggable-panel'))
+                .map((panel) => panel.getBoundingClientRect())
+                .filter((rect) => rect.left > canvasRect.right)
+            const rightPanelLeft = rightPanelRects
+                .reduce((left, rect) => Math.min(left, rect.left), window.innerWidth - 16)
+
+            const gap = 14
+            const rightBoundary = Math.min(window.innerWidth - 16, rightPanelLeft - gap)
+            const desiredWidth = 245
+            const minWidth = 190
+            const availableWidth = rightBoundary - canvasRect.right - gap
+            let width = Math.max(minWidth, Math.min(desiredWidth, Math.max(availableWidth, minWidth)))
+            let left = canvasRect.right + gap
+            let top = Math.max(88, Math.min(canvasRect.top, window.innerHeight - 160))
+
+            if (availableWidth >= minWidth) {
+                left = Math.min(left, Math.max(16, rightBoundary - width))
+            } else {
+                width = Math.max(180, Math.min(desiredWidth, window.innerWidth - left - 16))
+                const panelRight = left + width
+                const blockingBottom = rightPanelRects
+                    .filter((rect) => left < rect.right && panelRight > rect.left)
+                    .reduce((bottom, rect) => Math.max(bottom, rect.bottom), 0)
+                if (blockingBottom && blockingBottom + 180 < window.innerHeight) {
+                    top = blockingBottom + gap
+                }
+            }
+
+            setFloatingStyle({
+                left: `${left}px`,
+                top: `${top}px`,
+                width: `${width}px`,
+                maxHeight: `${Math.max(220, window.innerHeight - top - 24)}px`,
+            })
+        }
+
+        updateFloatingPosition()
+        const raf = requestAnimationFrame(updateFloatingPosition)
+        window.addEventListener('resize', updateFloatingPosition)
+        window.addEventListener('mouseup', updateFloatingPosition)
+        return () => {
+            cancelAnimationFrame(raf)
+            window.removeEventListener('resize', updateFloatingPosition)
+            window.removeEventListener('mouseup', updateFloatingPosition)
+        }
+    }, [onSelect, variant, displayType, systemType])
 
     useEffect(() => {
         const systemType = getSysType()
@@ -204,20 +309,20 @@ export default function SelectSet(props) {
             .filter(Boolean)
     }
 
-    const handleSaveTemplate = () => {
-        const name = templateName.trim()
+    const saveTemplateByName = (rawName) => {
+        const name = String(rawName || '').trim()
         if (!boxes.length) {
             message.warning(t('createSelectionFirst'))
-            return
+            return false
         }
         if (!name) {
             message.warning(t('enterTemplateName'))
-            return
+            return false
         }
         const regions = getCurrentRegions()
         if (!regions.length) {
             message.warning(t('noSelectionToSave'))
-            return
+            return false
         }
 
         const now = Date.now()
@@ -241,7 +346,20 @@ export default function SelectSet(props) {
         setSelectedTemplateId(nextTemplate.templateId)
         setTemplateName('')
         message.success(t('templateSaved'))
+        return true
     }
+
+    const handleSaveTemplate = () => {
+        saveTemplateByName(templateName)
+    }
+
+    useEffect(() => {
+        const handleSaveFromExit = (event) => {
+            saveTemplateByName(event?.detail?.name)
+        }
+        window.addEventListener('save-selection-template', handleSaveFromExit)
+        return () => window.removeEventListener('save-selection-template', handleSaveFromExit)
+    }, [boxes, templateName, templates, sysType, displayType, matrixInfo])
 
     const applyTemplate = (template) => {
         if (!isTemplateMatched(template)) {
@@ -323,7 +441,10 @@ export default function SelectSet(props) {
     if (!onSelect) return null
 
     return (
-        <div className={`selectInputContent ${variant === 'embedded' ? 'selectInputEmbedded' : 'selectInputDrawer'}`}>
+        <div
+            className={`selectInputContent ${variant === 'embedded' ? 'selectInputEmbedded' : variant === 'drawer' ? 'selectInputDrawer' : 'selectInputFloating'}`}
+            style={variant === 'floating' && floatingStyle ? floatingStyle : undefined}
+        >
             <div className="selectInputTitle" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <div className="selectInputTitleInfo" style={{ color: '#E6EBF0' }}>{t('selectionRegion')}</div>

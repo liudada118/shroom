@@ -30,32 +30,26 @@ export default function IconAndTextAndSelect(props) {
 
     return (
         <div className='iconAndSelect'
-            onMouseOver={() => {
+            onMouseEnter={() => {
                 setSelectShow(true)
             }}
-            onMouseOut={() => {
+            onMouseLeave={() => {
                 setSelectShow(false)
             }}
         >
             <IconAndText show={show} text={text} icon={icon} />
-            <div className="dropDown" style={{ opacity: selectShow ? 1 : 0 }}>
+            <div className={`dropDown ${selectShow ? 'dropDownVisible' : ''}`}>
                 {options.map((a, index) => {
                     return (
-                        <div className='dropItem fs14 cursor' onClick={() => {
+                        <div key={`${a.target || 'all'}-${a.value}-${index}`} className='dropItem fs14 cursor' onClick={() => {
                             if (useEquipStore.getState().collecting) {
                                 message.warning(t('collectingDirectionLocked'))
                                 return
                             }
                             // setValue(a.label)
                             // setShow(false)
-                            let nextDirection
-                            if (a.value == 'up') {
-                                nextDirection = changeDataDirection('up')
-                            } else if (a.value == 'left') {
-                                nextDirection = changeDataDirection('left')
-                            } else {
-                                nextDirection = changeDataDirection('rotate')
-                            }
+                            const directionType = a.direction || a.value
+                            const nextDirection = changeDataDirection(directionType, a.target)
                             syncDataDirection(nextDirection)
 
                         }}>

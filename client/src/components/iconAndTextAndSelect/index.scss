@@ -10,29 +10,43 @@
 
     .dropDown {
         position: absolute;
-        width: 100%;
+        left: 50%;
+        min-width: 8.5rem;
+        width: max-content;
         top: calc(4rem);
         padding: 15px 9px 9px;
         border: 1px solid #3E444C;
         opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translate(-50%, -4px);
         transition: all 0.4s ease-in-out;
         overflow: hidden;
         background: #202327;
         border-radius: 6px;
+        z-index: 20;
 
     }
 
+    .dropDownVisible {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transform: translate(-50%, 0);
+    }
+
     .dropItem {
-         padding: 3px 0px;
+        padding: 3px 8px;
         text-align: center;
         border-radius: 3px;
+        white-space: nowrap;
     }
 
     .dropItem:hover{
         background-color: #3E444C;
     }
 
-    .dropItem:first-child{
+    .dropItem:not(:last-child){
         margin-bottom: 9px;
     }
 }

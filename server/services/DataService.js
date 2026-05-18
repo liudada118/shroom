@@ -3,6 +3,8 @@
  * 负责实时数据发送、数据采集存储、历史回放等业务逻辑
  */
 const WebSocket = require('ws')
+const fs = require('fs')
+const path = require('path')
 const constantObj = require('../../util/config')
 const { state, resetPlaybackState } = require('../state')
 const { broadcast } = require('../websocket')
@@ -61,6 +63,45 @@ function normalizeDataDirectionState(direction) {
     })
   }
   return { ...base, byKey }
+}
+
+function getDataDirectionPath() {
+  if (state._dataDirectionPath) return state._dataDirectionPath
+  const basePath = state._dbPath || path.join(__dirname, '..', '..', 'db')
+  state._dataDirectionPath = path.join(basePath, 'data_direction.json')
+  return state._dataDirectionPath
+}
+
+function loadPersistedDataDirection() {
+  const directionPath = getDataDirectionPath()
+  try {
+    if (!fs.existsSync(directionPath)) {
+      state.dataDirection = normalizeDataDirectionState(state.dataDirection || DEFAULT_DATA_DIRECTION)
+      return state.dataDirection
+    }
+    const payload = JSON.parse(fs.readFileSync(directionPath, 'utf-8'))
+    state.dataDirection = normalizeDataDirectionState(payload.dataDirection || payload)
+  } catch (err) {
+    console.warn('[DataDirection] Load failed:', err.message)
+    state.dataDirection = normalizeDataDirectionState(state.dataDirection || DEFAULT_DATA_DIRECTION)
+  }
+  return state.dataDirection
+}
+
+function saveDataDirection(direction) {
+  const normalized = normalizeDataDirectionState(direction || DEFAULT_DATA_DIRECTION)
+  state.dataDirection = normalized
+  const directionPath = getDataDirectionPath()
+  try {
+    fs.mkdirSync(path.dirname(directionPath), { recursive: true })
+    fs.writeFileSync(directionPath, JSON.stringify({
+      dataDirection: normalized,
+      updatedAt: new Date().toISOString(),
+    }, null, 2))
+  } catch (err) {
+    console.error('[DataDirection] Persist failed:', err.message)
+  }
+  return normalized
 }
 
 function getDirectionForKey(directionState, key) {
@@ -176,6 +217,38 @@ function applyCollectionDirection(key, arr, direction) {
   return result
 }
 
+function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAULT_DATA_DIRECTION) {
+  const normalizedState = normalizeDataDirectionState(directionState)
+  const directedFrame = {}
+
+  Object.keys(frame || {}).forEach((key) => {
+    const item = frame[key]
+    if (!item || typeof item !== 'object') {
+      directedFrame[key] = item
+      return
+    }
+
+    const nextItem = { ...item }
+    if (Array.isArray(nextItem.arr) && isValidMatrix(key, nextItem.arr)) {
+      const direction = getDirectionForKey(normalizedState, key)
+      nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
+      nextItem.dataDirection = direction
+      const directedDimensions = getDirectedDimensions(key, item.arr, direction)
+      if (directedDimensions) {
+        nextItem.matrixMeta = {
+          matrix_key: key,
+          width: directedDimensions.width,
+          height: directedDimensions.height,
+          point_count: nextItem.arr.length,
+        }
+      }
+    }
+    directedFrame[key] = nextItem
+  })
+
+  return directedFrame
+}
+
 function applyZeroBaseline(key, arr, zeroState) {
   if (!zeroState?.enabled || !zeroState?.data || !Array.isArray(arr)) return [...arr]
   const shortKey = key.includes('-') ? key.split('-')[1] : key
@@ -286,11 +359,11 @@ function sendData() {
     })
 
     if (Object.keys(obj).some((a) => Object.values(constantObj.type).includes(a))) {
-      broadcast(JSON.stringify({ data: obj }))
+      broadcast(JSON.stringify({ data: buildDirectedFrame(obj) }))
     }
   } else {
     obj = parseData(state.parserArr, structuredClone(state.dataMap), 'highHZ')
-    broadcast(JSON.stringify({ sitData: obj }))
+    broadcast(JSON.stringify({ sitData: buildDirectedFrame(obj) }))
   }
   return obj
 }
@@ -313,8 +386,8 @@ function storageData(data) {
     if (nextItem.status) delete nextItem.status
     if (Array.isArray(nextItem.arr)) {
       const direction = getDirectionForKey(directionState, key)
-      nextItem.arr = applyZeroBaseline(key, nextItem.arr, state.zeroState)
       nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
+      nextItem.arr = applyZeroBaseline(key, nextItem.arr, state.zeroState)
       nextItem.dataDirection = direction
       const directedDimensions = getDirectedDimensions(key, item.arr, direction)
       if (directedDimensions) {
@@ -627,4 +700,8 @@ module.exports = {
   changePlaySpeed,
   getPlaybackSnapshot,
   parseData,
+  buildDirectedFrame,
+  normalizeDataDirectionState,
+  saveDataDirection,
+  loadPersistedDataDirection,
 }

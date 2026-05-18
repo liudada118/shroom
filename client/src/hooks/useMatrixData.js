@@ -354,6 +354,19 @@ export function useMatrixData() {
 
         const { area: bArea, press: bPress, stats } = computeSingleStats(arr, box.data, fullKey)
         boxStat.data = stats
+        const boxWidth = Math.max(1, Number(box.matrix?.xEnd) - Number(box.matrix?.xStart) || width)
+        const boxHeight = Math.max(1, Number(box.matrix?.yEnd) - Number(box.matrix?.yStart) || height)
+        const boxMu = mean(box.data)
+        const boxVariance = variance(box.data, boxMu)
+        const boxSigma = Math.sqrt(boxVariance)
+        boxStat.center = calcCentroidRatio([...box.data], boxWidth, boxHeight)
+        boxStat.normalDis = {
+          ['\u03bc']: boxMu.toFixed(3),
+          Var: boxVariance.toFixed(3),
+          Skew: skewness(box.data, boxMu, boxSigma).toFixed(3),
+          Kurt: kurtosis(box.data, boxMu, boxSigma).toFixed(3),
+          yData: xData.map(x => normalPDF(x, boxMu, boxSigma)),
+        }
 
         const bPressForChart = (fullKey === 'carY-back' || fullKey === 'carY-sit') ? bPress / divisor : bPress
         if (boxStat.pressArr.length < 20) {
@@ -486,7 +499,8 @@ export function useMatrixData() {
   /**
    * 处理传感器数据帧（实时或回放）
    */
-  function processSensorFrame(sitData, data) {
+  function processSensorFrame(sitData, data, options = {}) {
+    const isRealtimeFrame = options.source !== 'playback'
     if (!Object.keys(sitData).length) {
       useEquipStore.getState().setStatus(new Array(4096).fill(0))
       useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
@@ -531,8 +545,10 @@ export function useMatrixData() {
         dataQualityObj[fullKey] = sitData[fullKey].dataQuality
       }
     }
-    useEquipStore.getState().setEquipStatus(newObj)
-    if (Object.keys(dataQualityObj).length) {
+    if (isRealtimeFrame) {
+      useEquipStore.getState().setEquipStatus(newObj)
+    }
+    if (isRealtimeFrame && Object.keys(dataQualityObj).length) {
       const prevQuality = useEquipStore.getState().dataQuality || {}
       useEquipStore.getState().setDataQuality({ ...prevQuality, ...dataQualityObj })
 
@@ -556,7 +572,7 @@ export function useMatrixData() {
 
     // 检测设备断开：5 秒防抖
     const allOffline = Object.values(newObj).every(s => s === 'offline' || s === undefined)
-    if (allOffline && useEquipStore.getState().connectState === 'connected') {
+    if (isRealtimeFrame && allOffline && useEquipStore.getState().connectState === 'connected') {
       if (!window.__offlineDebounceTimer) {
         window.__offlineDebounceTimer = setTimeout(() => {
           const currentStatus = useEquipStore.getState().equipStatus
@@ -568,7 +584,7 @@ export function useMatrixData() {
           window.__offlineDebounceTimer = null
         }, 5000)
       }
-    } else if (!allOffline && window.__offlineDebounceTimer) {
+    } else if ((!isRealtimeFrame || !allOffline) && window.__offlineDebounceTimer) {
       clearTimeout(window.__offlineDebounceTimer)
       window.__offlineDebounceTimer = null
     }
@@ -620,18 +636,25 @@ export function useMatrixData() {
     return normalizeDataDirection(state.byKey?.[fullKey] || state)
   }
 
-  function getDirectionTargetKeys() {
+  function getDirectionTargetKeys(targetPart) {
     const system = getSysType()
-    const displayType = getDisplayType()
     if (!isMoreMatrix(system)) return []
-    if (displayType.includes('back')) return [`${system}-back`]
-    if (displayType.includes('sit')) return [`${system}-sit`]
-    return [`${system}-back`, `${system}-sit`]
+    if (targetPart === 'back' || targetPart === 'sit') {
+      const key = `${system}-${targetPart}`
+      return systemPointConfig[key] ? [key] : []
+    }
+    return [`${system}-back`, `${system}-sit`].filter((key) => systemPointConfig[key])
   }
 
-  function changeDataDirection(dir) {
+  function setDataDirection(direction) {
+    dataDirection.current = normalizeDataDirectionState(direction || DEFAULT_DATA_DIRECTION)
+    persistDataDirection(dataDirection.current)
+    return dataDirection.current
+  }
+
+  function changeDataDirection(dir, targetPart) {
     const state = normalizeDataDirectionState(dataDirection.current)
-    const targetKeys = getDirectionTargetKeys()
+    const targetKeys = getDirectionTargetKeys(targetPart)
     const applyChange = (direction) => {
       const next = normalizeDataDirection(direction)
       if (dir === 'rotate') {
@@ -647,11 +670,15 @@ export function useMatrixData() {
 
     if (targetKeys.length) {
       const byKey = { ...state.byKey }
+      getDirectionTargetKeys().forEach((key) => {
+        if (!byKey[key]) {
+          byKey[key] = normalizeDataDirection(state)
+        }
+      })
       targetKeys.forEach((key) => {
         byKey[key] = applyChange(byKey[key] || state)
       })
-      const first = byKey[targetKeys[0]]
-      dataDirection.current = { ...first, byKey }
+      dataDirection.current = { ...normalizeDataDirection(DEFAULT_DATA_DIRECTION), byKey }
       persistDataDirection(dataDirection.current)
       return normalizeDataDirectionState(dataDirection.current)
     }
@@ -691,6 +718,7 @@ export function useMatrixData() {
     disPlayDataRef,
     chartRef,
     dataDirection,
+    setDataDirection,
     processSensorFrame,
     changeDataDirection,
     changeWsLocalData,
