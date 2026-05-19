@@ -6,6 +6,7 @@ import { systemPointConfig } from '../../util/constant';
 import { isMoreMatrix } from '../../assets/util/util';
 import { calMatrixToSelect } from '../../assets/util/selectMatrix';
 import { getDefaultSelectionName } from '../../util/selectionName';
+import { isEndiBackVisibleCell } from '../../util/endiBackVisibleMask';
 
 // ─── 4 个框选的固定颜色 ──────────────────────────────────────
 export const SELECT_COLORS = [
@@ -181,7 +182,23 @@ export class BrushManager {
         const yEnd = this._clampValue(Math.ceil((bottom - effectiveRect.top) / unitHeight), 0, height);
 
         if (xEnd <= xStart || yEnd <= yStart) return null;
-        return { xStart, xEnd, yStart, yEnd, width, height };
+        const matrixRect = { xStart, xEnd, yStart, yEnd, width, height };
+        return this._isValidMatrixSelection(matrixRect, context) ? matrixRect : null;
+    }
+
+    _isValidMatrixSelection(matrixRect, context = this._getMatrixContext()) {
+        if (!matrixRect) return false;
+        if (context?.matrixKey !== 'endi-back') return true;
+
+        const { xStart, xEnd, yStart, yEnd, width, height } = matrixRect;
+        for (let y = yStart; y < yEnd; y += 1) {
+            for (let x = xStart; x < xEnd; x += 1) {
+                if (!isEndiBackVisibleCell(y, x, width, height)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     _syncRangeMetadata(range) {
@@ -280,6 +297,22 @@ export class BrushManager {
         ].join(',')));
     }
 
+    _shouldIgnoreKeyboardTarget(target) {
+        if (!target) return false;
+        const tagName = String(target.tagName || '').toLowerCase();
+        if (['input', 'textarea', 'select', 'option'].includes(tagName)) return true;
+        if (target.isContentEditable) return true;
+        return Boolean(target.closest?.([
+            '[contenteditable="true"]',
+            '.ant-input',
+            '.ant-input-number',
+            '.ant-select',
+            '.ant-picker',
+            '.ant-modal',
+            '.ant-popover',
+        ].join(',')));
+    }
+
     /**
      * 检查框选区域是否完整落在真实矩阵区域内
      */
@@ -296,6 +329,7 @@ export class BrushManager {
     }
 
     onKeyDown = (e) => {
+        if (this._shouldIgnoreKeyboardTarget(e.target || document.activeElement)) return;
         // 方向键移动最后一个框
         const obj = this.rangeArr[this.rangeArr.length - 1];
         if (!obj) return;
@@ -305,6 +339,7 @@ export class BrushManager {
             const w = obj.x2 - obj.x1;
             const h = obj.y2 - obj.y1;
             const rect = this._getEffectiveCanvasRect();
+            const prev = { x1: obj.x1, y1: obj.y1, x2: obj.x2, y2: obj.y2 };
             let nextX = obj.x1 + dx;
             let nextY = obj.y1 + dy;
             if (rect) {
@@ -317,7 +352,16 @@ export class BrushManager {
             obj.y2 = nextY + h;
             el.style.left = obj.x1 + 'px';
             el.style.top = obj.y1 + 'px';
-            this._syncRangeMetadata(obj);
+            if (!this._syncRangeMetadata(obj)) {
+                obj.x1 = prev.x1;
+                obj.y1 = prev.y1;
+                obj.x2 = prev.x2;
+                obj.y2 = prev.y2;
+                el.style.left = obj.x1 + 'px';
+                el.style.top = obj.y1 + 'px';
+                this._syncRangeMetadata(obj);
+                message.warning(tr('selectionOutOfValidRange'));
+            }
             this._updateMeasureBadge(el, obj);
             this.notify(this.rangeArr);
         };
@@ -364,6 +408,7 @@ export class BrushManager {
             }
         }
         this.rangeArr = [];
+        this.notify(this.rangeArr);
     }
 
     // ─── 为框添加交互控件（拖拽手柄 + 删除按钮 + 编号标签） ───
@@ -477,6 +522,11 @@ export class BrushManager {
             return false;
         }
         if (xEnd > width || yEnd > height) {
+            message.warning(tr('selectionOutOfValidRange'));
+            return false;
+        }
+        const matrixRectForValidation = { xStart, xEnd, yStart, yEnd, width, height };
+        if (!this._isValidMatrixSelection(matrixRectForValidation, context)) {
             message.warning(tr('selectionOutOfValidRange'));
             return false;
         }
@@ -660,7 +710,16 @@ export class BrushManager {
             el.classList.remove('selectBox-active');
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp, true);
-            this._syncRangeMetadata(rangeObj);
+            if (!this._syncRangeMetadata(rangeObj)) {
+                message.warning(tr('selectionOutOfValidRange'));
+                rangeObj.x1 = origX1;
+                rangeObj.y1 = origY1;
+                rangeObj.x2 = origX1 + w;
+                rangeObj.y2 = origY1 + h;
+                el.style.left = origX1 + 'px';
+                el.style.top = origY1 + 'px';
+                this._syncRangeMetadata(rangeObj);
+            }
             this._updateMeasureBadge(el, rangeObj);
             this.notify(this.rangeArr);
         };

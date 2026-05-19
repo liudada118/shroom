@@ -13,7 +13,8 @@ import { isMoreMatrix } from '../../assets/util/util'
 import { localAddress, pointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
 import { buildFallbackParams } from '../../util/request'
-import { saveVisualSettingValue } from '../../util/visualSettingStorage'
+import { normalizeVisualSettingMax, saveVisualSettingValue } from '../../util/visualSettingStorage'
+import { removeHistoryBox } from '../../assets/util/selectMatrix'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
@@ -28,7 +29,8 @@ function SecondTitle(props) {
     // const { settingValue, setSettingValue, selectHelper } = pageInfo
     // const settingValue = getSettingValue()
     const settingValue = useEquipStore(s => s.settingValue, shallow);
-    const settingValueMax = useEquipStore(s => s.settingValueMax, shallow);
+    const rawSettingValueMax = useEquipStore(s => s.settingValueMax, shallow);
+    const settingValueMax = normalizeVisualSettingMax(rawSettingValueMax);
     const systemType = useEquipStore(s => s.systemType, shallow);
     const currentDisplayType = useEquipStore(s => s.displayType, shallow);
 
@@ -36,8 +38,7 @@ function SecondTitle(props) {
     const setSettingValueMax = useEquipStore.getState().setSettingValueMax
 
     const getSettingKey = (a) => {
-        if (a.type !== 'color') return a.type
-        return display === 'num' ? 'color2D' : 'color3D'
+        return a.type
     }
 
     const getRowValue = (a) => {
@@ -55,11 +56,7 @@ function SecondTitle(props) {
         const key = getSettingKey(a)
         let obj = { ...settingValue }
         obj[key] = Math.max(a.min, Math.min(a.max, numericValue))
-        if (a.type !== 'color') {
-            obj[a.type] = obj[key]
-        } else if (obj.color === undefined) {
-            obj.color = obj[key]
-        }
+        obj[a.type] = obj[key]
 
         saveVisualSettingValue(systemType || getSysType(), obj)
         setSettingValue(obj);
@@ -78,7 +75,7 @@ function SecondTitle(props) {
             ...settingValue,
             [key]: Number.isFinite(currentValue) ? Math.min(currentValue, nextMaxValue) : a.min,
         }
-        if (a.type !== 'color') nextSettingValue[a.type] = nextSettingValue[key]
+        nextSettingValue[a.type] = nextSettingValue[key]
 
         setSettingValueMax(nextMax)
         setSettingValue(nextSettingValue)
@@ -145,8 +142,7 @@ function SecondTitle(props) {
             type: 'height',
             max: settingValueMax.height,
             min: 0.1,
-            step: 0.1,
-            sliderScale: 10,
+            step: 5,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('pointHeight')}</div>
         },
     ]
@@ -165,12 +161,6 @@ function SecondTitle(props) {
         // }
         if (display == 'num' || display == 'contrast') {
             if (!onSelect) {
-                // 若回放中，先暂停回放（PlaybackBar 仍保留在底部，可继续控制）
-                if (useEquipStore.getState().dataStatus === 'replay') {
-                    window.dispatchEvent(new CustomEvent('pause-playback'))
-                }
-                // 关掉历史列表抽屉，避免挡画布；PlaybackBar 已独立显示，不受影响
-                window.dispatchEvent(new CustomEvent('close-history-drawer'))
                 setOnSelect(true)
                 pageInfo?.brushInstance.startBrush();
             } else {
@@ -188,6 +178,7 @@ function SecondTitle(props) {
 
     const forceCloseSelection = () => {
         pageInfo?.brushInstance.stopBrush();
+        removeHistoryBox()
         useEquipStore.getState().setSelectArr([])
         setOnSelect(false)
     }
@@ -195,6 +186,11 @@ function SecondTitle(props) {
     const requestCloseSelection = () => {
         const ranges = pageInfo?.brushInstance?.rangeArr || []
         if (!ranges.length || selectionCloseConfirmingRef.current) {
+            forceCloseSelection()
+            return
+        }
+        const onlyAppliedTemplateRanges = ranges.every((range) => range?.templateId)
+        if (onlyAppliedTemplateRanges) {
             forceCloseSelection()
             return
         }
@@ -439,14 +435,8 @@ function SecondTitle(props) {
                     <div style={{ display: 'flex', justifyContent: 'end' }}>
                         <div onClick={() => {
                             const optimalObj = getSettingValueOptimal()
-                            const color = optimalObj.color
-                            const nextOptimalObj = {
-                                ...optimalObj,
-                                color3D: optimalObj.color3D ?? color,
-                                color2D: optimalObj.color2D ?? color,
-                            }
-                            useEquipStore.getState().setSettingValue(nextOptimalObj)
-                            saveVisualSettingValue(systemType || getSysType(), nextOptimalObj)
+                            useEquipStore.getState().setSettingValue(optimalObj)
+                            saveVisualSettingValue(systemType || getSysType(), optimalObj)
                         }} className='connectPort cursor'>{t('restore')}</div>
                     </div>
                 </div>

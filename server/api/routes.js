@@ -7,7 +7,7 @@ const fs = require('fs')
 const path = require('path')
 const HttpResult = require('../HttpResult')
 const constantObj = require('../../util/config')
-const { initDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, buildCsvPlaybackData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir, validateImportedCsv } = require('../../util/db')
+const { initDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, buildCsvPlaybackData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir, validateImportedCsv, listSelectionTemplates, replaceSelectionTemplates } = require('../../util/db')
 const module2 = require('../../util/aes_ecb')
 const { readEncryptedSystemConfig } = require('../../util/systemConfig')
 const { state } = require('../state')
@@ -18,6 +18,21 @@ const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('.
 const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES } = require('../../util/deviceConfigValidation')
 
 const router = express.Router()
+const historyIndexReady = new WeakSet()
+
+function ensureHistoryListIndex(db) {
+  if (!db || historyIndexReady.has(db)) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    db.run('CREATE INDEX IF NOT EXISTS idx_matrix_date_timestamp ON matrix(date, timestamp)', (err) => {
+      if (err) {
+        reject(err)
+        return
+      }
+      historyIndexReady.add(db)
+      resolve()
+    })
+  })
+}
 
 const CONTRAST_MATRIX_DIMENSIONS = {
   'endi-back': { width: 50, height: 64 },
@@ -72,7 +87,9 @@ function inferMatrixSize(key, arr) {
 
 function normalizeContrastFrame(row, keys) {
   const frame = parseMatrixFrame(row)
-  const result = {}
+  const result = {
+    _timestamp: row?.timestamp ?? '',
+  }
   keys.forEach((key) => {
     const source = frame[key] || {}
     const arr = Array.isArray(source.arr) ? source.arr.map((value) => Number(value) || 0) : []
@@ -122,6 +139,30 @@ function buildContrastFrame(leftRows, rightRows, keys, progress = 0) {
   }
 }
 
+function clampFrameIndex(rows, index) {
+  if (!Array.isArray(rows) || !rows.length) return 0
+  const value = Number(index)
+  const safeIndex = Number.isFinite(value) ? Math.round(value) : 0
+  return Math.max(0, Math.min(rows.length - 1, safeIndex))
+}
+
+function buildContrastFrameByIndex(leftRows, rightRows, keys, leftIndex = 0, rightIndex = 0) {
+  const safeLeftIndex = clampFrameIndex(leftRows, leftIndex)
+  const safeRightIndex = clampFrameIndex(rightRows, rightIndex)
+  const left = normalizeContrastFrame(leftRows[safeLeftIndex], keys)
+  const right = normalizeContrastFrame(rightRows[safeRightIndex], keys)
+  return {
+    progress: null,
+    leftIndex: safeLeftIndex,
+    rightIndex: safeRightIndex,
+    left,
+    right,
+    diff: buildDiffFrame(left, right, keys),
+    leftTimestamp: leftRows[safeLeftIndex]?.timestamp ?? '',
+    rightTimestamp: rightRows[safeRightIndex]?.timestamp ?? '',
+  }
+}
+
 function validateContrastResults(leftResult, rightResult, leftId, rightId) {
   if (!leftId) return '请先选择基准数据 A。'
   if (!rightId) return '请先选择对比数据 B。'
@@ -146,6 +187,48 @@ function validateContrastResults(leftResult, rightResult, leftId, rightId) {
   }
 
   return ''
+}
+
+function validateSingleRecordContrastResult(result, recordId) {
+  if (!recordId) return '请选择一条历史数据。'
+  if (!result.rows.length) return '数据为空，不能对比。'
+  if (result.rows.length < 2) return '同记录时间点对比至少需要 2 帧数据。'
+
+  const firstFrame = parseMatrixFrame(result.rows[0])
+  const keys = getComparableKeys(firstFrame).filter((key) => {
+    const arr = firstFrame[key]?.arr
+    if (!Array.isArray(arr)) return false
+    const size = inferMatrixSize(key, arr)
+    return size.width * size.height === arr.length
+  })
+
+  if (!keys.length) return '数据缺少有效矩阵，不能对比。'
+  return ''
+}
+
+function getMatrixKeyCandidates(key) {
+  const candidates = [key]
+  if (typeof key === 'string' && key.includes('-')) {
+    candidates.push(key.split('-').pop())
+  }
+  if (typeof key === 'string' && !key.includes('-')) {
+    const systemType = state.file || state.type || state.currentType || ''
+    if (systemType) candidates.push(`${systemType}-${key}`)
+  }
+  return [...new Set(candidates.filter(Boolean))]
+}
+
+function getSelectionForMatrixKey(selectJson, key) {
+  for (const candidate of getMatrixKeyCandidates(key)) {
+    if (selectJson[candidate]) return selectJson[candidate]
+  }
+  if (typeof key === 'string' && !key.includes('-')) {
+    const matchedKey = Object.keys(selectJson).find((selectKey) => (
+      typeof selectKey === 'string' && selectKey.endsWith(`-${key}`)
+    ))
+    if (matchedKey) return selectJson[matchedKey]
+  }
+  return null
 }
 
 function readSystemConfig() {
@@ -831,6 +914,7 @@ router.get('/getColHistory', asyncHandler(async (req, res) => {
     res.json(new HttpResult(1, {}, 'Database not initialized'))
     return
   }
+  await ensureHistoryListIndex(db)
   const selectQuery = `
     SELECT 
       m.date, m.timestamp,
@@ -892,6 +976,12 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
     return
   }
 
+  if (!Object.keys(selectJson).length) {
+    state.historySelectCache = null
+    res.json(new HttpResult(0, { pressArr: {}, areaArr: {} }, 'success'))
+    return
+  }
+
   state.historySelectCache = selectJson
 
   if (!state.historyDbArr || !state.historyDbArr.length) {
@@ -924,7 +1014,7 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
     for (const key of keyArr) {
       const item = dataObj[key]
       const arr = item && item.arr ? item.arr : []
-      const sel = selectJson[key]
+      const sel = getSelectionForMatrixKey(selectJson, key)
 
       let press = 0
       let area = 0
@@ -967,12 +1057,94 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getContrastData', asyncHandler(async (req, res) => {
+  const mode = resolveRequestValue(req, ['mode', 'compareMode']) || 'record_pair'
   const left = resolveRequestValue(req, ['left'])
   const right = resolveRequestValue(req, ['right'])
   const db = await ensureCurrentDb()
 
   if (!db) {
     res.json(new HttpResult(1, {}, 'Database not initialized'))
+    return
+  }
+
+  if (mode === 'single_record_frame') {
+    const record = resolveRequestValue(req, ['record', 'left'])
+    if (!record) {
+      res.json(new HttpResult(1, {}, '请选择一条历史数据。'))
+      return
+    }
+
+    const result = await dbGetData({ db, params: [record] })
+    const validateMessage = validateSingleRecordContrastResult(result, record)
+    if (validateMessage) {
+      res.json(new HttpResult(1, {}, validateMessage))
+      return
+    }
+
+    state.leftDbArr = result.rows
+    state.rightDbArr = result.rows
+    state.historyDbArr = null
+    state.historySelectCache = null
+
+    const firstFrame = parseMatrixFrame(result.rows[0])
+    const keys = getComparableKeys(firstFrame).filter((key) => {
+      const arr = firstFrame[key]?.arr
+      if (!Array.isArray(arr)) return false
+      const size = inferMatrixSize(key, arr)
+      return size.width * size.height === arr.length
+    })
+    const frames = result.rows.map((row) => normalizeContrastFrame(row, keys))
+    const frameA = clampFrameIndex(result.rows, resolveRequestValue(req, ['frameA', 'leftIndex']) ?? 0)
+    const defaultFrameB = result.rows.length > 1 ? result.rows.length - 1 : 0
+    let frameB = clampFrameIndex(result.rows, resolveRequestValue(req, ['frameB', 'rightIndex']) ?? defaultFrameB)
+    if (frameA === frameB && result.rows.length > 1) {
+      frameB = frameA === 0 ? 1 : 0
+    }
+    const initialFrame = buildContrastFrameByIndex(result.rows, result.rows, keys, frameA, frameB)
+    const name = result.rows[0]?.name || record
+    const payload = {
+      mode: 'single_record_frame',
+      keys,
+      record: {
+        id: record,
+        name,
+        date: record,
+        length: result.length,
+        pressArr: result.pressArr,
+        areaArr: result.areaArr,
+        frames,
+      },
+      left: {
+        id: record,
+        name: `${name} A`,
+        date: record,
+        length: result.length,
+        pressArr: result.pressArr,
+        areaArr: result.areaArr,
+        frames,
+      },
+      right: {
+        id: record,
+        name: `${name} B`,
+        date: record,
+        length: result.length,
+        pressArr: result.pressArr,
+        areaArr: result.areaArr,
+        frames,
+      },
+      time: {
+        frameA,
+        frameB,
+      },
+      frame: initialFrame,
+      warnings: [],
+    }
+
+    broadcast(JSON.stringify({
+      contrastData: initialFrame
+    }))
+
+    res.json(new HttpResult(0, payload, 'success'))
     return
   }
 
@@ -1337,6 +1509,31 @@ router.post('/getRemark', asyncHandler(async (req, res) => {
     return
   }
   const data = await getRemark({ db, params: [date] })
+  res.json(new HttpResult(0, data, 'success'))
+}))
+
+router.get('/selectionTemplates', asyncHandler(async (req, res) => {
+  const db = await ensureCurrentDb()
+  if (!db) {
+    res.json(new HttpResult(1, [], 'Database not initialized'))
+    return
+  }
+  const data = await listSelectionTemplates({ db })
+  res.json(new HttpResult(0, data, 'success'))
+}))
+
+router.post('/selectionTemplates/saveAll', asyncHandler(async (req, res) => {
+  const templates = resolveRequestValue(req, ['templates'])
+  const db = await ensureCurrentDb()
+  if (!db) {
+    res.json(new HttpResult(1, [], 'Database not initialized'))
+    return
+  }
+  if (!Array.isArray(templates)) {
+    res.json(new HttpResult(1, [], 'templates required'))
+    return
+  }
+  const data = await replaceSelectionTemplates({ db, templates })
   res.json(new HttpResult(0, data, 'success'))
 }))
 

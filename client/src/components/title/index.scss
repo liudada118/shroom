@@ -3,6 +3,8 @@
     align-items: center;
     justify-content: center;
     position: fixed;
+    top: 0;
+    left: 0;
 
     color: #fff;
 
@@ -123,6 +125,13 @@
             .iconInfo {
                 color: #606A76;
             }
+        }
+    }
+
+    &.titleContentContrast {
+        .firstTitle {
+            border-bottom: 0;
+            box-shadow: none;
         }
     }
 
@@ -329,11 +338,15 @@
 
 
 .selectInputContent {
-    background: #1A1C20;
-    box-shadow: 0px 4px 10px 0px rgba(0, 0, 0, 0.4);
-    border-radius: 0.75rem;
-    padding: 0.875rem 1.125rem;
-    border: 1px solid rgba(126, 210, 255, 0.14);
+    color: #f4f7fb;
+    background:
+        radial-gradient(circle at 86% 18%, rgba(0, 118, 255, 0.2), transparent 14rem),
+        linear-gradient(145deg, rgba(6, 18, 30, 0.96), rgba(12, 20, 31, 0.96));
+    box-shadow: 0 1.2rem 3.2rem rgba(0, 0, 0, 0.48), inset 0 0 0 1px rgba(63, 139, 233, 0.18);
+    border-radius: 0.8rem;
+    padding: 0.85rem 0.8rem 0.78rem;
+    border: 1px solid rgba(74, 144, 226, 0.72);
+    box-sizing: border-box;
 
     &.selectInputDrawer {
         position: fixed;
@@ -344,23 +357,15 @@
         max-height: none;
         overflow-y: auto;
         z-index: 998;
-        background:
-            radial-gradient(circle at 80% 0%, rgba(0, 114, 239, 0.16), transparent 12rem),
-            rgba(18, 21, 26, 0.94);
-        box-shadow: -1rem 1.2rem 2.6rem rgba(0, 0, 0, 0.34);
         backdrop-filter: blur(10px);
     }
 
     &.selectInputFloating {
         position: fixed;
-        width: 15.3rem;
+        width: 17.8rem;
         max-height: calc(100vh - 7rem);
-        overflow-y: auto;
+        overflow: visible;
         z-index: 170;
-        background:
-            radial-gradient(circle at 80% 0%, rgba(0, 114, 239, 0.14), transparent 10rem),
-            rgba(18, 21, 26, 0.96);
-        box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.42);
         backdrop-filter: blur(10px);
     }
 
@@ -369,7 +374,7 @@
         width: auto;
         height: 100%;
         max-height: 100%;
-        overflow-y: auto;
+        overflow: visible;
         padding: 0;
         border: 0;
         border-radius: 0;
@@ -378,20 +383,180 @@
     }
 
     .selectInputTitle {
-        margin-bottom: 1rem;
-        font-size: 1.125rem;
-        // vertical-align: baseline;
+        margin-bottom: 0.65rem;
         display: flex;
+        justify-content: space-between;
         align-items: center;
-
-        .iconfont {
-            font-size: 0.75rem;
-
-        }
+        gap: 1.25rem;
     }
 
-    .selectInput::placeholder {
-        color: #4E565F;
+    .selectInputTitleLeft {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        min-width: 0;
+    }
+
+    .selectInputTitleInfo {
+        color: #f5f8fc;
+        font-size: 1.125rem;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .selectCount {
+        color: #2f83ff;
+        font-size: 0.875rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .selectInfoIcon {
+        color: #c8d7ea;
+        font-size: 1.15rem;
+    }
+
+    .selectClearButton {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-left: auto;
+        padding: 0 0 0 0.85rem;
+        border: 0;
+        color: #ff5f66;
+        background: transparent;
+        font-size: 1rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .selectRegionCard {
+        display: grid;
+        grid-template-columns: 1.8rem minmax(0, 1fr) 2rem 2rem;
+        align-items: center;
+        gap: 0.35rem;
+        min-height: 2.55rem;
+        margin-bottom: 0.42rem;
+        padding: 0 0.45rem;
+        border: 1px solid rgba(92, 111, 134, 0.38);
+        border-radius: 0.65rem;
+        background: rgba(22, 31, 43, 0.72);
+    }
+
+    .selectRegionIndex {
+        width: 1.35rem;
+        height: 1.35rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.38rem;
+        color: #09111a;
+        font-size: 0.82rem;
+        font-weight: 900;
+    }
+
+    .selectRegionNameInput,
+    .selectInput,
+    .templateNameInput {
+        color: #eef5ff;
+        border: 1px solid rgba(92, 111, 134, 0.66);
+        border-radius: 0.55rem;
+        background: rgba(25, 35, 48, 0.8);
+        box-shadow: none;
+    }
+
+    .selectRegionNameInput {
+        min-width: 0;
+        border-color: transparent;
+        background: transparent;
+        padding: 0;
+        color: #f6f9fd;
+        font-size: 0.78rem;
+        font-weight: 800;
+    }
+
+    .selectRegionNameInput.ant-input:focus,
+    .selectRegionNameInput.ant-input-focused {
+        border-color: rgba(47, 131, 255, 0.72);
+        background: rgba(18, 29, 42, 0.9);
+        padding: 0.2rem 0.35rem;
+    }
+
+    .selectRegionMeta {
+        grid-column: 2 / -1;
+        grid-row: 2;
+        color: #b9c6d8;
+        font-size: 0.72rem;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .selectRegionIconButton {
+        width: 1.35rem;
+        height: 1.35rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        font-size: 1rem;
+    }
+
+    .selectRegionEyeButton {
+        color: #2f83ff;
+    }
+
+    .selectRegionDeleteButton {
+        color: #ff5f66;
+    }
+
+    .selectSection {
+        margin-top: 0.7rem;
+        padding-top: 0.7rem;
+        border-top: 1px solid rgba(92, 111, 134, 0.32);
+    }
+
+    .selectSectionTitle {
+        margin-bottom: 0.5rem;
+        color: #f5f8fc;
+        font-size: 0.92rem;
+        font-weight: 800;
+    }
+
+    .selectManualGrid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: end;
+        gap: 0.42rem;
+    }
+
+    .selectManualField {
+        display: flex;
+        flex-direction: column;
+        gap: 0.22rem;
+        min-width: 0;
+        color: #c7d2df;
+        font-size: 0.72rem;
+        font-weight: 800;
+    }
+
+    .selectInput {
+        height: 2rem;
+        padding: 0 0.45rem;
+        font-size: 0.74rem;
+    }
+
+    .selectInput::placeholder,
+    .templateNameInput::placeholder,
+    .templateNameInput.ant-input::placeholder,
+    .templateNameInput input::placeholder,
+    .ant-input-affix-wrapper.templateNameInput input::placeholder {
+        color: #aaaaaa;
+        opacity: 1;
+        font-weight: 700;
     }
 
     .selectInputItem {
@@ -405,32 +570,161 @@
         }
     }
 
-    .selectInputTitleInfo {
-        margin-right: 0.5rem;
-    }
-
-    .templateNameInput::placeholder,
-    .templateNameInput.ant-input::placeholder {
-        color: #B4C0CA;
-    }
-
-    .selectInputItemName {
-        width: 2rem;
-        text-align: right;
-        margin-right: 0.5rem;
-    }
-
-    .selectInputButtonContent {
-        display: flex;
-        justify-content: end;
-        // width: 100%;
-    }
-
     .selectInputButton {
-        background: #0072EF;
-        border: 1px solid #0072EF;
-        border-radius: 4px;
-        padding: 1px 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 2rem;
+        padding: 0 0.68rem;
+        border: 1px solid #0072ef;
+        border-radius: 0.45rem;
         color: #fff;
+        background: linear-gradient(180deg, #1387ff, #006df2);
+        box-shadow: 0 0.5rem 1.1rem rgba(0, 114, 239, 0.24);
+        font-size: 0.8rem;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
     }
+
+    .selectAddButton {
+        min-width: 3.4rem;
+        grid-column: span 2;
+    }
+
+    .selectTemplateSaveRow {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.45rem;
+        margin-bottom: 0.42rem;
+    }
+
+    .templateNameInput {
+        height: 2rem;
+        padding: 0 0.55rem;
+        font-size: 0.78rem;
+    }
+
+    .templateNameEditIcon {
+        color: #2f83ff;
+        font-size: 0.85rem;
+    }
+
+    .selectSaveButton {
+        min-width: 4.8rem;
+    }
+
+    .selectTemplateSelect {
+        width: 100%;
+        margin-bottom: 0.48rem;
+    }
+
+    .selectTemplateSelect .ant-select-selector {
+        display: flex !important;
+        align-items: center !important;
+        height: 2rem !important;
+        border: 1px solid rgba(92, 111, 134, 0.66) !important;
+        border-radius: 0.55rem !important;
+        background: rgba(25, 35, 48, 0.8) !important;
+        box-shadow: none !important;
+    }
+
+    .selectTemplateSelect .ant-select-selection-item,
+    .selectTemplateSelect .ant-select-arrow {
+        color: #eef5ff !important;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .selectTemplateSelect .ant-select-selection-placeholder {
+        color: #aaaaaa !important;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .selectTemplateSelect .ant-select-selection-item,
+    .selectTemplateSelect .ant-select-selection-placeholder {
+        display: flex !important;
+        align-items: center !important;
+        height: 100% !important;
+        line-height: 1 !important;
+    }
+
+    .selectTemplateSelect .ant-select-arrow {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        height: 100% !important;
+        margin-top: 0 !important;
+        transform: translateY(-50%);
+    }
+
+    .selectTemplateActionRow {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.45rem;
+    }
+
+    .selectRenameTemplateButton {
+        color: #2f83ff;
+        border-color: #2f83ff;
+        background: rgba(47, 131, 255, 0.08);
+        box-shadow: none;
+    }
+
+    .selectApplyButton {
+        min-width: 0;
+    }
+
+    .selectDeleteTemplateButton {
+        min-width: 0;
+        grid-column: span 2;
+        color: #ff5f66;
+        border-color: #ff5f66;
+        background: rgba(255, 95, 102, 0.08);
+        box-shadow: none;
+    }
+
+    @media (max-width: 920px) {
+        .selectManualGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .selectAddButton {
+            grid-column: span 2;
+        }
+
+        .selectRegionCard {
+            grid-template-columns: 1.8rem minmax(4rem, 1fr) auto 2rem 2rem;
+            gap: 0.55rem;
+        }
+    }
+}
+
+.selectTemplateDropdown,
+.ant-select-dropdown.selectTemplateDropdown {
+    background: #16202b;
+    border: 1px solid rgba(74, 144, 226, 0.48);
+    border-radius: 0.55rem;
+}
+
+.selectTemplateDropdown .ant-select-item {
+    color: #ffffff !important;
+    display: flex;
+    align-items: center;
+    min-height: 2rem;
+}
+
+.selectTemplateDropdown .ant-select-item-option-content {
+    color: #ffffff !important;
+}
+
+.selectTemplateDropdown .ant-select-item-empty,
+.selectTemplateDropdown .ant-empty-description {
+    color: #aaaaaa !important;
+}
+
+.selectTemplateDropdown .ant-select-item-option-selected,
+.selectTemplateDropdown .ant-select-item-option-active {
+    background: rgba(0, 114, 239, 0.22) !important;
 }

@@ -1,10 +1,12 @@
 import { Input, message, Modal, Popover, Select } from 'antd'
+import { CloseOutlined, DeleteOutlined, EditOutlined, EyeOutlined, InfoCircleOutlined } from '@ant-design/icons'
+import axios from 'axios'
 import React, { useContext, useEffect, useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { colSelectMatrix } from '../../util/util'
-import { systemPointConfig } from '../../util/constant'
+import { localAddress, systemPointConfig } from '../../util/constant'
 import { pageContext } from '../../page/test/Test'
 import { isMoreMatrix } from '../../assets/util/util'
 import { SELECT_COLORS } from '../selectBox/newSelecttBox'
@@ -19,21 +21,66 @@ const selectInputObj = [
 
 const SELECTION_TEMPLATE_KEY = 'selectionTemplatesV1'
 const SELECTION_TEMPLATE_BACKUP_KEY = 'selectionTemplatesBackupV1'
+const SELECTION_TEMPLATE_LEGACY_KEYS = [
+    'selectionTemplates',
+    'selectionTemplate',
+    'selectionTemplateList',
+    'selectTemplates',
+    'selectTemplateList',
+    'selectAreaTemplates',
+    'selectSetTemplates',
+    'boxSelectionTemplates',
+    'selectionTemplatesV0',
+]
+
+function hashTemplateText(text = '') {
+    let hash = 0
+    const source = String(text)
+    for (let i = 0; i < source.length; i += 1) {
+        hash = ((hash << 5) - hash) + source.charCodeAt(i)
+        hash |= 0
+    }
+    return Math.abs(hash).toString(36)
+}
+
+function getTemplateCandidates(value) {
+    if (Array.isArray(value)) return value
+    if (!value || typeof value !== 'object') return []
+    const nested = value.templates || value.list || value.data || value.items
+    if (Array.isArray(nested)) return nested
+    if (value.regions || value.areas || value.selections || value.boxes || value.rangeArr || value.selectArr || value.matrixRect) {
+        return [value]
+    }
+    return Object.values(value).filter(item => item && typeof item === 'object')
+}
+
+function readTemplateKey(key, sourcePriority = 0) {
+    try {
+        const raw = localStorage.getItem(key)
+        if (!raw) return []
+        return getTemplateCandidates(JSON.parse(raw)).map(item => ({
+            ...item,
+            __sourceKey: key,
+            __sourcePriority: sourcePriority,
+        }))
+    } catch {
+        return []
+    }
+}
 
 function normalizeTemplateList(value) {
-    if (!Array.isArray(value)) return []
-    return value.map((item) => {
+    return getTemplateCandidates(value).map((item, templateIndex) => {
         if (!item) return null
-        const templateId = item.templateId || item.id || item.key
-        const templateName = item.templateName || item.name || item.title
-        const regionsRaw = item.regions || item.areas || item.selections || []
-        const regions = Array.isArray(regionsRaw) ? regionsRaw.map((region, index) => {
+        const rawRegions = item.regions || item.areas || item.selections || item.boxes || item.rangeArr || item.selectArr
+        const selfRegion = item.matrixRect || item.xStart != null || item.x1 != null || item.x != null
+        const regionsRaw = Array.isArray(rawRegions) ? rawRegions : (rawRegions ? [rawRegions] : (selfRegion ? [item] : []))
+        const regions = regionsRaw.map((region, index) => {
             if (!region) return null
-            const source = region.matrixRect || region
-            const x = Number(source.x ?? source.xStart ?? source.columnStart ?? 0)
-            const y = Number(source.y ?? source.yStart ?? source.rowStart ?? 0)
-            const width = Number(source.width ?? (Number(source.xEnd) - x))
-            const height = Number(source.height ?? (Number(source.yEnd) - y))
+            const source = region.matrixRect || region.rect || region
+            const x = Number(source.x ?? source.xStart ?? source.x1 ?? source.left ?? source.columnStart ?? 0)
+            const y = Number(source.y ?? source.yStart ?? source.y1 ?? source.top ?? source.rowStart ?? 0)
+            const width = Number(source.width ?? source.w ?? (Number(source.xEnd ?? source.x2) - x))
+            const height = Number(source.height ?? source.h ?? (Number(source.yEnd ?? source.y2) - y))
             if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null
             return {
                 ...region,
@@ -45,7 +92,28 @@ function normalizeTemplateList(value) {
                 regionName: region.regionName || region.name || getDefaultSelectionName(index + 1),
                 index: region.index || index + 1,
             }
-        }).filter(Boolean) : []
+        }).filter(Boolean)
+        const displayType = item.displayType || item.displayObject || item.target || ''
+        const templateName = item.templateName || item.name || item.title || item.label || item.remark || `模板${templateIndex + 1}`
+        const matrixWidth = Number(item.matrixWidth ?? item.matrix_width ?? item.matrixW ?? item.canvasWidth ?? item.totalWidth ?? regions[0]?.matrixWidth)
+        const matrixHeight = Number(item.matrixHeight ?? item.matrix_height ?? item.matrixH ?? item.canvasHeight ?? item.totalHeight ?? regions[0]?.matrixHeight)
+        const deviceType = item.deviceType || item.systemType || item.sysType || item.matrixKey
+        const identityText = JSON.stringify({
+            source: item.__sourceKey || '',
+            templateName,
+            deviceType,
+            displayType,
+            matrixWidth,
+            matrixHeight,
+            regions: regions.map(region => ({
+                x: region.x,
+                y: region.y,
+                width: region.width,
+                height: region.height,
+                name: region.regionName,
+            })),
+        })
+        const templateId = item.templateId || item.id || item.key || `selection-template-${hashTemplateText(identityText)}`
         if (!templateId || !templateName || !regions.length) return null
         return {
             ...item,
@@ -53,28 +121,138 @@ function normalizeTemplateList(value) {
             templateName,
             regions,
             regionCount: item.regionCount || regions.length,
+            ...(displayType ? { displayType } : {}),
+            ...(deviceType ? { deviceType } : {}),
+            ...(Number.isFinite(matrixWidth) && matrixWidth > 0 ? { matrixWidth } : {}),
+            ...(Number.isFinite(matrixHeight) && matrixHeight > 0 ? { matrixHeight } : {}),
         }
     }).filter(Boolean)
 }
 
+function getTemplateSignature(template) {
+    const regionSignature = Array.isArray(template.regions)
+        ? template.regions.map(region => [
+            Number(region.x),
+            Number(region.y),
+            Number(region.width),
+            Number(region.height),
+        ].join(',')).join(';')
+        : ''
+    return [
+        template.templateName || '',
+        template.deviceType || '',
+        template.displayType || '',
+        template.matrixWidth || '',
+        template.matrixHeight || '',
+        regionSignature,
+    ].join('|')
+}
+
+function getTemplateTime(template) {
+    const updatedAt = Number(template.updatedAt)
+    if (Number.isFinite(updatedAt) && updatedAt > 0) return updatedAt
+    const createdAt = Number(template.createdAt)
+    if (Number.isFinite(createdAt) && createdAt > 0) return createdAt
+    return 0
+}
+
+function shouldReplaceTemplate(existing, candidate) {
+    const existingTime = getTemplateTime(existing)
+    const candidateTime = getTemplateTime(candidate)
+    if (existingTime || candidateTime) return candidateTime >= existingTime
+    return Number(candidate.__sourcePriority || 0) >= Number(existing.__sourcePriority || 0)
+}
+
+function stripTemplateMeta(template) {
+    const { __sourceKey, __sourcePriority, ...rest } = template
+    return rest
+}
+
+function dedupeSelectionTemplates(templates) {
+    const normalized = normalizeTemplateList(templates)
+    const byId = new Map()
+    const signatureToId = new Map()
+
+    normalized.forEach((template) => {
+        const signature = getTemplateSignature(template)
+        const existingId = signatureToId.get(signature)
+        const existing = existingId ? byId.get(existingId) : byId.get(template.templateId)
+        if (!existing) {
+            byId.set(template.templateId, template)
+            signatureToId.set(signature, template.templateId)
+            return
+        }
+        if (shouldReplaceTemplate(existing, template)) {
+            byId.delete(existing.templateId)
+            byId.set(template.templateId, template)
+            signatureToId.set(signature, template.templateId)
+        }
+    })
+
+    return Array.from(byId.values())
+        .sort((a, b) => getTemplateTime(b) - getTemplateTime(a))
+        .map(stripTemplateMeta)
+}
+
+function clearLegacyTemplateKeys() {
+    SELECTION_TEMPLATE_LEGACY_KEYS.forEach((key) => localStorage.removeItem(key))
+}
+
 function readSelectionTemplates() {
     try {
-        const primary = normalizeTemplateList(JSON.parse(localStorage.getItem(SELECTION_TEMPLATE_KEY) || '[]'))
-        const backup = normalizeTemplateList(JSON.parse(localStorage.getItem(SELECTION_TEMPLATE_BACKUP_KEY) || '[]'))
-        const map = new Map()
-        ;[...backup, ...primary].forEach((template) => {
-            map.set(template.templateId, template)
-        })
-        return Array.from(map.values())
+        const allTemplates = [
+            ...readTemplateKey(SELECTION_TEMPLATE_KEY, 3),
+            ...readTemplateKey(SELECTION_TEMPLATE_BACKUP_KEY, 2),
+            ...SELECTION_TEMPLATE_LEGACY_KEYS.flatMap((key) => readTemplateKey(key, 1)),
+        ]
+        const normalized = dedupeSelectionTemplates(allTemplates)
+        if (normalized.length) {
+            writeSelectionTemplates(normalized)
+        }
+        return normalized
     } catch (e) {
         return []
     }
 }
 
 function writeSelectionTemplates(templates) {
-    const normalized = normalizeTemplateList(templates)
+    const normalized = dedupeSelectionTemplates(templates)
     localStorage.setItem(SELECTION_TEMPLATE_KEY, JSON.stringify(normalized))
     localStorage.setItem(SELECTION_TEMPLATE_BACKUP_KEY, JSON.stringify(normalized))
+    clearLegacyTemplateKeys()
+    return normalized
+}
+
+async function saveSelectionTemplatesToDb(templates) {
+    const normalized = dedupeSelectionTemplates(templates)
+    const res = await axios.post(`${localAddress}/selectionTemplates/saveAll`, { templates: normalized })
+    if (res.data?.code !== 0) {
+        throw new Error(res.data?.message || 'Failed to save selection templates')
+    }
+    const dbTemplates = normalizeTemplateList(res.data?.data || normalized)
+    writeSelectionTemplates(dbTemplates)
+    return dbTemplates
+}
+
+async function loadSelectionTemplatesFromDb() {
+    const localTemplates = readSelectionTemplates()
+    try {
+        const res = await axios.get(`${localAddress}/selectionTemplates`)
+        if (res.data?.code !== 0) {
+            throw new Error(res.data?.message || 'Failed to load selection templates')
+        }
+        const dbTemplates = normalizeTemplateList(res.data?.data || [])
+        if (dbTemplates.length) {
+            writeSelectionTemplates(dbTemplates)
+            return dbTemplates
+        }
+        if (localTemplates.length) {
+            return saveSelectionTemplatesToDb(localTemplates)
+        }
+        return []
+    } catch (err) {
+        return localTemplates
+    }
 }
 
 function getDisplayObject(displayType = '') {
@@ -100,9 +278,32 @@ export default function SelectSet(props) {
     const [selectedTemplateId, setSelectedTemplateId] = useState('')
     const [floatingStyle, setFloatingStyle] = useState(null)
 
+    const getCurrentMatrixType = () => {
+        const currentSystem = getSysType()
+        if (isMoreMatrix(currentSystem)) {
+            return currentSystem + '-' + (displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : '')
+        }
+        return currentSystem
+    }
+
+    const getCurrentMatrixConfig = () => systemPointConfig[sysType] || systemPointConfig[getCurrentMatrixType()]
+
     useEffect(() => {
+        let cancelled = false
+        if (!onSelect) {
+            setBoxes([])
+            setInputRect({ xStart: '', yStart: '', width: '', height: '' })
+            return () => {
+                cancelled = true
+            }
+        }
         if (onSelect) {
-            setTemplates(readSelectionTemplates())
+            loadSelectionTemplatesFromDb().then((nextTemplates) => {
+                if (!cancelled) setTemplates(nextTemplates)
+            })
+        }
+        return () => {
+            cancelled = true
         }
     }, [onSelect])
 
@@ -123,8 +324,8 @@ export default function SelectSet(props) {
 
             const gap = 14
             const rightBoundary = Math.min(window.innerWidth - 16, rightPanelLeft - gap)
-            const desiredWidth = 245
-            const minWidth = 190
+            const desiredWidth = 285
+            const minWidth = 230
             const availableWidth = rightBoundary - canvasRect.right - gap
             let width = Math.max(minWidth, Math.min(desiredWidth, Math.max(availableWidth, minWidth)))
             let left = canvasRect.right + gap
@@ -133,7 +334,7 @@ export default function SelectSet(props) {
             if (availableWidth >= minWidth) {
                 left = Math.min(left, Math.max(16, rightBoundary - width))
             } else {
-                width = Math.max(180, Math.min(desiredWidth, window.innerWidth - left - 16))
+                width = Math.max(220, Math.min(desiredWidth, window.innerWidth - left - 16))
                 const panelRight = left + width
                 const blockingBottom = rightPanelRects
                     .filter((rect) => left < rect.right && panelRight > rect.left)
@@ -207,13 +408,15 @@ export default function SelectSet(props) {
         return () => {
             pageInfo.brushInstance.unsubscribe(cb)
         }
-    }, [pageInfo.brushInstance, displayType, systemType])
+    }, [pageInfo.brushInstance, displayType, systemType, onSelect, t])
 
     const isTemplateMatched = (template) => {
         if (!template) return false
-        return template.deviceType === sysType
-            && Number(template.matrixWidth) === Number(matrixInfo.width)
-            && Number(template.matrixHeight) === Number(matrixInfo.height)
+        const currentSystem = getSysType()
+        const deviceMatched = !template.deviceType || template.deviceType === sysType || template.deviceType === currentSystem
+        return deviceMatched
+            && (!template.matrixWidth || Number(template.matrixWidth) === Number(matrixInfo.width))
+            && (!template.matrixHeight || Number(template.matrixHeight) === Number(matrixInfo.height))
             && (!template.displayType || template.displayType === getDisplayObject(displayType))
     }
 
@@ -285,10 +488,11 @@ export default function SelectSet(props) {
     }
 
     const getCurrentRegions = () => {
-        const matrixConfig = systemPointConfig[sysType]
+        const currentType = sysType || getCurrentMatrixType()
+        const matrixConfig = getCurrentMatrixConfig()
         if (!matrixConfig) return []
         return pageInfo.brushInstance.rangeArr
-            .filter(range => !range.matrixKey || range.matrixKey === sysType)
+            .filter(range => !range.matrixKey || range.matrixKey === currentType)
             .map((range, index) => {
                 const matrix = range.matrixRect || colSelectMatrix('canvasThree', range, matrixConfig)
                 if (!matrix) return null
@@ -309,9 +513,21 @@ export default function SelectSet(props) {
             .filter(Boolean)
     }
 
-    const saveTemplateByName = (rawName) => {
+    const markCurrentRangesAsTemplate = (templateId) => {
+        const currentType = sysType || getCurrentMatrixType()
+        const rangeArr = pageInfo.brushInstance.rangeArr || []
+        rangeArr.forEach((range) => {
+            if (range.matrixKey && range.matrixKey !== currentType) return
+            range.templateId = templateId
+            range.updatedAt = Date.now()
+        })
+        pageInfo.brushInstance.notify?.(rangeArr)
+    }
+
+    const saveTemplateByName = async (rawName) => {
         const name = String(rawName || '').trim()
-        if (!boxes.length) {
+        const regions = getCurrentRegions()
+        if (!regions.length) {
             message.warning(t('createSelectionFirst'))
             return false
         }
@@ -319,34 +535,36 @@ export default function SelectSet(props) {
             message.warning(t('enterTemplateName'))
             return false
         }
-        const regions = getCurrentRegions()
-        if (!regions.length) {
-            message.warning(t('noSelectionToSave'))
-            return false
-        }
-
         const now = Date.now()
+        const existingTemplate = templates.find(item => item.templateName === name)
+        const currentType = sysType || getCurrentMatrixType()
+        const matrixConfig = getCurrentMatrixConfig() || matrixInfo
         const nextTemplate = {
-            templateId: `selection-template-${now}`,
+            templateId: existingTemplate?.templateId || `selection-template-${now}`,
             templateName: name,
-            deviceType: sysType,
+            deviceType: currentType,
             displayType: getDisplayObject(displayType),
-            matrixWidth: matrixInfo.width,
-            matrixHeight: matrixInfo.height,
+            matrixWidth: matrixConfig.width,
+            matrixHeight: matrixConfig.height,
             coordinateMode: 'display',
             regions,
             regionCount: regions.length,
             version: 1,
-            createdAt: now,
+            createdAt: existingTemplate?.createdAt || now,
             updatedAt: now,
         }
-        const nextTemplates = [nextTemplate, ...templates.filter(item => item.templateName !== name)]
-        writeSelectionTemplates(nextTemplates)
-        setTemplates(nextTemplates)
-        setSelectedTemplateId(nextTemplate.templateId)
-        setTemplateName('')
-        message.success(t('templateSaved'))
-        return true
+        try {
+            const nextTemplates = await saveSelectionTemplatesToDb([nextTemplate, ...templates.filter(item => item.templateName !== name)])
+            markCurrentRangesAsTemplate(nextTemplate.templateId)
+            setTemplates(nextTemplates)
+            setSelectedTemplateId(nextTemplate.templateId)
+            setTemplateName('')
+            message.success(t('templateSaved'))
+            return true
+        } catch (err) {
+            message.error(err?.message || t('requestFailed'))
+            return false
+        }
     }
 
     const handleSaveTemplate = () => {
@@ -367,15 +585,17 @@ export default function SelectSet(props) {
             return
         }
         const runApply = () => {
-            pageInfo.brushInstance.deleteAll()
+            pageInfo.brushInstance.removeChild?.()
+            const templateWidth = Number(template.matrixWidth) || matrixInfo.width
+            const templateHeight = Number(template.matrixHeight) || matrixInfo.height
             template.regions.slice(0, 4).forEach((region) => {
                 pageInfo.brushInstance.addMatrixRange({
                     xStart: Number(region.x),
                     yStart: Number(region.y),
                     xEnd: Number(region.x) + Number(region.width),
                     yEnd: Number(region.y) + Number(region.height),
-                    width: template.matrixWidth,
-                    height: template.matrixHeight,
+                    width: templateWidth,
+                    height: templateHeight,
                 }, {
                     name: region.regionName,
                     colorIndex: region.colorIndex,
@@ -392,6 +612,10 @@ export default function SelectSet(props) {
                 okText: t('overwrite'),
                 cancelText: t('cancel'),
                 onOk: runApply,
+                onCancel: () => {
+                    setSelectedTemplateId('')
+                    setTemplateName('')
+                },
             })
             return
         }
@@ -418,13 +642,37 @@ export default function SelectSet(props) {
             content: t('deleteTemplateConfirm', { name: template.templateName }),
             okText: t('delete'),
             cancelText: t('cancel'),
-            onOk: () => {
-                const nextTemplates = templates.filter(item => item.templateId !== selectedTemplateId)
-                writeSelectionTemplates(nextTemplates)
+            onOk: async () => {
+                const nextTemplates = await saveSelectionTemplatesToDb(templates.filter(item => item.templateId !== selectedTemplateId))
                 setTemplates(nextTemplates)
                 setSelectedTemplateId('')
                 message.success(t('templateDeleted'))
             },
+        })
+    }
+
+    const handleRenameTemplate = () => {
+        const template = templates.find(item => item.templateId === selectedTemplateId)
+        if (!template) {
+            message.warning(t('selectTemplate'))
+            return
+        }
+        const nextName = String(templateName || '').trim()
+        if (!nextName) {
+            message.warning(t('enterTemplateName'))
+            return
+        }
+        const now = Date.now()
+        saveSelectionTemplatesToDb(templates.map(item => (
+            item.templateId === selectedTemplateId
+                ? { ...item, templateName: nextName, updatedAt: now }
+                : item
+        ))).then((nextTemplates) => {
+            setTemplates(nextTemplates)
+            setSelectedTemplateId(selectedTemplateId)
+            message.success(t('templateRenamed') || '模板已重命名')
+        }).catch((err) => {
+            message.error(err?.message || t('requestFailed'))
         })
     }
 
@@ -445,144 +693,123 @@ export default function SelectSet(props) {
             className={`selectInputContent ${variant === 'embedded' ? 'selectInputEmbedded' : variant === 'drawer' ? 'selectInputDrawer' : 'selectInputFloating'}`}
             style={variant === 'floating' && floatingStyle ? floatingStyle : undefined}
         >
-            <div className="selectInputTitle" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div className="selectInputTitleInfo" style={{ color: '#E6EBF0' }}>{t('selectionRegion')}</div>
-                    <span style={{ fontSize: '0.7rem', color: '#E6EBF0' }}>({boxes.length}/4)</span>
+            <div className="selectInputTitle">
+                <div className="selectInputTitleLeft">
+                    <div className="selectInputTitleInfo">{t('selectionRegion')}</div>
+                    <span className="selectCount">({boxes.length}/4)</span>
                     <Popover color='#32373E' placement="bottomLeft" content={selectInfoTip}>
-                        <i className='iconfont cursor' style={{ fontSize: '0.85rem' }}>&#xe674;</i>
+                        <InfoCircleOutlined className="selectInfoIcon cursor" />
                     </Popover>
                 </div>
                 {boxes.length > 0 && (
-                    <span
+                    <button
+                        type="button"
                         onClick={handleDeleteAll}
-                        style={{ fontSize: '0.7rem', color: '#ff4444', cursor: 'pointer' }}
+                        className="selectClearButton cursor"
                     >
                         {t('clearAll')}
-                    </span>
+                        <DeleteOutlined />
+                    </button>
                 )}
             </div>
 
             {boxes.map((box, idx) => (
-                <div key={`box-${box.rangeIndex}-${idx}`} style={{
-                    display: 'flex', alignItems: 'center', gap: '0.4rem',
-                    padding: '0.25rem 0', borderBottom: '1px solid #2a2e33',
-                    fontSize: '0.75rem',
-                }}>
-                    <div style={{
-                        width: '12px', height: '12px', borderRadius: '3px',
-                        backgroundColor: box.bgc, flexShrink: 0,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: '#071016', fontSize: '0.48rem', fontWeight: 900,
-                    }}>{idx + 1}</div>
+                <div key={`box-${box.rangeIndex}-${idx}`} className="selectRegionCard">
+                    <div className="selectRegionIndex" style={{ backgroundColor: box.bgc }}>{idx + 1}</div>
                     <Input
                         value={box.name}
                         onChange={(e) => handleRenameBox(idx, e.target.value)}
-                        style={{
-                            width: '4.8rem', backgroundColor: '#202327',
-                            border: '1px solid #32373E', color: '#E6EBF0',
-                            fontSize: '0.7rem', padding: '0.1rem 0.3rem',
-                        }}
+                        className="selectRegionNameInput"
                     />
-                    <span style={{ color: '#E6EBF0', fontVariantNumeric: 'tabular-nums' }}>
-                        ({box.xStart},{box.yStart}) {box.width}x{box.height}
-                    </span>
-                    <i
-                        className='iconfont cursor'
+                    <span className="selectRegionMeta">({box.xStart},{box.yStart}) {box.width}x{box.height}</span>
+                    <button type="button" className="selectRegionIconButton selectRegionEyeButton" aria-label="view selection">
+                        <EyeOutlined />
+                    </button>
+                    <button
+                        type="button"
+                        className="selectRegionIconButton selectRegionDeleteButton cursor"
                         onClick={() => handleDeleteBox(idx)}
-                        style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#ff4444' }}
-                    >&#xe625;</i>
+                        aria-label="delete selection"
+                    >
+                        <CloseOutlined />
+                    </button>
                 </div>
             ))}
 
             {boxes.length < 4 && (
-                <div style={{ marginTop: '0.4rem', borderTop: '1px solid #2a2e33', paddingTop: '0.4rem' }}>
-                    <div style={{ fontSize: '0.7rem', color: '#E6EBF0', marginBottom: '0.25rem' }}>{t('manualAddSelection')}</div>
-                    <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                <div className="selectSection selectManualSection">
+                    <div className="selectSectionTitle">{t('manualAddSelection')}</div>
+                    <div className="selectManualGrid">
                         {selectInputObj.map((a) => (
-                            <div key={a.valueStr} style={{ display: 'flex', alignItems: 'center', gap: '0.15rem' }}>
-                                <span style={{ fontSize: '0.7rem', color: '#E6EBF0', minWidth: '0.8rem' }}>{isEnglish && a.enName ? a.enName : a.name}</span>
+                            <label key={a.valueStr} className="selectManualField">
+                                <span>{isEnglish && a.enName ? a.enName : a.name}</span>
                                 <Input
                                     value={inputRect[a.valueStr]}
                                     onChange={(e) => setInputRect(prev => ({ ...prev, [a.valueStr]: e.target.value }))}
                                     className='selectInput'
-                                    style={{
-                                        width: '3rem', backgroundColor: '#202327',
-                                        border: '1px solid #32373E', color: '#E6EBF0',
-                                        fontSize: '0.7rem', padding: '0.1rem 0.3rem',
-                                    }}
-                                    placeholder={t(a.placeholderKey)}
+                                    placeholder={isEnglish ? 'Input...' : '输入...'}
                                 />
-                            </div>
+                            </label>
                         ))}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.3rem' }}>
-                        <div
-                            className="selectInputButton connectButton cursor"
-                            onClick={handleAddByInput}
-                            style={{ fontSize: '0.7rem', padding: '0.15rem 0.6rem' }}
-                        >
+                        <button type="button" className="selectInputButton selectAddButton cursor" onClick={handleAddByInput}>
                             {t('add')}
-                        </div>
+                        </button>
                     </div>
                 </div>
             )}
 
-            <div style={{ marginTop: '0.5rem', borderTop: '1px solid #2a2e33', paddingTop: '0.45rem' }}>
-                <div style={{ fontSize: '0.7rem', color: '#E6EBF0', marginBottom: '0.25rem' }}>{t('selectionTemplate')}</div>
-                <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.35rem' }}>
+            <div className="selectSection selectTemplateSection">
+                <div className="selectSectionTitle">{t('selectionTemplate')}</div>
+                <div className="selectTemplateSaveRow">
                     <Input
                         value={templateName}
                         onChange={(e) => setTemplateName(e.target.value)}
                         placeholder={t('templateName')}
                         className='templateNameInput'
-                        style={{
-                            flex: 1, backgroundColor: '#202327',
-                            border: '1px solid #32373E', color: '#E6EBF0',
-                            fontSize: '0.875rem', padding: '0.35rem 0.55rem',
-                        }}
+                        suffix={<EditOutlined className="templateNameEditIcon" />}
                     />
-                    <div
-                        className="selectInputButton connectButton cursor"
-                        onClick={handleSaveTemplate}
-                        style={{ fontSize: '0.875rem', padding: '0.35rem 0.85rem', whiteSpace: 'nowrap' }}
-                    >
+                    <button type="button" className="selectInputButton selectSaveButton cursor" onClick={handleSaveTemplate}>
                         {t('saveTemplate')}
-                    </div>
+                    </button>
                 </div>
                 <Select
-                    size="small"
+                    allowClear
+                    size="large"
                     value={selectedTemplateId || undefined}
-                    onChange={setSelectedTemplateId}
+                    onChange={(value) => {
+                        if (!value) {
+                            setSelectedTemplateId('')
+                            setTemplateName('')
+                            return
+                        }
+                        setSelectedTemplateId(value)
+                        const template = templates.find(item => item.templateId === value)
+                        setTemplateName(template?.templateName || '')
+                    }}
+                    onClear={() => {
+                        setSelectedTemplateId('')
+                        setTemplateName('')
+                    }}
                     placeholder={t('chooseTemplate')}
                     notFoundContent={t('noData')}
-                    style={{ width: '100%', marginBottom: '0.35rem' }}
+                    className="selectTemplateSelect"
+                    popupClassName="selectTemplateDropdown"
                     options={templates.map(template => ({
                         label: `${template.templateName}${isTemplateMatched(template) ? '' : ` (${t('templateMismatch')})`}`,
                         value: template.templateId,
                     }))}
                 />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.35rem' }}>
-                    <div
-                        className="selectInputButton connectButton cursor"
-                        onClick={handleApplyTemplate}
-                        style={{ fontSize: '0.7rem', padding: '0.15rem 0.6rem' }}
-                    >
+                <div className="selectTemplateActionRow">
+                    <button type="button" className="selectInputButton selectRenameTemplateButton cursor" onClick={handleRenameTemplate}>
+                        <EditOutlined />
+                        {t('renameTemplate') || '重命名模板'}
+                    </button>
+                    <button type="button" className="selectInputButton selectApplyButton cursor" onClick={handleApplyTemplate}>
                         {t('applyTemplate')}
-                    </div>
-                    <div
-                        className="selectInputButton cursor"
-                        onClick={handleDeleteTemplate}
-                        style={{
-                            fontSize: '0.7rem',
-                            padding: '0.15rem 0.6rem',
-                            border: '1px solid #ff4444',
-                            color: '#ff6666',
-                            borderRadius: '3px',
-                        }}
-                    >
+                    </button>
+                    <button type="button" className="selectInputButton selectDeleteTemplateButton cursor" onClick={handleDeleteTemplate}>
                         {t('deleteTemplate')}
-                    </div>
+                    </button>
                 </div>
             </div>
         </div>

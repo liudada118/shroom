@@ -199,12 +199,6 @@ function applyCollectionDirection(key, arr, direction) {
   }
 
   let result = [...arr]
-  if (!direction.left) {
-    result = flipHorizontal(result, dimensions.width, dimensions.height)
-  }
-  if (!direction.up) {
-    result = flipVertical(result, dimensions.width, dimensions.height)
-  }
   let currentWidth = dimensions.width
   let currentHeight = dimensions.height
   const turns = normalizeRotateDegree(direction.rotateDegree) / 90
@@ -213,6 +207,12 @@ function applyCollectionDirection(key, arr, direction) {
     const oldWidth = currentWidth
     currentWidth = currentHeight
     currentHeight = oldWidth
+  }
+  if (!direction.left) {
+    result = flipHorizontal(result, currentWidth, currentHeight)
+  }
+  if (!direction.up) {
+    result = flipVertical(result, currentWidth, currentHeight)
   }
   return result
 }

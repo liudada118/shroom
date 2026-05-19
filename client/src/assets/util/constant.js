@@ -16,7 +16,7 @@ const baseMax = {
     gauss: 4,
     color: 500,
     filter: 20,
-    height: 10,
+    height: 200,
     coherent: 10
 }
 
@@ -30,12 +30,12 @@ export const optimalObj = {
 };
 
 export const maxObj = {
-  bed: { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 },
-  car: { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 },
-  endi: { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 },
-  carY: { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 },
-  bigHand: { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 },
-  hand: { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 }
+  bed: { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 },
+  car: { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 },
+  endi: { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 },
+  carY: { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 },
+  bigHand: { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 },
+  hand: { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 }
 };
 
 export { lengthObj }

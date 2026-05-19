@@ -35,7 +35,7 @@ function syncControlsMotionState(controls) {
 }
 
 export function getZoomDistance(baseDistance, zoomValue) {
-  return (baseDistance * clampZoomValue(zoomValue)) / 100;
+  return (baseDistance * 100) / clampZoomValue(zoomValue);
 }
 
 export function applyZoomBounds(controls, baseDistance) {
@@ -50,7 +50,7 @@ export function getZoomValueFromCamera(camera, controls, baseDistance) {
   if (!camera || !baseDistance) return 100;
   const distance = camera.position.distanceTo(getTarget(controls));
   if (!Number.isFinite(distance) || distance < EPSILON) return 100;
-  return clampZoomValue(Math.round((distance * 100) / baseDistance));
+  return clampZoomValue(Math.round((baseDistance * 100) / distance));
 }
 
 export function bindZoomValueSync({

@@ -176,6 +176,12 @@ function getFrameByProgress(frames = [], progress = 0) {
     return frames[Math.max(0, Math.min(frames.length - 1, index))] || {}
 }
 
+function getFrameByIndex(frames = [], index = 0) {
+    if (!frames.length) return {}
+    const safeIndex = Math.max(0, Math.min(frames.length - 1, Math.round(Number(index) || 0)))
+    return frames[safeIndex] || {}
+}
+
 function buildDiffArr(leftArr = [], rightArr = []) {
     const length = Math.min(leftArr.length, rightArr.length)
     return Array.from({ length }, (_, index) => (Number(rightArr[index]) || 0) - (Number(leftArr[index]) || 0))
@@ -231,9 +237,33 @@ function formatValue(value) {
     return Math.abs(value) >= 100 ? value.toFixed(0) : value.toFixed(1)
 }
 
+function fillTemplate(template, replacements = {}, fallback = '') {
+    return Object.entries(replacements).reduce((text, [key, value]) => {
+        return text.replace(new RegExp(`{{${key}}}`, 'g'), value)
+    }, String(template || fallback))
+}
+
 function formatRate(a, b) {
     if (!Number.isFinite(a) || !Number.isFinite(b) || a === 0) return 'N/A'
     return `${(((b - a) / a) * 100).toFixed(1)}%`
+}
+
+function getSignedClass(value) {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric) || numeric === 0) return 'neutral'
+    return numeric > 0 ? 'positive' : 'negative'
+}
+
+function getRateInfo(rate) {
+    const numeric = Number.parseFloat(String(rate).replace('%', ''))
+    if (!Number.isFinite(numeric) || numeric === 0) {
+        return { className: 'neutral', arrow: '—', text: rate || 'N/A' }
+    }
+    return {
+        className: numeric > 0 ? 'positive' : 'negative',
+        arrow: numeric > 0 ? '↑' : '↓',
+        text: rate,
+    }
 }
 
 function csvCell(value) {
@@ -314,34 +344,118 @@ function buildSeriesByProgress(leftValues = [], rightValues = []) {
     })
 }
 
-function MiniLineChart({ title, rows = [] }) {
-    const width = 260
-    const height = 86
-    const padding = 12
-    const values = rows.flatMap((row) => [row.left, row.right, row.diff]).filter(Number.isFinite)
+function buildSingleSeries(values = []) {
+    return (Array.isArray(values) ? values : []).map((value, index) => ({
+        index,
+        value: Number(value) || 0,
+    }))
+}
+
+function MiniLineChart({ title, rows = [], mode = 'pair', markers = {}, unit = '' }) {
+    const width = 520
+    const height = 150
+    const padding = { left: 42, right: 18, top: 18, bottom: 28 }
+    const isSingle = mode === 'single'
+    const values = isSingle
+        ? rows.map((row) => row.value).filter(Number.isFinite)
+        : rows.flatMap((row) => [row.left, row.right, row.diff]).filter(Number.isFinite)
     const minValue = Math.min(0, ...values)
     const maxValue = Math.max(1, ...values)
     const span = maxValue - minValue || 1
+    const plotWidth = width - padding.left - padding.right
+    const plotHeight = height - padding.top - padding.bottom
+    const pointX = (index) => padding.left + (rows.length > 1 ? index / (rows.length - 1) : 0) * plotWidth
+    const pointY = (value) => padding.top + plotHeight - ((Number(value) - minValue) / span) * plotHeight
+    const yTicks = Array.from({ length: 4 }, (_, index) => minValue + (span * index / 3)).reverse()
+    const xTicks = rows.length > 1
+        ? [0, Math.floor((rows.length - 1) / 2), rows.length - 1]
+        : [0]
     const makePath = (key) => rows.map((row, index) => {
-        const x = padding + (rows.length > 1 ? index / (rows.length - 1) : 0) * (width - padding * 2)
-        const y = height - padding - ((Number(row[key]) - minValue) / span) * (height - padding * 2)
+        const x = pointX(index)
+        const y = pointY(row[key])
         return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
     }).join(' ')
+    const singlePath = rows.map((row, index) => {
+        const x = pointX(index)
+        const y = pointY(row.value)
+        return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
+    }).join(' ')
+    const markerItems = isSingle ? [
+        { key: 'A', index: markers.a, className: 'chartMarkerA' },
+        { key: 'B', index: markers.b, className: 'chartMarkerB' },
+    ].filter((item) => Number.isInteger(item.index) && item.index >= 0 && item.index < rows.length) : []
 
     return (
         <div className="contrastLinePanel">
-            <div className="contrastLineTitle">{title}</div>
-            <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
-                <line x1={padding} x2={width - padding} y1={height - padding} y2={height - padding} className="chartAxis" />
-                <path d={makePath('left')} className="chartLine chartLineA" />
-                <path d={makePath('right')} className="chartLine chartLineB" />
-                <path d={makePath('diff')} className="chartLine chartLineDiff" />
-            </svg>
-            <div className="contrastLineLegend">
-                <span className="chartDotA" />A
-                <span className="chartDotB" />B
-                <span className="chartDotDiff" />B-A
+            <div className="contrastLineHeader">
+                <div>
+                    <div className="contrastLineTitle">
+                        {title}
+                        <span className="lineTitleHelp">?</span>
+                    </div>
+                    <div className="contrastLineTitleLegend">
+                        {isSingle ? (
+                            <>
+                                <span className="chartDotTrend" />历史趋势
+                                <span className="chartDotA" />A 时间点
+                                <span className="chartDotB" />B 时间点
+                            </>
+                        ) : (
+                            <>
+                                <span className="chartDotA" />A 基础数据
+                                <span className="chartDotB" />B 对比数据
+                                <span className="chartDotDiff" />B-A 差值
+                            </>
+                        )}
+                    </div>
+                </div>
+                <span>单位：{unit || '-'}</span>
             </div>
+            <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
+                {yTicks.map((tick) => {
+                    const y = pointY(tick)
+                    return (
+                        <g key={`y-${tick}`}>
+                            <line x1={padding.left} x2={width - padding.right} y1={y} y2={y} className="chartGridLine" />
+                            <text x={padding.left - 8} y={y + 3} textAnchor="end" className="chartAxisText">{formatValue(tick)}</text>
+                        </g>
+                    )
+                })}
+                {xTicks.map((index) => {
+                    const x = pointX(index)
+                    return (
+                        <g key={`x-${index}`}>
+                            <line x1={x} x2={x} y1={padding.top} y2={height - padding.bottom} className="chartGridLine vertical" />
+                            <text x={x} y={height - 8} textAnchor="middle" className="chartAxisText">{index + 1}</text>
+                        </g>
+                    )
+                })}
+                <line x1={padding.left} x2={width - padding.right} y1={height - padding.bottom} y2={height - padding.bottom} className="chartAxis" />
+                <line x1={padding.left} x2={padding.left} y1={padding.top} y2={height - padding.bottom} className="chartAxis" />
+                {isSingle ? (
+                    <>
+                        <path d={singlePath} className="chartLine chartLineTrend" />
+                        {markerItems.map((item) => {
+                            const row = rows[item.index]
+                            const x = pointX(item.index)
+                            const y = pointY(row?.value)
+                            return (
+                                <g key={item.key}>
+                                    <line x1={x} x2={x} y1={padding.top} y2={height - padding.bottom} className={`chartMarkerLine ${item.className}`} />
+                                    <circle cx={x} cy={y} r="4.2" className={`chartMarkerDot ${item.className}`} />
+                                    <text x={x + 5} y={Math.max(padding.top + 8, y - 6)} className="chartMarkerText">{item.key}</text>
+                                </g>
+                            )
+                        })}
+                    </>
+                ) : (
+                    <>
+                        <path d={makePath('left')} className="chartLine chartLineA" />
+                        <path d={makePath('right')} className="chartLine chartLineB" />
+                        <path d={makePath('diff')} className="chartLine chartLineDiff" />
+                    </>
+                )}
+            </svg>
         </div>
     )
 }
@@ -358,16 +472,39 @@ export default function NumThresContrast() {
     const settingValue = useEquipStore(s => s.settingValue, shallow)
     const [progress, setProgress] = useState(0)
     const [playing, setPlaying] = useState(false)
+    const [playbackExpanded, setPlaybackExpanded] = useState(false)
     const [activeKey, setActiveKey] = useState('')
     const [activeSelectionId, setActiveSelectionId] = useState('')
 
     const keys = contrast?.keys || []
+    const isTimePointMode = contrast?.mode === 'single_record_frame'
+    const [timeIndexA, setTimeIndexA] = useState(0)
+    const [timeIndexB, setTimeIndexB] = useState(1)
+    const leftFrameCount = contrast?.left?.frames?.length || 0
+    const rightFrameCount = contrast?.right?.frames?.length || 0
 
     useEffect(() => {
         if (!keys.length) return
         const matchedKey = keys.find((key) => displayType.includes('back') ? key.includes('back') : key.includes('sit'))
         setActiveKey((current) => current && keys.includes(current) ? current : (matchedKey || keys[0]))
     }, [keys.join('|'), displayType])
+
+    useEffect(() => {
+        setPlaying(false)
+        if (!isTimePointMode) {
+            setTimeIndexA(0)
+            setTimeIndexB(1)
+            return
+        }
+        const maxIndex = Math.max(0, leftFrameCount - 1)
+        const nextA = Math.max(0, Math.min(maxIndex, Number(contrast?.time?.frameA) || 0))
+        let nextB = Math.max(0, Math.min(maxIndex, Number(contrast?.time?.frameB) || maxIndex))
+        if (nextA === nextB && maxIndex > 0) {
+            nextB = nextA === 0 ? 1 : 0
+        }
+        setTimeIndexA(nextA)
+        setTimeIndexB(nextB)
+    }, [contrast?.mode, contrast?.record?.id, leftFrameCount])
 
     useEffect(() => {
         if (!playing) return
@@ -383,8 +520,16 @@ export default function NumThresContrast() {
         return () => clearInterval(timer)
     }, [playing])
 
-    const leftFrame = useMemo(() => getFrameByProgress(contrast?.left?.frames, progress), [contrast, progress])
-    const rightFrame = useMemo(() => getFrameByProgress(contrast?.right?.frames, progress), [contrast, progress])
+    const leftFrame = useMemo(() => (
+        isTimePointMode
+            ? getFrameByIndex(contrast?.left?.frames, timeIndexA)
+            : getFrameByProgress(contrast?.left?.frames, progress)
+    ), [contrast, progress, isTimePointMode, timeIndexA])
+    const rightFrame = useMemo(() => (
+        isTimePointMode
+            ? getFrameByIndex(contrast?.right?.frames, timeIndexB)
+            : getFrameByProgress(contrast?.right?.frames, progress)
+    ), [contrast, progress, isTimePointMode, timeIndexB])
     const leftData = leftFrame?.[activeKey] || {}
     const rightData = rightFrame?.[activeKey] || {}
     const width = leftData.width || rightData.width || 32
@@ -453,11 +598,25 @@ export default function NumThresContrast() {
         const pressDiff = Number(pressRow?.diff)
         const areaDiff = Number(areaRow?.diff)
         const pressText = Number.isFinite(pressDiff)
-            ? copy.pressConclusion.replace('{{direction}}', pressDiff >= 0 ? copy.pressHigher : copy.pressLower).replace('{{value}}', formatValue(Math.abs(pressDiff)))
-            : copy.pressNA
+            ? fillTemplate(
+                copy.pressConclusion || copy.pressureConclusion,
+                {
+                    direction: pressDiff >= 0 ? (copy.pressHigher || copy.pressureHigher || 'higher by') : (copy.pressLower || copy.pressureLower || 'lower by'),
+                    value: formatValue(Math.abs(pressDiff)),
+                },
+                'B total pressure is {{direction}} {{value}}'
+            )
+            : (copy.pressNA || copy.pressureNA || 'B total pressure difference N/A')
         const areaText = Number.isFinite(areaDiff)
-            ? copy.areaConclusion.replace('{{direction}}', areaDiff >= 0 ? copy.areaIncrease : copy.areaDecrease).replace('{{value}}', formatValue(Math.abs(areaDiff)))
-            : copy.areaNA
+            ? fillTemplate(
+                copy.areaConclusion,
+                {
+                    direction: areaDiff >= 0 ? (copy.areaIncrease || 'increased by') : (copy.areaDecrease || 'decreased by'),
+                    value: formatValue(Math.abs(areaDiff)),
+                },
+                'Contact area {{direction}} {{value}}'
+            )
+            : (copy.areaNA || 'Contact area difference N/A')
         return {
             pressText,
             areaText,
@@ -465,18 +624,30 @@ export default function NumThresContrast() {
         }
     }, [metricRows, diffArr, copy])
 
-    const leftIndex = contrast?.left?.frames?.length > 1 ? Math.round((contrast.left.frames.length - 1) * progress / 100) : 0
-    const rightIndex = contrast?.right?.frames?.length > 1 ? Math.round((contrast.right.frames.length - 1) * progress / 100) : 0
+    const leftIndex = isTimePointMode
+        ? Math.max(0, Math.min(leftFrameCount - 1, timeIndexA))
+        : (contrast?.left?.frames?.length > 1 ? Math.round((contrast.left.frames.length - 1) * progress / 100) : 0)
+    const rightIndex = isTimePointMode
+        ? Math.max(0, Math.min(rightFrameCount - 1, timeIndexB))
+        : (contrast?.right?.frames?.length > 1 ? Math.round((contrast.right.frames.length - 1) * progress / 100) : 0)
 
-    const pressSeries = useMemo(() => buildSeriesByProgress(
-        contrast?.left?.pressArr?.[activeKey],
-        contrast?.right?.pressArr?.[activeKey],
-    ), [contrast, activeKey])
+    const pressSeries = useMemo(() => (
+        isTimePointMode
+            ? buildSingleSeries(contrast?.record?.pressArr?.[activeKey] || contrast?.left?.pressArr?.[activeKey])
+            : buildSeriesByProgress(
+                contrast?.left?.pressArr?.[activeKey],
+                contrast?.right?.pressArr?.[activeKey],
+            )
+    ), [contrast, activeKey, isTimePointMode])
 
-    const areaSeries = useMemo(() => buildSeriesByProgress(
-        contrast?.left?.areaArr?.[activeKey],
-        contrast?.right?.areaArr?.[activeKey],
-    ), [contrast, activeKey])
+    const areaSeries = useMemo(() => (
+        isTimePointMode
+            ? buildSingleSeries(contrast?.record?.areaArr?.[activeKey] || contrast?.left?.areaArr?.[activeKey])
+            : buildSeriesByProgress(
+                contrast?.left?.areaArr?.[activeKey],
+                contrast?.right?.areaArr?.[activeKey],
+            )
+    ), [contrast, activeKey, isTimePointMode])
 
     const selectionStats = useMemo(() => {
         return selectionItems.map((item) => {
@@ -498,12 +669,15 @@ export default function NumThresContrast() {
     const exportPreviewRows = useMemo(() => ([
         { label: copy.exportScope, value: activeSelection ? activeSelection.name : copy.fullMatrix },
         { label: copy.exportObject, value: activeKey || '-' },
-        { label: copy.exportFrames, value: Math.max(contrast?.left?.frames?.length || 0, contrast?.right?.frames?.length || 0) },
+        { label: copy.exportFrames, value: isTimePointMode ? 2 : Math.max(contrast?.left?.frames?.length || 0, contrast?.right?.frames?.length || 0) },
         { label: copy.exportFields, value: copy.exportFieldValue },
-    ]), [activeSelection, activeKey, contrast, copy])
+    ]), [activeSelection, activeKey, contrast, copy, isTimePointMode])
 
     const exitContrast = () => {
         setPlaying(false)
+        pageInfo?.brushInstance?.stopBrush?.()
+        pageInfo?.brushInstance?.deleteAll?.()
+        useEquipStore.getState().setSelectArr([])
         pageInfo?.setDisplay?.('num')
         // 通知后端解除 historyFlag，恢复实时数据流（否则即使串口连着也收不到实时数据）
         axios.post(`${localAddress}/cancalDbPlay`).catch(() => {})
@@ -522,12 +696,75 @@ export default function NumThresContrast() {
         }
     }
 
+    const changeTimeIndexA = (nextValue) => {
+        const nextIndex = Math.round(Number(nextValue) || 0)
+        if (nextIndex === timeIndexB && leftFrameCount > 1) {
+            message.warning(copy.sameFrameWarning || 'A/B cannot use the same frame')
+            return
+        }
+        setTimeIndexA(nextIndex)
+    }
+
+    const changeTimeIndexB = (nextValue) => {
+        const nextIndex = Math.round(Number(nextValue) || 0)
+        if (nextIndex === timeIndexA && rightFrameCount > 1) {
+            message.warning(copy.sameFrameWarning || 'A/B cannot use the same frame')
+            return
+        }
+        setTimeIndexB(nextIndex)
+    }
+
     const exportContrastResult = () => {
         const leftFrames = contrast?.left?.frames || []
         const rightFrames = contrast?.right?.frames || []
         const count = Math.max(leftFrames.length, rightFrames.length)
         if (!count || !activeKey) {
             message.warning(copy.noExportData)
+            return
+        }
+
+        if (isTimePointMode) {
+            const leftFrameItem = getFrameByIndex(leftFrames, leftIndex)?.[activeKey] || {}
+            const rightFrameItem = getFrameByIndex(rightFrames, rightIndex)?.[activeKey] || {}
+            const rowWidth = leftFrameItem.width || rightFrameItem.width || width
+            const leftSource = getRegionArr(leftFrameItem.arr || [], rowWidth, activeSelect)
+            const rightSource = getRegionArr(rightFrameItem.arr || [], rowWidth, activeSelect)
+            const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : rowWidth
+            const metricA = calcMetrics(leftSource, metricWidth, activeSelect)
+            const metricB = calcMetrics(rightSource, metricWidth, activeSelect)
+            const maxAbsDiff = buildDiffArr(leftSource, rightSource).reduce((max, value) => Math.max(max, Math.abs(Number(value) || 0)), 0)
+            const rows = [{
+                frame_index: 0,
+                progress: '',
+                object: activeKey,
+                scope: activeSelect ? 'selection' : 'full',
+                selection: activeSelect ? `${activeSelect.xStart}-${activeSelect.xEnd},${activeSelect.yStart}-${activeSelect.yEnd}` : '',
+                left_index: leftIndex,
+                right_index: rightIndex,
+                a_pressure_sum: getMetricValue(metricA, 'press'),
+                b_pressure_sum: getMetricValue(metricB, 'press'),
+                diff_pressure_sum: getMetricValue(metricB, 'press') - getMetricValue(metricA, 'press'),
+                a_contact_area: getMetricValue(metricA, 'area'),
+                b_contact_area: getMetricValue(metricB, 'area'),
+                diff_contact_area: getMetricValue(metricB, 'area') - getMetricValue(metricA, 'area'),
+                a_avg_pressure: getMetricValue(metricA, 'aver'),
+                b_avg_pressure: getMetricValue(metricB, 'aver'),
+                diff_avg_pressure: getMetricValue(metricB, 'aver') - getMetricValue(metricA, 'aver'),
+                a_max_pressure: getMetricValue(metricA, 'max'),
+                b_max_pressure: getMetricValue(metricB, 'max'),
+                diff_max_pressure: getMetricValue(metricB, 'max') - getMetricValue(metricA, 'max'),
+                a_center: getMetricValue(metricA, 'center'),
+                b_center: getMetricValue(metricB, 'center'),
+                max_abs_point_diff: maxAbsDiff,
+            }]
+            const headers = Object.keys(rows[0])
+            const csv = [
+                headers.join(','),
+                ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')),
+            ].join('\n')
+            const filename = `contrast_time_${activeKey}_${dayjs().format('YYYYMMDD_HHmmss')}.csv`
+            downloadText(filename, csv)
+            message.success(copy.exportSuccess)
             return
         }
 
@@ -579,6 +816,53 @@ export default function NumThresContrast() {
         message.success(copy.exportSuccess)
     }
 
+    const modeLabel = isTimePointMode ? (copy.modeTimePoint || '同记录时间点对比') : (copy.modeRecordPair || '逐帧对比')
+    const statusCards = [
+        { label: '当前对比', value: '进行中', accent: true },
+        { label: '对比模式', value: modeLabel },
+        { label: '采样率', value: `A ${getSampleRateText(leftData, copy)} / B ${getSampleRateText(rightData, copy)}` },
+        { label: '对齐方式', value: isTimePointMode ? '同记录时间点' : '方向/进度对齐' },
+        { label: '重采样', value: leftFrameCount !== rightFrameCount ? '已启用' : '未启用' },
+        { label: '差值阈值', value: `± ${formatValue(conclusion.maxAbsDiff)}` },
+    ]
+    const insightText = `B 相比 A：${conclusion.pressText}，${conclusion.areaText}`
+
+    const renderPlaybackControls = () => (
+        isTimePointMode ? (
+            <>
+                <div className="timePointControl">
+                    <span>{copy.timePointA || '鏃堕棿鐐?A'}</span>
+                    <Slider value={leftIndex} onChange={changeTimeIndexA} min={0} max={Math.max(0, leftFrameCount - 1)} step={1} style={{ flex: 1 }} />
+                    <strong>{leftIndex + 1}/{leftFrameCount || 0}</strong>
+                </div>
+                <div className="timePointControl">
+                    <span>{copy.timePointB || '鏃堕棿鐐?B'}</span>
+                    <Slider value={rightIndex} onChange={changeTimeIndexB} min={0} max={Math.max(0, rightFrameCount - 1)} step={1} style={{ flex: 1 }} />
+                    <strong>{rightIndex + 1}/{rightFrameCount || 0}</strong>
+                </div>
+            </>
+        ) : (
+            <>
+                <Button size="small" onClick={() => {
+                    if (!playing && progress >= 100) setProgress(0)
+                    setPlaying(!playing)
+                }}>{playing ? copy.pause : copy.play}</Button>
+                <span className="frameText">
+                    A {leftIndex + 1}/{contrast.left?.length || 0} / B {rightIndex + 1}/{contrast.right?.length || 0}
+                </span>
+                <Slider value={progress} onChange={setProgress} min={0} max={100} style={{ flex: 1 }} />
+                <div className="contrastProgress">{progress}%</div>
+                <span className="volumeIcon">◕</span>
+                <Select
+                    size="small"
+                    value="1.0x"
+                    options={[{ label: '1.0x', value: '1.0x' }]}
+                    style={{ width: 78 }}
+                />
+            </>
+        )
+    )
+
     if (!keys.length || !activeKey) {
         return (
             <div className="contrastPage">
@@ -589,10 +873,61 @@ export default function NumThresContrast() {
 
     return (
         <div className="contrastPage">
+            <div className="contrastNav">
+                <div className="contrastBrand"><span>JQ</span> Tools</div>
+                <div className="contrastNavDivider" />
+                <div className="contrastNavItem">汽车座椅</div>
+                <div className="contrastNavDivider" />
+                <div className="contrastNavItem active">数据对比</div>
+                <div className="contrastNavDivider" />
+                <div className="contrastNavItem">分析报告</div>
+                <div className="contrastNavRight">
+                    <span>深色主题</span>
+                    <span>中文</span>
+                    <span className="contrastAvatar" />
+                </div>
+            </div>
+
+            <div className="contrastHeaderGrid">
+                <div className="contrastStatusCards">
+                    {statusCards.map((item) => (
+                        <div className="contrastStatusCard" key={item.label}>
+                            <span>{item.label}</span>
+                            <strong className={item.accent ? 'running' : ''}>{item.accent ? <i /> : null}{item.value}</strong>
+                        </div>
+                    ))}
+                </div>
+                <div className="contrastInsight">
+                    <div className="insightIcon">!</div>
+                    <div className="insightBody">
+                        <div className="insightTitle">数据洞察</div>
+                        <div className="insightText">{insightText}</div>
+                    </div>
+                    <Button type="primary" size="small" onClick={exportContrastResult}>导出结果</Button>
+                    <Button size="small" onClick={exitContrast}>退出对比</Button>
+                </div>
+            </div>
+
+            <div className="contrastObjectBar">
+                <span>对比对象</span>
+                <Select
+                    size="small"
+                    value={activeKey}
+                    options={keys.map((key) => ({ label: key, value: key }))}
+                    onChange={changeActiveKey}
+                    style={{ width: 150 }}
+                />
+                <span>A: {contrast.left?.name || contrast.left?.date}</span>
+                <span>B: {contrast.right?.name || contrast.right?.date}</span>
+                <span>{copy.currentMetricScope}: {activeSelect ? copy.selectionRegion || 'Selection Area' : copy.fullMatrix}</span>
+                <span>{copy.filterValue}: {settingValue?.filter ?? 0}</span>
+            </div>
+
             <div className="contrastTopbar">
                 <div>
                     <div className="contrastTitle">{copy.title}</div>
                     <div className="contrastMeta">
+                        {isTimePointMode ? (copy.modeTimePoint || '同记录时间点对比') : (copy.modeRecordPair || '跨记录对比')} ｜
                         A: {contrast.left?.name || contrast.left?.date} ｜ B: {contrast.right?.name || contrast.right?.date}
                     </div>
                 </div>
@@ -640,6 +975,8 @@ export default function NumThresContrast() {
                             arr={leftArr}
                             width={width}
                             height={height}
+                            matrixKey={activeKey}
+                            colorMax={settingValue?.color}
                             className="contrastCanvasA"
                         />
                         <ContrastHeatmap
@@ -648,6 +985,8 @@ export default function NumThresContrast() {
                             arr={diffArr}
                             width={width}
                             height={height}
+                            matrixKey={activeKey}
+                            colorMax={settingValue?.color}
                             mode="diff"
                         />
                         <ContrastHeatmap
@@ -656,6 +995,8 @@ export default function NumThresContrast() {
                             arr={rightArr}
                             width={width}
                             height={height}
+                            matrixKey={activeKey}
+                            colorMax={settingValue?.color}
                         />
                     </div>
                 </div>
@@ -715,14 +1056,63 @@ export default function NumThresContrast() {
                 </aside>
             </div>
 
-            <div className="contrastPlayback">
-                <Button size="small" onClick={() => {
-                    if (!playing && progress >= 100) setProgress(0)
-                    setPlaying(!playing)
-                }}>{playing ? copy.pause : copy.play}</Button>
-                <Slider value={progress} onChange={setProgress} min={0} max={100} style={{ flex: 1 }} />
-                <div className="contrastProgress">{progress}%</div>
+            <div className={`contrastPlayback ${isTimePointMode ? 'timePointPlayback' : ''}`}>
+                <button className="playbackExpandIcon" type="button" onClick={() => setPlaybackExpanded(true)} aria-label="放大播放控制">⛶</button>
+                {renderPlaybackControls()}
             </div>
+
+            {playbackExpanded ? (
+                <div className="contrastExpandOverlay playbackExpandOverlay" onClick={() => setPlaybackExpanded(false)}>
+                    <div className="contrastPlaybackExpandDialog" onClick={(event) => event.stopPropagation()}>
+                        <div className="contrastExpandHeader">
+                            <div>
+                                <div className="contrastPanelTitle">数据对比回放</div>
+                                <div className="contrastPanelSubtitle">
+                                    A {leftIndex + 1}/{contrast.left?.length || leftFrameCount || 0} / B {rightIndex + 1}/{contrast.right?.length || rightFrameCount || 0}
+                                </div>
+                            </div>
+                            <button type="button" onClick={() => setPlaybackExpanded(false)}>×</button>
+                        </div>
+                        <div className="playbackExpandHeatmaps">
+                            <ContrastHeatmap
+                                title={copy.baselineA}
+                                subtitle={`${copy.frame} ${leftIndex + 1}/${contrast.left?.length || 0}`}
+                                arr={leftArr}
+                                width={width}
+                                height={height}
+                                matrixKey={activeKey}
+                                colorMax={settingValue?.color}
+                                className="contrastCanvasA"
+                                disableExpand
+                            />
+                            <ContrastHeatmap
+                                title={copy.diffMap}
+                                subtitle={copy.diffSubtitle}
+                                arr={diffArr}
+                                width={width}
+                                height={height}
+                                matrixKey={activeKey}
+                                colorMax={settingValue?.color}
+                                mode="diff"
+                                disableExpand
+                            />
+                            <ContrastHeatmap
+                                title={copy.compareB}
+                                subtitle={`${copy.frame} ${rightIndex + 1}/${contrast.right?.length || 0}`}
+                                arr={rightArr}
+                                width={width}
+                                height={height}
+                                matrixKey={activeKey}
+                                colorMax={settingValue?.color}
+                                disableExpand
+                            />
+                        </div>
+                        <div className={`contrastPlayback contrastPlaybackExpanded ${isTimePointMode ? 'timePointPlayback' : ''}`}>
+                            {renderPlaybackControls()}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
 
             <div className="contrastLegend">
                 <span className="legendBlue" />{copy.bLess}
@@ -732,11 +1122,15 @@ export default function NumThresContrast() {
             </div>
 
             <div className="contrastLineCharts">
-                <MiniLineChart title={copy.pressureChart} rows={pressSeries} />
-                <MiniLineChart title={copy.areaChart} rows={areaSeries} />
+                <MiniLineChart title={copy.pressureChart} rows={pressSeries} mode={isTimePointMode ? 'single' : 'pair'} markers={{ a: leftIndex, b: rightIndex }} unit="kPa" />
+                <MiniLineChart title={copy.areaChart} rows={areaSeries} mode={isTimePointMode ? 'single' : 'pair'} markers={{ a: leftIndex, b: rightIndex }} unit="cm²" />
             </div>
 
             <div className="contrastMetricTable">
+                <div className="metricTableTitle">
+                    数据汇总对比
+                    <span>按当前帧与当前区域统计 A 基础数据、B 对比数据、差值和变化率</span>
+                </div>
                 <div className="metricHeader">
                     <span>{copy.metric}</span>
                     <span>A</span>
@@ -744,21 +1138,24 @@ export default function NumThresContrast() {
                     <span>B-A</span>
                     <span>{copy.rate}</span>
                 </div>
-                {metricRows.map((row) => (
-                    <div className="metricRow" key={row.key}>
-                        <span>{row.label}</span>
-                        <span>{formatValue(row.a)}</span>
-                        <span>{formatValue(row.b)}</span>
-                        <span>{formatValue(row.diff)}</span>
-                        <span>{row.rate}</span>
-                    </div>
-                ))}
+                {metricRows.map((row) => {
+                    const rateInfo = getRateInfo(row.rate)
+                    return (
+                        <div className="metricRow" key={row.key}>
+                            <span>{row.label}</span>
+                            <span>{formatValue(row.a)}</span>
+                            <span>{formatValue(row.b)}</span>
+                            <span className={`metricDiffValue ${getSignedClass(row.diff)}`}>{formatValue(row.diff)}</span>
+                            <span className={`metricRateValue ${rateInfo.className}`}>{rateInfo.text} <em>{rateInfo.arrow}</em></span>
+                        </div>
+                    )
+                })}
             </div>
 
             <div className="contrastFooterMeta">
-                {copy.timeA}: {contrast.frame?.leftTimestamp ? dayjs(contrast.frame.leftTimestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}
+                {copy.timeA}: {(leftFrame?._timestamp || contrast.frame?.leftTimestamp) ? dayjs(leftFrame?._timestamp || contrast.frame.leftTimestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}
                 <span />
-                {copy.timeB}: {contrast.frame?.rightTimestamp ? dayjs(contrast.frame.rightTimestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}
+                {copy.timeB}: {(rightFrame?._timestamp || contrast.frame?.rightTimestamp) ? dayjs(rightFrame?._timestamp || contrast.frame.rightTimestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}
             </div>
         </div>
     )

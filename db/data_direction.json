@@ -7,20 +7,20 @@
     "data_direction": "none",
     "byKey": {
       "endi-back": {
-        "left": true,
+        "left": false,
         "up": true,
         "rotateDegree": 0,
         "rotate_degree": 0,
-        "data_direction": "none"
+        "data_direction": "horizontal"
       },
       "endi-sit": {
         "left": true,
         "up": false,
-        "rotateDegree": 270,
-        "rotate_degree": 270,
-        "data_direction": "rotate270"
+        "rotateDegree": 0,
+        "rotate_degree": 0,
+        "data_direction": "vertical"
       }
     }
   },
-  "updatedAt": "2026-05-18T08:24:02.757Z"
+  "updatedAt": "2026-05-19T07:56:06.615Z"
 }

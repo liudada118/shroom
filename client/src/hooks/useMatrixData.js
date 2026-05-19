@@ -79,6 +79,9 @@ export function useMatrixData() {
   const chartRef = useRef({})
   const wsLocalDataRef = useRef({ data: {}, flag: false })
   const dataDirection = useRef(loadStoredDataDirection())
+  const activeFrameDirectionRef = useRef({})
+  const lastSensorFrameRef = useRef(null)
+  const lastSensorFrameSourceRef = useRef('realtime')
 
   /**
    * 限制 endi 类型数据值上限为 255
@@ -112,12 +115,48 @@ export function useMatrixData() {
     return newArr
   }
 
+  function getMatrixKeyCandidates(key) {
+    const candidates = [key]
+    if (typeof key === 'string' && key.includes('-')) {
+      candidates.push(key.split('-').pop())
+    }
+    if (typeof key === 'string' && !key.includes('-')) {
+      const systemType = getSysType()
+      if (systemType) candidates.push(`${systemType}-${key}`)
+    }
+    return [...new Set(candidates.filter(Boolean))]
+  }
+
+  function matrixKeysMatch(a, b) {
+    if (!a || !b) return true
+    if (typeof a === 'string' && typeof b === 'string') {
+      if (a.endsWith(`-${b}`) || b.endsWith(`-${a}`)) return true
+    }
+    const aCandidates = new Set(getMatrixKeyCandidates(a))
+    return getMatrixKeyCandidates(b).some(candidate => aCandidates.has(candidate))
+  }
+
+  function getMatrixConfigEntry(matrixKey, shortKey) {
+    const candidates = [
+      matrixKey,
+      shortKey,
+      ...getMatrixKeyCandidates(matrixKey),
+      ...getMatrixKeyCandidates(shortKey),
+    ]
+    for (const candidate of candidates) {
+      if (candidate && systemPointConfig[candidate]) {
+        return { key: candidate, config: systemPointConfig[candidate] }
+      }
+    }
+    return { key: matrixKey, config: null }
+  }
+
   /**
    * 计算框选区域数据 — 支持多框
    * 返回: { default: [...全部数据], boxes: [{data, colorIndex, bgc, matrix}] }
    */
   function computeSelectArr(arr, key, fullKey, select, displayType, sitDataItem) {
-    const config = systemPointConfig[fullKey]
+    const { config } = getMatrixConfigEntry(fullKey, key)
     if (!config) return { default: arr, boxes: [] }
     const { width, height } = config
 
@@ -126,7 +165,7 @@ export function useMatrixData() {
       const boxes = []
       for (let i = 0; i < select.length; i++) {
         const sel = select[i]
-        if (sel.matrixKey && sel.matrixKey !== fullKey) continue
+        if (sel.matrixKey && !matrixKeysMatch(sel.matrixKey, fullKey)) continue
         const matrix = colSelectMatrix('canvasThree', sel, systemPointConfig[fullKey])
         if (matrix) {
           const data = extractSelectData(arr, matrix, width)
@@ -150,8 +189,8 @@ export function useMatrixData() {
       }
     }
 
-    // 回放框选
-    if (sitDataItem?.select) {
+    // 回放框选只在当前回放确实处于框选状态时生效，避免退出框选后旧帧缓存重新绘制历史框。
+    if (sitDataItem?.select && useEquipStore.getState().playbackHasSelection) {
       const regionsRaw = Array.isArray(sitDataItem.select?.regions)
         ? sitDataItem.select.regions
         : (sitDataItem.select ? [sitDataItem.select] : [])
@@ -246,34 +285,24 @@ export function useMatrixData() {
     return { area, press, stats }
   }
 
-  function normalizeSelectRegions(selectValue) {
-    if (!selectValue) return []
-    const regions = Array.isArray(selectValue?.regions)
-      ? selectValue.regions
-      : (Array.isArray(selectValue) ? selectValue : [selectValue])
-    return regions.filter(Boolean)
-  }
-
-  function maskMatrixBySelect(arr, regions, width, height) {
-    if (!Array.isArray(arr) || !regions.length || !width || !height) return arr
-    const masked = new Array(arr.length).fill(0)
-
-    regions.forEach((region) => {
-      const xStart = Math.max(0, Math.trunc(Number(region.xStart)))
-      const xEnd = Math.min(width, Math.trunc(Number(region.xEnd)))
-      const yStart = Math.max(0, Math.trunc(Number(region.yStart)))
-      const yEnd = Math.min(height, Math.trunc(Number(region.yEnd)))
-      if (xEnd <= xStart || yEnd <= yStart) return
-
-      for (let y = yStart; y < yEnd; y++) {
-        for (let x = xStart; x < xEnd; x++) {
-          const index = y * width + x
-          if (index < arr.length) masked[index] = arr[index]
-        }
-      }
-    })
-
-    return masked
+  function projectBoxCenterToMatrix(center, matrix, matrixWidth, matrixHeight) {
+    const cx = Number(center?.x)
+    const cy = Number(center?.y)
+    const xStart = Number(matrix?.xStart)
+    const yStart = Number(matrix?.yStart)
+    const xEnd = Number(matrix?.xEnd)
+    const yEnd = Number(matrix?.yEnd)
+    if (![cx, cy, xStart, yStart, xEnd, yEnd, matrixWidth, matrixHeight].every(Number.isFinite)) {
+      return center
+    }
+    const boxWidth = Math.max(1, xEnd - xStart)
+    const boxHeight = Math.max(1, yEnd - yStart)
+    const globalX = matrixWidth > 1 ? (xStart + cx * (boxWidth - 1)) / (matrixWidth - 1) : 0.5
+    const globalY = matrixHeight > 1 ? (yStart + cy * (boxHeight - 1)) / (matrixHeight - 1) : 0.5
+    return {
+      x: Math.max(0, Math.min(1, globalX)).toFixed(2),
+      y: Math.max(0, Math.min(1, globalY)).toFixed(2),
+    }
   }
 
   /**
@@ -281,8 +310,9 @@ export function useMatrixData() {
    * 支持多框选：data[key].boxStats = [{colorIndex, bgc, pressArr, areaArr, data}]
    */
   function computeStats(data, arr, selectResult, key, fullKey) {
-    if (!systemPointConfig[fullKey]) return
-    const { width, height } = systemPointConfig[fullKey]
+    const { key: matrixKey, config } = getMatrixConfigEntry(fullKey, key)
+    if (!config) return
+    const { width, height } = config
 
     if (!data[key]) data[key] = {}
     if (!data[key].areaArr) data[key].areaArr = []
@@ -291,20 +321,24 @@ export function useMatrixData() {
     if (!data[key].boxStats) data[key].boxStats = []
 
     const selectedArr = selectResult.default
-
-    const arrSmooth = calcCentroidRatio([...arr], width, height)
-    const mu = mean(arr)
-    const v = variance(arr, mu)
+    const firstBox = selectResult.boxes?.[0]
+    const firstBoxWidth = Math.max(1, Number(firstBox?.matrix?.xEnd) - Number(firstBox?.matrix?.xStart) || width)
+    const firstBoxHeight = Math.max(1, Number(firstBox?.matrix?.yEnd) - Number(firstBox?.matrix?.yStart) || height)
+    const selectedCenter = firstBox
+      ? projectBoxCenterToMatrix(calcCentroidRatio([...selectedArr], firstBoxWidth, firstBoxHeight), firstBox.matrix, width, height)
+      : calcCentroidRatio([...selectedArr], width, height)
+    const mu = mean(selectedArr)
+    const v = variance(selectedArr, mu)
     const sigma = Math.sqrt(v)
-    const sk = skewness(arr, mu, sigma)
-    const ku = kurtosis(arr, mu, sigma)
+    const sk = skewness(selectedArr, mu, sigma)
+    const ku = kurtosis(selectedArr, mu, sigma)
     const xData = Array.from({ length: 256 }, (_, i) => i)
     const yData = xData.map(x => normalPDF(x, mu, sigma))
 
     const area = selectedArr.filter(a => a > 0).length
     const press = selectedArr.reduce((a, b) => a + b, 0)
 
-    data[key].center = arrSmooth
+    data[key].center = selectedCenter
     data[key].normalDis = {
       μ: mu.toFixed(3),
       Var: v.toFixed(3),
@@ -320,7 +354,7 @@ export function useMatrixData() {
       data[key].areaArr.shift()
       data[key].areaArr.push(area)
     }
-    const pressForChart = (fullKey === 'carY-back' || fullKey === 'carY-sit') ? press / (divisor) : press
+    const pressForChart = (matrixKey === 'carY-back' || matrixKey === 'carY-sit') ? press / (divisor) : press
     if (data[key].pressArr.length < 20) {
       data[key].pressArr.push(pressForChart)
     } else {
@@ -338,18 +372,18 @@ export function useMatrixData() {
     data[key].data.pressAver = (press / (area || 1)).toFixed(2)
 
     // endi 类型单位转换
-    if (fullKey === 'endi-back') {
+    if (matrixKey === 'endi-back') {
       data[key].data.pressMax = backYToX(Math.max(...selectedArr)).toFixed(2)
       data[key].data.pressMin = backYToX(min || 0).toFixed(2)
       data[key].data.pressAver = backYToX(press / (area || 1)).toFixed(2)
-    } else if (fullKey === 'endi-sit') {
+    } else if (matrixKey === 'endi-sit') {
       data[key].data.pressMax = sitYToX(Math.max(...selectedArr)).toFixed(2)
       data[key].data.pressMin = sitYToX(min || 0).toFixed(2)
       data[key].data.pressAver = sitYToX(press / (area || 1)).toFixed(2)
     }
 
     // carY 类型压力转换
-    if (fullKey === 'carY-back' || fullKey === 'carY-sit') {
+    if (matrixKey === 'carY-back' || matrixKey === 'carY-sit') {
       const pressTotal = press / divisor
       data[key].data.pressMax = (Math.max(...selectedArr) / divisor).toFixed(2)
       data[key].data.pressTotal = pressTotal.toFixed(2)
@@ -382,14 +416,16 @@ export function useMatrixData() {
         boxStat.bgc = box.bgc
         boxStat.name = formatSelectionName(box.name, i + 1)
 
-        const { area: bArea, press: bPress, stats } = computeSingleStats(arr, box.data, fullKey)
+        const { area: bArea, press: bPress, stats } = computeSingleStats(arr, box.data, matrixKey)
         boxStat.data = stats
         const boxWidth = Math.max(1, Number(box.matrix?.xEnd) - Number(box.matrix?.xStart) || width)
         const boxHeight = Math.max(1, Number(box.matrix?.yEnd) - Number(box.matrix?.yStart) || height)
         const boxMu = mean(box.data)
         const boxVariance = variance(box.data, boxMu)
         const boxSigma = Math.sqrt(boxVariance)
-        boxStat.center = calcCentroidRatio([...box.data], boxWidth, boxHeight)
+        const localCenter = calcCentroidRatio([...box.data], boxWidth, boxHeight)
+        boxStat.center = projectBoxCenterToMatrix(localCenter, box.matrix, width, height)
+        boxStat.localCenter = localCenter
         boxStat.normalDis = {
           ['\u03bc']: boxMu.toFixed(3),
           Var: boxVariance.toFixed(3),
@@ -398,7 +434,7 @@ export function useMatrixData() {
           yData: xData.map(x => normalPDF(x, boxMu, boxSigma)),
         }
 
-        const bPressForChart = (fullKey === 'carY-back' || fullKey === 'carY-sit') ? bPress / divisor : bPress
+        const bPressForChart = (matrixKey === 'carY-back' || matrixKey === 'carY-sit') ? bPress / divisor : bPress
         if (boxStat.pressArr.length < 20) {
           boxStat.pressArr.push(bPressForChart)
         } else {
@@ -484,13 +520,6 @@ export function useMatrixData() {
     let currentWidth = width
     let currentHeight = height
 
-    if (!normalized.left) {
-      nextArr = flipHorizontalArray(nextArr, currentWidth, currentHeight)
-    }
-    if (!normalized.up) {
-      nextArr = flipVerticalArray(nextArr, currentWidth, currentHeight)
-    }
-
     const turns = normalizeRotateDegree(normalized.rotateDegree) / 90
     for (let i = 0; i < turns; i++) {
       nextArr = rotateClockwiseArray(nextArr, currentWidth, currentHeight)
@@ -499,7 +528,27 @@ export function useMatrixData() {
       currentHeight = oldWidth
     }
 
+    if (!normalized.left) {
+      nextArr = flipHorizontalArray(nextArr, currentWidth, currentHeight)
+    }
+    if (!normalized.up) {
+      nextArr = flipVerticalArray(nextArr, currentWidth, currentHeight)
+    }
+
     return nextArr
+  }
+
+  function isDefaultDataDirection(direction) {
+    const normalized = normalizeDataDirection(direction)
+    return normalized.left === true
+      && normalized.up === true
+      && normalizeRotateDegree(normalized.rotateDegree) === 0
+  }
+
+  function getExecutedDirectionForFrame(fullKey, frameItem) {
+    const currentDirection = getCurrentDirectionForKey(fullKey)
+    const frameDirection = normalizeDataDirection(frameItem?.dataDirection || DEFAULT_DATA_DIRECTION)
+    return isDefaultDataDirection(frameDirection) ? currentDirection : frameDirection
   }
 
   function applyDisplayDirection(resArr, keyArr, sitData) {
@@ -509,16 +558,14 @@ export function useMatrixData() {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       if (!res[key] || !systemPointConfig[fullKey]) continue
 
-      const currentDirection = getCurrentDirectionForKey(fullKey)
       const frameDirection = normalizeDataDirection(sitData[fullKey]?.dataDirection || DEFAULT_DATA_DIRECTION)
+      const executedDirection = getExecutedDirectionForFrame(fullKey, sitData[fullKey])
+      activeFrameDirectionRef.current[fullKey] = executedDirection
       const { width, height } = systemPointConfig[fullKey]
       let nextArr = res[key]
 
-      const frameMatchesDefault = frameDirection.left === true
-        && frameDirection.up === true
-        && normalizeRotateDegree(frameDirection.rotateDegree) === 0
-      if (frameMatchesDefault) {
-        nextArr = applyDirectionToArray(nextArr, width, height, currentDirection)
+      if (isDefaultDataDirection(frameDirection)) {
+        nextArr = applyDirectionToArray(nextArr, width, height, executedDirection)
       }
       res[key] = nextArr
     }
@@ -536,13 +583,13 @@ export function useMatrixData() {
       useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
       return
     }
+    lastSensorFrameRef.current = sitData
+    lastSensorFrameSourceRef.current = options.source || 'realtime'
 
     const select = getSelectArr()
     const displayType = getDisplayType()
     const keyArr = Object.keys(sitData)
     const arr = {}
-    const selectedArr = {}
-    const playbackSelectRegions = {}
 
     // 1. 解析矩阵数据 + 框选计算
     for (let i = 0; i < keyArr.length; i++) {
@@ -552,12 +599,6 @@ export function useMatrixData() {
 
       arr[key] = clampEndi([...sitData[fullKey].arr], fullKey, key)
       const selectResult = computeSelectArr(arr[key], key, fullKey, select, displayType, sitData[fullKey])
-      selectedArr[key] = selectResult.default
-      playbackSelectRegions[key] = isRealtimeFrame
-        ? []
-        : (selectResult.boxes?.length
-          ? selectResult.boxes.map((box) => box.matrix).filter(Boolean)
-          : normalizeSelectRegions(sitData[fullKey]?.select))
       computeStats(data, arr[key], selectResult, key, fullKey)
     }
 
@@ -589,15 +630,12 @@ export function useMatrixData() {
       useEquipStore.getState().setDataQuality({ ...prevQuality, ...dataQualityObj })
 
       const severeEntry = Object.entries(dataQualityObj).find(([, quality]) => quality?.status === 'device_error')
-      const degradedEntry = severeEntry || Object.entries(dataQualityObj).find(([, quality]) => quality?.status === 'degraded' || quality?.hzAbnormal)
-      if (degradedEntry) {
+      if (severeEntry) {
         const now = Date.now()
-        const [qualityKey, quality] = degradedEntry
+        const [qualityKey, quality] = severeEntry
         if (!window.__dataQualityMessageAt || now - window.__dataQualityMessageAt > DATA_QUALITY_MESSAGE_INTERVAL) {
           window.__dataQualityMessageAt = now
-          message.warning(quality?.status === 'device_error'
-            ? `${qualityKey} 设备数据异常，请重新连接`
-            : `${qualityKey} 数据不稳定，请检查设备连接`)
+          message.warning(`${qualityKey} 设备数据异常，请重新连接`)
         }
         if (quality?.status === 'device_error') {
           useEquipStore.getState().setConnectState('deviceError')
@@ -659,16 +697,6 @@ export function useMatrixData() {
 
     // 5. 翻转处理：实时帧按当前方向翻转；历史帧按保存方向和当前方向的差异修正，避免重复翻转
     resArr = applyDisplayDirection(resArr, keyArr, sitData)
-    if (!isRealtimeFrame) {
-      for (const fullKey of keyArr) {
-        const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
-        const regions = playbackSelectRegions[key]
-        const config = systemPointConfig[fullKey]
-        if (resArr[key] && regions?.length && config) {
-          resArr[key] = maskMatrixBySelect(resArr[key], regions, config.width, config.height)
-        }
-      }
-    }
     disPlayDataRef.current = resArr
 
     useEquipStore.getState().setDisplayStatus(resArr)
@@ -701,6 +729,9 @@ export function useMatrixData() {
   function changeDataDirection(dir, targetPart) {
     const state = normalizeDataDirectionState(dataDirection.current)
     const targetKeys = getDirectionTargetKeys(targetPart)
+    const getDirectionBaseForKey = (key) => normalizeDataDirection(
+      activeFrameDirectionRef.current[key] || state.byKey?.[key] || state
+    )
     const applyChange = (direction) => {
       const next = normalizeDataDirection(direction)
       if (dir === 'rotate') {
@@ -718,18 +749,20 @@ export function useMatrixData() {
       const byKey = { ...state.byKey }
       getDirectionTargetKeys().forEach((key) => {
         if (!byKey[key]) {
-          byKey[key] = normalizeDataDirection(state)
+          byKey[key] = getDirectionBaseForKey(key)
         }
       })
       targetKeys.forEach((key) => {
-        byKey[key] = applyChange(byKey[key] || state)
+        byKey[key] = applyChange(getDirectionBaseForKey(key))
       })
       dataDirection.current = { ...normalizeDataDirection(DEFAULT_DATA_DIRECTION), byKey }
       persistDataDirection(dataDirection.current)
       return normalizeDataDirectionState(dataDirection.current)
     }
 
-    dataDirection.current = applyChange(state)
+    const system = getSysType()
+    const baseDirection = activeFrameDirectionRef.current[system] || state
+    dataDirection.current = applyChange(baseDirection)
     persistDataDirection(dataDirection.current)
     return normalizeDataDirectionState(dataDirection.current)
   }
@@ -759,6 +792,14 @@ export function useMatrixData() {
     }
   }
 
+  function reprocessLastSensorFrame(data, options = {}) {
+    if (!lastSensorFrameRef.current || !Object.keys(lastSensorFrameRef.current).length) return false
+    processSensorFrame(lastSensorFrameRef.current, data, {
+      source: options.source || lastSensorFrameSourceRef.current || 'realtime',
+    })
+    return true
+  }
+
   return {
     sitDataRef,
     disPlayDataRef,
@@ -766,6 +807,7 @@ export function useMatrixData() {
     dataDirection,
     setDataDirection,
     processSensorFrame,
+    reprocessLastSensorFrame,
     changeDataDirection,
     changeWsLocalData,
   }

@@ -1,16 +1,16 @@
 import { create } from 'zustand'
 import { maxObj } from '../assets/util/constant'
-import { loadVisualSettingValue } from '../util/visualSettingStorage'
+import { loadVisualSettingValue, normalizeVisualSettingMax } from '../util/visualSettingStorage'
 
 // ─── 持久化设置值 ────────────────────────────────────────
-const DEFAULT_SETTINGS = { gauss: 1, color: 200, color3D: 200, color2D: 200, filter: 1, height: 10, coherent: 1 }
+const DEFAULT_SETTINGS = { gauss: 1, color: 200, filter: 1, height: 10, coherent: 1 }
 
 function loadSettingValue() {
   return loadVisualSettingValue('default', DEFAULT_SETTINGS, maxObj.bed)
 }
 
 const initialSettings = loadSettingValue()
-const initialMaxData = maxObj['bed']
+const initialMaxData = normalizeVisualSettingMax(maxObj['bed'])
 
 // ─── Store 定义 ──────────────────────────────────────────
 export const useEquipStore = create((set) => ({
@@ -46,6 +46,7 @@ export const useEquipStore = create((set) => ({
   historyChart: { pressArr: {}, areaArr: {} },
   dataStatus: 'realtime',  // 'realtime' | 'history' | 'replay' | 'contrast'
   playbackHasSelection: false,
+  playbackRecordDate: '',
   collecting: false,
 
   // 对比数据
@@ -78,6 +79,7 @@ export const useEquipStore = create((set) => ({
   setHistoryChart: (s) => set({ historyChart: s }),
   setDataStatus: (s) => set({ dataStatus: s }),
   setPlaybackHasSelection: (s) => set({ playbackHasSelection: Boolean(s) }),
+  setPlaybackRecordDate: (s) => set({ playbackRecordDate: s || '' }),
   setCollecting: (s) => set({ collecting: Boolean(s) }),
 
   setContrast: (s) => set({ contrast: s }),
@@ -87,16 +89,7 @@ export const useEquipStore = create((set) => ({
 export const getStatus = () => useEquipStore.getState().status
 export const getsetDisplayStatus = () => useEquipStore.getState().displayStatus
 export const getSysType = () => useEquipStore.getState().systemType
-export const getSettingValue = () => {
-  const { settingValue, display } = useEquipStore.getState()
-  const colorKey = display === 'num' ? 'color2D' : 'color3D'
-  const next = { ...(settingValue || {}) }
-  const colorValue = Number(next[colorKey])
-  if (Number.isFinite(colorValue)) {
-    next.color = colorValue
-  }
-  return next
-}
+export const getSettingValue = () => useEquipStore.getState().settingValue
 export const getDisplayType = () => useEquipStore.getState().displayType
 export const getSettingValueOptimal = () => useEquipStore.getState().settingValueOptimal
 export const getSelectArr = () => useEquipStore.getState().selectArr

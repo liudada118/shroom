@@ -25,7 +25,7 @@ import ChartsAside from '../../components/chartsAside/ChartsAside'
 import { Scheduler } from '../../scheduler/scheduler'
 import { newRuler } from '../../components/ruler/newRuler'
 import { backYToX, calcCentroidRatio, colSelectMatrix, endiBackPressFn, endiSitPressFn, graCenter, kurtosis, mean, normalPDF, sitYToX, skewness, variance } from '../../util/util'
-import { matrixGenBox, removeHistoryBox } from '../../assets/util/selectMatrix'
+import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import NumThresContrast from '../../components/contrast/NumThresContrast'
 import { gaussianBlur1D, pressFN } from './util'
 import { isMoreMatrix } from '../../assets/util/util'
@@ -34,9 +34,31 @@ import { useMatrixData } from '../../hooks/useMatrixData'
 import NumThres from '../../components/three/NumThres'
 import { buildFallbackParams } from '../../util/request'
 import { formatSelectionName } from '../../util/selectionName'
-import { loadVisualSettingValue } from '../../util/visualSettingStorage'
+import { loadVisualSettingValue, normalizeVisualSettingMax } from '../../util/visualSettingStorage'
 
 export const pageContext = createContext(null)
+
+function getHistoryChartKeyCandidates(key) {
+    const candidates = [key]
+    if (typeof key === 'string' && key.includes('-')) {
+        candidates.push(key.split('-').pop())
+    }
+    if (typeof key === 'string' && !key.includes('-')) {
+        const systemType = getSysType()
+        if (systemType) candidates.push(`${systemType}-${key}`)
+    }
+    return [...new Set(candidates.filter(Boolean))]
+}
+
+function filterSelectedHistoryChartKeys(obj = {}, selectedKeys = new Set()) {
+    const candidateSet = new Set()
+    selectedKeys.forEach((key) => {
+        getHistoryChartKeyCandidates(key).forEach(candidate => candidateSet.add(candidate))
+    })
+    return Object.fromEntries(
+        Object.entries(obj).filter(([key]) => candidateSet.has(key))
+    )
+}
 
 function Test() {
     const { t, i18n } = useTranslation()
@@ -72,6 +94,7 @@ function Test() {
         dataDirection,
         setDataDirection,
         processSensorFrame,
+        reprocessLastSensorFrame,
         changeDataDirection,
         changeWsLocalData,
     } = useMatrixData()
@@ -133,7 +156,25 @@ function Test() {
                 : []
             useEquipStore.getState().setSelectArr(safeArr)
             const status = useEquipStore.getState().dataStatus
-            if (status !== 'replay' || safeArr.length === 0) return
+            if (status !== 'replay') return
+            if (safeArr.length === 0) {
+                useEquipStore.getState().setPlaybackHasSelection(false)
+                useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
+                removeHistoryBox()
+                window.setTimeout(() => {
+                    if (brushInstance.rangeArr?.length) return
+                    axios({
+                        method: 'post',
+                        url: `${localAddress}/getDbHistorySelect`,
+                        params: { selectJson: JSON.stringify({}) },
+                        data: { selectJson: {} },
+                    }).catch(() => { })
+                }, 50)
+                reprocessLastSensorFrame(persistentDataRef.current, { source: 'playback' })
+                return
+            }
+            useEquipStore.getState().setPlaybackHasSelection(true)
+            reprocessLastSensorFrame(persistentDataRef.current, { source: 'playback' })
 
             const systemType = getSysType()
             const displayType = getDisplayType()
@@ -168,14 +209,20 @@ function Test() {
                 const data = res.data?.data || {}
                 const { areaArr, pressArr } = data
                 if (areaArr || pressArr) {
+                    const selectedKeys = new Set(Object.keys(selectJson))
                     useEquipStore.getState().setHistoryChart({
-                        areaArr: areaArr || {},
-                        pressArr: pressArr || {}
+                        areaArr: filterSelectedHistoryChartKeys(areaArr || {}, selectedKeys),
+                        pressArr: filterSelectedHistoryChartKeys(pressArr || {}, selectedKeys),
+                        selection: {
+                            active: true,
+                            ranges: safeArr,
+                        },
                     })
                 }
-            })
+            }).catch(() => { })
         }
         brushInstance.subscribe(cb)
+        return () => brushInstance.unsubscribe(cb)
     }, [])
 
     // ─── 调度器启动 ──────────────────────────────────────
@@ -212,10 +259,11 @@ function Test() {
             const typeArr = result.typeArr
             const optimalObj = result.optimalObj
             const maxObj = result.maxObj
+            const currentMaxObj = normalizeVisualSettingMax(maxObj[type])
             setSystemType(type)
 
-            useEquipStore.getState().setSettingValue(loadVisualSettingValue(type, optimalObj[type], maxObj[type]))
-            useEquipStore.getState().setSettingValueMax(maxObj[type])
+            useEquipStore.getState().setSettingValue(loadVisualSettingValue(type, optimalObj[type], currentMaxObj))
+            useEquipStore.getState().setSettingValueMax(currentMaxObj)
             useEquipStore.getState().setSettingValueOptimal(optimalObj[type])
 
             if (typeArr) {
@@ -258,8 +306,8 @@ function Test() {
         carY: <Endi1 key="carY" sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
-            backPointConfig={{ position: [0.0000, -14.0000, -1.5000], rotation: [-1.8326, 0.0000, 0.0000], scale: [0.0021, 0.0030, 0.0037], pointSize: 1.10 }}
-            sitPointConfig={{ position: [0.0000, -30.5000, -6.0000], rotation: [-0.5236, 0.0000, 0.0000], scale: [0.0022, 0.0025, 0.0022], pointSize: 0.75 }}
+            backPointConfig={{ position: [2.5000, -11.0000, -1.0000], rotation: [-1.8326, 0.0000, 0.0000], scale: [0.0015, 0.0030, 0.0026], pointSize: 1.00 }}
+            sitPointConfig={{ position: [0.0000, -30.0000, -5.0000], rotation: [-0.5236, 0.0000, 0.0000], scale: [0.0018, 0.0018, 0.0018], pointSize: 1.00 }}
         />
     }
 
@@ -310,7 +358,7 @@ function Test() {
                 onRuler, setOnRuler, onSelect, setOnSelect,
                 onMagnifier, setOnMagnifier
             }} >
-                {display !== 'contrast' ? <Title /> : null}
+                <Title hideSecondTitle={display === 'contrast'} />
                 {display !== 'contrast' ? <ViewSetting showProp={showProp} setShowProp={setShowProp} three={threeRef} /> : null}
                 {display !== 'contrast' ? <ColAndHistory playBack={playBack} /> : null}
                 {display !== 'contrast' ? <ChartsAside sitData={disPlayDataRef} chartData={chartRef} /> : null}

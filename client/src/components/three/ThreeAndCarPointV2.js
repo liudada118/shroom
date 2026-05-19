@@ -120,6 +120,20 @@ const Canvas =
         const {
             // sitnum1 = 32, sitnum2 = 32, sitInterp = 4, sitInterp2 = 2, sitOrder = 4 , 
             sitConfig, backConfig } = props
+        const defaultBackPointConfig = {
+            position: [2.5000, -11.0000, -1.0000],
+            rotation: [-1.8326, 0.0000, 0.0000],
+            scale: [0.0015, 0.0030, 0.0026],
+            pointSize: 1.00,
+        }
+        const defaultSitPointConfig = {
+            position: [0.0000, -30.0000, -5.0000],
+            rotation: [-0.5236, 0.0000, 0.0000],
+            scale: [0.0018, 0.0018, 0.0018],
+            pointSize: 1.00,
+        }
+        const initialBackPointConfig = props.backPointConfig || defaultBackPointConfig
+        const initialSitPointConfig = props.sitPointConfig || defaultSitPointConfig
         const groupRef = useRef(new THREE.Group());
         const group = groupRef.current;
 
@@ -133,16 +147,16 @@ const Canvas =
         const [configPanelOpen, setConfigPanelOpen] = useState(false)
         const [configValues, setConfigValues] = useState({
             back: {
-                position: props.backPointConfig?.position || [2.5, -15, 0],
-                rotation: props.backPointConfig?.rotation || [-Math.PI / 12 - Math.PI / 2, 0, 0],
-                scale: props.backPointConfig?.scale || [0.0015, 0.002, 0.002],
-                pointSize: props.backPointConfig?.pointSize || 1.0,
+                position: initialBackPointConfig.position,
+                rotation: initialBackPointConfig.rotation,
+                scale: initialBackPointConfig.scale,
+                pointSize: initialBackPointConfig.pointSize,
             },
             sit: {
-                position: props.sitPointConfig?.position || [0, -30, -5],
-                rotation: props.sitPointConfig?.rotation || [-Math.PI / 6 - Math.PI / 2 + Math.PI / 2, 0, 0],
-                scale: props.sitPointConfig?.scale || [0.0018, 0.0018, 0.0018],
-                pointSize: props.sitPointConfig?.pointSize || 1.0,
+                position: initialSitPointConfig.position,
+                rotation: initialSitPointConfig.rotation,
+                scale: initialSitPointConfig.scale,
+                pointSize: initialSitPointConfig.pointSize,
             }
         })
 
@@ -600,9 +614,6 @@ const Canvas =
         // const sitConfig = { sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }
 
         // 默认点位配置
-        const defaultBackPointConfig = { position: [2.5, -15, 0], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.002] }
-        const defaultSitPointConfig = { position: [0, -30, -5], rotation: [-Math.PI / 6 - Math.PI / 2 + Math.PI / 2, 0, 0], scale: [0.0018, 0.0018, 0.0018] }
-
         let allConfig = {
             // neck: {
             //     dataConfig: neckConfig,
@@ -612,13 +623,13 @@ const Canvas =
             back: {
                 dataConfig: backConfig,
                 name: 'back',
-                pointConfig: props.backPointConfig || defaultBackPointConfig,
+                pointConfig: configValues.back,
                 // pointConfig: { position: [2.5, -28, -50], rotation: [-Math.PI / 12 - Math.PI / 2, 0, 0], scale: [0.0015, 0.002, 0.002] },
             },
             sit: {
                 dataConfig: sitConfig,
                 name: 'sit',
-                pointConfig: props.sitPointConfig || defaultSitPointConfig,
+                pointConfig: configValues.sit,
                 //  pointConfig: { position: [0, -28, -65], rotation: [ + Math.PI*11 / 24, 0, 0], scale: [0.0018, 0.0018, 0.0018] },
             },
             // handLeft: {
@@ -1165,7 +1176,9 @@ const Canvas =
 
                     const sourceRow = (ix - sitOrder) / sitInterp
                     const sourceCol = (iy - sitOrder) / sitInterp1
-                    const isPaddingPoint = name === 'back' && !isEndiBackPointVisible(sourceRow, sourceCol, sitnum2, sitnum1)
+                    // The 3D backrest is visually flipped vertically relative to the 2D matrix.
+                    const visibleRow = name === 'back' ? sitnum1 - 1 - sourceRow : sourceRow
+                    const isPaddingPoint = name === 'back' && !isEndiBackPointVisible(visibleRow, sourceCol, sitnum2, sitnum1)
                     const isHidden = isPaddingPoint || shouldHideDisplayPoint(value, filter);
                     scales[j] = isHidden ? 0 : 1;
 
@@ -1355,9 +1368,26 @@ const Canvas =
             }
         }
 
-        function changeCamera(value) {
+        function changeCamera(value, options = {}) {
             // 限制缩放范围 10%-300%
             if (!camera.current || !controls.current || !baseCameraDistanceRef.current) return
+            const previousValue = Number(options.previousValue)
+            if (Number.isFinite(previousValue) && previousValue > 0 && previousValue !== value) {
+                const currentDistance = camera.current.position.distanceTo(controls.current.target)
+                const nextBaseDistance = currentDistance * previousValue / 100
+                if (Number.isFinite(nextBaseDistance) && nextBaseDistance > 0) {
+                    suppressZoomSyncRef.current = true
+                    if (restoreZoomSyncTimerRef.current) {
+                        clearTimeout(restoreZoomSyncTimerRef.current)
+                    }
+                    baseCameraDistanceRef.current = nextBaseDistance
+                    rebindZoomSync(nextBaseDistance)
+                    changeViewPropSafely(value)
+                    restoreZoomSyncTimerRef.current = setTimeout(() => {
+                        suppressZoomSyncRef.current = false
+                    }, 120)
+                }
+            }
             animateCameraZoom({
                 camera: camera.current,
                 controls: controls.current,

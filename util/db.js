@@ -293,6 +293,24 @@ async function ensureRemarksTable(db) {
   )
 }
 
+async function ensureSelectionTemplatesTable(db) {
+  await dbRun(
+    db,
+    `CREATE TABLE IF NOT EXISTS selection_templates (
+      template_id TEXT PRIMARY KEY,
+      template_name TEXT NOT NULL,
+      device_type TEXT,
+      display_type TEXT,
+      matrix_width INTEGER,
+      matrix_height INTEGER,
+      template_json TEXT NOT NULL,
+      created_at INTEGER,
+      updated_at INTEGER
+    )`
+  )
+  await dbRun(db, 'CREATE INDEX IF NOT EXISTS idx_selection_templates_updated_at ON selection_templates(updated_at DESC)')
+}
+
 function legacyGenDb(file, filePath) {
   let db
   if (fs.existsSync(file)) {
@@ -307,6 +325,7 @@ function legacyGenDb(file, filePath) {
   db.run('PRAGMA journal_mode = WAL;')
   db.run('PRAGMA synchronous = NORMAL;')
   ensureRemarksTable(db);
+  ensureSelectionTemplatesTable(db);
   return db;
 }
 
@@ -355,6 +374,7 @@ async function configureDb(db) {
   await dbRun(db, 'PRAGMA journal_mode = WAL;')
   await dbRun(db, 'PRAGMA synchronous = NORMAL;')
   await ensureRemarksTable(db)
+  await ensureSelectionTemplatesTable(db)
 }
 
 function removeSidecarFiles(file) {
@@ -951,6 +971,89 @@ async function deleteRemarkByDate({ db, params }) {
   return { success: true }
 }
 
+// ─── 框选模板管理 ────────────────────────────────────────
+
+function normalizeSelectionTemplateRow(row) {
+  if (!row) return null
+  try {
+    const template = JSON.parse(row.template_json || '{}')
+    return {
+      ...template,
+      templateId: template.templateId || row.template_id,
+      templateName: template.templateName || row.template_name,
+      deviceType: template.deviceType || row.device_type,
+      displayType: template.displayType || row.display_type,
+      matrixWidth: template.matrixWidth ?? row.matrix_width,
+      matrixHeight: template.matrixHeight ?? row.matrix_height,
+      createdAt: template.createdAt || row.created_at,
+      updatedAt: template.updatedAt || row.updated_at,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function listSelectionTemplates({ db }) {
+  await ensureSelectionTemplatesTable(db)
+  const rows = await dbAll(
+    db,
+    `SELECT template_id, template_name, device_type, display_type, matrix_width, matrix_height, template_json, created_at, updated_at
+     FROM selection_templates
+     ORDER BY updated_at DESC, created_at DESC`
+  )
+  return rows.map(normalizeSelectionTemplateRow).filter(Boolean)
+}
+
+async function replaceSelectionTemplates({ db, templates }) {
+  await ensureSelectionTemplatesTable(db)
+  const safeTemplates = Array.isArray(templates) ? templates.filter(Boolean) : []
+  const now = Date.now()
+
+  await dbRun(db, 'BEGIN TRANSACTION')
+  try {
+    await dbRun(db, 'DELETE FROM selection_templates')
+    for (const template of safeTemplates) {
+      const templateId = String(template.templateId || template.id || `selection-template-${now}`).trim()
+      const templateName = String(template.templateName || template.name || '').trim()
+      if (!templateId || !templateName) continue
+      const createdAt = Number(template.createdAt) || now
+      const updatedAt = Number(template.updatedAt) || createdAt
+      const matrixWidth = Number(template.matrixWidth)
+      const matrixHeight = Number(template.matrixHeight)
+      const normalized = {
+        ...template,
+        templateId,
+        templateName,
+        createdAt,
+        updatedAt,
+      }
+      await dbRun(
+        db,
+        `INSERT INTO selection_templates
+          (template_id, template_name, device_type, display_type, matrix_width, matrix_height, template_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          templateId,
+          templateName,
+          normalized.deviceType || null,
+          normalized.displayType || null,
+          Number.isFinite(matrixWidth) ? matrixWidth : null,
+          Number.isFinite(matrixHeight) ? matrixHeight : null,
+          JSON.stringify(normalized),
+          createdAt,
+          updatedAt,
+        ]
+      )
+    }
+    await dbRun(db, 'COMMIT')
+  } catch (err) {
+    await dbRun(db, 'ROLLBACK').catch(() => {})
+    throw err
+  }
+
+  return listSelectionTemplates({ db })
+}
+
 // ─── CSV 读取 ────────────────────────────────────────────
 
 function normalizeCsvHeader(header) {
@@ -1369,6 +1472,8 @@ module.exports = {
   upsertRemark,
   getRemark,
   deleteRemarkByDate,
+  listSelectionTemplates,
+  replaceSelectionTemplates,
   resolveWritableDownloadDir,
   validateImportedCsv,
 }

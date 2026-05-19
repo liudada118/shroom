@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ReloadOutlined } from '@ant-design/icons'
 import './index.scss'
 
 const PANEL_Z_INDEX_BASE = 120
@@ -72,8 +73,8 @@ export default function DraggablePanel({ children, defaultPosition, title, class
     }, [isDragging])
 
     // 缩放（10%~1000%），固定 10% 步长，只保留 10 的倍数
-    const ZOOM_MIN = 10
-    const ZOOM_MAX = 1000
+    const ZOOM_MIN = 50
+    const ZOOM_MAX = 150
     const ZOOM_STEP = 10
 
     const zoomIn = useCallback((e) => {
@@ -115,8 +116,10 @@ export default function DraggablePanel({ children, defaultPosition, title, class
                 <span className='draggable-panel-title'>{title}</span>
                 <div className='draggable-panel-controls'>
                     <span className='panel-ctrl-btn' onClick={zoomOut} title={t('zoomOut')}>-</span>
-                    <span className='panel-ctrl-btn' onClick={resetZoom} title={t('resetZoom')}
-                        style={{ fontSize: '0.65rem' }}>{zoomPercent}%</span>
+                    <span className='panel-zoom-value'>{zoomPercent}%</span>
+                    <span className='panel-ctrl-btn' onClick={resetZoom} title={t('resetZoom')}>
+                        <ReloadOutlined />
+                    </span>
                     <span className='panel-ctrl-btn' onClick={zoomIn} title={t('zoomIn')}>+</span>
                 </div>
             </div>

@@ -1,4 +1,4 @@
-import React, { memo, useContext, useEffect, useRef, useState } from 'react'
+import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import Col from '../col/Col'
 import './index.scss'
 import Drawer from '../Drawer/Drawer'
@@ -19,6 +19,9 @@ import dayjs from 'dayjs'
 import { pageContext } from '../../page/test/Test'
 
 const CSV_STORAGE_KEY = 'csvArr'
+const DRAWER_RENDER_CHUNK = 24
+const HISTORY_PREFETCH_DELAY = 800
+const HISTORY_CACHE_MAX_AGE = 30000
 const CSV_IMPORT_INVALID_MESSAGE = '数据有误'
 
 const normalizeCsvItem = (item) => {
@@ -116,10 +119,18 @@ const normalizeFolderSelection = (value) => {
     return ''
 }
 
+const scheduleIdleTask = (callback, timeout = 800) => {
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+        const id = window.requestIdleCallback(callback, { timeout })
+        return () => window.cancelIdleCallback?.(id)
+    }
+    const id = setTimeout(callback, 0)
+    return () => clearTimeout(id)
+}
+
 const ColAndHistory = memo((props) => {
 
     const pageInfo = useContext(pageContext);
-    console.log('ViewSetting')
     const { setDisplay, display, setDisplayType, setOnRuler } = pageInfo
     const dataStatus = useEquipStore(s => s.dataStatus, shallow)
 
@@ -139,6 +150,10 @@ const ColAndHistory = memo((props) => {
     const [colHistoryArr, setColHistoryArr] = useState()
     const [displayHistoryArr, setDisplayHistoryArr] = useState()
     const [localArr, setLocalArr] = useState(readStoredCsvList)
+    const [historyRenderCount, setHistoryRenderCount] = useState(DRAWER_RENDER_CHUNK)
+    const [localRenderCount, setLocalRenderCount] = useState(DRAWER_RENDER_CHUNK)
+    const [historyLoading, setHistoryLoading] = useState(false)
+    const historyFetchRef = useRef({ loading: false, lastFetchAt: 0 })
 
     const onChange = () => {
 
@@ -155,11 +170,13 @@ const ColAndHistory = memo((props) => {
     const contrastInitArr = { left: {}, right: {} }
 
     const [contrastArr, setContrast] = useState(contrastInitArr)
+    const [contrastMode, setContrastMode] = useState('record_pair')
 
     const resetOperateState = () => {
         setSelectArr([])
         setOperateStatus('')
         setContrast(contrastInitArr)
+        setContrastMode('record_pair')
     }
 
     const handleTabChange = (nextIndex) => {
@@ -246,10 +263,10 @@ const ColAndHistory = memo((props) => {
                 setUploadFileShow(false)
                 clearUploadFile()
             } else {
-                message.error(res.data?.message || CSV_IMPORT_INVALID_MESSAGE)
+                message.error(res.data?.message || t('csvImportInvalid') || CSV_IMPORT_INVALID_MESSAGE)
             }
         }).catch((err) => {
-            message.error(err?.response?.data?.message || err.message || CSV_IMPORT_INVALID_MESSAGE)
+            message.error(err?.response?.data?.message || err.message || t('csvImportInvalid') || CSV_IMPORT_INVALID_MESSAGE)
         }).finally(() => {
             setUploadLoading(false)
         })
@@ -260,19 +277,19 @@ const ColAndHistory = memo((props) => {
         clearUploadFile()
     }
 
-    const getColHistory = () => {
-        const willOpen = !historyDrawer
-        sethistoryDrawer((prev) => !prev)
-        if (willOpen) {
-            // 打开历史 → 重置框选工具的激活状态
-            window.dispatchEvent(new CustomEvent('clear-selection-mode'))
-        }
-        resetOperateState()
+    const loadColHistory = useCallback((options = {}) => {
+        const { force = false } = options
+        const now = Date.now()
+        const fetchState = historyFetchRef.current
+        if (fetchState.loading) return
+        if (!force && Array.isArray(colHistoryArr) && now - fetchState.lastFetchAt < HISTORY_CACHE_MAX_AGE) return
+
+        fetchState.loading = true
+        setHistoryLoading(true)
         axios({
             method: 'get',
             url: `${localAddress}/getColHistory`,
         }).then((res) => {
-            console.log(res.data.data)
             const arr = normalizeHistoryList((res.data.data || []).map((a) => {
                 const obj = {}
                 const date = a && a.date != null ? String(a.date) : ''
@@ -282,25 +299,43 @@ const ColAndHistory = memo((props) => {
                 obj.remark = a && a.remark != null ? a.remark : ''
                 obj.name = alias || date
                 obj.time = a ? a.timestamp : ''
-                let parsedSelect = {}
-                if (a && a.select) {
-                    try {
-                        parsedSelect = typeof a.select === 'string' ? JSON.parse(a.select) : a.select
-                    } catch (e) {
-                        parsedSelect = {}
-                    }
-                }
-                obj.select = parsedSelect
-                obj.selected = parsedSelect && Object.keys(parsedSelect).length > 0
+                obj.select = {}
+                obj.selected = false
                 return obj
             }))
             setColHistoryArr(arr)
             setDisplayHistoryArr(arr)
-            console.log('历史执行')
-            useEquipStore.getState().setStatus(new Array(4096).fill(0))
-            useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
+            fetchState.lastFetchAt = Date.now()
+        }).catch(() => {
+            message.error(i18n.language?.startsWith('zh') ? '历史数据加载失败' : 'Load history failed')
+        }).finally(() => {
+            fetchState.loading = false
+            setHistoryLoading(false)
+        })
+    }, [colHistoryArr, i18n.language])
+
+    const getColHistory = () => {
+        resetOperateState()
+        sethistoryDrawer((prev) => {
+            const next = !prev
+            if (next) {
+                setHistoryRenderCount(DRAWER_RENDER_CHUNK)
+                requestAnimationFrame(() => loadColHistory({ force: !Array.isArray(colHistoryArr) }))
+            }
+            return next
         })
     }
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            const cancelIdle = scheduleIdleTask(() => loadColHistory(), 1200)
+            historyFetchRef.current.cancelIdlePrefetch = cancelIdle
+        }, HISTORY_PREFETCH_DELAY)
+        return () => {
+            clearTimeout(timer)
+            historyFetchRef.current.cancelIdlePrefetch?.()
+        }
+    }, [loadColHistory])
 
     // 外部请求关闭历史抽屉
     useEffect(() => {
@@ -621,6 +656,10 @@ const ColAndHistory = memo((props) => {
         }
     }
 
+    const handleChooseUploadFile = () => {
+        fileInputRef.current?.click()
+    }
+
 
     const [dataLength, setDataLength] = useState(10)
     const [currentName, setCurrentName] = useState()
@@ -651,6 +690,7 @@ const ColAndHistory = memo((props) => {
         useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
         useEquipStore.getState().setDataStatus('realtime')
         useEquipStore.getState().setPlaybackHasSelection(false)
+        useEquipStore.getState().setPlaybackRecordDate('')
         setCurrentName('')
         setCurrentPlaybackKey('')
         setOperateStatus('')
@@ -665,22 +705,31 @@ const ColAndHistory = memo((props) => {
         const leftDate = contrastArr.left?.date
         const rightDate = contrastArr.right?.date
         if (!leftDate) {
-            message.error(t('selectBaseDataFirst'))
-            return
-        }
-        if (!rightDate) {
-            message.error(t('selectCompareDataFirst'))
-            return
-        }
-        if (leftDate === rightDate) {
-            message.error(t('compareSameRecordInvalid'))
+            message.error(contrastMode === 'single_record_frame' ? 'Please select one history record first' : t('selectBaseDataFirst'))
             return
         }
 
-        const payload = {
-            left: leftDate,
-            right: rightDate,
+        if (contrastMode !== 'single_record_frame') {
+            if (!rightDate) {
+                message.error(t('selectCompareDataFirst'))
+                return
+            }
+            if (leftDate === rightDate) {
+                message.error(t('compareSameRecordInvalid'))
+                return
+            }
         }
+
+        const payload = contrastMode === 'single_record_frame'
+            ? {
+                mode: 'single_record_frame',
+                record: leftDate,
+            }
+            : {
+                mode: 'record_pair',
+                left: leftDate,
+                right: rightDate,
+            }
 
         axios({
             method: 'post',
@@ -719,10 +768,36 @@ const ColAndHistory = memo((props) => {
 
     const [searchInfo, setSearchInfo] = useState('')
     const debouncedValue = useDebounce(searchInfo, 300)
+    const displayHistoryLength = Array.isArray(displayHistoryArr) ? displayHistoryArr.length : 0
+    const localLength = Array.isArray(localArr) ? localArr.length : 0
+    const visibleHistoryArr = useMemo(
+        () => Array.isArray(displayHistoryArr) ? displayHistoryArr.slice(0, historyRenderCount) : [],
+        [displayHistoryArr, historyRenderCount]
+    )
+    const visibleLocalArr = useMemo(
+        () => Array.isArray(localArr) ? localArr.slice(0, localRenderCount) : [],
+        [localArr, localRenderCount]
+    )
+    const handlePlaybackScroll = useCallback((event) => {
+        const target = event.currentTarget
+        if (!target || target.scrollHeight - target.scrollTop - target.clientHeight > 180) return
+        if (Onindex === 0) {
+            setHistoryRenderCount((count) => Math.min(count + DRAWER_RENDER_CHUNK, displayHistoryLength || DRAWER_RENDER_CHUNK))
+        } else {
+            setLocalRenderCount((count) => Math.min(count + DRAWER_RENDER_CHUNK, localLength || DRAWER_RENDER_CHUNK))
+        }
+    }, [Onindex, displayHistoryLength, localLength])
+
+    useEffect(() => {
+        setHistoryRenderCount(DRAWER_RENDER_CHUNK)
+    }, [historyDrawer, debouncedValue, displayHistoryLength])
+
+    useEffect(() => {
+        setLocalRenderCount(DRAWER_RENDER_CHUNK)
+    }, [historyDrawer, Onindex, localLength])
 
     useEffect(() => {
         // const user = 
-        console.log(debouncedValue)
         if (Onindex == 0 && colHistoryArr) {
             if (debouncedValue != '') {
                 let resArr = [...colHistoryArr].filter((a) => a.name.includes(debouncedValue))
@@ -805,6 +880,8 @@ const ColAndHistory = memo((props) => {
     const selectDataArrType = ['delete', 'download', 'contrast']
 
 
+    const shouldShowPlaybackBar = dataStatus === 'replay' && display !== 'contrast'
+
     return (
         <>
             {/* <Modal
@@ -868,8 +945,18 @@ const ColAndHistory = memo((props) => {
                 okText={t('ok')}
                 cancelText={t('cancel')}
             >
-                <input ref={fileInputRef} type="file" accept=".csv" onChange={(e) => { fileChange(e) }} id="file" />
-                {fileName && <div style={{ marginTop: '8px', color: '#8794A1', fontSize: '0.8rem' }}>{fileName}</div>}
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => { fileChange(e) }}
+                    id="file"
+                    style={{ display: 'none' }}
+                />
+                <Button onClick={handleChooseUploadFile}>{t('choosingDataFile')}</Button>
+                <div style={{ marginTop: '8px', color: '#8794A1', fontSize: '0.8rem' }}>
+                    {fileName || t('noFileSelected')}
+                </div>
             </Modal>
 
             {/* ─── 下载路径选择对话框 ─── */}
@@ -979,6 +1066,7 @@ const ColAndHistory = memo((props) => {
 
             <Drawer zindex={2} title={t('history')} show={historyDrawer} setShow={sethistoryDrawer} close={close} >
                 <Input
+                    className="historySearchInput"
                     style={{ backgroundColor: '#202327', border: 0, color: "#E6EBF0", marginBottom: '0.75rem' }}
                     placeholder={t('searchPlaceholder')}
                     onChange={(e) => { setSearchInfo(e.target.value) }}
@@ -1040,10 +1128,34 @@ const ColAndHistory = memo((props) => {
                                     <div className='navIconContent'>
                                         <i className='iconfont cursor' onClick={() => {
                                             setOperateStatus('contrast')
+                                            setSelectArr([])
+                                            setContrast(contrastInitArr)
                                         }}>&#xe60e;</i>
                                     </div>
                                 </Popover></> :
                                 <>
+                                    {
+                                        operateStatus == 'contrast' ? <div className="contrastModeSwitch">
+                                            <button
+                                                type="button"
+                                                className={contrastMode === 'record_pair' ? 'active' : ''}
+                                                onClick={() => {
+                                                    setContrastMode('record_pair')
+                                                    setSelectArr([])
+                                                    setContrast(contrastInitArr)
+                                                }}
+                                            >{t('contrastRecordPair')}</button>
+                                            <button
+                                                type="button"
+                                                className={contrastMode === 'single_record_frame' ? 'active' : ''}
+                                                onClick={() => {
+                                                    setContrastMode('single_record_frame')
+                                                    setSelectArr([])
+                                                    setContrast(contrastInitArr)
+                                                }}
+                                            >{t('contrastSingleRecordTime')}</button>
+                                        </div> : ''
+                                    }
                                     {
                                         operateStatus == 'delete' ? <div className='modalConfirmButton cursor' onClick={deleteData}>{t('delete')}</div> :
                                             operateStatus == 'download' ? <div className='modalConfirmButton cursor' onClick={download}>{t('download')}</div> :
@@ -1086,12 +1198,16 @@ const ColAndHistory = memo((props) => {
                         </div>
                     </div>
 
-                    <div className="playbackItemContent">
+                    <div className="playbackItemContent" onScroll={handlePlaybackScroll}>
                         <div className="playbackItems">
                             {
-                                Onindex == 0 && displayHistoryArr ? displayHistoryArr.map((dbInfo, index) => {
+                                Onindex == 0 && historyLoading && !visibleHistoryArr.length ? (
+                                    <div className="historyLoadingText">{i18n.language?.startsWith('zh') ? '加载中...' : 'Loading...'}</div>
+                                ) : Onindex == 0 && visibleHistoryArr.length ? visibleHistoryArr.map((dbInfo, index) => {
                                     const historyItemKey = getHistoryItemKey(dbInfo)
-                                    const contrastRole = contrastArr.left?.date === dbInfo.date ? 'A' : contrastArr.right?.date === dbInfo.date ? 'B' : ''
+                                    const contrastRole = contrastMode === 'single_record_frame'
+                                        ? (contrastArr.left?.date === dbInfo.date ? 'T' : '')
+                                        : (contrastArr.left?.date === dbInfo.date ? 'A' : contrastArr.right?.date === dbInfo.date ? 'B' : '')
 
                                     return (
                                         <div key={historyItemKey || `history-${index}`} className={`playbackItem cursor ${currentPlaybackKey === historyItemKey ? 'playbackItemActive' : ''}`}
@@ -1100,36 +1216,36 @@ const ColAndHistory = memo((props) => {
                                                 if (operateStatus == 'contrast') {
                                                     const obj = { ...contrastArr }
 
-                                                    if (!Object.keys(obj.left).length || obj.left.date == dbInfo.date) {
-
-                                                        let arr = [...selectArr]
-                                                        if (arr.includes(dbInfo.date)) {
-                                                            arr = arr.filter((b) => b != dbInfo.date)
+                                                    if (contrastMode === 'single_record_frame') {
+                                                        if (obj.left?.date === dbInfo.date) {
                                                             obj.left = {}
+                                                            obj.right = {}
+                                                            setSelectArr([])
                                                         } else {
-                                                            arr.push(dbInfo.date)
                                                             obj.left = dbInfo
+                                                            obj.right = {}
+                                                            setSelectArr([dbInfo.date])
                                                         }
-                                                        console.log(arr)
-                                                        setSelectArr(arr)
-
                                                     } else {
-                                                        if (!Object.keys(obj.right).length || obj.right.date == dbInfo.date) {
-
-                                                            let arr = [...selectArr]
-                                                            if (arr.includes(dbInfo.date)) {
-                                                                arr = arr.filter((b) => b != dbInfo.date)
-                                                                obj.right = {}
-                                                            } else {
-                                                                arr.push(dbInfo.date)
-                                                                obj.right = dbInfo
-                                                            }
-                                                            setSelectArr(arr)
+                                                        const clickedDate = dbInfo.date
+                                                        let arr = [...selectArr]
+                                                        if (obj.left?.date === clickedDate) {
+                                                            obj.left = {}
+                                                            arr = arr.filter((b) => b !== clickedDate)
+                                                        } else if (obj.right?.date === clickedDate) {
+                                                            obj.right = {}
+                                                            arr = arr.filter((b) => b !== clickedDate)
+                                                        } else if (!obj.left?.date) {
+                                                            obj.left = dbInfo
+                                                            arr = [...arr.filter((b) => b !== clickedDate), clickedDate]
+                                                        } else if (!obj.right?.date) {
+                                                            obj.right = dbInfo
+                                                            arr = [...arr.filter((b) => b !== clickedDate), clickedDate]
                                                         } else {
                                                             message.info(t('twoGroupsSelected'))
                                                         }
+                                                        setSelectArr(arr)
                                                     }
-                                                    console.log(obj)
                                                     setContrast(obj)
 
 
@@ -1162,7 +1278,6 @@ const ColAndHistory = memo((props) => {
                                                         params: playbackRequest,
                                                         data: playbackRequest
                                                     }).then((res) => {
-                                                        console.log(res)
                                                         const result = res.data || {}
                                                         const payload = result.data || {}
                                                         const length = Number(payload.length) || 0
@@ -1180,24 +1295,9 @@ const ColAndHistory = memo((props) => {
                                                         setCurrentName(dbInfo.name)
                                                         setCurrentPlaybackKey(historyItemKey)
                                                         useEquipStore.getState().setDataStatus('replay')
-                                                        useEquipStore.getState().setPlaybackHasSelection(!!dbInfo.selected)
+                                                        useEquipStore.getState().setPlaybackHasSelection(false)
+                                                        useEquipStore.getState().setPlaybackRecordDate(dbInfo.date)
 
-                                                        // 进入回放：清掉用户在采集模式下画的框，关掉框选工具
-                                                        window.dispatchEvent(new CustomEvent('clear-selection-mode'))
-
-                                                        if (dbInfo.selected && dbInfo.select && Object.keys(dbInfo.select).length > 0) {
-                                                            if (display !== 'num') {
-                                                                setDisplay('num')
-                                                            }
-                                                            const firstKey = Object.keys(dbInfo.select)[0] || ''
-                                                            let target2DType = ''
-                                                            if (firstKey.includes('back')) target2DType = 'back2D'
-                                                            else if (firstKey.includes('sit')) target2DType = 'sit2D'
-                                                            if (target2DType) {
-                                                                useEquipStore.getState().setDisplayType(target2DType)
-                                                                setDisplayType(target2DType)
-                                                            }
-                                                        }
                                                         setDataLength(length)
                                                         useEquipStore.getState().setHistoryStatus({
                                                             index: Number(payload.initialIndex) || 0,
@@ -1213,23 +1313,6 @@ const ColAndHistory = memo((props) => {
                                                         useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
 
                                                         // 如果历史数据有保存的框选信息，自动设置框选缓存供回放时展示
-                                                        if (dbInfo.selected && dbInfo.select && Object.keys(dbInfo.select).length > 0) {
-                                                            axios({
-                                                                method: 'post',
-                                                                url: `${localAddress}/getDbHistorySelect`,
-                                                                params: { selectJson: JSON.stringify(dbInfo.select) },
-                                                                data: { selectJson: dbInfo.select }
-                                                            }).then((selectRes) => {
-                                                                const selectData = selectRes.data?.data || {}
-                                                                const { areaArr: selAreaArr, pressArr: selPressArr } = selectData
-                                                                if (selAreaArr || selPressArr) {
-                                                                    useEquipStore.getState().setHistoryChart({
-                                                                        areaArr: selAreaArr || {},
-                                                                        pressArr: selPressArr || {}
-                                                                    })
-                                                                }
-                                                            })
-                                                        }
                                                     }).catch((err) => {
                                                         message.error(err.message || 'Load playback failed')
                                                     })
@@ -1255,14 +1338,6 @@ const ColAndHistory = memo((props) => {
                                                 </div> : ''}
                                                 {operateStatus === 'contrast' && contrastRole ? <div className="contrastRoleBadge">{contrastRole}</div> : ''}
 
-
-
-                                                {dbInfo.selected ?
-                                                    <div className='fs14' style={{ left: 5, bottom: 5, position: 'absolute', color: '#5CDBD3', }}>
-                                                        <i className='iconfont fs14' style={{ zIndex: 2, color: '#5CDBD3' }}>&#xe60e;</i> {t('selected')}
-                                                    </div>
-                                                    : ''}
-
                                                 {/* <img style={{width : '100%'}} src={history} alt="" /> */}
                                             </div>
                                             <div className='playbackItemNameInfo'>
@@ -1273,7 +1348,7 @@ const ColAndHistory = memo((props) => {
                                             </div>
                                         </div>
                                     )
-                                }) : Onindex == 1 && localArr ? localArr.map((a, index) => {
+                                }) : Onindex == 1 && visibleLocalArr.length ? visibleLocalArr.map((a, index) => {
                                     const localItemKey = getLocalItemKey(a)
                                     return (
                                         <div key={localItemKey || `local-${index}`} className={`playbackItem cursor ${currentPlaybackKey === localItemKey ? 'playbackItemActive' : ''}`} onClick={() => {
@@ -1315,6 +1390,7 @@ const ColAndHistory = memo((props) => {
                                                     setDataLength(length)
                                                     useEquipStore.getState().setDataStatus('replay')
                                                     useEquipStore.getState().setPlaybackHasSelection(false)
+                                                    useEquipStore.getState().setPlaybackRecordDate('')
                                                     useEquipStore.getState().setHistoryStatus({
                                                         index: Number(payload.initialIndex) || 0,
                                                         timestamp: payload.initialTimestamp || ''
@@ -1425,7 +1501,6 @@ const ColAndHistory = memo((props) => {
                             setOperateStatus('contrast')
                         }}>对比</div>
                             <div className='playbackButton cursor' onClick={() => {
-                                console.log('click setUploadFileShow')
                                 setUploadFileShow(true)
                             }}>csv导入</div> </> :
                             <> <div className='playbackButton cursor' onClick={() => {
@@ -1441,7 +1516,6 @@ const ColAndHistory = memo((props) => {
                                     params: buildFallbackParams(payload),
                                     data: payload,
                                 }).then((res) => {
-                                    console.log(res)
                                     // setDisplayStatus()
                                       setDisplay('contrast')
                                       useEquipStore.getState().setContrast(res.data.data)
@@ -1506,13 +1580,9 @@ const ColAndHistory = memo((props) => {
 
             <div className='colAndHContent'>
                 <div className='colAndHistory'>
-                    {
-                        dataStatus === 'replay' && display != 'contrast'
-                            ? <DataPlay dataLength={dataLength} name={currentName} />
-                            : !historyDrawer
-                                ? <ColControl getColHistory={getColHistory} />
-                                : display != 'contrast' ? <DataPlay dataLength={dataLength} name={currentName} /> : ''
-                    }
+                    {shouldShowPlaybackBar
+                        ? <DataPlay dataLength={dataLength} name={currentName} />
+                        : <ColControl getColHistory={getColHistory} />}
                 </div>
             </div>
         </>

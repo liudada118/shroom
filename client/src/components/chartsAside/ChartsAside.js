@@ -24,6 +24,9 @@ function ChartsAside(props) {
     const myChart1 = useRef()
     const myChart2 = useRef()
     const chart = useRef()
+    const myChart1Dom = useRef()
+    const myChart2Dom = useRef()
+    const normalChartDom = useRef()
     const trackRef = useRef()
 
     const [data, setData] = useState({})
@@ -162,7 +165,8 @@ function ChartsAside(props) {
         const historyData = historyChartRef.current
         const pressArrRaw = historyData && historyData.pressArr
         const pressArr = Array.isArray(pressArrRaw) ? { back: pressArrRaw } : pressArrRaw
-        const useHistory = pressArr && Object.keys(pressArr).length
+        const hasCurrentBoxStats = getBoxStats(props.chartData.current).length > 0
+        const useHistory = pressArr && Object.keys(pressArr).length && !hasCurrentBoxStats
 
         const chartData = useHistory ? pressArr : props.chartData.current
         const keyArr = Object.keys(chartData)
@@ -194,7 +198,8 @@ function ChartsAside(props) {
         const historyData = historyChartRef.current
         const areaArrRaw = historyData && historyData.areaArr
         const areaArr = Array.isArray(areaArrRaw) ? { back: areaArrRaw } : areaArrRaw
-        const useHistory = areaArr && Object.keys(areaArr).length
+        const hasCurrentBoxStats = getBoxStats(props.chartData.current).length > 0
+        const useHistory = areaArr && Object.keys(areaArr).length && !hasCurrentBoxStats
 
         const chartData = useHistory ? areaArr : props.chartData.current
         const keyArr = Object.keys(chartData)
@@ -227,10 +232,14 @@ function ChartsAside(props) {
         const keys = Object.keys(chartData)
         if (!keys.length) return
         const boxCenters = getBoxStats(chartData)
-            .map((box) => getCenterValues(box.center))
+            .map((box) => ({
+                center: getCenterValues(box.center),
+                color: box.bgc || SELECT_COLORS[box.colorIndex] || SELECT_COLORS[box.boxIndex],
+            }))
+            .filter((box) => box.center)
             .filter(Boolean)
         if (boxCenters.length) {
-            trackRef.current?.circleMove(...boxCenters.slice(0, 2))
+            trackRef.current?.circleMove(boxCenters)
             return
         }
         const centerArr = []
@@ -243,6 +252,7 @@ function ChartsAside(props) {
     }
 
     const renderNormal = () => {
+        if (!chart.current) return
         const chartData = props.chartData.current
         const keys = Object.keys(chartData)
         if (!keys.length) return
@@ -300,18 +310,30 @@ function ChartsAside(props) {
     }
 
     useEffect(() => {
-        myChart1.current = echarts.init(document.getElementById(`myChart1`))
-        myChart2.current = echarts.init(document.getElementById(`myChart2`))
-        chart.current = echarts.init(document.getElementById('chart'));
+        myChart1.current = echarts.init(myChart1Dom.current)
+        myChart2.current = echarts.init(myChart2Dom.current)
+        chart.current = echarts.init(normalChartDom.current);
+        const chartPanel = document.querySelector('.charts-panel')
+        const resizeCharts = () => {
+            myChart1.current?.resize()
+            myChart2.current?.resize()
+            chart.current?.resize()
+        }
+        const resizeObserver = chartPanel && typeof ResizeObserver !== 'undefined'
+            ? new ResizeObserver(resizeCharts)
+            : null
+        if (resizeObserver && chartPanel) resizeObserver.observe(chartPanel)
 
-        Scheduler.onRender(renderCharts1)
-        Scheduler.onRender(renderCharts2)
-        Scheduler.onRender(renderCenter)
-        Scheduler.onRender(renderNormal)
+        const offRenderCharts1 = Scheduler.onRender(renderCharts1)
+        const offRenderCharts2 = Scheduler.onRender(renderCharts2)
+        const offRenderCenter = Scheduler.onRender(renderCenter)
+        const offRenderNormal = Scheduler.onRender(renderNormal)
+        resizeCharts()
+        requestAnimationFrame(resizeCharts)
 
         let data = {}
 
-        Scheduler.onUI(() => setData(() => {
+        const offUI = Scheduler.onUI(() => setData(() => {
             const system = getSysType()
             const chartData = props.chartData.current
 
@@ -382,6 +404,21 @@ function ChartsAside(props) {
             return { ...dataObj, t: Date.now() }
         }))
 
+        return () => {
+            offRenderCharts1()
+            offRenderCharts2()
+            offRenderCenter()
+            offRenderNormal()
+            offUI()
+            resizeObserver?.disconnect()
+            myChart1.current?.dispose()
+            myChart2.current?.dispose()
+            chart.current?.dispose()
+            myChart1.current = null
+            myChart2.current = null
+            chart.current = null
+        }
+
     }, [])
 
     const { t, i18n } = useTranslation()
@@ -398,6 +435,8 @@ function ChartsAside(props) {
         const keys = Object.keys(data).filter(a => a !== 't')
         return keys.some(key => data[key]?.boxStats?.length > 0)
     }
+
+    const hasSelectionStats = hasBoxStats()
 
     /**
      * 渲染图表图例 — 多框选时显示框颜色，否则显示设备颜色
@@ -448,9 +487,9 @@ function ChartsAside(props) {
                         allBoxRows.push(
                             <div className='chartTypeItem' key={`${key}-box-${box.colorIndex}-${item}`}>
                                 <div className='cirlce' style={{ backgroundColor: color }}></div>
-                                <div style={{ width: '4rem', display: 'flex', justifyContent: 'flex-end' }}>
-                                    <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: '2.8rem', textAlign: 'right', display: 'inline-block' }}>{value}</span>
-                                    <span style={{ width: '1.6rem', textAlign: 'left', flexShrink: 0 }}>
+                                <div className='chartMetricValueGroup'>
+                                    <span className='chartMetricValue'>{value}</span>
+                                    <span className='chartMetricUnit'>
                                         {system === 'carY' ? '' : (item === 'total' ? 'N' : item === 'pointTotal' ? '个' : item === 'areaTotal' ? 'cm²' : 'Kpa')}
                                     </span>
                                 </div>
@@ -467,9 +506,9 @@ function ChartsAside(props) {
             if (a !== 't') {
                 return <div className='chartTypeItem' key={`${a}-${item}`}>
                     <div className='cirlce' style={{ backgroundColor: colorArr[a] }}></div>
-                    <div style={{ width: '4rem', display: 'flex', justifyContent: 'flex-end' }}>
-                        <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: '2.8rem', textAlign: 'right', display: 'inline-block' }}>{data[a][item]}</span>
-                        <span style={{ width: '1.6rem', textAlign: 'left', flexShrink: 0 }}>
+                    <div className='chartMetricValueGroup'>
+                        <span className='chartMetricValue'>{data[a][item]}</span>
+                        <span className='chartMetricUnit'>
                             {system === 'carY' ? '' : (item === 'total' ? 'N' : item === 'pointTotal' ? '个' : item === 'areaTotal' ? 'cm²' : 'Kpa')}
                         </span>
                     </div>
@@ -514,17 +553,21 @@ function ChartsAside(props) {
 
     return (
         <>
-            <DraggablePanel title={t('pressureCurve') + ' / ' + t('areaCurve')} defaultPosition={{ x: 20, y: 80 }}>
+            <DraggablePanel
+                title={t('pressureCurve') + ' / ' + t('areaCurve')}
+                defaultPosition={{ x: 20, y: 80 }}
+                className={`charts-panel${hasSelectionStats ? ' charts-panel--expanded' : ''}`}
+            >
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{t('pressureCurve')}</div>
                         <div className="chartType">{renderLegend(pressColorArr)}</div>
                     </div>
-                    <canvas id="myChart1" style={{ height: `7.5rem`, width: '18.35rem', opacity: '0.8' }}></canvas>
+                    <div ref={myChart1Dom} id="myChart1" className="chartCanvas" style={{ opacity: '0.8' }}></div>
                     {pressDataArr.map((item) => (
                         <div className='chartData' key={item}>
-                            {t(item)}
-                            <div className='chartTypeContent'>{renderDataRow(item, pressColorArr)}</div>
+                            <span className="chartDataLabel">{t(item)}</span>
+                            <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>{renderDataRow(item, pressColorArr)}</div>
                         </div>
                     ))}
                 </div>
@@ -534,11 +577,11 @@ function ChartsAside(props) {
                         <div className="chartName">{t('areaCurve')}</div>
                         <div className="chartType">{renderLegend(areaColorArr)}</div>
                     </div>
-                    <canvas id="myChart2" style={{ height: `7.5rem`, width: '18.35rem', opacity: '0.8' }}></canvas>
+                    <div ref={myChart2Dom} id="myChart2" className="chartCanvas" style={{ opacity: '0.8' }}></div>
                     {areaDataArr.map((item) => (
                         <div className='chartData' key={item}>
-                            {t(item)}
-                            <div className='chartTypeContent'>{renderDataRow(item, areaColorArr)}</div>
+                            <span className="chartDataLabel">{t(item)}</span>
+                            <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>{renderDataRow(item, areaColorArr)}</div>
                         </div>
                     ))}
                 </div>
@@ -554,7 +597,7 @@ function ChartsAside(props) {
                     <div style={{ marginBottom: '6px', color: '#E6EBF0', fontSize: '0.875rem' }}>{t('pressureCenter')}{`(X,Y)`}</div>
                     {centerDataArr.map((item) => (
                         <div className='chartData' key={item}>
-                            <div className='chartTypeContent' style={{ height: '1.2rem' }}>
+                            <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`} style={{ height: '1.2rem' }}>
                                 {renderCenterRows()}
                             </div>
                         </div>
@@ -566,8 +609,8 @@ function ChartsAside(props) {
                         <div className="chartName">{t('pressureNormalDist')}</div>
                         <div className="chartType">{renderLegend(areaColorArr)}</div>
                     </div>
-                    <div style={{ margin: '1.5rem 0 1.2rem' }}>
-                        <canvas id="chart" style={{ height: `9.5rem`, width: '18.35rem' }}></canvas>
+                    <div className="normalChartWrap">
+                        <div ref={normalChartDom} id="chart" className="normalChartCanvas"></div>
                     </div>
                 </div>
             </DraggablePanel>

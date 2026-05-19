@@ -51,8 +51,6 @@ function normalizeDisplayValue(value) {
   return Math.max(0, Math.min(255, Math.round(numeric)));
 }
 
-let oldColor = 0
-
 function getTextureColorMax(color) {
   const value = Number(color);
   return Number.isFinite(value) && value > 0 ? value : 1;
@@ -238,8 +236,9 @@ export default function NumThree(props) {
       camera.updateProjectionMatrix();
     };
 
-    const texture = createDigitSpriteSheetWithJet();
-    textureMaxRef.current = 22;
+    let currentTextureMax = getTextureColorMax(getSettingValue()?.color)
+    const texture = createDigitSpriteSheetWithJet(currentTextureMax);
+    textureMaxRef.current = currentTextureMax;
     // texture.flipY = false;
 
 
@@ -378,15 +377,14 @@ export default function NumThree(props) {
         gauss, color, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
 
-      if (oldColor !== color) {
+      const nextMax = getTextureColorMax(color)
+      if (currentTextureMax !== nextMax) {
         console.log('colorChange')
-        const nextMax = getTextureColorMax(color)
         const texture = createDigitSpriteSheetWithJet(nextMax)
         material.uniforms.map.value = texture
         textureMaxRef.current = nextMax
+        currentTextureMax = nextMax
       }
-
-      oldColor = color
       // const { wsLocalData } = pageRef.current
       // if (wsLocalData) {
       //   data = data.map((a, index) => {

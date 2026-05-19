@@ -5,9 +5,9 @@ export function isEndiBackVisibleCell(row, col, width = 50, height = 64) {
   if (width !== 50 || height !== 64) return true
   if (r < 0 || r >= height || c < 0 || c >= width) return false
 
-  // The bottom 9 physical rows only have 11 wired columns centered on the backrest.
-  // With the current 2x linear interpolation this maps to the last 18 rows and columns 14..34.
-  if (r >= height - 18) {
+  // The top 9 physical rows only have 11 wired columns centered on the backrest.
+  // With the current 2x linear interpolation this maps to rows 0..17 and columns 14..34.
+  if (r < 18) {
     return c >= 14 && c <= 34
   }
 

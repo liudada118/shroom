@@ -178,6 +178,40 @@
     }
 }
 
+.historySearchInput::placeholder,
+.historySearchInput input::placeholder,
+.historySearchInput .ant-input::placeholder {
+    color: #aaaaaa !important;
+    opacity: 1;
+}
+
+.contrastModeSwitch {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.18rem;
+    margin-right: 0.5rem;
+    border-radius: 0.45rem;
+    background: rgba(20, 26, 32, 0.95);
+    border: 1px solid rgba(135, 148, 161, 0.18);
+
+    button {
+        border: 0;
+        outline: none;
+        color: #9aa8b7;
+        background: transparent;
+        border-radius: 0.36rem;
+        padding: 0.28rem 0.55rem;
+        font-size: 0.78rem;
+        cursor: pointer;
+    }
+
+    button.active {
+        color: #fff;
+        background: #0072EF;
+    }
+}
+
 .playbackContent {
     display: flex;
     flex-direction: column;
@@ -203,11 +237,21 @@
             // justify-content: space-between;
         }
 
+        .historyLoadingText {
+            width: 100%;
+            padding: 1.8rem 0;
+            color: #8794A1;
+            font-size: 0.8rem;
+            text-align: center;
+        }
+
         .playbackItem {
             flex: 0 0 30%;
             margin-bottom: 0.6rem;
             overflow: hidden;
             margin-right: 5%;
+            content-visibility: auto;
+            contain-intrinsic-size: 120px 145px;
         }
 
         .playbackItem:nth-child(3n) {

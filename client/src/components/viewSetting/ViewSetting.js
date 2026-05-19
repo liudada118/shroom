@@ -65,7 +65,7 @@ const ViewSetting = (props) => {
             newVal = Math.max(ZOOM_MIN, newVal)
             if (newVal !== showProp) {
                 setShowProp(newVal)
-                props.three?.current?.changeCamera(newVal)
+                props.three?.current?.changeCamera(newVal, { previousValue: showProp })
             }
         }
     }
@@ -76,7 +76,7 @@ const ViewSetting = (props) => {
             newVal = Math.min(ZOOM_MAX, newVal)
             if (newVal !== showProp) {
                 setShowProp(newVal)
-                props.three?.current?.changeCamera(newVal)
+                props.three?.current?.changeCamera(newVal, { previousValue: showProp })
             }
         }
     }
@@ -275,6 +275,7 @@ const ViewSetting = (props) => {
 
     const systemType = useEquipStore(s => s.systemType, shallow);
     const displayType = useEquipStore(s => s.displayType, shallow);
+    const canSwitchPointAngle = display === 'point3D' && ['back', 'sit'].includes(displayType)
 
     const reset3D = () => {
         props.three.current?.reset3D()
@@ -402,18 +403,12 @@ const ViewSetting = (props) => {
 
                         <i className='iconfont add cursor' style={{ marginRight: '1.375rem' }} onClick={addShow}>&#xe631;</i>
                     </div>
-                    <Popover color='#32373E' className='set-popover' placement="top" content={<div style={{ color: '#E6EBF0' }} >{t('viewSwitch3D')}</div>} >
-                        {display == 'point3D' ?
+                    {canSwitchPointAngle ? <Popover color='#32373E' className='set-popover' placement="top" content={<div style={{ color: '#E6EBF0' }} >{t('viewSwitch3D')}</div>} >
                             <div className='viewAdjust cursor' onClick={threeViewChange} style={{ display: 'flex', flexDirection: 'column' }}>
                                 <i className='iconfont  fs20'>&#xe606;</i>
                                 <span>{t('angleAdj')}</span>
-                            </div> :
-                            <div className='viewAdjust cursor' style={{ display: 'flex', flexDirection: 'column' }}>
-                                <i style={{ color: '#606A76' }} className='iconfont  fs20'>&#xe606;</i>
-                                <span>{t('angleAdj')}</span>
                             </div>
-                        }
-                    </Popover>
+                    </Popover> : null}
 
                     {isMoreMatrix(systemType) ? <Popover trigger='click' color='#32373E' className='set-popover' placement="top" content={changeMoreViewContent} >
                         <div className='viewAdjust cursor' style={{ display: 'flex', flexDirection: 'column' }}>

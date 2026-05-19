@@ -29,6 +29,15 @@
             gap: 4px;
             margin-left: 12px;
 
+            .panel-zoom-value {
+                min-width: 2.8rem;
+                color: #E6EBF0;
+                font-size: 0.72rem;
+                font-weight: 700;
+                text-align: center;
+                font-variant-numeric: tabular-nums;
+            }
+
             .panel-ctrl-btn {
                 display: inline-flex;
                 align-items: center;

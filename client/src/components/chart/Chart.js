@@ -129,25 +129,28 @@ const FootTrack = React.forwardRef((props, refs) => {
         if (ctxCircle) ctxCircle.clearRect(0, 0, canvasWidth, canvasWidth);
     }
 
-    const circleMove = (arrSmooth, arrSmooth1
-        //  rightTopPropSmooth, leftTopPropSmooth, leftBottomPropSmooth, rightPropSmooth, leftPropSmooth, rightBottomPropSmooth
-    ) => {
-        const width = 1
-        // ctx.strokeStyle = "#01F1E3";
-        // ctx.lineTo(
-        //     (arrSmooth[0] * canvasWidth) / width,
-        //     (arrSmooth[1] * canvasWidth) / width
-        // );
-        // ctx.stroke();
-        ctxCircle.clearRect(0, 0, canvasWidth, canvasWidth);
+    const getCenterPointHaloColor = (color) => {
+        const value = String(color || '')
+        if (/^#[0-9a-fA-F]{6}$/.test(value)) return `${value}4D`
+        if (/^#[0-9a-fA-F]{3}$/.test(value)) {
+            const r = value[1], g = value[2], b = value[3]
+            return `#${r}${r}${g}${g}${b}${b}4D`
+        }
+        return 'rgba(138,194,135,0.3)'
+    }
 
-        // { back: '#8AC287', sit: '#5D65FF' }
+    const drawCenterPoint = (point, color) => {
+        if (!point) return
+        const width = 1
+        const x = Number(Array.isArray(point) ? point[0] : point.x)
+        const y = Number(Array.isArray(point) ? point[1] : point.y)
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return
 
         ctxCircle.beginPath();
-        ctxCircle.fillStyle = "rgba(138,194,135,0.3)";
+        ctxCircle.fillStyle = getCenterPointHaloColor(color);
         ctxCircle.arc(
-            (arrSmooth[0] * canvasWidth) / width,
-            (arrSmooth[1] * canvasWidth) / width,
+            (x * canvasWidth) / width,
+            (y * canvasWidth) / width,
             10,
             0,
             2 * Math.PI
@@ -156,40 +159,42 @@ const FootTrack = React.forwardRef((props, refs) => {
         ctxCircle.closePath()
 
         ctxCircle.beginPath();
-        ctxCircle.fillStyle = "#8AC287";
+        ctxCircle.fillStyle = color;
         ctxCircle.arc(
-            (arrSmooth[0] * canvasWidth) / width,
-            (arrSmooth[1] * canvasWidth) / width,
+            (x * canvasWidth) / width,
+            (y * canvasWidth) / width,
             7,
             0,
             2 * Math.PI
         );
         ctxCircle.fill();
+        ctxCircle.closePath()
+    }
+
+    const circleMove = (arrSmooth, arrSmooth1
+        //  rightTopPropSmooth, leftTopPropSmooth, leftBottomPropSmooth, rightPropSmooth, leftPropSmooth, rightBottomPropSmooth
+    ) => {
+        // ctx.strokeStyle = "#01F1E3";
+        // ctx.lineTo(
+        //     (arrSmooth[0] * canvasWidth) / width,
+        //     (arrSmooth[1] * canvasWidth) / width
+        // );
+        // ctx.stroke();
+        ctxCircle.clearRect(0, 0, canvasWidth, canvasWidth);
+
+        if (Array.isArray(arrSmooth) && arrSmooth.length && arrSmooth[0]?.center) {
+            arrSmooth.forEach((item) => {
+                drawCenterPoint(item.center, item.color || '#8AC287')
+            })
+            return
+        }
+
+        // { back: '#8AC287', sit: '#5D65FF' }
+        drawCenterPoint(arrSmooth, '#8AC287')
 
         if (!arrSmooth1) return
 
-        ctxCircle.beginPath();
-        ctxCircle.fillStyle = "rgba(93,101,255,0.3)";
-        ctxCircle.arc(
-            (arrSmooth1[0] * canvasWidth) / width,
-            (arrSmooth1[1] * canvasWidth) / width,
-            10,
-            0,
-            2 * Math.PI
-        );
-        ctxCircle.fill();
-
-
-        ctxCircle.beginPath();
-        ctxCircle.fillStyle = "#5D65FF";
-        ctxCircle.arc(
-            (arrSmooth1[0] * canvasWidth) / width,
-            (arrSmooth1[1] * canvasWidth) / width,
-            7,
-            0,
-            2 * Math.PI
-        );
-        ctxCircle.fill();
+        drawCenterPoint(arrSmooth1, '#5D65FF')
         // canvasText2({ ctx: ctxCircle, width: canvasWidth, htmlWidth: window.innerWidth, rightTopPropSmooth, leftTopPropSmooth, leftBottomPropSmooth, rightPropSmooth, leftPropSmooth, rightBottomPropSmooth });
     }
 

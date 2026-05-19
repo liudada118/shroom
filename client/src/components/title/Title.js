@@ -10,6 +10,7 @@ import { withTranslation } from "react-i18next";
 import { pageContext } from '../../page/test/Test'
 import { systemConfig, localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
+import { normalizeVisualSettingMax } from '../../util/visualSettingStorage'
 import { loadVisualSettingValue } from '../../util/visualSettingStorage'
 import { useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
@@ -131,7 +132,7 @@ const Title = memo((props) => {
     }).then((res) => {
       console.log(res)
       const optimalObj = res.data.data.optimalObj
-      const maxObj = res.data.data.maxObj
+      const maxObj = normalizeVisualSettingMax(res.data.data.maxObj)
       useEquipStore.getState().setSystemType(e)
       useEquipStore.getState().setStatus(new Array(4096).fill(0))
       useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
@@ -193,7 +194,7 @@ const Title = memo((props) => {
   }
 
   return (
-    <div className='titleContent'>
+    <div className={`titleContent ${props.hideSecondTitle ? 'titleContentContrast' : ''}`}>
       <div className="firstTitle">
         <div className="titleLeft">
           <div className="logo fs24">
@@ -210,7 +211,7 @@ const Title = memo((props) => {
 
           {/* 重新连接按钮（仅在已连接状态显示） */}
           {(connectState === 'connected' || connectState === 'failed' || connectState === 'deviceError') && (
-            <Tooltip title="重新连接（清理死端口/僵尸设备后重连）">
+            <Tooltip title={t('reconnectTooltip')}>
               <div className="rescanBtn cursor" onClick={rescan}>
                 <ReloadOutlined style={{ fontSize: '0.85rem' }} />
               </div>
@@ -219,7 +220,7 @@ const Title = memo((props) => {
 
           {/* 断开连接按钮（仅在已连接/重扫状态显示） */}
           {(connectState === 'connected' || connectState === 'rescanning') && (
-            <Tooltip title="断开所有串口连接">
+            <Tooltip title={t('disconnectAllPorts')}>
               <div className="disconnectBtn cursor" onClick={disconnect}>
                 <DisconnectOutlined style={{ fontSize: '0.85rem' }} />
               </div>
@@ -230,7 +231,7 @@ const Title = memo((props) => {
         </div>
 
         <div className="titleRight">
-          <Tooltip title="设备 MAC 地址配置">
+          <Tooltip title={t('deviceMacConfig')}>
             <div className="settingBtn cursor" onClick={goToMacConfig}>
               <SettingOutlined style={{ fontSize: '1.1rem', color: '#E6EBF0' }} />
             </div>
@@ -248,7 +249,7 @@ const Title = memo((props) => {
         </div>
       </div>
 
-      <SecondTitle />
+      {props.hideSecondTitle ? null : <SecondTitle />}
     </div>
   )
 })

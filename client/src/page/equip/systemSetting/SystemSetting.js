@@ -66,12 +66,12 @@ const fallbackConfig = {
         hand:    { gauss: 2,   color: 495,  filter: 0,  height: 3.36, coherent: 1 }
     },
     maxObj: {
-        bed:     { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 },
-        car:     { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 },
-        endi:    { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 },
-        carY:    { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 },
-        bigHand: { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 },
-        hand:    { gauss: 4, color: 500, filter: 20, height: 10, coherent: 10 },
+        bed:     { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 },
+        car:     { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 },
+        endi:    { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 },
+        carY:    { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 },
+        bigHand: { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 },
+        hand:    { gauss: 4, color: 500, filter: 20, height: 200, coherent: 10 },
     }
 };
 
@@ -119,6 +119,10 @@ export default function SystemSetting() {
                             ...fallbackConfig.maxObj[sysKey],
                             ...(result.maxObj && result.maxObj[sysKey] ? result.maxObj[sysKey] : {})
                         };
+                        newInputValue.maxObj[sysKey].height = Math.max(
+                            Number(newInputValue.maxObj[sysKey].height) || 0,
+                            fallbackConfig.maxObj[sysKey].height
+                        );
                     }
                     setInputValue(newInputValue);
                     message.success(t('loadedBackendConfig'));
