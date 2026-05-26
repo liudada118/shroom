@@ -13,6 +13,7 @@ export default function NumThres(props) {
     // const { displayType } = pageInfo
     const systemType = useEquipStore(s => s.systemType, shallow);
     const displayType = useEquipStore(s => s.displayType, shallow);
+    const num2DZoom = useEquipStore(s => s.num2DZoom, shallow);
     console.log(displayType.includes('sit'))
 
     // 根据 systemType 和 displayType 动态获取 width/height
@@ -35,10 +36,10 @@ export default function NumThres(props) {
         <>{isMoreMatrix(systemType) ?
             displayType.includes('back') ?
                 (isSquareBack ?
-                    <NumThree key={`${systemType}-back`} width={width} height={height} sitData={sitData} /> :
-                    <NumThree2 key={`${systemType}-back`} width={width} height={height} sitData={sitData} />) :
-                <NumThree key={`${systemType}-sit`} width={width} height={height} sitData={sitData} /> :
-            <NumThree width={32} height={32} sitData={sitData} />}
+                    <NumThree key={`${systemType}-back`} width={width} height={height} sitData={sitData} zoom={num2DZoom} /> :
+                    <NumThree2 key={`${systemType}-back`} width={width} height={height} sitData={sitData} zoom={num2DZoom} />) :
+                <NumThree key={`${systemType}-sit`} width={width} height={height} sitData={sitData} zoom={num2DZoom} /> :
+            <NumThree width={32} height={32} sitData={sitData} zoom={num2DZoom} />}
 
             {/* <div style={{width : '100vw' , height : '100vh' , 
                 position : 'fixed' , zIndex : 1 , 

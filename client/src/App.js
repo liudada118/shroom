@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import Equip from './page/equip/Equip';
 import Data from './page/data/Data';
 import MacConfig, { hasMacConfig } from './page/equip/macConfig/MacConfig';
+import CopReport from './page/report/CopReport';
 
 const MAC_FULLSCREEN_COPY = {
   zh: {
@@ -34,6 +35,7 @@ i18next.init({
       translation: {
         connect: 'Connect',
         connecting: 'Connecting',
+        autoConnecting: 'Connecting to device...',
         connected: 'Connected',
         reconnecting: 'Reconnecting...',
         reconnectTooltip: 'Reconnect (clean dead ports / zombie devices first)',
@@ -53,12 +55,14 @@ i18next.init({
         flipH: 'FlipH',
         rotate90: 'Rotate 90° CW',
         zeroPre: 'Zero',
+        cancelZero: 'Cancel Zero',
         select: 'Select',
         ruler: 'Ruler',
         upload: 'Upload',
         adjust: 'Adjust',
         blur: 'GaussianBlur',
         colorAdj: 'ColorAdj',
+        currentDataMax: 'Current Max',
         denoise: 'Denoise',
         heightAdj: 'HeightAdj',
         continuity: 'Continuity',
@@ -82,6 +86,11 @@ i18next.init({
         ok: 'OK',
         rename: 'rename',
         download: 'download',
+        generateReport: 'Report',
+        startReport: 'Generate',
+        selectOneReportData: 'Please select one history record',
+        reportExportSuccess: 'PDF exported',
+        reportExportFailed: 'PDF export failed',
         delete: 'delete',
         car: 'Ergo Chair',
         // ——这几个写长一点——
@@ -97,7 +106,8 @@ i18next.init({
         back3D: 'back',
         sit3D: 'sit',
         num3D: 'num3D',
-        resetView: 'ResetView',
+        resetView: 'Reset View',
+        resetViewTip: 'Reset 3D and 2D views',
         sizeAdj: 'SizeAdjustment',
         viewAdj: 'ViewAdjustment',
         angleAdj: 'AngleAdjustment',
@@ -362,6 +372,7 @@ i18next.init({
       translation: {
         connect: '连接',
         connecting: '连接中',
+        autoConnecting: '正在连接设备...',
         connected: '已连接',
         reconnecting: '重新连接中...',
         reconnectTooltip: '重新连接（清理死端口/僵尸设备后重连）',
@@ -381,12 +392,14 @@ i18next.init({
         flipH: '左右翻转',
         rotate90: '顺时针旋转90°',
         zeroPre: '预压力置零',
+        cancelZero: '取消置零',
         select: '框选工具',
         ruler: '量尺工具',
         upload: '图片上传',
         adjust: '可视化调节',
         blur: '图像润滑',
         colorAdj: '颜色调节',
+        currentDataMax: '当前最大值',
         denoise: '噪点消除',
         heightAdj: '高度调节',
         continuity: '响应速度',
@@ -397,6 +410,11 @@ i18next.init({
         bedEquip: '床垫',
 
         download: '下载',
+        generateReport: '生成报告',
+        startReport: '生成报告',
+        selectOneReportData: '请选择一条历史数据生成报告',
+        reportExportSuccess: 'PDF 已导出',
+        reportExportFailed: 'PDF 导出失败',
         delete: '删除',
         // ——今天新增/长文字扩写——
         rename: '修改名称',
@@ -428,7 +446,8 @@ i18next.init({
         back3D: '靠背',
         sit3D: '坐垫',
         num3D: '3D数字',
-        resetView: '重置视角',
+        resetView: '重置视图',
+        resetViewTip: '重置3D视图和2D数字视图',
         sizeAdj: '大小调节',
         viewAdj: '视图切换',
         angleAdj: '视角切换',
@@ -841,6 +860,14 @@ function App() {
             exact
             element={
               <MacConfigFullscreen />
+            }
+          />
+
+          <Route
+            path="/copReport"
+            exact
+            element={
+              <CopReport />
             }
           />
 

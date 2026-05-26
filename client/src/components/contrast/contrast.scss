@@ -87,7 +87,7 @@
 
 .contrastWorkspace {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 20rem;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.8rem;
     min-height: 0;
     flex: 1 1 auto;
@@ -407,6 +407,14 @@
     }
 }
 
+.contrastDualProgress {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.22rem;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .contrastLegend {
     display: flex;
     align-items: center;
@@ -604,17 +612,17 @@
 /* Data comparison dashboard UI */
 .contrastPage {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 20rem;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 3.25rem auto auto minmax(16.5rem, 1fr) auto 12.6rem minmax(7rem, auto) auto;
     grid-template-areas:
-        "nav nav"
-        "head head"
-        "object object"
-        "heat side"
-        "play side"
-        "charts side"
-        "table side"
-        "foot foot";
+        "nav"
+        "head"
+        "object"
+        "heat"
+        "play"
+        "charts"
+        "table"
+        "foot";
     gap: 0.55rem 0.75rem;
     padding: 0 1.1rem 0.7rem;
     overflow: auto;
@@ -1241,13 +1249,13 @@ button.playbackExpandIcon {
     margin-top: 4.5rem;
     grid-template-rows: auto auto minmax(16.5rem, 1fr) auto 12.6rem minmax(7rem, auto) auto;
     grid-template-areas:
-        "head head"
-        "object object"
-        "heat side"
-        "play side"
-        "charts side"
-        "table side"
-        "foot foot";
+        "head"
+        "object"
+        "heat"
+        "play"
+        "charts"
+        "table"
+        "foot";
     padding-top: 0;
 }
 
@@ -1329,6 +1337,26 @@ button.playbackExpandIcon {
     min-height: 3.05rem;
     padding: 0.42rem 0.95rem;
     background: linear-gradient(180deg, rgba(9, 39, 67, 0.94), rgba(4, 18, 32, 0.94));
+}
+
+.contrastWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.contrastDualProgress {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.18rem;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.contrastDualProgress .timePointControl span {
+    width: 1rem;
+}
+
+.contrastDualProgress .timePointControl strong {
+    width: 4.2rem;
 }
 
 .contrastPlayback .ant-btn {
@@ -1727,4 +1755,20 @@ button.playbackExpandIcon:active {
 
 .contrastPlaybackExpanded .ant-slider {
     min-width: 24rem;
+}
+
+/* Temporarily hide pressure/area curve row on the comparison page. */
+.contrastPage {
+    grid-template-rows: auto auto minmax(16.5rem, 1fr) auto minmax(7rem, auto) auto;
+    grid-template-areas:
+        "head"
+        "object"
+        "heat"
+        "play"
+        "table"
+        "foot";
+}
+
+.contrastLineCharts {
+    display: none;
 }

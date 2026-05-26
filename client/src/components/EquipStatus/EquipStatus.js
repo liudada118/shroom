@@ -1,46 +1,49 @@
-import React, { useContext } from 'react'
+import React from 'react'
 import './index.scss'
-import { pageContext } from '../../page/test/Test';
 import { withTranslation } from 'react-i18next';
 import { useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 
 const EquipStatus = React.memo(function EquipStatus(props) {
 
-    const { t, i18n } = props;
+    const { t } = props;
     const { fileName } = props
 
-
-    const portMap = {
-        'car': [{ label: t('back'), value: 'back' }, { label: t('sit'), value: 'sit' }],
-        'bed': [{ label: t('bedEquip'), value: 'bed' },],
-        'hand': [{ label: t('handEquip'), value: 'hand' },]
+    const equipStatus = useEquipStore(s => s.equipStatus, shallow);
+    const getStatusFor = (part) => {
+        if (!equipStatus) return undefined
+        const entry = Object.entries(equipStatus).find(([key]) => key === part || key.endsWith(`-${part}`) || key.includes(part))
+        return entry?.[1]
     }
 
+    const chairItems = [
+        { key: 'sit', label: t('sit'), status: getStatusFor('sit') },
+        { key: 'back', label: t('back'), status: getStatusFor('back') },
+    ].filter(item => item.status !== undefined)
 
-    // const pageInfo = useContext(pageContext);
-    const equipStatus = useEquipStore(s => s.equipStatus, shallow);
+    const fallbackItems = Object.entries(equipStatus || {}).map(([key, status]) => ({
+        key,
+        label: key.includes('car') || key.includes('endi') || key.includes('carY')
+            ? t(key.split('-')[1])
+            : key === 'hand'
+                ? t('handEquip')
+                : key === 'bed'
+                    ? t('bedEquip')
+                    : key,
+        status,
+    }))
 
+    const items = ['car', 'endi', 'carY'].includes(fileName) && chairItems.length > 0 ? chairItems : fallbackItems
 
-   
     return (
         <div className='equipsStatusContent'>
-            {/* {
-                fileName ? portMap[fileName].map((a, index) => {
-                    return (
-                        <div className='equipStatusContent'>
-                            <div className='equipName'>{a.label}</div> <div className={equipStatus == 'offline' ? 'equipOfflineStatus' : 'equipOnlineStatus'}></div>
-                        </div>
-                    )
-                })
-                    : ''} */}
             {
-              Object.values(equipStatus).every((a) => a != undefined) &&  Object.keys(equipStatus).map((a, index) => {
+                items.map((item) => {
+                    const online = item.status === 'online'
                     return (
-                        <div className='equipStatusContent'>
-                            <div className='equipName'>{
-                                a.includes('car') ||a.includes('endi') ||a.includes('carY')   ? t(a.split('-')[1]) : a == 'hand' ? t('handEquip') : a == 'bed' ? t('bedEquip') : ''
-                            }</div> <div className={equipStatus[a] == 'online' ? 'equipOnlineStatus' :  'equipOfflineStatus'}></div>
+                        <div className='equipStatusContent' key={item.key}>
+                            <div className='equipName'>{item.label}</div>
+                            <div className={online ? 'equipOnlineStatus' : 'equipOfflineStatus'}></div>
                         </div>
                     )
                 })

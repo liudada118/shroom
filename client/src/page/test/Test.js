@@ -108,21 +108,38 @@ function Test() {
     // ─── WebSocket 连接 ──────────────────────────────────
     useWebSocket({
         onSitData: (sitData) => {
+            const store = useEquipStore.getState()
+            if (store.display !== 'contrast' && store.dataStatus !== 'contrast') {
+                store.setDataStatus('realtime')
+                store.setPlaybackHasSelection(false)
+                store.setPlaybackRecordDate('')
+                store.setHistoryChart({ pressArr: {}, areaArr: {} })
+                store.setHistoryStatus({ index: 0, timestamp: '' })
+                setPlayBack(false)
+            }
             processSensorFrame(sitData, persistentDataRef.current, { source: 'realtime' })
         },
         onSitDataPlay: (sitDataPlay) => {
+            if (useEquipStore.getState().dataStatus !== 'replay') return
             processSensorFrame(sitDataPlay, persistentDataRef.current, { source: 'playback' })
         },
         onIndex: (index) => {
+            if (useEquipStore.getState().dataStatus !== 'replay') return
             useEquipStore.getState().setDataStatus('replay')
             setPlayBack(true)
             const history = useEquipStore.getState().history
             useEquipStore.getState().setHistoryStatus({ ...history, index })
         },
         onTimestamp: (timestamp) => {
+            if (useEquipStore.getState().dataStatus !== 'replay') return
             useEquipStore.getState().setDataStatus('replay')
             const history = useEquipStore.getState().history
             useEquipStore.getState().setHistoryStatus({ ...history, timestamp })
+        },
+        onPlayEnd: () => {
+            if (useEquipStore.getState().dataStatus === 'replay') {
+                setPlayBack(false)
+            }
         },
         onMacInfo: (macInfo) => {
             useEquipStore.getState().setMacInfo(macInfo)
@@ -131,6 +148,12 @@ function Test() {
             if (result?.success) {
                 useEquipStore.getState().setConnectState('connected')
                 useEquipStore.getState().setConnectionError(null)
+                useEquipStore.getState().setDataStatus('realtime')
+                useEquipStore.getState().setPlaybackHasSelection(false)
+                useEquipStore.getState().setPlaybackRecordDate('')
+                useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
+                useEquipStore.getState().setHistoryStatus({ index: 0, timestamp: '' })
+                removeHistoryBox()
                 if (result.macInfo) useEquipStore.getState().setMacInfo(result.macInfo)
             } else if (result?.code || result?.message) {
                 useEquipStore.getState().setConnectState('failed')

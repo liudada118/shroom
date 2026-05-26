@@ -20,4 +20,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 在文件管理器中显示文件
   showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
+
+  exportCurrentPagePdf: (options) => ipcRenderer.invoke('export-current-page-pdf', options),
 })

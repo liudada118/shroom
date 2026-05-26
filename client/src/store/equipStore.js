@@ -37,6 +37,7 @@ export const useEquipStore = create((set) => ({
   settingValue: initialSettings,
   settingValueMax: initialMaxData,
   settingValueOptimal: initialSettings,
+  num2DZoom: 100,
 
   // 框选工具
   selectArr: [],
@@ -72,6 +73,7 @@ export const useEquipStore = create((set) => ({
   setSettingValue: (s) => set({ settingValue: s }),
   setSettingValueMax: (s) => set({ settingValueMax: s }),
   setSettingValueOptimal: (s) => set({ settingValueOptimal: s }),
+  setNum2DZoom: (s) => set({ num2DZoom: s }),
 
   setSelectArr: (s) => set({ selectArr: s }),
 

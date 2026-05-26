@@ -1,27 +1,39 @@
 .equipsStatusContent {
     display: flex;
+    align-items: center;
+    gap: 0.6rem;
 }
 
 .equipStatusContent {
     display: flex;
     align-items: center;
-    margin-right: 1.6rem;
+    height: 2.2rem;
+    padding: 0 0.75rem;
+    border: 1px solid rgba(78, 86, 95, 0.9);
+    border-radius: 0.35rem;
+    background: rgba(12, 18, 28, 0.72);
+    color: #E6EBF0;
+    line-height: 1;
+    white-space: nowrap;
+
     .equipName{
-       margin-right: 0.5rem;
+       margin-right: 0.55rem;
        line-height: 1rem;
     }
 }
 
 .equipOfflineStatus {
-    width: 0.5rem;
-    height: 0.5rem;
+    width: 0.42rem;
+    height: 0.42rem;
     border-radius: 50%;
-    border: 1px solid #778592;
+    background: #ff4d4f;
+    box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.12);
 }
 
 .equipOnlineStatus {
-    width: 0.5rem;
-    height: 0.5rem;
+    width: 0.42rem;
+    height: 0.42rem;
     border-radius: 50%;
-    background: #0072EF;
+    background: #18d26b;
+    box-shadow: 0 0 0 2px rgba(24, 210, 107, 0.12);
 }

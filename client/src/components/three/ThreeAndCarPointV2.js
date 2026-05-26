@@ -73,6 +73,47 @@ const sitObj = {
 
 const CHAIR_BRIGHTEN_COLOR = new THREE.Color(0xffffff)
 const CHAIR_EMISSIVE_COLOR = new THREE.Color(0x2f3338)
+const POINT_TEMPORAL_ALPHA = 0.24
+const POINT_VALUE_DEADBAND = 1.2
+
+function stabilizePointValues(values, stableStore, key) {
+    const count = values.length
+    const source = Array.from({ length: count }, (_, index) => {
+        const value = Number(values[index])
+        return Number.isFinite(value) ? Math.max(0, value) : 0
+    })
+
+    if (source.every(value => value < 0.5)) {
+        const zero = new Array(count).fill(0)
+        stableStore[key] = { values: zero, output: zero }
+        return zero
+    }
+
+    const previous = stableStore[key]
+    if (!previous || previous.values?.length !== count) {
+        stableStore[key] = { values: source, output: source }
+        return source
+    }
+
+    const nextValues = new Array(count)
+    const output = new Array(count)
+    for (let i = 0; i < count; i++) {
+        const prevValue = previous.values[i] ?? source[i]
+        const prevOutput = previous.output[i] ?? prevValue
+        const smoothed = source[i] < 0.5
+            ? 0
+            : prevValue + (source[i] - prevValue) * POINT_TEMPORAL_ALPHA
+        let nextOutput = smoothed
+        if (source[i] >= 0.5 && Math.abs(source[i] - prevOutput) < POINT_VALUE_DEADBAND) {
+            nextOutput = prevOutput
+        }
+        nextValues[i] = smoothed
+        output[i] = nextOutput
+    }
+
+    stableStore[key] = { values: nextValues, output }
+    return output
+}
 
 function brightenChairModel(root) {
     if (!root) return
@@ -144,6 +185,7 @@ const Canvas =
         const chairRef = useRef(null)
         const tweenRef = useRef(null)
         const tween1Ref = useRef(null)
+        const pointStableRef = useRef({})
         const [configPanelOpen, setConfigPanelOpen] = useState(false)
         const [configValues, setConfigValues] = useState({
             back: {
@@ -434,6 +476,9 @@ const Canvas =
 
         function applyControlsFocusTarget(worldTarget, options = {}) {
             if (!camera.current || !controls.current || !worldTarget) return false
+            if (!controls.current.target) {
+                controls.current.target = new THREE.Vector3()
+            }
             const { syncResetState = false, preserveView = false } = options
             let nextTarget = worldTarget.clone()
             if (preserveView) {
@@ -447,6 +492,9 @@ const Canvas =
             }
             controls.current.target.copy(nextTarget)
             if (syncResetState) {
+                if (!controls.current.position0) controls.current.position0 = camera.current.position.clone()
+                if (!controls.current.target0) controls.current.target0 = new THREE.Vector3()
+                if (!controls.current.up0) controls.current.up0 = camera.current.up.clone()
                 controls.current.position0.copy(camera.current.position)
                 controls.current.target0.copy(nextTarget)
                 controls.current.up0.copy(camera.current.up)
@@ -1114,8 +1162,8 @@ const Canvas =
             const particles = pointGroup.children.find((a) => a.name == name)
 
             const { geometry } = particles
-            const position = new Float32Array(numParticles * 3);
-            const colors = new Float32Array(numParticles * 3);
+            const position = geometry.attributes.position.array;
+            const colors = geometry.attributes.color.array;
             const scales = geometry.attributes.aScale.array;
 
 
@@ -1142,6 +1190,11 @@ const Canvas =
                 sitnum1 * sitInterp + sitOrder * 2,
                 gauss
             );
+            bigArrg = stabilizePointValues(
+                bigArrg,
+                pointStableRef.current,
+                `${name}-${AMOUNTX}x${AMOUNTY}`
+            )
 
             let k = 0, l = 0, j = 0;
             let dataArr = []
@@ -1149,7 +1202,7 @@ const Canvas =
                 for (let iy = 0; iy < AMOUNTY; iy++) {
                     const value = bigArrg[l];
                     //柔化处理smooth
-                    smoothBig[l] = smoothBig[l] + (value - smoothBig[l]) / coherent;
+                    smoothBig[l] = value < 0.5 ? 0 : smoothBig[l] + (value - smoothBig[l]) / coherent;
 
                     position[k] = iy * SEPARATION - (AMOUNTX * SEPARATION) / 2; // x
 
@@ -1179,7 +1232,7 @@ const Canvas =
                     // The 3D backrest is visually flipped vertically relative to the 2D matrix.
                     const visibleRow = name === 'back' ? sitnum1 - 1 - sourceRow : sourceRow
                     const isPaddingPoint = name === 'back' && !isEndiBackPointVisible(visibleRow, sourceCol, sitnum2, sitnum1)
-                    const isHidden = isPaddingPoint || shouldHideDisplayPoint(value, filter);
+                    const isHidden = isPaddingPoint || shouldHideDisplayPoint(smoothBig[l], filter);
                     scales[j] = isHidden ? 0 : 1;
 
 
@@ -1211,11 +1264,6 @@ const Canvas =
             particles.geometry.attributes.position.needsUpdate = true;
             particles.geometry.attributes.color.needsUpdate = true;
             particles.geometry.attributes.aScale.needsUpdate = true;
-            geometry.setAttribute(
-                "position",
-                new THREE.BufferAttribute(position, 3)
-            );
-            geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
         }
 
         //模型动画
@@ -1491,8 +1539,18 @@ const Canvas =
         }
 
         function reset3D() {
+            tweenRef.current?.stop?.()
+            tween1Ref.current?.stop?.()
             holdStableZoomPercent(100)
             controls.current?.reset()
+            controls.current?.update()
+            const nextBaseDistance = camera.current && controls.current
+                ? camera.current.position.distanceTo(controls.current.target)
+                : null
+            if (Number.isFinite(nextBaseDistance) && nextBaseDistance > 0) {
+                baseCameraDistanceRef.current = nextBaseDistance
+                rebindZoomSync(nextBaseDistance)
+            }
         }
 
         function actionSit(type) {

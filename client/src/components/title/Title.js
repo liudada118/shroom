@@ -1,4 +1,4 @@
-import React, { memo, useContext } from 'react'
+import React, { memo, useContext, useEffect, useRef } from 'react'
 import './index.scss'
 import EquipStatus from '../EquipStatus/EquipStatus'
 import Select from '../select/Select'
@@ -13,9 +13,10 @@ import { buildFallbackParams } from '../../util/request'
 import { normalizeVisualSettingMax } from '../../util/visualSettingStorage'
 import { loadVisualSettingValue } from '../../util/visualSettingStorage'
 import { useEquipStore } from '../../store/equipStore'
+import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import { shallow } from 'zustand/shallow'
 import { Tooltip, message } from 'antd'
-import { SettingOutlined, ReloadOutlined, DisconnectOutlined } from '@ant-design/icons'
+import { LinkOutlined, SettingOutlined, ReloadOutlined, DisconnectOutlined } from '@ant-design/icons'
 
 
 const Title = memo((props) => {
@@ -29,6 +30,7 @@ const Title = memo((props) => {
 
   const connectState = useEquipStore(s => s.connectState, shallow);
   const CONNECT_TIMEOUT_MS = 15000
+  const autoConnectRef = useRef(false)
 
   const getConnectErrorMessage = (err, fallback = t('connectFailedCheckDevice')) => {
     if (err?.code === 'ECONNABORTED') return t('connectTimeoutCheckDevice')
@@ -48,6 +50,12 @@ const Title = memo((props) => {
     if (payload?.code === 0 && result?.success !== false) {
       useEquipStore.getState().setConnectState('connected')
       useEquipStore.getState().setConnectionError(null)
+      useEquipStore.getState().setDataStatus('realtime')
+      useEquipStore.getState().setPlaybackHasSelection(false)
+      useEquipStore.getState().setPlaybackRecordDate('')
+      useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
+      useEquipStore.getState().setHistoryStatus({ index: 0, timestamp: '' })
+      removeHistoryBox()
       if (result?.macInfo) {
         useEquipStore.getState().setMacInfo(result.macInfo)
       }
@@ -60,13 +68,14 @@ const Title = memo((props) => {
 
   // ─── 一键连接 ──────────────────────────────────────────
   // connPort 已合并 MAC 查询，不再需要单独调用 /sendMac
-  const connent = () => {
+  const connent = (options = {}) => {
     if (connectState === 'connecting' || connectState === 'rescanning' || connectState === 'connected') {
-      message.info(t('duplicateConnectionOperation'))
+      if (!options.auto) message.info(t('duplicateConnectionOperation'))
       return
     }
 
     useEquipStore.getState().setConnectState('connecting')
+    message.info(options.auto ? (t('autoConnecting') || t('connecting')) : t('connecting'))
 
     axios.get(`${localAddress}/connPort`, { timeout: CONNECT_TIMEOUT_MS }).then((res) => {
       console.log('[Connect] connPort result:', res.data)
@@ -76,6 +85,19 @@ const Title = memo((props) => {
       setConnectFailed(err)
     })
   }
+
+  useEffect(() => {
+    if (autoConnectRef.current || window.__jqToolsAutoConnectStarted) return
+    autoConnectRef.current = true
+    window.__jqToolsAutoConnectStarted = true
+    const timer = window.setTimeout(() => {
+      const state = useEquipStore.getState().connectState
+      if (state === 'idle' || state === 'failed' || state === 'deviceError') {
+        connent({ auto: true })
+      }
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   // ─── 重新连接 ──────────────────────────────────────────
   // 清理死端口 + 僵尸设备 → 重新连接
@@ -145,6 +167,10 @@ const Title = memo((props) => {
   }
 
   const equipStatus = useEquipStore(s => s.equipStatus, shallow);
+  const hasDeviceOffline = equipStatus
+    && Object.keys(equipStatus).length > 0
+    && Object.values(equipStatus).some(status => status !== 'online')
+  const shouldShowRescan = connectState === 'failed' || connectState === 'deviceError' || hasDeviceOffline
 
   // 根据 connectState 决定主按钮样式和文本
   const getButtonClass = () => {
@@ -153,7 +179,7 @@ const Title = memo((props) => {
       case 'rescanning':
         return 'connectingPort'
       case 'connected':
-        return 'connectedPort'
+        return 'connectPort'
       case 'failed':
       case 'deviceError':
         return 'connectPort'
@@ -163,18 +189,19 @@ const Title = memo((props) => {
   }
 
   const getButtonText = () => {
+    const connectText = languageKey === 'en' ? t('connect') : '一键连接'
     switch (connectState) {
       case 'connecting':
         return t('connecting')
       case 'rescanning':
         return '重新连接中...'
       case 'connected':
-        return t('connected')
+        return connectText
       case 'failed':
       case 'deviceError':
         return '重新连接'
       default:
-        return t('connect')
+        return connectText
     }
   }
 
@@ -205,12 +232,13 @@ const Title = memo((props) => {
             onChange={changeSystemType}
           />
           {/* 一键连接按钮 */}
-          <div className={`${getButtonClass()} cursor connectButton`} style={{ marginRight: '0.5rem' }} onClick={() => { connent() }}>
+          <div className={`${getButtonClass()} cursor connectButton oneKeyConnectButton`} style={{ marginRight: '0.5rem' }} onClick={() => { connent() }}>
+            <LinkOutlined className="connectButtonIcon" />
             {getButtonText()}
           </div>
 
-          {/* 重新连接按钮（仅在已连接状态显示） */}
-          {(connectState === 'connected' || connectState === 'failed' || connectState === 'deviceError') && (
+          {/* 设备断开或连接失败时显示重连按钮 */}
+          {shouldShowRescan && (
             <Tooltip title={t('reconnectTooltip')}>
               <div className="rescanBtn cursor" onClick={rescan}>
                 <ReloadOutlined style={{ fontSize: '0.85rem' }} />

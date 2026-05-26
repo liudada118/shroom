@@ -10,7 +10,7 @@ import { buildFallbackParams } from '../../util/request'
 import { useEquipStore } from '../../store/equipStore'
 
 export default function IconAndTextAndSelect(props) {
-    const { show, text, options, icon } = props
+    const { show, text, options, icon, onClickStatus, onSelectOption, lockCollecting = true } = props
     const { t } = useTranslation()
     const [selectShow, setSelectShow] = useState(false)
 
@@ -37,12 +37,17 @@ export default function IconAndTextAndSelect(props) {
                 setSelectShow(false)
             }}
         >
-            <IconAndText show={show} text={text} icon={icon} />
+            <IconAndText show={show} text={text} icon={icon} onClickStatus={onClickStatus} />
             <div className={`dropDown ${selectShow ? 'dropDownVisible' : ''}`}>
                 {options.map((a, index) => {
                     return (
                         <div key={`${a.target || 'all'}-${a.value}-${index}`} className='dropItem fs14 cursor' onClick={() => {
-                            if (useEquipStore.getState().collecting) {
+                            if (onSelectOption) {
+                                onSelectOption(a)
+                                setSelectShow(false)
+                                return
+                            }
+                            if (lockCollecting && useEquipStore.getState().collecting) {
                                 message.warning(t('collectingDirectionLocked'))
                                 return
                             }

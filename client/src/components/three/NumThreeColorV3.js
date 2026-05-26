@@ -3,9 +3,9 @@ import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
 import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
-import { getDisplayType, getSettingValue, getStatus, getSysType } from '../../store/equipStore';
+import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
-import { NUMBER_TEXT_COLOR_ALPHA, jetWhite3NoWhite } from '../../assets/util/line';
+import { NUMBER_TEXT_COLOR_ALPHA, gaussBlur_return, jetWhite3NoWhite } from '../../assets/util/line';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -55,13 +55,101 @@ function getTextureColorMax(color) {
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
+function normalizeZoomScale(value) {
+  const numeric = Number(value);
+  const percent = Number.isFinite(numeric) ? numeric : 100;
+  return Math.max(50, Math.min(200, percent)) / 100;
+}
+
+function clampZoomPercent(value) {
+  const numeric = Number(value);
+  const percent = Number.isFinite(numeric) ? numeric : 100;
+  return Math.max(50, Math.min(200, Math.round(percent)));
+}
+
+function getMagnifierCells(zoom) {
+  if (zoom >= 1.6) return 3;
+  if (zoom <= 0.85) return 7;
+  return 5;
+}
+
+const DIGIT_ATLAS_GRID = 16;
+const DIGIT_ATLAS_CELL = 128;
+const DIGIT_ATLAS_SIZE = DIGIT_ATLAS_GRID * DIGIT_ATLAS_CELL;
+const DIGIT_TILE_INSET = 8;
+const NUM_2D_GAUSS_KERNEL_FACTOR = 0.5;
+const NUM_2D_TEMPORAL_ALPHA = 0.22;
+const NUM_2D_DISPLAY_DEADBAND = 1.1;
+
+function prepareDisplayData(data, width, height, settings) {
+  const count = width * height;
+  let next = Array.from({ length: count }, (_, index) => Number(data?.[index]) || 0);
+  const filter = Number(settings?.filter);
+  if (Number.isFinite(filter) && filter > 0) {
+    next = next.map(value => (value < filter ? 0 : value));
+  }
+  const gauss = Number(settings?.gauss);
+  const effectiveGauss = Number.isFinite(gauss) ? gauss * NUM_2D_GAUSS_KERNEL_FACTOR : NUM_2D_GAUSS_KERNEL_FACTOR;
+  if (effectiveGauss > 0.01) {
+    next = gaussBlur_return(next, width, height, effectiveGauss);
+  }
+  return next;
+}
+
+function stabilizeDisplayData(data, stableRef, key) {
+  const count = data.length;
+  const source = Array.from({ length: count }, (_, index) => {
+    const value = Number(data[index]);
+    return Number.isFinite(value) ? Math.max(0, value) : 0;
+  });
+
+  if (source.every(value => value < 0.5)) {
+    const zero = new Array(count).fill(0);
+    stableRef.current = { key, values: zero, display: zero };
+    return zero;
+  }
+
+  const previous = stableRef.current;
+  const shouldReset = !previous || previous.key !== key || previous.values?.length !== count;
+  if (shouldReset) {
+    const display = source.map(normalizeDisplayValue);
+    stableRef.current = { key, values: source, display };
+    return display;
+  }
+
+  const values = new Array(count);
+  const display = new Array(count);
+  for (let i = 0; i < count; i++) {
+    const prevValue = previous.values[i] ?? source[i];
+    const prevDisplay = previous.display[i] ?? normalizeDisplayValue(prevValue);
+    const smoothed = source[i] < 0.5
+      ? 0
+      : prevValue + (source[i] - prevValue) * NUM_2D_TEMPORAL_ALPHA;
+    let nextDisplay = normalizeDisplayValue(smoothed);
+    if (nextDisplay !== prevDisplay && source[i] >= 0.5 && Math.abs(source[i] - prevDisplay) < NUM_2D_DISPLAY_DEADBAND) {
+      nextDisplay = prevDisplay;
+    }
+    values[i] = smoothed;
+    display[i] = nextDisplay;
+  }
+  stableRef.current = { key, values, display };
+  return display;
+}
+
 function drawCellValue(ctx, value, cx, cy, cellSize) {
   const text = String(value);
-  const fontSize = value >= 100 ? 32 : 40;
-  ctx.font = `bold ${fontSize}px monospace`;
+  const fontSize = cellSize * 0.5;
+  ctx.font = `700 ${fontSize}px "Arial Narrow", Arial, sans-serif`;
   ctx.globalAlpha = 1;
   ctx.fillStyle = "white";
-  ctx.fillText(text, cx + cellSize / 2, cy + cellSize / 2);
+  const maxTextWidth = cellSize * 0.9;
+  const textWidth = ctx.measureText(text).width || maxTextWidth;
+  const horizontalScale = Math.min(1, maxTextWidth / textWidth);
+  ctx.save();
+  ctx.translate(cx + cellSize / 2, cy + cellSize / 2);
+  ctx.scale(horizontalScale, 1);
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
 }
 
 export default function NumThree(props) {
@@ -84,6 +172,9 @@ export default function NumThree(props) {
   const textureMaxRef = useRef(22);
   const magnifierPosRef = useRef({ col: -1, row: -1 });
   const drawMagnifierRef = useRef(null);
+  const magnifierZoomRef = useRef(1);
+  const zoomRef = useRef(normalizeZoomScale(props.zoom));
+  const stableDataRef = useRef(null);
   // const pageRef = useRef(pageInfo)
 
   // useEffect(() => {
@@ -114,12 +205,13 @@ export default function NumThree(props) {
   function createDigitSpriteSheetWithJet(value = 22) {
     const canvas = document.createElement("canvas");
     // document.body.appendChild(canvas)
-    canvas.width = canvas.height = 1024;
+    canvas.width = canvas.height = DIGIT_ATLAS_SIZE;
     const ctx = canvas.getContext("2d");
 
-    const gridSize = 16;
-    const cellSize = canvas.width / gridSize;
+    const gridSize = DIGIT_ATLAS_GRID;
+    const cellSize = DIGIT_ATLAS_CELL;
 
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
@@ -134,18 +226,18 @@ export default function NumThree(props) {
       ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
-      // ✅ 黑色边框
-      ctx.strokeStyle = "black";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(cx, cy, cellSize, cellSize);
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.78)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(cx + 1.5, cy + 1.5, cellSize - 3, cellSize - 3);
 
       drawCellValue(ctx, i, cx, cy, cellSize);
     }
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.flipY = false;
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.NearestFilter;
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
     return tex;
   }
 
@@ -222,7 +314,7 @@ export default function NumThree(props) {
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
     camera.position.z = 1000;
-    camera.zoom = 1;
+    camera.zoom = zoomRef.current;
     camera.updateProjectionMatrix();
     cameraRef.current = camera;
     const initialCamera = {
@@ -231,7 +323,7 @@ export default function NumThree(props) {
     };
     resetCameraRef.current = () => {
       camera.position.copy(initialCamera.position);
-      camera.zoom = initialCamera.zoom;
+      camera.zoom = zoomRef.current;
       camera.updateProjectionMatrix();
     };
 
@@ -244,16 +336,18 @@ export default function NumThree(props) {
     const material = new THREE.ShaderMaterial({
       uniforms: {
         map: { value: texture },
-        tileSize: { value: 1.0 / 16.0 }
+        tileSize: { value: 1.0 / 16.0 },
+        tileInset: { value: DIGIT_TILE_INSET / DIGIT_ATLAS_SIZE }
       },
       vertexShader: `
         attribute vec3 instanceColor;
         varying vec3 vColor;
         attribute vec2 uvOffset;
         uniform float tileSize;
+        uniform float tileInset;
         varying vec2 vUv;
         void main() {
-          vUv = uv * tileSize + uvOffset;
+          vUv = uvOffset + vec2(tileInset) + uv * (tileSize - tileInset * 2.0);
           vColor = instanceColor;
           gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
         }
@@ -354,10 +448,6 @@ export default function NumThree(props) {
         if (!data) data = new Array(4096).fill(0)
       }
 
-      dataRef.current = data;
-      gridRef.current = { width: gridSize, height: gridSize };
-
-
       // const yArr = []
       // for (let i = 0; i < 46; i++) {
       //   yArr.push(45 - i)
@@ -373,9 +463,14 @@ export default function NumThree(props) {
       // data = newArr
 
 
+      const settingValue = getSettingValue()
       const {
         gauss, color, filter, height, coherent,
-      } = getSettingValue() //pageRef.current.settingValue
+      } = settingValue //pageRef.current.settingValue
+      data = prepareDisplayData(data, gridSize, gridSize, settingValue);
+      data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize}x${gridSize}`);
+      dataRef.current = data;
+      gridRef.current = { width: gridSize, height: gridSize };
       // const { wsLocalData } = pageRef.current
       // if (wsLocalData) {
       //   data = data.map((a, index) => {
@@ -437,13 +532,10 @@ export default function NumThree(props) {
         // colorArray[i * 3 + 1] = rgb[1];
         // colorArray[i * 3 + 2] = rgb[2];
 
-        geometry.setAttribute("instanceColor", new THREE.InstancedBufferAttribute(colorArray, 3));
-        geometry.attributes.instanceColor.needsUpdate = true;
-        geometry.setAttribute('uvOffset', new THREE.InstancedBufferAttribute(uvOffsets, 2));
-        // console.log(uvOffsets.length)
-        geometry.attributes.uvOffset.needsUpdate = true;
-
       }
+      mesh.instanceMatrix.needsUpdate = true;
+      geometry.attributes.instanceColor.needsUpdate = true;
+      geometry.attributes.uvOffset.needsUpdate = true;
       renderer.render(scene, camera);
       oldTime = new Date().getTime()
 
@@ -454,6 +546,7 @@ export default function NumThree(props) {
 
     }
 
+    geometry.setAttribute("instanceColor", new THREE.InstancedBufferAttribute(colorArray, 3));
     geometry.setAttribute('uvOffset', new THREE.InstancedBufferAttribute(uvOffsets, 2));
     animate()
     scene.add(mesh);
@@ -467,6 +560,76 @@ export default function NumThree(props) {
     }
 
     const wheelTarget = canvasNum;
+    const getPointerWorld = (event) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      return new THREE.Vector3(ndcX, ndcY, 0).unproject(camera);
+    };
+    const applyCanvasZoom = (nextPercent, event) => {
+      const safePercent = clampZoomPercent(nextPercent);
+      const before = event ? getPointerWorld(event) : null;
+      useEquipStore.getState().setNum2DZoom(safePercent);
+      zoomRef.current = normalizeZoomScale(safePercent);
+      camera.zoom = zoomRef.current;
+      camera.updateProjectionMatrix();
+      if (before) {
+        const after = getPointerWorld(event);
+        camera.position.x += before.x - after.x;
+        camera.position.y += before.y - after.y;
+        camera.updateProjectionMatrix();
+      }
+    };
+    const isPointerInsideCanvas = (event) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      return event.clientX >= rect.left && event.clientX <= rect.right
+        && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    };
+    const isPointerInsideMagnifier = (event) => {
+      const rect = magnifierCanvasRef.current?.getBoundingClientRect?.();
+      return magnifierEnabledRef.current && rect
+        && event.clientX >= rect.left && event.clientX <= rect.right
+        && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    };
+    const syncDragCursor = () => {
+      if (!wheelTarget) return;
+      if (interactionLockedRef.current) {
+        wheelTarget.style.cursor = 'default';
+        return;
+      }
+      wheelTarget.style.cursor = dragRef.current.isDragging ? 'grabbing' : 'grab';
+    };
+    const handleMouseDown = (event) => {
+      if (event.button !== 0 || interactionLockedRef.current) return;
+      if (!isPointerInsideCanvas(event) || isPointerInsideMagnifier(event)) return;
+      event.preventDefault();
+      dragRef.current = {
+        isDragging: true,
+        lastX: event.clientX,
+        lastY: event.clientY
+      };
+      syncDragCursor();
+    };
+    const handleCanvasDragMove = (event) => {
+      if (!dragRef.current.isDragging) return;
+      event.preventDefault();
+      const before = getPointerWorld({
+        clientX: dragRef.current.lastX,
+        clientY: dragRef.current.lastY
+      });
+      const after = getPointerWorld(event);
+      camera.position.x += before.x - after.x;
+      camera.position.y += before.y - after.y;
+      camera.updateProjectionMatrix();
+      dragRef.current.lastX = event.clientX;
+      dragRef.current.lastY = event.clientY;
+    };
+    const handleCanvasDragEnd = () => {
+      if (!dragRef.current.isDragging) return;
+      dragRef.current.isDragging = false;
+      syncDragCursor();
+    };
+    syncDragCursor();
     const applyMatrixColor = (value, colorMax) => {
       return jetWhite3NoWhite(0, colorMax, value);
     };
@@ -479,7 +642,8 @@ export default function NumThree(props) {
       const height = gridRef.current.height;
       if (!width || !height) return;
       const dataArr = dataRef.current || [];
-      const cells = 5;
+      const cells = getMagnifierCells(magnifierZoomRef.current);
+      const center = Math.floor(cells / 2);
       const cellSize = canvas.width / cells;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const colorMax = textureMaxRef.current || 22;
@@ -488,8 +652,8 @@ export default function NumThree(props) {
       ctx.textBaseline = 'middle';
       for (let y = 0; y < cells; y++) {
         for (let x = 0; x < cells; x++) {
-          const gx = col + x - 2;
-          const gy = row + y - 2;
+          const gx = col + x - center;
+          const gy = row + y - center;
           let value = 0;
           if (gx >= 0 && gx < width && gy >= 0 && gy < height) {
             value = dataArr[gy * width + gx] ?? 0;
@@ -507,7 +671,7 @@ export default function NumThree(props) {
       }
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2;
-      ctx.strokeRect(2 * cellSize + 1, 2 * cellSize + 1, cellSize - 2, cellSize - 2);
+      ctx.strokeRect(center * cellSize + 1, center * cellSize + 1, cellSize - 2, cellSize - 2);
       ctx.lineWidth = 1;
     };
     drawMagnifierRef.current = drawMagnifier;
@@ -548,20 +712,67 @@ export default function NumThree(props) {
       }
     };
 
+    const handleWheel = (event) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const overCanvas = event.clientX >= rect.left && event.clientX <= rect.right
+        && event.clientY >= rect.top && event.clientY <= rect.bottom;
+      const overMagnifier = isPointerInsideMagnifier(event);
+      if (!overCanvas && !overMagnifier) return;
+      event.preventDefault();
+      if (!overMagnifier) {
+        const currentPercent = useEquipStore.getState().num2DZoom || props.zoom || 100;
+        applyCanvasZoom(currentPercent + (event.deltaY < 0 ? 10 : -10), event);
+        return;
+      }
+      const nextZoom = Math.max(0.75, Math.min(3, magnifierZoomRef.current + (event.deltaY < 0 ? 0.25 : -0.25)));
+      if (nextZoom === magnifierZoomRef.current) return;
+      magnifierZoomRef.current = nextZoom;
+      const magnifierCanvas = magnifierCanvasRef.current;
+      if (magnifierCanvas) {
+        const size = Math.round(200 * Math.min(1.5, Math.max(1, nextZoom)));
+        magnifierCanvas.style.width = `${size}px`;
+        magnifierCanvas.style.height = `${size}px`;
+      }
+      if (magnifierPosRef.current.col >= 0) {
+        drawMagnifier(magnifierPosRef.current.col, magnifierPosRef.current.row);
+      }
+    };
+
+    wheelTarget.addEventListener('mousedown', handleMouseDown);
     wheelTarget.addEventListener('mousemove', handleMouseMove);
     wheelTarget.addEventListener('mouseleave', handleMouseLeave);
+    wheelTarget.addEventListener('wheel', handleWheel, { passive: false });
+    window.addEventListener('mousemove', handleCanvasDragMove);
+    window.addEventListener('mouseup', handleCanvasDragEnd);
 
     return () => {
       cleanupThree({ scene, renderer, animationId: animationRequestId })
+      wheelTarget.removeEventListener('mousedown', handleMouseDown);
       wheelTarget.removeEventListener('mousemove', handleMouseMove);
       wheelTarget.removeEventListener('mouseleave', handleMouseLeave);
+      wheelTarget.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('mousemove', handleCanvasDragMove);
+      window.removeEventListener('mouseup', handleCanvasDragEnd);
     };
 
   }, [])
 
   useEffect(() => {
+    zoomRef.current = normalizeZoomScale(props.zoom);
+    const camera = cameraRef.current;
+    if (camera) {
+      camera.zoom = zoomRef.current;
+      camera.updateProjectionMatrix();
+    }
+  }, [props.zoom])
+
+  useEffect(() => {
     const locked = Boolean(onSelect || onRuler);
     interactionLockedRef.current = locked;
+    const canvasNum = document.querySelector('.canvasNum');
+    if (canvasNum) {
+      canvasNum.style.cursor = locked ? 'default' : 'grab';
+    }
     if (locked) {
       dragRef.current.isDragging = false;
       if (resetCameraRef.current) {
@@ -583,6 +794,20 @@ export default function NumThree(props) {
       }
     }
   }, [onMagnifier])
+
+  useEffect(() => {
+    const reset2DView = () => {
+      useEquipStore.getState().setNum2DZoom(100);
+      zoomRef.current = 1;
+      if (resetCameraRef.current) {
+        resetCameraRef.current();
+      } else {
+        pendingResetRef.current = true;
+      }
+    };
+    window.addEventListener('reset-num-2d-view', reset2DView);
+    return () => window.removeEventListener('reset-num-2d-view', reset2DView);
+  }, [])
 
   // useEffect(() => {
 

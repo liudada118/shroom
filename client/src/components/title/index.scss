@@ -56,6 +56,8 @@
             display: flex;
             align-items: center;
             gap: 0.8rem;
+            position: relative;
+            z-index: 1200;
 
             .systemSelect {
                 margin-right: 1.6rem;
@@ -135,6 +137,7 @@
         }
     }
 
+    .iconAndSelect:not(:first-child),
     .iconContent:not(:first-child) {
         margin-left: 1.7rem;
     }
@@ -208,6 +211,20 @@
         padding-right: 5px;
     }
 
+    .setItemLabel {
+        min-width: 5.8rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+
+        em {
+            color: #9aa8b7;
+            font-size: 0.72rem;
+            font-style: normal;
+            white-space: nowrap;
+        }
+    }
+
     .setItemSlide {
         flex: 1;
     }
@@ -259,6 +276,26 @@
     background-color: #0072EF;
     color: #E6EBF0;
     border-radius: 5px;
+}
+
+.oneKeyConnectButton {
+    height: 2.2rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0 0.95rem;
+    border: 1px solid rgba(19, 135, 255, 0.9);
+    border-radius: 0.35rem;
+    background: linear-gradient(180deg, #087dff 0%, #006df2 100%);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font-size: 0.875rem;
+    line-height: 1;
+    white-space: nowrap;
+
+    .connectButtonIcon {
+        font-size: 0.95rem;
+    }
 }
 
 .connectingPort {
@@ -388,6 +425,22 @@
         justify-content: space-between;
         align-items: center;
         gap: 1.25rem;
+    }
+
+    .selectInputTitleDraggable {
+        cursor: grab;
+        user-select: none;
+
+        &:active {
+            cursor: grabbing;
+        }
+
+        input,
+        button,
+        .ant-select,
+        .selectInfoIcon {
+            cursor: initial;
+        }
     }
 
     .selectInputTitleLeft {

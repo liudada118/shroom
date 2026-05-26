@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef, useState } from 'react'
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
 import IconAndText from '../iconAndText/IconAndText'
 import IconAndTextAndSelect from '../iconAndTextAndSelect/IconAndTextAndSelect'
@@ -33,6 +33,7 @@ function SecondTitle(props) {
     const settingValueMax = normalizeVisualSettingMax(rawSettingValueMax);
     const systemType = useEquipStore(s => s.systemType, shallow);
     const currentDisplayType = useEquipStore(s => s.displayType, shallow);
+    const displayStatus = useEquipStore(s => s.displayStatus, shallow);
 
     const setSettingValue = useEquipStore.getState().setSettingValue
     const setSettingValueMax = useEquipStore.getState().setSettingValueMax
@@ -106,6 +107,24 @@ function SecondTitle(props) {
     const getSliderMax = (a) => a.sliderScale ? a.max * a.sliderScale : a.max
     const getSliderStep = (a) => a.sliderScale ? a.step * a.sliderScale : a.step
     const getSettingValueFromSlider = (value, a) => a.sliderScale ? Number(value) / a.sliderScale : value
+
+    const currentDataMax = useMemo(() => {
+        const getMax = (arr) => Array.isArray(arr)
+            ? arr.reduce((max, value) => Math.max(max, Number(value) || 0), 0)
+            : null
+        if (Array.isArray(displayStatus)) return getMax(displayStatus)
+        if (!displayStatus || typeof displayStatus !== 'object') return null
+        const values = Object.entries(displayStatus)
+        if (!values.length) return null
+        const target = currentDisplayType?.includes('back') ? 'back' : currentDisplayType?.includes('sit') ? 'sit' : ''
+        const matched = target
+            ? values.filter(([key]) => key === target || key.endsWith(`-${target}`))
+            : values
+        const maxList = (matched.length ? matched : values)
+            .map(([, arr]) => getMax(arr))
+            .filter((value) => value !== null)
+        return maxList.length ? Math.max(...maxList) : null
+    }, [displayStatus, currentDisplayType])
 
 
 
@@ -294,8 +313,8 @@ function SecondTitle(props) {
 
     const [onZero, setOnZero] = useState(false)
 
-    const wsDataZero = () => {
-        const zeroState = pageInfo.changeWsLocalData()
+    const wsDataZero = (action = 'enable') => {
+        const zeroState = pageInfo.changeWsLocalData(action)
         if (zeroState?.error === 'no_data') {
             message.warning(t('noValidPressureMatrix'))
             return
@@ -305,8 +324,11 @@ function SecondTitle(props) {
         axios({
             method: 'post',
             url: `${localAddress}/setZeroBaseline`,
-            params: buildFallbackParams(payload),
             data: payload,
+        }).then((res) => {
+            if (res.data?.code !== 0) {
+                message.warning(t('zeroSyncFailed'))
+            }
         }).catch(() => {
             message.warning(t('zeroSyncFailed'))
         })
@@ -373,9 +395,14 @@ function SecondTitle(props) {
                     {
                         setType.map((a, index) => {
                             return (
-                                <div className="setItem">
+                                <div key={a.type} className="setItem">
                                     <Popover color='#32373E' className='set-popover' placement="bottomLeft" content={a.content} >
-                                        <div>{a.title}</div>
+                                        <div className="setItemLabel">
+                                            <span>{a.title}</span>
+                                            {a.type === 'color' ? (
+                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : Number(currentDataMax).toFixed(0)}</em>
+                                            ) : null}
+                                        </div>
                                     </Popover>
 
                                     <Slider
@@ -464,7 +491,18 @@ function SecondTitle(props) {
                     ]}
                         icon={<div className='iconContentBox'><i className='iconfont fs18'>&#xe60c;</i></div>}
                     />
-                    <IconAndText text={t('zeroPre')} onClickStatus={onZero} show={show} onClick={wsDataZero} icon={<div className='iconContentBox'><i style={{ color: onZero ? '#fff' : '#D1D9E1' }} className='iconfont fs18'>&#xe604;</i></div>} />
+                    <IconAndTextAndSelect
+                        text={t('zeroPre')}
+                        onClickStatus={onZero}
+                        show={show}
+                        options={[
+                            { label: t('zeroPre'), value: 'enable' },
+                            { label: t('cancelZero'), value: 'disable' },
+                        ]}
+                        onSelectOption={(item) => wsDataZero(item.value)}
+                        lockCollecting={false}
+                        icon={<div className='iconContentBox'><i style={{ color: onZero ? '#fff' : '#D1D9E1' }} className='iconfont fs18'>&#xe604;</i></div>}
+                    />
                     <IconAndText onClickStatus={onSelect} text={t('select')} onClick={() => {
                         if (onRuler) {
                             message.info(t('noSimultaneousUse'))
@@ -491,7 +529,6 @@ function SecondTitle(props) {
                         }
                     }} text={t('magnifier')} show={show} icon={<div className='iconContentBox'> <i style={{ color: onMagnifier ? '#fff' : '#D1D9E1' }} className='iconfont fs16'>&#xe61f;</i></div>} />
                     <IconAndText onClick={() => { setSetshow(!setshow) }} text={t('adjust')} show={show} icon={<div className='iconContentBox'><i className='iconfont fs16'>&#xe60d;</i></div>} />
-                    <IconAndText disable text={t('upload')} show={show} icon={<div className='iconContentBox'><i className='iconfont fs18'>&#xe609;</i></div>} />
                 </div>
                 {/* {onSelect ? <div className='selectInputContent'>
                     <div className="selectInputTitle"> <div className="selectInputTitleInfo">框选区域</div>  

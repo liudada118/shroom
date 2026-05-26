@@ -7,13 +7,13 @@ const fs = require('fs')
 const path = require('path')
 const HttpResult = require('../HttpResult')
 const constantObj = require('../../util/config')
-const { initDb, dbLoadCsv, deleteDbData, dbGetData, getCsvData, buildCsvPlaybackData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir, validateImportedCsv, listSelectionTemplates, replaceSelectionTemplates } = require('../../util/db')
+const { initDb, dbLoadCsv, getExportFieldOptions, deleteDbData, dbGetData, getCsvData, buildCsvPlaybackData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir, validateImportedCsv, listSelectionTemplates, replaceSelectionTemplates } = require('../../util/db')
 const module2 = require('../../util/aes_ecb')
 const { readEncryptedSystemConfig } = require('../../util/systemConfig')
 const { state } = require('../state')
 const { broadcast } = require('../websocket')
 const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
-const { colAndSendData, sendData, clearPlayTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot, saveDataDirection } = require('../services/DataService')
+const { colAndSendData, sendData, clearPlayTimer, ensureRealtimeTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot, saveDataDirection } = require('../services/DataService')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES } = require('../../util/deviceConfigValidation')
 
@@ -104,6 +104,27 @@ function normalizeContrastFrame(row, keys) {
   return result
 }
 
+function normalizeReportFrame(row, keys) {
+  const frame = parseMatrixFrame(row)
+  const result = {
+    timestamp: row?.timestamp ?? '',
+    date: row?.date ?? '',
+    data: {},
+  }
+  keys.forEach((key) => {
+    const source = frame[key] || {}
+    const arr = Array.isArray(source.arr) ? source.arr.map((value) => Number(value) || 0) : []
+    const size = inferMatrixSize(key, arr)
+    result.data[key] = {
+      ...source,
+      arr,
+      width: Number(source.width) || Number(source.col) || size.width,
+      height: Number(source.height) || Number(source.row) || size.height,
+    }
+  })
+  return result
+}
+
 function buildDiffFrame(leftFrame, rightFrame, keys) {
   const diff = {}
   keys.forEach((key) => {
@@ -121,14 +142,17 @@ function buildDiffFrame(leftFrame, rightFrame, keys) {
   return diff
 }
 
-function buildContrastFrame(leftRows, rightRows, keys, progress = 0) {
-  const safeProgress = Math.min(100, Math.max(0, Number(progress) || 0))
-  const leftIndex = leftRows.length > 1 ? Math.round((leftRows.length - 1) * safeProgress / 100) : 0
-  const rightIndex = rightRows.length > 1 ? Math.round((rightRows.length - 1) * safeProgress / 100) : 0
+function buildContrastFrame(leftRows, rightRows, keys, frameIndex = 0) {
+  const maxLength = Math.max(leftRows.length, rightRows.length)
+  const safeFrameIndex = maxLength > 0 ? Math.max(0, Math.min(maxLength - 1, Math.round(Number(frameIndex) || 0))) : 0
+  const safeProgress = maxLength > 1 ? (safeFrameIndex / (maxLength - 1)) * 100 : 0
+  const leftIndex = clampFrameIndex(leftRows, safeFrameIndex)
+  const rightIndex = clampFrameIndex(rightRows, safeFrameIndex)
   const left = normalizeContrastFrame(leftRows[leftIndex], keys)
   const right = normalizeContrastFrame(rightRows[rightIndex], keys)
   return {
     progress: safeProgress,
+    frameIndex: safeFrameIndex,
     leftIndex,
     rightIndex,
     left,
@@ -368,7 +392,20 @@ function resolveDownloadRequest(req) {
   }
   selectJson = tryParseRequestJson(selectJson)
 
-  return { fileArr, selectJson }
+  const bodyOptions = req.body && (req.body.exportOptions || req.body.options || req.body.exportConfig)
+  const queryOptions = req.query && (req.query.exportOptions || req.query.options || req.query.exportConfig)
+  let exportOptions = tryParseRequestJson(bodyOptions !== undefined ? bodyOptions : queryOptions) || {}
+  if (!exportOptions || typeof exportOptions !== 'object' || Array.isArray(exportOptions)) {
+    exportOptions = {}
+  }
+  if (!exportOptions.format) {
+    exportOptions.format = (req.body && req.body.format) || (req.query && req.query.format) || 'csv'
+  }
+  if (!exportOptions.fields) {
+    exportOptions.fields = (req.body && req.body.fields) || (req.query && req.query.fields) || []
+  }
+
+  return { fileArr, selectJson, exportOptions }
 }
 
 function extractPathCandidate(source, depth = 0) {
@@ -627,6 +664,23 @@ router.get('/getPort', asyncHandler(async (req, res) => {
 router.get('/connPort', asyncHandler(async (req, res) => {
   try {
     const result = await connectPort(broadcast, colAndSendData)
+    state.historyFlag = false
+    state.historyPlayFlag = false
+    state.historyDbArr = null
+    state.historySelectCache = null
+    clearPlayTimer()
+    try {
+      sendData()
+      setTimeout(() => {
+        try {
+          sendData()
+        } catch (err) {
+          console.warn('[Connect] Failed to push delayed realtime frame:', err.message)
+        }
+      }, 300)
+    } catch (err) {
+      console.warn('[Connect] Failed to push realtime frame:', err.message)
+    }
     res.json(new HttpResult(0, result, 'Connect success'))
   } catch (err) {
     res.json(new HttpResult(1, {
@@ -642,6 +696,23 @@ router.get('/connPort', asyncHandler(async (req, res) => {
 router.get('/rescanPort', asyncHandler(async (req, res) => {
   try {
     const result = await rescanPort(broadcast, colAndSendData)
+    state.historyFlag = false
+    state.historyPlayFlag = false
+    state.historyDbArr = null
+    state.historySelectCache = null
+    clearPlayTimer()
+    try {
+      sendData()
+      setTimeout(() => {
+        try {
+          sendData()
+        } catch (err) {
+          console.warn('[Rescan] Failed to push delayed realtime frame:', err.message)
+        }
+      }, 300)
+    } catch (err) {
+      console.warn('[Rescan] Failed to push realtime frame:', err.message)
+    }
     res.json(new HttpResult(0, result, 'Rescan complete'))
   } catch (err) {
     res.json(new HttpResult(1, {
@@ -929,8 +1000,6 @@ router.get('/getColHistory', asyncHandler(async (req, res) => {
     LIMIT ?, ?
   `
 
-  state.historyFlag = true
-
   const rows = await new Promise((resolve, reject) => {
     db.all(selectQuery, [0, 500], (err, rows) => {
       if (err) reject(err)
@@ -939,7 +1008,6 @@ router.get('/getColHistory', asyncHandler(async (req, res) => {
   })
 
   res.json(new HttpResult(0, rows, 'success'))
-  broadcast(JSON.stringify({ sitData: {} }))
 }))
 
 router.post('/getDbHistory', asyncHandler(async (req, res) => {
@@ -967,6 +1035,54 @@ router.post('/getDbHistory', asyncHandler(async (req, res) => {
   state.playIndex = 0
 
   res.json(new HttpResult(0, { length, pressArr, areaArr }, 'success'))
+}))
+
+router.post('/copReportData', asyncHandler(async (req, res) => {
+  const time = resolveRequestValue(req, ['time', 'date', 'timestamp'])
+  const db = await ensureCurrentDb()
+
+  if (!time) {
+    res.json(new HttpResult(1, {}, 'history date required'))
+    return
+  }
+  if (!db) {
+    res.json(new HttpResult(1, {}, 'Database not initialized'))
+    return
+  }
+
+  const { rows } = await dbGetData({ db, params: [time] })
+  if (!rows.length) {
+    res.json(new HttpResult(1, {}, 'history data not found'))
+    return
+  }
+
+  const firstFrame = parseMatrixFrame(rows[0])
+  const keys = getComparableKeys(firstFrame).filter((key) => {
+    const arr = firstFrame[key]?.arr
+    if (!Array.isArray(arr)) return false
+    const size = inferMatrixSize(key, arr)
+    return size.width * size.height === arr.length
+  })
+  const remark = await getRemark({ db, params: [time] }).catch(() => null)
+  const frames = rows.map((row) => normalizeReportFrame(row, keys))
+  const timestamps = rows.map((row) => Number(row.timestamp)).filter(Number.isFinite)
+  const durationMs = timestamps.length > 1 ? Math.max(0, timestamps[timestamps.length - 1] - timestamps[0]) : 0
+  const sampleRate = durationMs > 0 ? ((timestamps.length - 1) * 1000 / durationMs) : 0
+
+  res.json(new HttpResult(0, {
+    id: String(time),
+    date: String(time),
+    name: remark?.alias || String(time),
+    alias: remark?.alias || '',
+    remark: remark?.remark || '',
+    select: tryParseRequestJson(remark?.select) || {},
+    keys,
+    frameCount: rows.length,
+    durationMs,
+    sampleRate,
+    generatedAt: Date.now(),
+    frames,
+  }, 'success'))
 }))
 
 router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
@@ -1084,7 +1200,11 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
     state.leftDbArr = result.rows
     state.rightDbArr = result.rows
     state.historyDbArr = null
+    state.historyFlag = false
+    state.historyPlayFlag = false
     state.historySelectCache = null
+    clearPlayTimer()
+    ensureRealtimeTimer()
 
     const firstFrame = parseMatrixFrame(result.rows[0])
     const keys = getComparableKeys(firstFrame).filter((key) => {
@@ -1175,7 +1295,11 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
   state.leftDbArr = leftResult.rows
   state.rightDbArr = rightResult.rows
   state.historyDbArr = null
+  state.historyFlag = false
+  state.historyPlayFlag = false
   state.historySelectCache = null
+  clearPlayTimer()
+  ensureRealtimeTimer()
 
   const keys = getContrastCommonKeys(parseMatrixFrame(leftResult.rows[0]), parseMatrixFrame(rightResult.rows[0]))
   const leftFrames = leftResult.rows.map((row) => normalizeContrastFrame(row, keys))
@@ -1206,6 +1330,10 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
     warnings: leftResult.length !== rightResult.length ? ['两组数据帧数不同，已按进度百分比对齐。'] : [],
   }
 
+  if (leftResult.length !== rightResult.length) {
+    payload.warnings = ['两组数据帧数不同，播放时按帧号同步，较短数据保持末帧。']
+  }
+
   broadcast(JSON.stringify({
     contrastData: initialFrame
   }))
@@ -1214,14 +1342,18 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getContrastIndex', asyncHandler(async (req, res) => {
-  const progress = resolveRequestValue(req, ['progress', 'index'])
+  const leftIndex = resolveRequestValue(req, ['leftIndex', 'left_index', 'aIndex', 'a_index'])
+  const rightIndex = resolveRequestValue(req, ['rightIndex', 'right_index', 'bIndex', 'b_index'])
+  const frameIndex = resolveRequestValue(req, ['frameIndex', 'frame_index', 'index', 'progress'])
   if (!Array.isArray(state.leftDbArr) || !Array.isArray(state.rightDbArr) || !state.leftDbArr.length || !state.rightDbArr.length) {
     res.json(new HttpResult(1, {}, '请先选择 A/B 数据并开始对比。'))
     return
   }
 
   const keys = getContrastCommonKeys(parseMatrixFrame(state.leftDbArr[0]), parseMatrixFrame(state.rightDbArr[0]))
-  const frame = buildContrastFrame(state.leftDbArr, state.rightDbArr, keys, progress)
+  const frame = (leftIndex !== undefined || rightIndex !== undefined)
+    ? buildContrastFrameByIndex(state.leftDbArr, state.rightDbArr, keys, leftIndex ?? 0, rightIndex ?? 0)
+    : buildContrastFrame(state.leftDbArr, state.rightDbArr, keys, frameIndex)
   broadcast(JSON.stringify({ contrastData: frame }))
   res.json(new HttpResult(0, frame, 'success'))
 }))
@@ -1250,9 +1382,19 @@ router.post('/cancalDbPlay', (req, res) => {
   state.rightDbArr = null
   state.historySelectCache = null
   clearPlayTimer()
+  ensureRealtimeTimer()
   try {
     if (Object.keys(state.parserArr || {}).length) {
       sendData()
+      setTimeout(() => {
+        try {
+          if (Object.keys(state.parserArr || {}).length) {
+            sendData()
+          }
+        } catch (err) {
+          console.warn('[Playback] Failed to push delayed realtime frame after cancel:', err.message)
+        }
+      }, 300)
     }
   } catch (err) {
     console.warn('[Playback] Failed to push realtime frame after cancel:', err.message)
@@ -1291,7 +1433,7 @@ router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
 // ─── 数据操作 ────────────────────────────────────────────
 
 const handleDownload = asyncHandler(async (req, res) => {
-  const { fileArr, selectJson } = resolveDownloadRequest(req)
+  const { fileArr, selectJson, exportOptions } = resolveDownloadRequest(req)
   const db = await ensureCurrentDb()
   const currentFile = resolveCurrentSystemFile()
   if (!fileArr || !fileArr.length) {
@@ -1316,13 +1458,29 @@ const handleDownload = asyncHandler(async (req, res) => {
     isPackaged: state._isPackaged,
     selectJson: selectOverride,
     customDownloadPath: resolvedDownloadPath,
-    dataPath: state._dataPath
+    dataPath: state._dataPath,
+    exportOptions,
   })
   res.json(new HttpResult(0, data, 'Download'))
 })
 
 router.post('/downlaod', handleDownload)
 router.post('/download', handleDownload)
+
+router.post('/downloadFields', asyncHandler(async (req, res) => {
+  const { fileArr } = resolveDownloadRequest(req)
+  const db = await ensureCurrentDb()
+  if (!fileArr || !fileArr.length) {
+    res.json(new HttpResult(1, {}, 'Please select data first'))
+    return
+  }
+  if (!db) {
+    res.json(new HttpResult(1, {}, 'Database not initialized'))
+    return
+  }
+  const data = await getExportFieldOptions({ db, params: fileArr })
+  res.json(new HttpResult(0, data, 'success'))
+}))
 
 // ─── 下载路径管理 ─────────────────────────────────────
 
@@ -1633,7 +1791,7 @@ router.post('/bindKey', (req, res) => {
   }
 })
 
-// ─── CSV文件上传 ───────────────────────────────────────
+// ─── CSV/XLSX文件上传 ──────────────────────────────────
 const multer = require('multer')
 const csvUploadStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -1659,10 +1817,10 @@ const csvUpload = multer({
   storage: csvUploadStorage,
   fileFilter: (req, file, cb) => {
     const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8')
-    if (originalName.toLowerCase().endsWith('.csv')) {
+    if (/\.(csv|xlsx|xls)$/i.test(originalName)) {
       cb(null, true)
     } else {
-      cb(new Error('Only CSV files are allowed'))
+      cb(new Error('Only CSV/XLSX files are allowed'))
     }
   },
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB限制

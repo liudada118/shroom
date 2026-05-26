@@ -1,7 +1,7 @@
 import { Input, message, Modal, Popover, Select } from 'antd'
 import { CloseOutlined, DeleteOutlined, EditOutlined, EyeOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import axios from 'axios'
-import React, { useContext, useEffect, useLayoutEffect, useState } from 'react'
+import React, { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
@@ -277,6 +277,69 @@ export default function SelectSet(props) {
     const [templates, setTemplates] = useState(() => readSelectionTemplates())
     const [selectedTemplateId, setSelectedTemplateId] = useState('')
     const [floatingStyle, setFloatingStyle] = useState(null)
+    const floatingStyleRef = useRef(null)
+    const floatingMovedRef = useRef(false)
+    const dragStateRef = useRef(null)
+
+    useEffect(() => {
+        floatingStyleRef.current = floatingStyle
+    }, [floatingStyle])
+
+    const setFloatingPanelStyle = (style) => {
+        floatingStyleRef.current = style
+        setFloatingStyle(style)
+    }
+
+    const clampFloatingPosition = (left, top, width = 285, height = 220) => {
+        const safeWidth = Number(width) || 285
+        const safeHeight = Number(height) || 220
+        return {
+            left: Math.max(8, Math.min(left, window.innerWidth - safeWidth - 8)),
+            top: Math.max(72, Math.min(top, window.innerHeight - Math.min(safeHeight, window.innerHeight - 80) - 8)),
+        }
+    }
+
+    const handleFloatingDragStart = (event) => {
+        if (variant !== 'floating') return
+        if (event.button !== 0) return
+        const target = event.target
+        if (target?.closest?.('button,input,.ant-select,.ant-popover-open,.selectInfoIcon')) return
+        const panel = event.currentTarget.closest('.selectInputFloating')
+        const rect = panel?.getBoundingClientRect()
+        if (!rect) return
+        event.preventDefault()
+        floatingMovedRef.current = true
+        dragStateRef.current = {
+            startX: event.clientX,
+            startY: event.clientY,
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+        }
+        const handleMove = (moveEvent) => {
+            const drag = dragStateRef.current
+            if (!drag) return
+            const next = clampFloatingPosition(
+                drag.left + moveEvent.clientX - drag.startX,
+                drag.top + moveEvent.clientY - drag.startY,
+                drag.width,
+                drag.height
+            )
+            setFloatingPanelStyle({
+                ...(floatingStyleRef.current || {}),
+                left: `${next.left}px`,
+                top: `${next.top}px`,
+            })
+        }
+        const handleUp = () => {
+            dragStateRef.current = null
+            window.removeEventListener('mousemove', handleMove)
+            window.removeEventListener('mouseup', handleUp)
+        }
+        window.addEventListener('mousemove', handleMove)
+        window.addEventListener('mouseup', handleUp)
+    }
 
     const getCurrentMatrixType = () => {
         const currentSystem = getSysType()
@@ -344,22 +407,34 @@ export default function SelectSet(props) {
                 }
             }
 
-            setFloatingStyle({
+            const nextStyle = {
                 left: `${left}px`,
                 top: `${top}px`,
                 width: `${width}px`,
                 maxHeight: `${Math.max(220, window.innerHeight - top - 24)}px`,
-            })
+            }
+
+            if (floatingMovedRef.current && floatingStyleRef.current) {
+                const currentLeft = parseFloat(floatingStyleRef.current.left)
+                const currentTop = parseFloat(floatingStyleRef.current.top)
+                const clamped = clampFloatingPosition(currentLeft, currentTop, width)
+                setFloatingPanelStyle({
+                    ...nextStyle,
+                    left: `${clamped.left}px`,
+                    top: `${clamped.top}px`,
+                })
+                return
+            }
+
+            setFloatingPanelStyle(nextStyle)
         }
 
         updateFloatingPosition()
         const raf = requestAnimationFrame(updateFloatingPosition)
         window.addEventListener('resize', updateFloatingPosition)
-        window.addEventListener('mouseup', updateFloatingPosition)
         return () => {
             cancelAnimationFrame(raf)
             window.removeEventListener('resize', updateFloatingPosition)
-            window.removeEventListener('mouseup', updateFloatingPosition)
         }
     }, [onSelect, variant, displayType, systemType])
 
@@ -693,7 +768,10 @@ export default function SelectSet(props) {
             className={`selectInputContent ${variant === 'embedded' ? 'selectInputEmbedded' : variant === 'drawer' ? 'selectInputDrawer' : 'selectInputFloating'}`}
             style={variant === 'floating' && floatingStyle ? floatingStyle : undefined}
         >
-            <div className="selectInputTitle">
+            <div
+                className={`selectInputTitle ${variant === 'floating' ? 'selectInputTitleDraggable' : ''}`}
+                onMouseDown={handleFloatingDragStart}
+            >
                 <div className="selectInputTitleLeft">
                     <div className="selectInputTitleInfo">{t('selectionRegion')}</div>
                     <span className="selectCount">({boxes.length}/4)</span>

@@ -51,12 +51,16 @@ const ViewSetting = (props) => {
     }
 
     const { showProp, setShowProp } = props
+    const num2DZoom = useEquipStore(s => s.num2DZoom, shallow)
+    const setNum2DZoom = useEquipStore.getState().setNum2DZoom
 
 
 
     // 等比例缩放：每次按固定比例（约10%）缩放，范围 10%~300%
     const ZOOM_MIN = 10
     const ZOOM_MAX = 300
+    const NUM_2D_ZOOM_MIN = 50
+    const NUM_2D_ZOOM_MAX = 200
     const ZOOM_STEP = 10
 
     const subShow = () => {
@@ -66,6 +70,11 @@ const ViewSetting = (props) => {
             if (newVal !== showProp) {
                 setShowProp(newVal)
                 props.three?.current?.changeCamera(newVal, { previousValue: showProp })
+            }
+        } else if (display == 'num') {
+            const newVal = Math.max(NUM_2D_ZOOM_MIN, num2DZoom - ZOOM_STEP)
+            if (newVal !== num2DZoom) {
+                setNum2DZoom(newVal)
             }
         }
     }
@@ -77,6 +86,11 @@ const ViewSetting = (props) => {
             if (newVal !== showProp) {
                 setShowProp(newVal)
                 props.three?.current?.changeCamera(newVal, { previousValue: showProp })
+            }
+        } else if (display == 'num') {
+            const newVal = Math.min(NUM_2D_ZOOM_MAX, num2DZoom + ZOOM_STEP)
+            if (newVal !== num2DZoom) {
+                setNum2DZoom(newVal)
             }
         }
     }
@@ -91,6 +105,8 @@ const ViewSetting = (props) => {
     const carArr = ['all', 'back', 'sit']
     const car2DArr = ['back2D', 'sit2D']
     const car3DArr = ['back3D', 'sit3D']
+    const systemType = useEquipStore(s => s.systemType, shallow);
+    const displayType = useEquipStore(s => s.displayType, shallow);
 
     const hasDisplayData = (type) => {
         const displayStatus = useEquipStore.getState().displayStatus
@@ -134,24 +150,43 @@ const ViewSetting = (props) => {
         return null
     }
 
+    const selectPoint3DView = (type) => {
+        if (!guard3D()) return
+        if (type !== 'all' && !hasDisplayData(type)) {
+            warnMissingDisplayData(type)
+            return
+        }
+        setShowProp(100)
+        setCarType(type)
+        if (display != 'point3D') {
+            setDisplay('point3D')
+        }
+        props.three.current?.actionSit(type)
+        useEquipStore.getState().setDisplayType(type)
+        setPointRotationIndex(0)
+        changeAllFun()
+    }
+
+    const selectNum2DView = (type) => {
+        if (!hasDisplayData(type)) {
+            warnMissingDisplayData(type)
+            return
+        }
+        setNum2DZoom(100)
+        setCarType(type)
+        if (display != 'num') {
+            setDisplay('num')
+        }
+        useEquipStore.getState().setDisplayType(type)
+        setDisplayType(type)
+        changeAllFun()
+    }
+
     const changeCarViewContent = <div style={{ color: '#E6EBF0' }}>
         {
             carArr.map((type, index) => {
-                return <div className='cursor' onClick={() => {
-                    if (!guard3D()) return
-                    if (type !== 'all' && !hasDisplayData(type)) {
-                        warnMissingDisplayData(type)
-                        return
-                    }
-                    setCarType(type)
-                    if (display != 'point3D') {
-                        setDisplay('point3D')
-                    }
-
-                    props.three.current?.actionSit(type)
-                    useEquipStore.getState().setDisplayType(type);
-                    setPointRotationIndex(0)
-                    changeAllFun()
+                return <div key={type} className='cursor' onClick={() => {
+                    selectPoint3DView(type)
                 }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: carType == type ? '#0072EF' : 'unset' }}>{t(type)}</div>
 
             })
@@ -161,21 +196,8 @@ const ViewSetting = (props) => {
     const changeCar2DViewContent = <div style={{ color: '#E6EBF0' }}>
         {
             car2DArr.map((type, index) => {
-                return <div className='cursor' onClick={() => {
-                    if (!hasDisplayData(type)) {
-                        warnMissingDisplayData(type)
-                        return
-                    }
-                    setCarType(type)
-                    if (display != 'num') {
-                        setDisplay('num')
-                    }
-
-
-                    // props.three.current?.actionSit(type)
-                    useEquipStore.getState().setDisplayType(type);
-                    setDisplayType(type)
-                    changeAllFun()
+                return <div key={type} className='cursor' onClick={() => {
+                    selectNum2DView(type)
                 }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: carType == type ? '#0072EF' : 'unset' }}>{t(type)}</div>
 
             })
@@ -185,7 +207,7 @@ const ViewSetting = (props) => {
     const changeCar3DNumViewContent = <div style={{ color: '#E6EBF0' }}>
         {
             car3DArr.map((type, index) => {
-                return <div className='cursor' onClick={() => {
+                return <div key={type} className='cursor' onClick={() => {
                     if (!guard3D()) return
                     setCarType(type)
                     if (display != 'num3D') {
@@ -199,41 +221,37 @@ const ViewSetting = (props) => {
             })
         }
     </div>
-
-
-
-    const changeMoreViewContent = <div style={{ color: '#E6EBF0' }}>
-        <Popover trigger='click' color='#32373E' placement="right" content={changeCarViewContent}>
-            <div className='cursor' onClick={() => {
-                if (!guard3D()) return
-                setShowProp(100)
-                setDisplay('point3D')
-                useEquipStore.getState().setDisplayType('all')
-                setCarType('all')
-                setPointRotationIndex(0)
-                changeAllFun()
-            }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: display == 'point3D' ? '#0072EF' : 'unset' }}>{t('point3D')}</div></Popover>
-
-        {/* <Popover trigger='click' color='#32373E' placement="right" content={changeCar3DNumViewContent}>
-            <div className='cursor' onClick={() => {
-                setShowProp(100)
-                setDisplay('num3D')
-                useEquipStore.getState().setDisplayType('back3D')
-                changeAllFun()
-                setCarType('back3D')
-            }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: display == 'num3D' ? '#0072EF' : 'unset' }}>{t('num3D')}</div>
-        </Popover> */}
-        <Popover trigger='click' color='#32373E' placement="right" content={changeCar2DViewContent}>
-            <div className='cursor' onClick={() => {
-                const defaultType = getDefault2DDisplayType()
-                if (!defaultType) return
-                setShowProp(100)
-                setDisplay('num')
-                useEquipStore.getState().setDisplayType(defaultType)
-                setCarType(defaultType)
-                changeAllFun()
-            }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: display == 'num' ? '#0072EF' : 'unset' }}>{t('num2D')}</div>
-        </Popover>
+    const changeMoreViewContent = <div className="viewModeMenu">
+        <div className="viewModeGroup">
+            <div className="viewModeGroupTitle">{t('point3D')}</div>
+            <div className="viewModeOptionRow">
+                {carArr.map((type) => (
+                    <button
+                        key={type}
+                        type="button"
+                        className={`viewModeOption ${display === 'point3D' && displayType === type ? 'active' : ''}`}
+                        onClick={() => selectPoint3DView(type)}
+                    >
+                        {t(type)}
+                    </button>
+                ))}
+            </div>
+        </div>
+        <div className="viewModeGroup">
+            <div className="viewModeGroupTitle">{t('num2D')}</div>
+            <div className="viewModeOptionRow">
+                {car2DArr.map((type) => (
+                    <button
+                        key={type}
+                        type="button"
+                        className={`viewModeOption ${display === 'num' && displayType === type ? 'active' : ''}`}
+                        onClick={() => selectNum2DView(type)}
+                    >
+                        {t(type)}
+                    </button>
+                ))}
+            </div>
+        </div>
     </div>
 
 
@@ -258,7 +276,7 @@ const ViewSetting = (props) => {
 
 
         <div className='cursor' onClick={() => {
-            setShowProp(100)
+            setNum2DZoom(100)
             setDisplay('num')
             changeAllFun()
         }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: display == 'num' ? '#0072EF' : 'unset' }}>{t('num2D')}</div>
@@ -273,13 +291,16 @@ const ViewSetting = (props) => {
 
     // const sysType = getSysType()
 
-    const systemType = useEquipStore(s => s.systemType, shallow);
-    const displayType = useEquipStore(s => s.displayType, shallow);
     const canSwitchPointAngle = display === 'point3D' && ['back', 'sit'].includes(displayType)
 
-    const reset3D = () => {
-        props.three.current?.reset3D()
+    const resetView = () => {
+        setShowProp(100)
+        setNum2DZoom(100)
+        props.three.current?.reset3D?.()
+        window.dispatchEvent(new CustomEvent('reset-num-2d-view'))
     }
+
+    const currentZoomLabel = display === 'num' ? num2DZoom : showProp
 
     const items = [
         {
@@ -351,9 +372,9 @@ const ViewSetting = (props) => {
         <>
             <div className='viewSetContent'>
                 <div className="secondContent viewContent1">
-                    <Popover color='#32373E' className='set-popover' placement="top" content={<div style={{ color: '#E6EBF0' }} >{t('reset3D')}</div>} >
+                    <Popover color='#32373E' className='set-popover' placement="top" content={<div style={{ color: '#E6EBF0' }} >{t('resetViewTip')}</div>} >
                         <div className='viewAdjust' style={{ display: 'flex', flexDirection: 'column' }}>
-                            <i onClick={reset3D} className='iconfont cursor fs20' >&#xe644;</i>
+                            <i onClick={resetView} className='iconfont cursor fs20' >&#xe644;</i>
                             {t('resetView')}
                         </div>
                     </Popover>
@@ -382,7 +403,7 @@ const ViewSetting = (props) => {
 
                         <i className='iconfont reduce cursor' onClick={subShow}>&#xe632;</i>
                         {/* <Input value={`${showProp}%`} /> */}
-                        <div style={{ padding: '0 0.75rem' }}>{showProp} %</div>
+                        <div style={{ padding: '0 0.75rem' }}>{currentZoomLabel} %</div>
 
 
                         {/* {display == 'point3D' ? isMoreMatrix(systemType) && !['sit', 'back'].includes(displayType) ?

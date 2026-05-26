@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react'
+import React, { useContext } from 'react'
 import './index.scss'
 import axios from 'axios'
 import { message } from 'antd'
@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 
 export default function Col(props) {
     const { t } = useTranslation()
-    const { colName, remark, HZ, setStartTime, col, setCol } = props
+    const { colName, remark, HZ, setStartTime, col, setCol, className = '', children, onBeforeStart } = props
     const pageInfo = useContext(pageContext)
 
     const getCurrentDataDirection = () => {
@@ -20,11 +20,13 @@ export default function Col(props) {
             : { left: true, up: true, rotateDegree: 0 }
     }
 
-    const colButtonClick = () => {
-        if (!col) {
+    const startCollect = (collectInfo = {}) => {
             const startStamp = Date.now()
             const fileName = startStamp
-            const hz = HZ ? HZ : 30
+            const currentColName = collectInfo.colName ?? colName
+            const currentRemark = collectInfo.remark ?? remark
+            const currentHZ = collectInfo.HZ ?? HZ
+            const hz = currentHZ ? currentHZ : 30
             const startPayload = {
                 fileName: fileName,
                 HZ: hz,
@@ -51,8 +53,8 @@ export default function Col(props) {
                     useEquipStore.getState().setCollecting(true)
 
                     // 始终调用 upsertRemark 保存框选数据（即使没有 alias 和 remark）
-                    const alias = colName ? colName.trim() : ''
-                    const remarkText = remark ? remark.trim().slice(0, 400) : ''
+                    const alias = currentColName ? currentColName.trim() : ''
+                    const remarkText = currentRemark ? currentRemark.trim().slice(0, 400) : ''
 
                     const remarkData = {
                         date: String(startStamp),
@@ -87,7 +89,15 @@ export default function Col(props) {
                 useEquipStore.getState().setCollecting(false)
                 message.error(t('collectFailed'))
             })
+    }
 
+    const colButtonClick = () => {
+        if (!col) {
+            if (onBeforeStart) {
+                onBeforeStart(startCollect)
+                return
+            }
+            startCollect()
         } else {
             axios({
                 method: 'get',
@@ -108,8 +118,9 @@ export default function Col(props) {
     }
 
     return (
-        <div className='colContent' onClick={colButtonClick}>
+        <div className={`colContent ${className}`} onClick={colButtonClick}>
             <div className={`${col ? "colIngIcon" : 'colInitIcon'} colIcon`}></div>
+            {children}
         </div>
     )
 }

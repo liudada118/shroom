@@ -7,14 +7,11 @@ import { pageContext } from '../../page/test/Test'
 import { useEquipStore } from '../../store/equipStore'
 import { localAddress } from '../../util/constant'
 import ContrastHeatmap from './ContrastHeatmap'
-import SelectSet from '../title/SelectSet'
 import { useTranslation } from 'react-i18next'
-import { formatSelectionName } from '../../util/selectionName'
 import './contrast.scss'
 
 const METRIC_KEYS = ['aver', 'max', 'min', 'press', 'area', 'points', 'center']
 
-const FULL_SELECTION_ID = '__full__'
 const CONTRAST_COPY = {
     zh: {
         metrics: {
@@ -170,16 +167,56 @@ const CONTRAST_COPY = {
     },
 }
 
-function getFrameByProgress(frames = [], progress = 0) {
-    if (!frames.length) return {}
-    const index = frames.length > 1 ? Math.round((frames.length - 1) * progress / 100) : 0
-    return frames[Math.max(0, Math.min(frames.length - 1, index))] || {}
-}
-
 function getFrameByIndex(frames = [], index = 0) {
     if (!frames.length) return {}
     const safeIndex = Math.max(0, Math.min(frames.length - 1, Math.round(Number(index) || 0)))
     return frames[safeIndex] || {}
+}
+
+function getFrameTimestamp(frame, fallbackIndex = 0) {
+    const raw = frame?._timestamp ?? frame?.timestamp ?? frame?.rawFrame?.timestamp ?? frame?.raw_frame?.timestamp
+    const numeric = Number(raw)
+    return Number.isFinite(numeric) ? numeric : fallbackIndex
+}
+
+function getFrameTimeRange(frames = []) {
+    if (!frames.length) return { start: 0, end: 0, duration: 0 }
+    const start = getFrameTimestamp(frames[0], 0)
+    const end = getFrameTimestamp(frames[frames.length - 1], frames.length - 1)
+    const duration = Math.max(0, end - start)
+    return { start, end, duration }
+}
+
+function getTimelineIndex(frames = [], progress = 0) {
+    if (!frames.length) return 0
+    if (frames.length === 1) return 0
+    const safeProgress = Math.max(0, Math.min(100, Number(progress) || 0))
+    const range = getFrameTimeRange(frames)
+    if (!range.duration) return getAlignedIndex(frames.length, safeProgress)
+    const target = range.start + range.duration * safeProgress / 100
+    let bestIndex = 0
+    let bestDistance = Infinity
+    frames.forEach((frame, index) => {
+        const distance = Math.abs(getFrameTimestamp(frame, index) - target)
+        if (distance < bestDistance) {
+            bestDistance = distance
+            bestIndex = index
+        }
+    })
+    return bestIndex
+}
+
+function getProgressByTimelineIndex(frames = [], index = 0) {
+    if (!frames.length || frames.length === 1) return 0
+    const safeIndex = Math.max(0, Math.min(frames.length - 1, Math.round(Number(index) || 0)))
+    const range = getFrameTimeRange(frames)
+    if (!range.duration) return (safeIndex / (frames.length - 1)) * 100
+    return Math.max(0, Math.min(100, ((getFrameTimestamp(frames[safeIndex], safeIndex) - range.start) / range.duration) * 100))
+}
+
+function getFrameByProgress(frames = [], progress = 0) {
+    if (!frames.length) return {}
+    return frames[getTimelineIndex(frames, progress)] || {}
 }
 
 function buildDiffArr(leftArr = [], rightArr = []) {
@@ -289,26 +326,15 @@ function getAlignedIndex(length, progress) {
     return length > 1 ? Math.round((length - 1) * progress / 100) : 0
 }
 
+function getClampedFrameIndex(length, index) {
+    if (!length) return 0
+    const value = Math.round(Number(index) || 0)
+    return Math.max(0, Math.min(length - 1, value))
+}
+
 function getMetricValue(metrics, key) {
     const value = metrics?.[key]
     return typeof value === 'string' ? value : (Number.isFinite(value) ? value : '')
-}
-
-function getSelectionId(item, index) {
-    return String(item?.id || item?.regionId || item?.name || `selection-${index}`)
-}
-
-function getSelectionRect(item) {
-    return item?.matrixRect || item?.rect || null
-}
-
-function getSelectionName(item, index, copy = CONTRAST_COPY.zh) {
-    return formatSelectionName(item?.name || item?.regionName, index + 1, (_, options) => `${copy.region} ${options.index}`)
-}
-
-function getSelectionColor(item, index) {
-    const palette = ['#ff6b5d', '#ffd27a', '#7ed2ff', '#9cff8f']
-    return item?.bgc || item?.color || palette[index % palette.length]
 }
 
 function formatDirection(direction, copy = CONTRAST_COPY.zh) {
@@ -333,14 +359,13 @@ function getSampleRateText(data = {}, copy = CONTRAST_COPY.zh) {
     return sampleRate ? `${formatValue(Number(sampleRate))}Hz` : copy.notRecorded
 }
 
-function buildSeriesByProgress(leftValues = [], rightValues = []) {
+function buildSeriesByFrameIndex(leftValues = [], rightValues = []) {
     const count = Math.max(leftValues.length, rightValues.length)
     if (!count) return []
     return Array.from({ length: count }, (_, index) => {
-        const progress = count > 1 ? (index / (count - 1)) * 100 : 0
-        const left = Number(leftValues[getAlignedIndex(leftValues.length, progress)] || 0)
-        const right = Number(rightValues[getAlignedIndex(rightValues.length, progress)] || 0)
-        return { progress, left, right, diff: right - left }
+        const left = Number(leftValues[getClampedFrameIndex(leftValues.length, index)] || 0)
+        const right = Number(rightValues[getClampedFrameIndex(rightValues.length, index)] || 0)
+        return { frameIndex: index, left, right, diff: right - left }
     })
 }
 
@@ -349,6 +374,17 @@ function buildSingleSeries(values = []) {
         index,
         value: Number(value) || 0,
     }))
+}
+
+function buildMetricSeriesFromFrames(frames = [], matrixKey, metricKey, matrixRect = null) {
+    if (!Array.isArray(frames) || !matrixKey) return []
+    return frames.map((frame) => {
+        const data = frame?.[matrixKey] || {}
+        const width = data.width || 1
+        const source = getRegionArr(data.arr || [], width, matrixRect)
+        const metricWidth = matrixRect ? Math.max(1, matrixRect.xEnd - matrixRect.xStart) : width
+        return Number(calcMetrics(source, metricWidth, matrixRect)[metricKey]) || 0
+    })
 }
 
 function MiniLineChart({ title, rows = [], mode = 'pair', markers = {}, unit = '' }) {
@@ -467,19 +503,18 @@ export default function NumThresContrast() {
     const metrics = useMemo(() => METRIC_KEYS.map((key) => ({ key, label: copy.metrics[key] })), [copy])
     const pageInfo = useContext(pageContext)
     const contrast = useEquipStore(s => s.contrast, shallow)
-    const selectArr = useEquipStore(s => s.selectArr, shallow)
     const displayType = useEquipStore(s => s.displayType, shallow)
     const settingValue = useEquipStore(s => s.settingValue, shallow)
-    const [progress, setProgress] = useState(0)
     const [playing, setPlaying] = useState(false)
     const [playbackExpanded, setPlaybackExpanded] = useState(false)
     const [activeKey, setActiveKey] = useState('')
-    const [activeSelectionId, setActiveSelectionId] = useState('')
 
     const keys = contrast?.keys || []
     const isTimePointMode = contrast?.mode === 'single_record_frame'
     const [timeIndexA, setTimeIndexA] = useState(0)
     const [timeIndexB, setTimeIndexB] = useState(1)
+    const [playbackIndexA, setPlaybackIndexA] = useState(0)
+    const [playbackIndexB, setPlaybackIndexB] = useState(0)
     const leftFrameCount = contrast?.left?.frames?.length || 0
     const rightFrameCount = contrast?.right?.frames?.length || 0
 
@@ -491,6 +526,8 @@ export default function NumThresContrast() {
 
     useEffect(() => {
         setPlaying(false)
+        setPlaybackIndexA(0)
+        setPlaybackIndexB(0)
         if (!isTimePointMode) {
             setTimeIndexA(0)
             setTimeIndexB(1)
@@ -504,32 +541,34 @@ export default function NumThresContrast() {
         }
         setTimeIndexA(nextA)
         setTimeIndexB(nextB)
-    }, [contrast?.mode, contrast?.record?.id, leftFrameCount])
+    }, [contrast?.mode, contrast?.record?.id, contrast?.left?.id, contrast?.right?.id, leftFrameCount, rightFrameCount])
 
     useEffect(() => {
-        if (!playing) return
+        if (!playing || isTimePointMode) return
         const timer = setInterval(() => {
-            setProgress((current) => {
-                if (current >= 100) {
-                    setPlaying(false)
-                    return 100
-                }
-                return Math.min(100, current + 1)
-            })
+            setPlaybackIndexA((current) => getClampedFrameIndex(leftFrameCount, current + 1))
+            setPlaybackIndexB((current) => getClampedFrameIndex(rightFrameCount, current + 1))
         }, 120)
         return () => clearInterval(timer)
-    }, [playing])
+    }, [playing, isTimePointMode, leftFrameCount, rightFrameCount])
+
+    useEffect(() => {
+        if (!playing || isTimePointMode) return
+        const leftDone = !leftFrameCount || playbackIndexA >= leftFrameCount - 1
+        const rightDone = !rightFrameCount || playbackIndexB >= rightFrameCount - 1
+        if (leftDone && rightDone) setPlaying(false)
+    }, [playing, isTimePointMode, playbackIndexA, playbackIndexB, leftFrameCount, rightFrameCount])
 
     const leftFrame = useMemo(() => (
         isTimePointMode
             ? getFrameByIndex(contrast?.left?.frames, timeIndexA)
-            : getFrameByProgress(contrast?.left?.frames, progress)
-    ), [contrast, progress, isTimePointMode, timeIndexA])
+            : getFrameByIndex(contrast?.left?.frames, playbackIndexA)
+    ), [contrast, isTimePointMode, timeIndexA, playbackIndexA])
     const rightFrame = useMemo(() => (
         isTimePointMode
             ? getFrameByIndex(contrast?.right?.frames, timeIndexB)
-            : getFrameByProgress(contrast?.right?.frames, progress)
-    ), [contrast, progress, isTimePointMode, timeIndexB])
+            : getFrameByIndex(contrast?.right?.frames, playbackIndexB)
+    ), [contrast, isTimePointMode, timeIndexB, playbackIndexB])
     const leftData = leftFrame?.[activeKey] || {}
     const rightData = rightFrame?.[activeKey] || {}
     const width = leftData.width || rightData.width || 32
@@ -538,38 +577,7 @@ export default function NumThresContrast() {
     const rightArr = rightData.arr || []
     const diffArr = useMemo(() => buildDiffArr(leftArr, rightArr), [leftArr, rightArr])
 
-    const selectionItems = useMemo(() => {
-        if (!Array.isArray(selectArr)) return []
-        return selectArr
-            .filter((item) => !item.matrixKey || item.matrixKey === activeKey)
-            .map((item, index) => ({
-                id: getSelectionId(item, index),
-                order: index + 1,
-                name: getSelectionName(item, index, copy),
-                color: getSelectionColor(item, index),
-                rect: getSelectionRect(item),
-                source: item,
-            }))
-            .filter((item) => item.rect)
-    }, [selectArr, activeKey, copy])
-
-    useEffect(() => {
-        if (!selectionItems?.length) {
-            setActiveSelectionId(FULL_SELECTION_ID)
-            return
-        }
-        setActiveSelectionId((current) => {
-            if (current === FULL_SELECTION_ID) return current
-            return selectionItems.some((item) => item.id === current) ? current : selectionItems[0].id
-        })
-    }, [selectionItems])
-
-    const activeSelection = useMemo(() => {
-        if (activeSelectionId === FULL_SELECTION_ID) return null
-        return selectionItems.find((item) => item.id === activeSelectionId) || null
-    }, [selectionItems, activeSelectionId])
-
-    const activeSelect = activeSelection?.rect || null
+    const activeSelect = null
 
     const metricRows = useMemo(() => {
         const sourceA = getRegionArr(leftArr, width, activeSelect)
@@ -626,61 +634,43 @@ export default function NumThresContrast() {
 
     const leftIndex = isTimePointMode
         ? Math.max(0, Math.min(leftFrameCount - 1, timeIndexA))
-        : (contrast?.left?.frames?.length > 1 ? Math.round((contrast.left.frames.length - 1) * progress / 100) : 0)
+        : getClampedFrameIndex(leftFrameCount, playbackIndexA)
     const rightIndex = isTimePointMode
         ? Math.max(0, Math.min(rightFrameCount - 1, timeIndexB))
-        : (contrast?.right?.frames?.length > 1 ? Math.round((contrast.right.frames.length - 1) * progress / 100) : 0)
+        : getClampedFrameIndex(rightFrameCount, playbackIndexB)
+
+    const leftPressureValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.left?.frames, activeKey, 'press', activeSelect), [contrast, activeKey, activeSelect])
+    const rightPressureValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.right?.frames, activeKey, 'press', activeSelect), [contrast, activeKey, activeSelect])
+    const leftAreaValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.left?.frames, activeKey, 'area', activeSelect), [contrast, activeKey, activeSelect])
+    const rightAreaValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.right?.frames, activeKey, 'area', activeSelect), [contrast, activeKey, activeSelect])
 
     const pressSeries = useMemo(() => (
         isTimePointMode
-            ? buildSingleSeries(contrast?.record?.pressArr?.[activeKey] || contrast?.left?.pressArr?.[activeKey])
-            : buildSeriesByProgress(
-                contrast?.left?.pressArr?.[activeKey],
-                contrast?.right?.pressArr?.[activeKey],
-            )
-    ), [contrast, activeKey, isTimePointMode])
+            ? buildSingleSeries(leftPressureValues.length ? leftPressureValues : (contrast?.record?.pressArr?.[activeKey] || contrast?.left?.pressArr?.[activeKey]))
+            : buildSeriesByFrameIndex(leftPressureValues, rightPressureValues)
+    ), [contrast, activeKey, isTimePointMode, leftPressureValues, rightPressureValues])
 
     const areaSeries = useMemo(() => (
         isTimePointMode
-            ? buildSingleSeries(contrast?.record?.areaArr?.[activeKey] || contrast?.left?.areaArr?.[activeKey])
-            : buildSeriesByProgress(
-                contrast?.left?.areaArr?.[activeKey],
-                contrast?.right?.areaArr?.[activeKey],
-            )
-    ), [contrast, activeKey, isTimePointMode])
+            ? buildSingleSeries(leftAreaValues.length ? leftAreaValues : (contrast?.record?.areaArr?.[activeKey] || contrast?.left?.areaArr?.[activeKey]))
+            : buildSeriesByFrameIndex(leftAreaValues, rightAreaValues)
+    ), [contrast, activeKey, isTimePointMode, leftAreaValues, rightAreaValues])
 
-    const selectionStats = useMemo(() => {
-        return selectionItems.map((item) => {
-            const sourceA = getRegionArr(leftArr, width, item.rect)
-            const sourceB = getRegionArr(rightArr, width, item.rect)
-            const metricWidth = Math.max(1, item.rect.xEnd - item.rect.xStart)
-            const metricA = calcMetrics(sourceA, metricWidth, item.rect)
-            const metricB = calcMetrics(sourceB, metricWidth, item.rect)
-            return {
-                ...item,
-                metricA,
-                metricB,
-                pressDiff: metricB.press - metricA.press,
-                areaDiff: metricB.area - metricA.area,
-            }
-        })
-    }, [selectionItems, leftArr, rightArr, width])
-
-    const exportPreviewRows = useMemo(() => ([
-        { label: copy.exportScope, value: activeSelection ? activeSelection.name : copy.fullMatrix },
-        { label: copy.exportObject, value: activeKey || '-' },
-        { label: copy.exportFrames, value: isTimePointMode ? 2 : Math.max(contrast?.left?.frames?.length || 0, contrast?.right?.frames?.length || 0) },
-        { label: copy.exportFields, value: copy.exportFieldValue },
-    ]), [activeSelection, activeKey, contrast, copy, isTimePointMode])
-
-    const exitContrast = () => {
+    const exitContrast = async () => {
         setPlaying(false)
         pageInfo?.brushInstance?.stopBrush?.()
         pageInfo?.brushInstance?.deleteAll?.()
         useEquipStore.getState().setSelectArr([])
+        useEquipStore.getState().setPlaybackHasSelection(false)
+        useEquipStore.getState().setPlaybackRecordDate('')
+        useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
+        useEquipStore.getState().setHistoryStatus({ index: 0, timestamp: '' })
         pageInfo?.setDisplay?.('num')
-        // 通知后端解除 historyFlag，恢复实时数据流（否则即使串口连着也收不到实时数据）
-        axios.post(`${localAddress}/cancalDbPlay`).catch(() => {})
+        try {
+            await axios.post(`${localAddress}/cancalDbPlay`)
+        } catch (err) {
+            console.warn('[Contrast] cancel history state failed:', err)
+        }
         useEquipStore.getState().setDataStatus('realtime')
         useEquipStore.getState().setContrast({})
     }
@@ -712,6 +702,16 @@ export default function NumThresContrast() {
             return
         }
         setTimeIndexB(nextIndex)
+    }
+
+    const changePlaybackIndexA = (nextValue) => {
+        setPlaying(false)
+        setPlaybackIndexA(getClampedFrameIndex(leftFrameCount, nextValue))
+    }
+
+    const changePlaybackIndexB = (nextValue) => {
+        setPlaying(false)
+        setPlaybackIndexB(getClampedFrameIndex(rightFrameCount, nextValue))
     }
 
     const exportContrastResult = () => {
@@ -770,8 +770,10 @@ export default function NumThresContrast() {
 
         const rows = Array.from({ length: count }, (_, index) => {
             const rowProgress = count > 1 ? (index / (count - 1)) * 100 : 0
-            const leftFrameItem = getFrameByProgress(leftFrames, rowProgress)?.[activeKey] || {}
-            const rightFrameItem = getFrameByProgress(rightFrames, rowProgress)?.[activeKey] || {}
+            const leftFrameIndex = getClampedFrameIndex(leftFrames.length, index)
+            const rightFrameIndex = getClampedFrameIndex(rightFrames.length, index)
+            const leftFrameItem = getFrameByIndex(leftFrames, leftFrameIndex)?.[activeKey] || {}
+            const rightFrameItem = getFrameByIndex(rightFrames, rightFrameIndex)?.[activeKey] || {}
             const rowWidth = leftFrameItem.width || rightFrameItem.width || width
             const leftSource = getRegionArr(leftFrameItem.arr || [], rowWidth, activeSelect)
             const rightSource = getRegionArr(rightFrameItem.arr || [], rowWidth, activeSelect)
@@ -786,8 +788,8 @@ export default function NumThresContrast() {
                 object: activeKey,
                 scope: activeSelect ? 'selection' : 'full',
                 selection: activeSelect ? `${activeSelect.xStart}-${activeSelect.xEnd},${activeSelect.yStart}-${activeSelect.yEnd}` : '',
-                left_index: getAlignedIndex(leftFrames.length, rowProgress),
-                right_index: getAlignedIndex(rightFrames.length, rowProgress),
+                left_index: leftFrameIndex,
+                right_index: rightFrameIndex,
                 a_pressure_sum: getMetricValue(metricA, 'press'),
                 b_pressure_sum: getMetricValue(metricB, 'press'),
                 diff_pressure_sum: getMetricValue(metricB, 'press') - getMetricValue(metricA, 'press'),
@@ -817,6 +819,11 @@ export default function NumThresContrast() {
     }
 
     const modeLabel = isTimePointMode ? (copy.modeTimePoint || '同记录时间点对比') : (copy.modeRecordPair || '逐帧对比')
+    const playbackFrameCount = Math.max(leftFrameCount, rightFrameCount)
+    const playbackDisplayIndex = Math.max(leftIndex, rightIndex)
+    const isPlaybackAtEnd = !isTimePointMode
+        && (!leftFrameCount || leftIndex >= leftFrameCount - 1)
+        && (!rightFrameCount || rightIndex >= rightFrameCount - 1)
     const statusCards = [
         { label: '当前对比', value: '进行中', accent: true },
         { label: '对比模式', value: modeLabel },
@@ -826,6 +833,16 @@ export default function NumThresContrast() {
         { label: '差值阈值', value: `± ${formatValue(conclusion.maxAbsDiff)}` },
     ]
     const insightText = `B 相比 A：${conclusion.pressText}，${conclusion.areaText}`
+
+    const playbackStatusCards = statusCards.map((item, index) => {
+        if (index === 3) {
+            return { ...item, value: isTimePointMode ? item.value : '帧号同步' }
+        }
+        if (index === 4) {
+            return { ...item, value: leftFrameCount !== rightFrameCount ? '短数据保持末帧' : '无需补帧' }
+        }
+        return item
+    })
 
     const renderPlaybackControls = () => (
         isTimePointMode ? (
@@ -844,14 +861,25 @@ export default function NumThresContrast() {
         ) : (
             <>
                 <Button size="small" onClick={() => {
-                    if (!playing && progress >= 100) setProgress(0)
+                    if (!playing && isPlaybackAtEnd) {
+                        setPlaybackIndexA(0)
+                        setPlaybackIndexB(0)
+                    }
                     setPlaying(!playing)
                 }}>{playing ? copy.pause : copy.play}</Button>
-                <span className="frameText">
-                    A {leftIndex + 1}/{contrast.left?.length || 0} / B {rightIndex + 1}/{contrast.right?.length || 0}
-                </span>
-                <Slider value={progress} onChange={setProgress} min={0} max={100} style={{ flex: 1 }} />
-                <div className="contrastProgress">{progress}%</div>
+                <div className="contrastDualProgress">
+                    <div className="timePointControl">
+                        <span>A</span>
+                        <Slider value={leftIndex} onChange={changePlaybackIndexA} min={0} max={Math.max(0, leftFrameCount - 1)} step={1} style={{ flex: 1 }} />
+                        <strong>{leftIndex + 1}/{leftFrameCount || 0}</strong>
+                    </div>
+                    <div className="timePointControl">
+                        <span>B</span>
+                        <Slider value={rightIndex} onChange={changePlaybackIndexB} min={0} max={Math.max(0, rightFrameCount - 1)} step={1} style={{ flex: 1 }} />
+                        <strong>{rightIndex + 1}/{rightFrameCount || 0}</strong>
+                    </div>
+                </div>
+                <div className="contrastProgress">{copy.frame} {playbackFrameCount ? playbackDisplayIndex + 1 : 0}/{playbackFrameCount || 0}</div>
                 <span className="volumeIcon">◕</span>
                 <Select
                     size="small"
@@ -890,7 +918,7 @@ export default function NumThresContrast() {
 
             <div className="contrastHeaderGrid">
                 <div className="contrastStatusCards">
-                    {statusCards.map((item) => (
+                    {playbackStatusCards.map((item) => (
                         <div className="contrastStatusCard" key={item.label}>
                             <span>{item.label}</span>
                             <strong className={item.accent ? 'running' : ''}>{item.accent ? <i /> : null}{item.value}</strong>
@@ -950,7 +978,7 @@ export default function NumThresContrast() {
 
             <div className="contrastStatusBar">
                 <span>{copy.currentScope}: {activeSelect ? copy.selectionRegion || 'Selection Area' : copy.fullMatrix}</span>
-                <span>{copy.currentFrame}: A {leftIndex + 1}/{contrast.left?.length || 0}, B {rightIndex + 1}/{contrast.right?.length || 0}</span>
+                <span>{copy.currentFrame}: A {leftIndex + 1}/{leftFrameCount || 0}, B {rightIndex + 1}/{rightFrameCount || 0}</span>
                 <span>{copy.filterValue}: {settingValue?.filter ?? 0}</span>
                 <span>{copy.object}: {activeKey}</span>
                 <span>{copy.sampleRate}: A {getSampleRateText(leftData, copy)} / B {getSampleRateText(rightData, copy)}</span>
@@ -971,7 +999,7 @@ export default function NumThresContrast() {
                     <div className="contrastGrid">
                         <ContrastHeatmap
                             title={copy.baselineA}
-                            subtitle={`${copy.frame} ${leftIndex + 1}/${contrast.left?.length || 0}`}
+                            subtitle={`${copy.frame} ${leftIndex + 1}/${leftFrameCount || 0}`}
                             arr={leftArr}
                             width={width}
                             height={height}
@@ -991,7 +1019,7 @@ export default function NumThresContrast() {
                         />
                         <ContrastHeatmap
                             title={copy.compareB}
-                            subtitle={`${copy.frame} ${rightIndex + 1}/${contrast.right?.length || 0}`}
+                            subtitle={`${copy.frame} ${rightIndex + 1}/${rightFrameCount || 0}`}
                             arr={rightArr}
                             width={width}
                             height={height}
@@ -1000,60 +1028,6 @@ export default function NumThresContrast() {
                         />
                     </div>
                 </div>
-
-                <aside className="contrastSidePanel">
-                    <div className="sidePanelHeader">
-                        <div>
-                            <div className="sidePanelTitle">{copy.regionManage}</div>
-                            <div className="sidePanelSub">{copy.regionSub}</div>
-                        </div>
-                        <Button size="small" onClick={() => setActiveSelectionId(FULL_SELECTION_ID)}>{copy.full}</Button>
-                    </div>
-
-                    <div className={`selectionCard ${activeSelectionId === FULL_SELECTION_ID ? 'active' : ''}`} onClick={() => setActiveSelectionId(FULL_SELECTION_ID)}>
-                        <div className="selectionCardTop">
-                            <span className="selectionColor" style={{ background: '#e1e4e8' }} />
-                            <strong>{copy.fullMatrix}</strong>
-                        </div>
-                        <div className="selectionMeta">{width} x {height}, {copy.fullMatrixMeta}</div>
-                    </div>
-
-                    {selectionStats.length ? selectionStats.map((item) => (
-                        <div
-                            key={item.id}
-                            className={`selectionCard ${activeSelectionId === item.id ? 'active' : ''}`}
-                            onClick={() => setActiveSelectionId(item.id)}
-                        >
-                            <div className="selectionCardTop">
-                                <span className="selectionColor selectionNumber" style={{ background: item.color }}>{item.order}</span>
-                                <strong>{item.name}</strong>
-                            </div>
-                            <div className="selectionMeta">
-                                X {item.rect.xStart}-{item.rect.xEnd} / Y {item.rect.yStart}-{item.rect.yEnd}
-                            </div>
-                            <div className="selectionMetrics">
-                                <span>{copy.pressureDiff} {formatValue(item.pressDiff)}</span>
-                                <span>{copy.areaDiff} {formatValue(item.areaDiff)}</span>
-                            </div>
-                        </div>
-                    )) : (
-                        <div className="selectionEmpty">{copy.noSelection}</div>
-                    )}
-
-                    <div className="contrastSelectPanel">
-                        <SelectSet onSelect variant="embedded" />
-                    </div>
-
-                    <div className="exportPreview">
-                        <div className="sidePanelTitle">{copy.exportPreview}</div>
-                        {exportPreviewRows.map((row) => (
-                            <div className="exportPreviewRow" key={row.label}>
-                                <span>{row.label}</span>
-                                <strong>{row.value}</strong>
-                            </div>
-                        ))}
-                    </div>
-                </aside>
             </div>
 
             <div className={`contrastPlayback ${isTimePointMode ? 'timePointPlayback' : ''}`}>
@@ -1068,7 +1042,7 @@ export default function NumThresContrast() {
                             <div>
                                 <div className="contrastPanelTitle">数据对比回放</div>
                                 <div className="contrastPanelSubtitle">
-                                    A {leftIndex + 1}/{contrast.left?.length || leftFrameCount || 0} / B {rightIndex + 1}/{contrast.right?.length || rightFrameCount || 0}
+                                    A {leftIndex + 1}/{leftFrameCount || 0} / B {rightIndex + 1}/{rightFrameCount || 0}
                                 </div>
                             </div>
                             <button type="button" onClick={() => setPlaybackExpanded(false)}>×</button>
@@ -1076,7 +1050,7 @@ export default function NumThresContrast() {
                         <div className="playbackExpandHeatmaps">
                             <ContrastHeatmap
                                 title={copy.baselineA}
-                                subtitle={`${copy.frame} ${leftIndex + 1}/${contrast.left?.length || 0}`}
+                                subtitle={`${copy.frame} ${leftIndex + 1}/${leftFrameCount || 0}`}
                                 arr={leftArr}
                                 width={width}
                                 height={height}
@@ -1098,7 +1072,7 @@ export default function NumThresContrast() {
                             />
                             <ContrastHeatmap
                                 title={copy.compareB}
-                                subtitle={`${copy.frame} ${rightIndex + 1}/${contrast.right?.length || 0}`}
+                                subtitle={`${copy.frame} ${rightIndex + 1}/${rightFrameCount || 0}`}
                                 arr={rightArr}
                                 width={width}
                                 height={height}
@@ -1119,11 +1093,6 @@ export default function NumThresContrast() {
                 <span className="legendWhite" />{copy.nearlyNoChange}
                 <span className="legendRed" />{copy.bGreater}
                 <span className="legendScope">{copy.currentMetricScope}: {activeSelect ? copy.selectionRegion || 'Selection Area' : copy.fullMatrix}</span>
-            </div>
-
-            <div className="contrastLineCharts">
-                <MiniLineChart title={copy.pressureChart} rows={pressSeries} mode={isTimePointMode ? 'single' : 'pair'} markers={{ a: leftIndex, b: rightIndex }} unit="kPa" />
-                <MiniLineChart title={copy.areaChart} rows={areaSeries} mode={isTimePointMode ? 'single' : 'pair'} markers={{ a: leftIndex, b: rightIndex }} unit="cm²" />
             </div>
 
             <div className="contrastMetricTable">

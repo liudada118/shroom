@@ -441,6 +441,21 @@ function clearPlayTimer() {
   }
 }
 
+function ensureRealtimeTimer() {
+  if (!Object.keys(state.parserArr || {}).length) return false
+
+  if (state.playtimer) {
+    clearInterval(state.playtimer)
+    state.playtimer = null
+  }
+
+  const hz = Number(state.HZ || state.MaxHZ)
+  const safeHz = Number.isFinite(hz) && hz > 0 ? hz : 30
+  const intervalMs = Math.max(16, 1000 / safeHz)
+  state.playtimer = setInterval(colAndSendData, intervalMs)
+  return true
+}
+
 function getPlaybackRows() {
   return Array.isArray(state.historyDbArr) ? state.historyDbArr : []
 }
@@ -696,6 +711,7 @@ module.exports = {
   sendData,
   storageData,
   clearPlayTimer,
+  ensureRealtimeTimer,
   startPlayback,
   changePlaySpeed,
   getPlaybackSnapshot,

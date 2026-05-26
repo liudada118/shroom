@@ -78,10 +78,12 @@ class ruler {
         this.selectedIndices = new Set()
         // 临时起点（正在绘制中的起点）
         this.tempStart = null
+        this.dragState = null
 
         // 统一使用 mousedown 事件，通过 e.button 区分左右键
         this.onMouseDown = (e) => {
             if (e.button === 0) {
+                e.preventDefault()
                 // ═══ 左键：负责绘制起点/终点 + 点击删除按钮 ═══
 
                 // 1. 先检查是否左键点击了某个选中量尺的删除按钮（最高优先级）
@@ -102,6 +104,14 @@ class ruler {
                     this.selectedIndices = newSelected
                     this._redraw()
                     return
+                }
+
+                if (!this.tempStart) {
+                    const editTarget = this._hitTestEditTarget(e)
+                    if (editTarget) {
+                        this._startDrag(editTarget, e)
+                        return
+                    }
                 }
 
                 if (!this._isInEffectiveArea(e)) {
@@ -174,6 +184,47 @@ class ruler {
         this.onContextMenu = (e) => {
             e.preventDefault()
         }
+
+        this.onMouseMove = (e) => {
+            if (!this.canvas) return
+
+            if (this.dragState) {
+                e.preventDefault()
+                this._updateDrag(e)
+                return
+            }
+
+            const target = this._hitTestEditTarget(e)
+            if (target) {
+                this.canvas.style.cursor = target.mode === 'line' ? 'grab' : 'pointer'
+            } else if (this.tempStart) {
+                this.canvas.style.cursor = 'crosshair'
+            } else {
+                this.canvas.style.cursor = 'default'
+            }
+        }
+
+        this.onMouseUp = () => {
+            if (this.dragState) {
+                this._finishDrag()
+            }
+        }
+
+        this.onKeyDown = (e) => {
+            if (e.key !== 'Escape') return
+
+            if (this.dragState) {
+                this._cancelDrag(true)
+                return
+            }
+
+            if (this.tempStart) {
+                this.tempStart = null
+                this.listeners.pop()
+                this.clickIndex = Math.max(0, this.clickIndex - 1)
+                this._redraw()
+            }
+        }
     }
 
     _toGrid(pointInfo) {
@@ -208,6 +259,42 @@ class ruler {
         }
     }
 
+    _eventToCanvasPoint(e) {
+        const rect = this.canvas.getBoundingClientRect()
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+        }
+    }
+
+    _cloneLine(line) {
+        return {
+            startGrid: { ...line.startGrid },
+            endGrid: { ...line.endGrid },
+            distance: line.distance,
+        }
+    }
+
+    _calcDistance(startGrid, endGrid) {
+        const x = Math.abs(endGrid.x - startGrid.x) * this.distanceX
+        const y = Math.abs(endGrid.y - startGrid.y) * this.distanceY
+        return `${(Math.sqrt(x * x + y * y) / 10).toFixed(1)}cm`
+    }
+
+    _getLabelRect(endPoint, distance, propW, propH) {
+        const text = String(distance || '')
+        const labelWidth = Math.max(propW * 2.6, text.length * propH * 0.7)
+        const labelHeight = propH + 4
+        const margin = 4
+        let labelX = endPoint.x + propW / 2
+        let labelY = endPoint.y - propH + 2
+
+        labelX = Math.max(margin, Math.min(labelX, this.canvas.width - labelWidth - margin))
+        labelY = Math.max(margin, Math.min(labelY, this.canvas.height - labelHeight - margin))
+
+        return { labelX, labelY, labelWidth, labelHeight }
+    }
+
     _isGridInEffectiveArea(grid) {
         return grid.x >= 0 && grid.x < this.width && grid.y >= 0 && grid.y < this.height
     }
@@ -217,6 +304,136 @@ class ruler {
         return this._isGridInEffectiveArea(this._toGrid({ pageX: e.pageX, pageY: e.pageY }))
     }
 
+    _hitTestEditTarget(e) {
+        if (!this.canvas || this.rulerLines.length === 0) return null
+
+        const point = this._eventToCanvasPoint(e)
+        const { propW, propH } = this._getGridMetrics()
+        const endpointThreshold = Math.max(propW, propH) * 1.5
+        const lineThreshold = Math.max(propW, propH) * 1.2
+
+        let nearestEndpoint = null
+        let nearestEndpointDist = Infinity
+
+        for (let i = 0; i < this.rulerLines.length; i++) {
+            const line = this.rulerLines[i]
+            const startPoint = this._gridToCanvasCenter(line.startGrid)
+            const endPoint = this._gridToCanvasCenter(line.endGrid)
+            const startDist = Math.sqrt((point.x - startPoint.x) ** 2 + (point.y - startPoint.y) ** 2)
+            const endDist = Math.sqrt((point.x - endPoint.x) ** 2 + (point.y - endPoint.y) ** 2)
+
+            if (startDist <= endpointThreshold && startDist < nearestEndpointDist) {
+                nearestEndpoint = { index: i, mode: 'start' }
+                nearestEndpointDist = startDist
+            }
+
+            if (endDist <= endpointThreshold && endDist < nearestEndpointDist) {
+                nearestEndpoint = { index: i, mode: 'end' }
+                nearestEndpointDist = endDist
+            }
+        }
+
+        if (nearestEndpoint) return nearestEndpoint
+
+        let nearestLine = null
+        let nearestLineDist = Infinity
+
+        for (let i = 0; i < this.rulerLines.length; i++) {
+            const line = this.rulerLines[i]
+            const startPoint = this._gridToCanvasCenter(line.startGrid)
+            const endPoint = this._gridToCanvasCenter(line.endGrid)
+            const dist = pointToSegmentDistance(point.x, point.y, startPoint.x, startPoint.y, endPoint.x, endPoint.y)
+            const { labelX, labelY, labelWidth, labelHeight } = this._getLabelRect(endPoint, line.distance, propW, propH)
+
+            if (isPointInLabel(point.x, point.y, labelX, labelY, labelWidth, labelHeight)) {
+                return { index: i, mode: 'line' }
+            }
+
+            if (dist <= lineThreshold && dist < nearestLineDist) {
+                nearestLine = { index: i, mode: 'line' }
+                nearestLineDist = dist
+            }
+        }
+
+        return nearestLine
+    }
+
+    _startDrag(target, e) {
+        const line = this.rulerLines[target.index]
+        if (!line) return
+
+        this.dragState = {
+            ...target,
+            originGrid: this._toGrid({ pageX: e.pageX, pageY: e.pageY }),
+            originalLine: this._cloneLine(line),
+        }
+        this.selectedIndices = new Set([target.index])
+        if (this.canvas) this.canvas.style.cursor = target.mode === 'line' ? 'grabbing' : 'pointer'
+        this._redraw()
+    }
+
+    _updateDrag(e) {
+        const state = this.dragState
+        if (!state) return
+
+        const currentGrid = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
+        const line = this.rulerLines[state.index]
+        if (!line) return
+
+        if (state.mode === 'line') {
+            const deltaX = currentGrid.x - state.originGrid.x
+            const deltaY = currentGrid.y - state.originGrid.y
+            const nextStart = {
+                x: state.originalLine.startGrid.x + deltaX,
+                y: state.originalLine.startGrid.y + deltaY,
+            }
+            const nextEnd = {
+                x: state.originalLine.endGrid.x + deltaX,
+                y: state.originalLine.endGrid.y + deltaY,
+            }
+
+            if (this._isGridInEffectiveArea(nextStart) && this._isGridInEffectiveArea(nextEnd)) {
+                line.startGrid = nextStart
+                line.endGrid = nextEnd
+                line.distance = state.originalLine.distance
+                this._redraw()
+            }
+            return
+        }
+
+        if (!this._isGridInEffectiveArea(currentGrid)) return
+
+        if (state.mode === 'start') {
+            line.startGrid = currentGrid
+        } else if (state.mode === 'end') {
+            line.endGrid = currentGrid
+        }
+        line.distance = this._calcDistance(line.startGrid, line.endGrid)
+        this._redraw()
+    }
+
+    _finishDrag() {
+        const state = this.dragState
+        this.dragState = null
+        if (this.canvas) this.canvas.style.cursor = 'default'
+
+        const line = this.rulerLines[state?.index]
+        if (line && line.startGrid.x === line.endGrid.x && line.startGrid.y === line.endGrid.y) {
+            const isEnglish = String(i18n.language || '').toLowerCase().startsWith('en')
+            message.warning(isEnglish ? 'Start and end points are the same. Please adjust the ruler.' : '起点和终点相同，请重新选择量尺端点')
+        }
+        this._redraw()
+    }
+
+    _cancelDrag(restore = false) {
+        if (restore && this.dragState) {
+            this.rulerLines[this.dragState.index] = this._cloneLine(this.dragState.originalLine)
+        }
+        this.dragState = null
+        if (this.canvas) this.canvas.style.cursor = 'default'
+        this._redraw()
+    }
+
     /**
      * 检查是否点击了某个选中量尺的删除按钮
      * 返回该量尺的索引，-1表示未命中
@@ -224,9 +441,8 @@ class ruler {
     _hitTestDeleteBtn(e) {
         if (this.rulerLines.length === 0 || this.selectedIndices.size === 0) return -1
 
-        const grid = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
         const { propW } = this._getGridMetrics()
-        const point = this._gridToCanvasCenter(grid)
+        const point = this._eventToCanvasPoint(e)
         const px = point.x
         const py = point.y
 
@@ -256,9 +472,8 @@ class ruler {
     _hitTest(e) {
         if (this.rulerLines.length === 0) return -1
 
-        const grid = this._toGrid({ pageX: e.pageX, pageY: e.pageY })
         const { propW, propH } = this._getGridMetrics()
-        const point = this._gridToCanvasCenter(grid)
+        const point = this._eventToCanvasPoint(e)
         const px = point.x
         const py = point.y
         // 线条点击容差：3个格子宽度
@@ -284,10 +499,7 @@ class ruler {
             }
 
             // 检查是否点击了距离标签区域
-            const labelWidth = line.distance.length * propH * 0.7
-            const labelHeight = propH + 4
-            const labelX = endPoint.x + propW / 2
-            const labelY = endPoint.y - propH + 2
+            const { labelX, labelY, labelWidth, labelHeight } = this._getLabelRect(endPoint, line.distance, propW, propH)
             if (isPointInLabel(px, py, labelX, labelY, labelWidth, labelHeight)) {
                 clickedIndex = i
                 break // 标签命中优先
@@ -383,10 +595,10 @@ class ruler {
         ctx.lineWidth = 1;
 
         // 绘制距离标签
-        const labelWidth = distance.length * propH * 0.7
+        const { labelX, labelY, labelWidth, labelHeight } = this._getLabelRect(endPoint, distance, propW, propH)
         const labelBg = isSelected ? SELECTED_LABEL_BG : '#fff'
         const labelColor = isSelected ? SELECTED_LABEL_TEXT : '#000'
-        drawRoundRectWithText(ctx, endPoint.x + propW / 2, endPoint.y - propH + 2, labelWidth, propH + 4, (propH + 4) / 2, labelBg, distance, labelColor, propH)
+        drawRoundRectWithText(ctx, labelX, labelY, labelWidth, labelHeight, labelHeight / 2, labelBg, distance, labelColor, propH)
 
         // 如果选中，绘制删除按钮和高亮边框
         if (isSelected) {
@@ -464,8 +676,16 @@ class ruler {
         this.rulersFlag = true
         if (document.querySelector('.canvasRuler')) {
             this.canvas = document.querySelector('.canvasRuler')
+            this.canvas.removeEventListener('mousedown', this.onMouseDown)
+            this.canvas.removeEventListener('mousemove', this.onMouseMove)
+            this.canvas.removeEventListener('contextmenu', this.onContextMenu)
             this.canvas.addEventListener('mousedown', this.onMouseDown)
+            this.canvas.addEventListener('mousemove', this.onMouseMove)
             this.canvas.addEventListener('contextmenu', this.onContextMenu)
+            window.removeEventListener('mouseup', this.onMouseUp)
+            window.removeEventListener('keydown', this.onKeyDown)
+            window.addEventListener('mouseup', this.onMouseUp)
+            window.addEventListener('keydown', this.onKeyDown)
         } else {
             message.info(i18n.t('useIn2DMode'))
         }
@@ -475,13 +695,18 @@ class ruler {
         this.clickIndex = 0
         if (this.canvas) {
             this.canvas.removeEventListener('mousedown', this.onMouseDown)
+            this.canvas.removeEventListener('mousemove', this.onMouseMove)
             this.canvas.removeEventListener('contextmenu', this.onContextMenu)
+            window.removeEventListener('mouseup', this.onMouseUp)
+            window.removeEventListener('keydown', this.onKeyDown)
+            this.canvas.style.cursor = 'default'
             const ctx = this.canvas.getContext('2d');
             ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
         }
         this.rulerLines = []
         this.selectedIndices.clear()
         this.tempStart = null
+        this.dragState = null
     }
 
     // 保留旧接口兼容性

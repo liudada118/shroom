@@ -81,6 +81,52 @@
     }
 }
 
+.viewModeMenu {
+    min-width: 13.5rem;
+    color: #E6EBF0;
+}
+
+.viewModeGroup + .viewModeGroup {
+    margin-top: 0.65rem;
+    padding-top: 0.65rem;
+    border-top: 1px solid rgba(108, 119, 132, 0.32);
+}
+
+.viewModeGroupTitle {
+    margin-bottom: 0.45rem;
+    color: #B4C0CA;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.viewModeOptionRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.viewModeOption {
+    min-width: 3.8rem;
+    height: 1.8rem;
+    padding: 0 0.65rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #E6EBF0;
+    background: transparent;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+
+.viewModeOption:hover {
+    background: rgba(0, 114, 239, 0.24);
+}
+
+.viewModeOption.active {
+    border-color: #0072EF;
+    background: #0072EF;
+    color: #fff;
+}
+
 .ant-dropdown-menu {
     background-color: #202327 !important;
 

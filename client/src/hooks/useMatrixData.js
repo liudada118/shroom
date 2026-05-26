@@ -770,8 +770,12 @@ export function useMatrixData() {
   /**
    * 预压力置零：记录当前帧作为基准
    */
-  function changeWsLocalData() {
-    const enabled = !wsLocalDataRef.current.flag
+  function changeWsLocalData(action = 'toggle') {
+    const enabled = action === 'enable'
+      ? true
+      : action === 'disable'
+        ? false
+        : !wsLocalDataRef.current.flag
     if (enabled && !Object.values(sitDataRef.current || {}).some((arr) => Array.isArray(arr) && arr.length > 0)) {
       return {
         enabled: false,

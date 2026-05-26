@@ -1,6 +1,7 @@
 ﻿const sqlite3 = require("sqlite3").verbose();
 const csv = require("csv-parser");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
+const XLSX = require("xlsx");
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -547,6 +548,104 @@ async function dbGetData({ db, params }) {
 }
 // ─── [PERF-PLAYBACK-OPT] 结束 ──────────────────────────────────
 
+function getExportKeyLabel(key) {
+  const text = String(key || '').toLowerCase()
+  if (text === 'back' || text.endsWith('-back')) return '靠背'
+  if (text === 'sit' || text.endsWith('-sit')) return '坐垫'
+  return String(key || '数据')
+}
+
+function getExportKeyFieldId(key, field) {
+  return `${key}_${field}`
+}
+
+function buildSingleKeyExportHeaders(key) {
+  const label = getExportKeyLabel(key)
+  return [
+    { id: getExportKeyFieldId(key, 'max_pressure'), title: `${label}最大压强(kPa)` },
+    { id: getExportKeyFieldId(key, 'max_pressure_coord'), title: `${label}最大压强坐标` },
+    { id: getExportKeyFieldId(key, 'avg_pressure'), title: `${label}平均压强(kPa)` },
+    { id: getExportKeyFieldId(key, 'contact_area'), title: `${label}受力面积(cm²)` },
+    { id: getExportKeyFieldId(key, 'real_data'), title: `${label}数据` },
+    { id: getExportKeyFieldId(key, 'point_count'), title: `${label}点数` },
+    { id: getExportKeyFieldId(key, 'total_pressure_n'), title: `${label}总压力(N)` },
+  ]
+}
+
+function buildExportHeadersForKeys(keys) {
+  const headers = [
+    { id: 'timestamp', title: '时间戳' },
+    { id: 'device_mac', title: '设备MAC' },
+  ]
+  sortExportKeys(keys).forEach((key) => {
+    headers.push(...buildSingleKeyExportHeaders(key))
+  })
+  headers.push({ id: 'remark', title: '备注' })
+  return headers
+}
+
+function normalizeExportOptions(options = {}) {
+  const format = String(options.format || 'csv').toLowerCase() === 'xlsx' ? 'xlsx' : 'csv'
+  const fields = Array.isArray(options.fields)
+    ? options.fields.map((field) => String(field || '').trim()).filter(Boolean)
+    : []
+  return { format, fields }
+}
+
+function filterExportHeaders(headers, fields) {
+  if (!Array.isArray(fields) || !fields.length) return headers
+  const selected = new Set(fields)
+  const filtered = headers.filter((header) => selected.has(header.id))
+  return filtered.length ? filtered : headers
+}
+
+function recordsForHeaders(records, headers) {
+  const ids = headers.map((header) => header.id)
+  return records.map((record) => {
+    const next = {}
+    ids.forEach((id) => {
+      const value = record[id] === undefined || record[id] === null ? '' : record[id]
+      next[id] = id === 'timestamp' || id === 'device_mac' ? String(value) : value
+    })
+    return next
+  })
+}
+
+async function writeXlsxFile(filePath, headers, records) {
+  const rows = recordsForHeaders(records, headers)
+  const sheetRows = [
+    headers.map((header) => header.title),
+    ...rows.map((row) => headers.map((header) => row[header.id])),
+  ]
+  const workbook = XLSX.utils.book_new()
+  const worksheet = XLSX.utils.aoa_to_sheet(sheetRows)
+  worksheet['!cols'] = headers.map((header) => ({ wch: Math.min(60, Math.max(10, String(header.title).length + 2)) }))
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'data')
+  XLSX.writeFile(workbook, filePath, { bookType: 'xlsx' })
+}
+
+async function getExportFieldOptions({ db, params }) {
+  const selected = Array.isArray(params) ? params.map((item) => String(item || '').trim()).filter(Boolean) : []
+  const keySet = new Set()
+  for (const param of selected) {
+    const row = await dbGet(db, 'SELECT data FROM matrix WHERE date = ? ORDER BY timestamp ASC LIMIT 1', [param])
+    let frame = {}
+    try {
+      frame = row?.data ? JSON.parse(row.data) : {}
+    } catch {
+      frame = {}
+    }
+    Object.keys(frame || {})
+      .filter((key) => key && key !== 'null' && key !== 'undefined' && Array.isArray(frame[key]?.arr))
+      .forEach((key) => keySet.add(key))
+  }
+  const headers = buildExportHeadersForKeys([...keySet])
+  return {
+    fields: headers.map((header) => ({ value: header.id, label: header.title })),
+    defaultFields: headers.map((header) => header.id),
+  }
+}
+
 // ─── CSV 导出 ────────────────────────────────────────────
 
 /**
@@ -554,7 +653,7 @@ async function dbGetData({ db, params }) {
  * 核心优化：每行只解析一次 JSON，消除内层循环中的重复 JSON.parse
  * 多矩阵系统（carY/endi）分别导出 back 和 sit 两个独立 CSV 文件
  */
-function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath) {
+function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath, exportOptions = {}) {
   return new Promise((resolve, reject) => {
     dbAll(db, "SELECT * FROM matrix WHERE date=?", [param]).then(async (rows) => {
       if (!rows.length) {
@@ -564,7 +663,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
 
       const firstData = JSON.parse(rows[0].data)
       // 过滤掉无效 key（如 "null"、"undefined"）
-      const keyArr = Object.keys(firstData).filter(k => k && k !== 'null' && k !== 'undefined')
+      const keyArr = Object.keys(firstData).filter(k => k && k !== 'null' && k !== 'undefined' && Array.isArray(firstData[k]?.arr))
 
       // 预处理 selectJson
       let selectOverride = selectJson
@@ -595,11 +694,21 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         }
       }
 
-      // 合并导出：同一条记录内的 back/sit 行写入同一个 CSV，通过 matrix_key 区分来源
+      // 合并导出：同一历史帧只写一行，靠背/坐垫分别落到同一行的中文字段组。
       const csvDataRows = []
+      const remarkRow = await getRemark({ db, params: [param] })
+      const aliasFromDb = remarkRow?.alias
+      const remarkText = remarkRow?.remark ?? ''
 
       for (let i = 0; i < rows.length; i++) {
         const rowData = JSON.parse(rows[i].data)
+        const frameEntry = {
+          timestamp: rows[i].timestamp,
+          device_mac: '',
+          remark: remarkText,
+        }
+        const frameDeviceMacSet = new Set()
+        let hasFrameMatrixData = false
 
         for (let j = 0; j < keyArr.length; j++) {
           const key = keyArr[j]
@@ -648,6 +757,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.frame_index = i
           rowEntry.created_at = new Date().toISOString()
           rowEntry.device_mac = getDeviceMacFromItem(item)
+          if (rowEntry.device_mac) frameDeviceMacSet.add(rowEntry.device_mac)
           rowEntry.device_type = key
           rowEntry.system_type = String(file || '')
           rowEntry.matrix_key = key
@@ -716,20 +826,49 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             rowEntry[`${key}selectAver`] = sitYToX(selectAver)
           }
 
+          const hasSelectionData = Boolean(obj && selectArr.length)
+          if (hasSelectionData) {
+            rowEntry[`${key}max`] = rowEntry[`${key}selectMax`]
+            rowEntry[`${key}maxCoord`] = rowEntry[`${key}selectMaxCoord`]
+            rowEntry[`${key}aver`] = rowEntry[`${key}selectAver`]
+            rowEntry[`${key}pressureArea`] = selectAreaValue
+            rowEntry[`${key}realData`] = JSON.stringify(selectArr)
+          }
+
           if (pointInfo) {
             const averValue = Number(rowEntry[`${key}aver`]) || 0
-            const pointValue = area
+            const pointValue = hasSelectionData ? selectArea : area
             rowEntry[`${key}point`] = pointValue
             rowEntry[`${key}pressTotal`] = (averValue * pointArea * pointValue) / 1000
           }
 
-          csvDataRows.push(rowEntry)
+          const activePointCount = pointInfo
+            ? (rowEntry[`${key}point`] ?? (hasSelectionData ? selectArea : area))
+            : (hasSelectionData ? selectArea : area)
+          rowEntry.max_pressure = rowEntry[`${key}max`]
+          rowEntry.max_pressure_coord = rowEntry[`${key}maxCoord`]
+          rowEntry.avg_pressure = rowEntry[`${key}aver`]
+          rowEntry.contact_area = rowEntry[`${key}pressureArea`]
+          rowEntry.real_data = rowEntry[`${key}realData`]
+          rowEntry.point_count = activePointCount
+          rowEntry.total_pressure_n = pointInfo ? rowEntry[`${key}pressTotal`] : press
+          rowEntry.remark = remarkText
+
+          frameEntry[getExportKeyFieldId(key, 'max_pressure')] = rowEntry[`${key}max`]
+          frameEntry[getExportKeyFieldId(key, 'max_pressure_coord')] = rowEntry[`${key}maxCoord`]
+          frameEntry[getExportKeyFieldId(key, 'avg_pressure')] = rowEntry[`${key}aver`]
+          frameEntry[getExportKeyFieldId(key, 'contact_area')] = rowEntry[`${key}pressureArea`]
+          frameEntry[getExportKeyFieldId(key, 'real_data')] = rowEntry[`${key}realData`]
+          frameEntry[getExportKeyFieldId(key, 'point_count')] = activePointCount
+          frameEntry[getExportKeyFieldId(key, 'total_pressure_n')] = rowEntry.total_pressure_n
+          hasFrameMatrixData = true
+        }
+
+        if (hasFrameMatrixData) {
+          frameEntry.device_mac = [...frameDeviceMacSet].filter(Boolean).join(' / ')
+          csvDataRows.push(frameEntry)
         }
       }
-
-      // 获取备注信息
-      const remarkRow = await getRemark({ db, params: [param] })
-      const aliasFromDb = remarkRow?.alias
 
       const safeName = buildExportFileStem(param, aliasFromDb)
 
@@ -745,101 +884,18 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         fs.mkdirSync(csvPath, { recursive: true })
       }
 
-      const remarkText = remarkRow?.remark ?? ''
-
       // 单个 key 的 CSV 表头（保留 ld 分支的中文表头）
       function buildSingleKeyHeaders(key) {
-        const res = key.replace(/endi/g, "car")
-        const headers = [
-          { id: 'csv_format_version', title: 'csv_format_version' },
-          { id: 'software_version', title: 'software_version' },
-          { id: 'record_id', title: 'record_id' },
-          { id: 'frame_index', title: 'frame_index' },
-          { id: 'created_at', title: 'created_at' },
-          { id: 'device_mac', title: 'device_mac' },
-          { id: 'device_type', title: 'device_type' },
-          { id: 'system_type', title: 'system_type' },
-          { id: 'matrix_key', title: 'matrix_key' },
-          { id: 'matrix_width', title: 'matrix_width' },
-          { id: 'matrix_height', title: 'matrix_height' },
-          { id: 'sample_rate_hz', title: 'sample_rate_hz' },
-          { id: 'hardware_sample_rate_hz', title: 'hardware_sample_rate_hz' },
-          { id: 'baud_rate', title: 'baud_rate' },
-          { id: 'pressure_unit', title: 'pressure_unit' },
-          { id: 'pressure_conversion', title: 'pressure_conversion' },
-          { id: 'pressure_conversion_desc', title: 'pressure_conversion_desc' },
-          { id: 'noise_removed', title: 'noise_removed' },
-          { id: 'data_direction_left', title: 'data_direction_left' },
-          { id: 'data_direction_up', title: 'data_direction_up' },
-          { id: 'rotate_degree', title: 'rotate_degree' },
-          { id: 'data_direction', title: 'data_direction' },
-          { id: 'zero_enabled', title: 'zero_enabled' },
-          { id: 'zero_time', title: 'zero_time' },
-          { id: 'zero_state', title: 'zero_state' },
-          { id: 'timestamp', title: 'timestamp' },
-          { id: 'avg_pressure', title: 'avg_pressure' },
-          { id: 'max_pressure', title: 'max_pressure' },
-          { id: 'max_pressure_coord', title: 'max_pressure_coord' },
-          { id: 'min_pressure_non_zero', title: 'min_pressure_non_zero' },
-          { id: 'pressure_sum', title: 'pressure_sum' },
-          { id: 'contact_area', title: 'contact_area' },
-          { id: 'active_sensor_count', title: 'active_sensor_count' },
-          { id: 'real_data', title: 'real_data' },
-          { id: 'select_data', title: 'select_data' },
-          { id: 'selection_1_id', title: 'selection_1_id' },
-          { id: 'selection_1_name', title: 'selection_1_name' },
-          { id: 'selection_1_row_range', title: 'selection_1_row_range' },
-          { id: 'selection_1_column_range', title: 'selection_1_column_range' },
-          { id: 'selection_1_avg_pressure', title: 'selection_1_avg_pressure' },
-          { id: 'selection_1_max_pressure', title: 'selection_1_max_pressure' },
-          { id: 'selection_1_max_pressure_coord', title: 'selection_1_max_pressure_coord' },
-          { id: 'selection_1_min_pressure_non_zero', title: 'selection_1_min_pressure_non_zero' },
-          { id: 'selection_1_pressure_sum', title: 'selection_1_pressure_sum' },
-          { id: 'selection_1_contact_area', title: 'selection_1_contact_area' },
-          { id: 'selection_1_active_sensor_count', title: 'selection_1_active_sensor_count' },
-          { id: 'selection_1_data', title: 'selection_1_data' },
-          { id: 'sec', title: 'sec(s)' },
-          { id: 'time', title: 'time' },
-          { id: `${key}max`, title: `${res} ` + '\u539f\u59cb\u6700\u5927\u538b\u5f3a(Kpa)' },
-          { id: `${key}maxCoord`, title: `${res} ` + '\u539f\u59cb\u6700\u5927\u538b\u5f3a\u5750\u6807' },
-          { id: `${key}aver`, title: `${res} ` + '\u539f\u59cb\u5e73\u5747\u538b\u5f3a(Kpa)' },
-          { id: `${key}pressureArea`, title: `${res} ` + '\u539f\u59cb\u53d7\u529b\u9762\u79ef(cm\u00b2)' },
-          { id: `${key}realData`, title: `${res} ` + '\u539f\u59cb\u6570\u636e' },
-          { id: `${key}selectMax`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u6700\u5927\u538b\u5f3a' },
-          { id: `${key}selectMaxCoord`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u6700\u5927\u538b\u5f3a\u5750\u6807' },
-          { id: `${key}selectAver`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u5e73\u5747\u538b\u5f3a' },
-          { id: `${key}selectArea`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u53d7\u529b\u9762\u79ef' },
-          { id: `${key}selectData`, title: `${res} ` + '\u6846\u9009\u533a\u57df1\u539f\u59cb\u6570\u636e' },
-        ]
-        if (key === 'endi-back' || key === 'endi-sit') {
-          headers.push(
-            { id: `${key}point`, title: `${res} Points` },
-            { id: `${key}pressTotal`, title: `${res} Pressure Total (N)` },
-          )
-        }
-        headers.push({ id: 'remark', title: 'remark' })
-        return headers
+        return buildSingleKeyExportHeaders(key)
       }
 
       function buildCombinedHeaders(keys) {
-        const headers = []
-        const seen = new Set()
-        sortExportKeys(keys).forEach((key) => {
-          buildSingleKeyHeaders(key).forEach((header) => {
-            if (seen.has(header.id)) return
-            seen.add(header.id)
-            headers.push(header)
-          })
-        })
-        return headers
+        return buildExportHeadersForKeys(keys)
       }
 
       // 写入单个 CSV 文件的辅助函数
       async function writeSingleCsv(filePath, headers, records) {
         const csvWriter = createCsvWriter({ path: filePath, header: headers })
-        if (remarkText) {
-          records.push({ remark: remarkText })
-        }
         await csvWriter.writeRecords(records)
         // 确保 UTF-8 BOM
         const content = fs.readFileSync(filePath)
@@ -852,26 +908,33 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
 
       try {
         const csvBaseName = buildCsvBaseName(file)
-        const csvFilePath = path.join(csvPath, `${csvBaseName}_${safeName}.csv`)
-        const headers = buildCombinedHeaders(keyArr)
-        await writeSingleCsv(csvFilePath, headers, [...csvDataRows])
-        resolve({ [param]: 'success', filePath: csvFilePath, filePaths: [csvFilePath] })
+        const normalizedExportOptions = normalizeExportOptions(exportOptions)
+        const fileExt = normalizedExportOptions.format === 'xlsx' ? 'xlsx' : 'csv'
+        const exportFilePath = path.join(csvPath, `${csvBaseName}_${safeName}.${fileExt}`)
+        const headers = filterExportHeaders(buildCombinedHeaders(keyArr), normalizedExportOptions.fields)
+        const records = [...csvDataRows]
+        if (normalizedExportOptions.format === 'xlsx') {
+          await writeXlsxFile(exportFilePath, headers, records)
+        } else {
+          await writeSingleCsv(exportFilePath, headers, records)
+        }
+        resolve({ [param]: 'success', filePath: exportFilePath, filePaths: [exportFilePath], format: normalizedExportOptions.format })
       } catch (err) {
-        console.error('[DB] CSV export failed:', err)
+        console.error('[DB] data export failed:', err)
         reject(err)
       }
     }).catch(reject)
   })
 }
 
-function dbloadSafe(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath) {
+function dbloadSafe(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath, exportOptions = {}) {
   const writablePath = resolveWritableDownloadDir({
     customDownloadPath,
     dataPath,
     isPackaged
   })
 
-  return dbload(db, param, file, isPackaged, selectJson, writablePath, dataPath)
+  return dbload(db, param, file, isPackaged, selectJson, writablePath, dataPath, exportOptions)
 }
 
 /**
@@ -912,8 +975,8 @@ function buildCsvHeaders(keyArr, file) {
 /**
  * 批量导出 CSV
  */
-async function dbLoadCsv({ db, params, file, isPackaged, selectJson, customDownloadPath, dataPath }) {
-  const promises = params.map((param) => dbloadSafe(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath))
+async function dbLoadCsv({ db, params, file, isPackaged, selectJson, customDownloadPath, dataPath, exportOptions }) {
+  const promises = params.map((param) => dbloadSafe(db, param, file, isPackaged, selectJson, customDownloadPath, dataPath, exportOptions))
   const results = await Promise.all(promises)
   return results
 }
@@ -1060,6 +1123,28 @@ function normalizeCsvHeader(header) {
   return String(header ?? '').replace(/^\uFEFF/, '').trim()
 }
 
+function isSpreadsheetImportFile(file) {
+  return /\.(xlsx|xls)$/i.test(String(file || ''))
+}
+
+function normalizeImportedRow(row = {}, file = '') {
+  const normalized = {}
+  Object.entries(row || {}).forEach(([key, value]) => {
+    const header = normalizeCsvHeader(key)
+    if (header) normalized[header] = value
+  })
+  return { ...normalized, file }
+}
+
+function readXlsxRows(file) {
+  const workbook = XLSX.readFile(file, { cellDates: false })
+  const sheetName = workbook.SheetNames[0]
+  if (!sheetName) return []
+  const worksheet = workbook.Sheets[sheetName]
+  return XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: true })
+    .map((row) => normalizeImportedRow(row, file))
+}
+
 function isEmptyCsvValue(value) {
   return value === undefined || value === null || String(value).trim() === ''
 }
@@ -1105,17 +1190,21 @@ function hasImportMetricHeaders(headers, realDataHeader) {
 function isOriginalDataColumn(header) {
   const normalized = normalizeCsvHeader(header)
   if (!normalized) return false
-  if (/select\s*Data$/i.test(normalized) || /selectData$/i.test(normalized)) return false
-  return /realData$/i.test(normalized) || /\sData$/i.test(normalized) || /原始数据$/.test(normalized)
+  if (/select\s*Data$/i.test(normalized) || /selectData$/i.test(normalized) || normalized.includes('框选')) return false
+  return normalized === '数据' || /数据$/.test(normalized) || /realData$/i.test(normalized) || /\sData$/i.test(normalized) || /原始数据$/.test(normalized)
 }
 
 function getMetricPrefix(realDataHeader) {
   const normalized = normalizeCsvHeader(realDataHeader)
+  if (normalized === '数据') return ''
   if (/realData$/i.test(normalized)) {
     return normalized.replace(/realData$/i, '')
   }
   if (/\sData$/i.test(normalized)) {
     return normalized.replace(/\sData$/i, '').trim()
+  }
+  if (/数据$/.test(normalized)) {
+    return normalized.replace(/\s*数据$/, '').trim()
   }
   return normalized.replace(/\s*原始数据$/, '').trim()
 }
@@ -1123,7 +1212,14 @@ function getMetricPrefix(realDataHeader) {
 function hasImportMetricHeaders(headers, realDataHeader) {
   const normalizedHeaders = headers.map(normalizeCsvHeader)
   const prefix = getMetricPrefix(realDataHeader)
-  if (!prefix) return false
+  if (!prefix) {
+    return normalizedHeaders.includes('数据') && [
+      '最大压强(kPa)',
+      '最大压强坐标',
+      '平均压强(kPa)',
+      '受力面积(cm²)',
+    ].every((header) => normalizedHeaders.includes(header))
+  }
 
   if (/realData$/i.test(realDataHeader)) {
     return [
@@ -1142,7 +1238,8 @@ function hasImportMetricHeaders(headers, realDataHeader) {
     ].every((tester) => normalizedHeaders.some(tester))
   }
 
-  const matches = (tester) => normalizedHeaders.some((header) => header.startsWith(`${prefix} `) && tester(header))
+  const hasPrefix = (header) => header.startsWith(`${prefix} `) || header.startsWith(prefix)
+  const matches = (tester) => normalizedHeaders.some((header) => hasPrefix(header) && tester(header))
   return [
     (header) => /最大|Max/i.test(header),
     (header) => /平均|Aver/i.test(header),
@@ -1188,7 +1285,7 @@ function isValidMatrixCsvValue(value) {
 function analyzeImportHeaders(headers) {
   const normalizedHeaders = headers.map(normalizeCsvHeader).filter(Boolean)
   const secHeader = normalizedHeaders.find((header) => header === 'sec(s)' || header === 'sec')
-  const timeHeader = normalizedHeaders.find((header) => header === 'time')
+  const timeHeader = normalizedHeaders.find((header) => header === 'time' || header === '时间' || header === 'timestamp' || header === '时间戳')
   const realDataColumns = normalizedHeaders
     .filter(isOriginalDataColumn)
     .filter((header) => hasImportMetricHeaders(normalizedHeaders, header))
@@ -1201,6 +1298,50 @@ function analyzeImportHeaders(headers) {
 }
 
 async function validateImportedCsv(file) {
+  if (isSpreadsheetImportFile(file)) {
+    try {
+      const rows = readXlsxRows(file)
+      const headers = Object.keys(rows[0] || {}).filter((header) => header !== 'file')
+      const headerInfo = analyzeImportHeaders(headers)
+      if (!headerInfo.valid) {
+        return { valid: false, message: CSV_IMPORT_INVALID_MESSAGE, reason: headerInfo.reason || 'missing headers', rowCount: 0 }
+      }
+
+      let dataRowCount = 0
+      for (const row of rows) {
+        const filledDataColumns = headerInfo.realDataColumns.filter((header) => !isEmptyCsvValue(row[header]))
+        if (!filledDataColumns.length) {
+          const hasNonRemarkValue = Object.entries(row).some(([key, value]) => key !== 'remark' && key !== '备注' && key !== 'file' && !isEmptyCsvValue(value))
+          if (hasNonRemarkValue) {
+            return { valid: false, message: CSV_IMPORT_INVALID_MESSAGE, reason: 'missing matrix data', rowCount: dataRowCount }
+          }
+          continue
+        }
+
+        if (headerInfo.secHeader && (isEmptyCsvValue(row[headerInfo.secHeader]) || !Number.isFinite(Number(row[headerInfo.secHeader])))) {
+          return { valid: false, message: CSV_IMPORT_INVALID_MESSAGE, reason: 'invalid sec value', rowCount: dataRowCount }
+        }
+
+        if (isEmptyCsvValue(row[headerInfo.timeHeader])) {
+          return { valid: false, message: CSV_IMPORT_INVALID_MESSAGE, reason: 'invalid time value', rowCount: dataRowCount }
+        }
+
+        const allColumnsValid = filledDataColumns.every((header) => isValidMatrixCsvValue(row[header]))
+        if (!allColumnsValid) {
+          return { valid: false, message: CSV_IMPORT_INVALID_MESSAGE, reason: 'invalid matrix data', rowCount: dataRowCount }
+        }
+        dataRowCount += 1
+      }
+
+      if (!dataRowCount) {
+        return { valid: false, message: CSV_IMPORT_INVALID_MESSAGE, reason: 'missing data rows', rowCount: 0 }
+      }
+      return { valid: true, message: 'success', reason: '', rowCount: dataRowCount }
+    } catch (err) {
+      return { valid: false, message: CSV_IMPORT_INVALID_MESSAGE, reason: err.message, rowCount: 0 }
+    }
+  }
+
   return new Promise((resolve) => {
     let settled = false
     let headerInfo = null
@@ -1287,6 +1428,10 @@ async function validateImportedCsv(file) {
 }
 
 async function getCsvData(file) {
+  if (isSpreadsheetImportFile(file)) {
+    return readXlsxRows(file)
+  }
+
   const results = []
   return new Promise((resolve, reject) => {
     fs.createReadStream(file)
@@ -1303,12 +1448,53 @@ async function getCsvData(file) {
 function normalizeCsvMatrixKey(value) {
   const text = normalizeCsvHeader(value)
   if (!text) return ''
-  return text.replace(/\s*原始数据$/, '').replace(/realData$/i, '').replace(/\sData$/i, '').trim()
+  if (text === '数据') return ''
+  const normalized = text
+    .replace(/\s*原始数据$/, '')
+    .replace(/\s*数据$/, '')
+    .replace(/realData$/i, '')
+    .replace(/\sData$/i, '')
+    .trim()
+  const lower = normalized.toLowerCase()
+  if (lower === 'back') return 'endi-back'
+  if (lower === 'sit') return 'endi-sit'
+  if (lower.endsWith('-back') || lower.endsWith('-sit')) return normalized
+  if (normalized.includes('靠背')) return 'endi-back'
+  if (normalized.includes('坐垫')) return 'endi-sit'
+  return normalized
+}
+
+function getImportCell(row, names = []) {
+  for (const name of names) {
+    if (row[name] !== undefined) return row[name]
+  }
+  return ''
+}
+
+function inferImportMatrixKey(arr = []) {
+  const length = Array.isArray(arr) ? arr.length : 0
+  const exact = Object.entries(pointConfig).find(([, config]) => config.width * config.height === length)
+  if (exact) return exact[0]
+  if (length === 4096) return 'endi-sit'
+  return 'endi-sit'
+}
+
+function isScientificTimestamp(value) {
+  return /^[+-]?\d+(?:\.\d+)?e[+-]?\d+$/i.test(normalizeCsvHeader(value))
+}
+
+function resolveImportMatrixKey(preferredKey, arr, frameData = {}) {
+  const inferredKey = inferImportMatrixKey(arr)
+  const normalizedKey = normalizeCsvMatrixKey(preferredKey) || inferredKey
+  const key = normalizedKey && pointConfig[normalizedKey] ? normalizedKey : inferredKey
+  if (!frameData[key]) return key
+  if (inferredKey && inferredKey !== key && !frameData[inferredKey]) return inferredKey
+  return ''
 }
 
 function getCsvRowMatrixEntries(row) {
   const entries = []
-  const fallbackKey = normalizeCsvMatrixKey(row.matrix_key || row.device_type)
+  const fallbackKey = normalizeCsvMatrixKey(row.matrix_key || row.device_type || row['矩阵标识'] || row['设备类型'])
 
   if (!isEmptyCsvValue(row.real_data)) {
     const arr = parseMatrixCsvValue(row.real_data)
@@ -1321,7 +1507,7 @@ function getCsvRowMatrixEntries(row) {
     if (!isOriginalDataColumn(header) || isEmptyCsvValue(row[header])) return
     const arr = parseMatrixCsvValue(row[header])
     if (!arr) return
-    const key = fallbackKey || normalizeCsvMatrixKey(header)
+    const key = fallbackKey || normalizeCsvMatrixKey(header) || inferImportMatrixKey(arr)
     if (!key || entries.some((entry) => entry.key === key)) return
     entries.push({ key, arr })
   })
@@ -1332,16 +1518,19 @@ function getCsvRowMatrixEntries(row) {
 function getCsvFrameGroupKey(row, rowIndex) {
   const frameIndex = normalizeCsvHeader(row.frame_index)
   if (frameIndex) return `frame:${frameIndex}`
-  const timestamp = normalizeCsvHeader(row.timestamp)
+  const timestampValue = getImportCell(row, ['timestamp', '时间戳'])
+  if (isScientificTimestamp(timestampValue)) return `row:${rowIndex}`
+  const timestamp = normalizeCsvHeader(timestampValue)
   if (timestamp) return `timestamp:${timestamp}`
   return `row:${rowIndex}`
 }
 
 function getCsvFrameTimestamp(row, rowIndex) {
-  const rawTimestamp = Number(row.timestamp)
+  const timestampValue = getImportCell(row, ['timestamp', '时间戳'])
+  const rawTimestamp = Number(timestampValue)
   if (Number.isFinite(rawTimestamp)) return rawTimestamp
 
-  const parsedTime = Date.parse(row.time)
+  const parsedTime = Date.parse(getImportCell(row, ['time', '时间']))
   if (Number.isFinite(parsedTime)) return parsedTime + rowIndex
 
   return Date.now() + rowIndex
@@ -1366,11 +1555,13 @@ function buildCsvPlaybackData(csvRows) {
     const frame = groups.get(groupKey)
     entries.forEach(({ key, arr }) => {
       const numericArr = arr.map((value) => Number(value))
-      const matrixSize = inferExportMatrixSize(key, numericArr)
-      frame.data[key] = {
+      const matrixKey = resolveImportMatrixKey(key, numericArr, frame.data)
+      if (!matrixKey) return
+      const matrixSize = inferExportMatrixSize(matrixKey, numericArr)
+      frame.data[matrixKey] = {
         arr: numericArr,
         matrixMeta: {
-          matrix_key: key,
+          matrix_key: matrixKey,
           width: Number(row.matrix_width) || matrixSize.width,
           height: Number(row.matrix_height) || matrixSize.height,
           point_count: numericArr.length,
@@ -1381,8 +1572,8 @@ function buildCsvPlaybackData(csvRows) {
           rotateDegree: row.rotate_degree,
           data_direction: row.data_direction,
         }),
-        deviceMac: row.device_mac || '',
-        deviceType: key,
+        deviceMac: row.device_mac || row['设备MAC'] || '',
+        deviceType: matrixKey,
         pressureUnit: row.pressure_unit || PRESSURE_UNIT,
       }
     })
@@ -1462,6 +1653,7 @@ module.exports = {
   initDb,
   closeDb,
   dbLoadCsv,
+  getExportFieldOptions,
   ensureWritableDir,
   deleteDbData,
   dbGetData,

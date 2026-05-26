@@ -2,7 +2,7 @@ import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useSt
 import Col from '../col/Col'
 import './index.scss'
 import Drawer from '../Drawer/Drawer'
-import { Button, Checkbox, Input, message, Modal, Popover, Progress, Slider, Tabs } from 'antd'
+import { Button, Checkbox, Input, message, Modal, Popover, Progress, Radio, Slider, Tabs } from 'antd'
 import selected from '../../assets/image/select.png'
 import history from '../../assets/image/history.png'
 import axios from 'axios'
@@ -17,6 +17,7 @@ import { localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import dayjs from 'dayjs'
 import { pageContext } from '../../page/test/Test'
+import { FileTextOutlined } from '@ant-design/icons'
 
 const CSV_STORAGE_KEY = 'csvArr'
 const DRAWER_RENDER_CHUNK = 24
@@ -146,6 +147,10 @@ const ColAndHistory = memo((props) => {
     const [downloadToast, setDownloadToast] = useState(null) // { fileName, filePath }
     const [showDownloadPathModal, setShowDownloadPathModal] = useState(false) // 下载前路径选择对话框
     const [downloadProgress, setDownloadProgress] = useState(null) // { percent, status: 'downloading'|'done'|'error', files: [] }
+    const [exportFormat, setExportFormat] = useState('csv')
+    const [exportFieldOptions, setExportFieldOptions] = useState([])
+    const [exportFields, setExportFields] = useState([])
+    const [exportFieldLoading, setExportFieldLoading] = useState(false)
 
     const [colHistoryArr, setColHistoryArr] = useState()
     const [displayHistoryArr, setDisplayHistoryArr] = useState()
@@ -511,10 +516,50 @@ const ColAndHistory = memo((props) => {
             return
         }
         setEditPathValue(downloadPath || '')
+        setExportFieldLoading(true)
+        setExportFieldOptions([])
+        setExportFields([])
         setShowDownloadPathModal(true)
+
+        const selectedFiles = Array.isArray(selectArr)
+            ? selectArr.map((item) => item == null ? '' : String(item).trim()).filter(Boolean)
+            : []
+        const payload = { fileArr: selectedFiles }
+        axios({
+            method: 'post',
+            url: `${localAddress}/downloadFields`,
+            params: buildFallbackParams(payload),
+            data: payload,
+        }).then((res) => {
+            const data = res.data?.data || {}
+            const fields = Array.isArray(data.fields) ? data.fields : []
+            const defaults = Array.isArray(data.defaultFields) ? data.defaultFields : fields.map((item) => item.value)
+            setExportFieldOptions(fields)
+            setExportFields(defaults)
+        }).catch((err) => {
+            console.error('[Download] load export fields failed:', err)
+            message.warning(t('exportFieldsLoadFailed') || '导出字段读取失败，已使用默认字段')
+        }).finally(() => {
+            setExportFieldLoading(false)
+        })
     }
 
     // 确认下载：关闭路径对话框，显示进度弹窗，执行下载
+    const openCopReport = () => {
+        if (selectArr.length !== 1) {
+            message.info(t('selectOneReportData') || '请选择一条历史数据生成报告')
+            return
+        }
+        const reportDate = String(selectArr[0] || '').trim()
+        if (!reportDate) {
+            message.info(t('selectDataFirst'))
+            return
+        }
+        window.location.hash = `#/copReport?date=${encodeURIComponent(reportDate)}`
+        resetOperateState()
+        sethistoryDrawer(false)
+    }
+
     const confirmDownload = async () => {
         const selectedFiles = Array.isArray(selectArr)
             ? selectArr.map((item) => item == null ? '' : String(item).trim()).filter(Boolean)
@@ -523,6 +568,10 @@ const ColAndHistory = memo((props) => {
         if (!selectedFiles.length) {
             setShowDownloadPathModal(false)
             message.info(t('selectDataFirst'))
+            return
+        }
+        if (exportFieldOptions.length && !exportFields.length) {
+            message.warning(t('selectExportFields') || '请至少选择一个导出字段')
             return
         }
 
@@ -549,6 +598,10 @@ const ColAndHistory = memo((props) => {
 
         const payload = {
             fileArr: selectedFiles,
+            exportOptions: {
+                format: exportFormat,
+                fields: exportFields,
+            },
         }
 
         axios({
@@ -877,7 +930,7 @@ const ColAndHistory = memo((props) => {
 
     // }, [playbackRef.current])
 
-    const selectDataArrType = ['delete', 'download', 'contrast']
+    const selectDataArrType = ['delete', 'download', 'contrast', 'report']
 
 
     const shouldShowPlaybackBar = dataStatus === 'replay' && display !== 'contrast'
@@ -948,7 +1001,7 @@ const ColAndHistory = memo((props) => {
                 <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".csv"
+                    accept=".csv,.xlsx,.xls"
                     onChange={(e) => { fileChange(e) }}
                     id="file"
                     style={{ display: 'none' }}
@@ -967,7 +1020,7 @@ const ColAndHistory = memo((props) => {
                 onCancel={() => setShowDownloadPathModal(false)}
                 okText={t('startDownload') || '开始下载'}
                 cancelText={t('cancel')}
-                width={480}
+                width={720}
             >
                 <div style={{ marginBottom: '12px', color: '#666', fontSize: '0.85rem' }}>
                     {t('downloadPathHint') || '请确认或修改下载保存路径：'}
@@ -991,6 +1044,56 @@ const ColAndHistory = memo((props) => {
                     />
                     <Button onClick={handleSelectFolder}>{t('browse')}</Button>
                     <Button onClick={() => handleOpenFolder(editPathValue || downloadPath)}>{t('open')}</Button>
+                </div>
+                <div style={{ marginTop: '16px' }}>
+                    <div style={{ marginBottom: '8px', fontWeight: 600 }}>{t('exportFormat') || '导出格式'}</div>
+                    <Radio.Group
+                        value={exportFormat}
+                        onChange={(e) => setExportFormat(e.target.value)}
+                        options={[
+                            { label: 'CSV', value: 'csv' },
+                            { label: 'XLSX', value: 'xlsx' },
+                        ]}
+                    />
+                </div>
+                <div style={{ marginTop: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <div style={{ fontWeight: 600 }}>
+                            {t('exportFields') || '导出字段'}
+                            <span style={{ marginLeft: 8, color: '#999', fontWeight: 400 }}>
+                                {exportFields.length}/{exportFieldOptions.length || 0}
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <Button size="small" onClick={() => setExportFields(exportFieldOptions.map((item) => item.value))} disabled={exportFieldLoading || !exportFieldOptions.length}>
+                                {t('selectAll') || '全选'}
+                            </Button>
+                            <Button size="small" onClick={() => setExportFields([])} disabled={exportFieldLoading || !exportFieldOptions.length}>
+                                {t('clear') || '清空'}
+                            </Button>
+                        </div>
+                    </div>
+                    <div style={{ minHeight: 120, maxHeight: 220, overflow: 'auto', padding: '8px 10px', border: '1px solid #d9d9d9', borderRadius: 6 }}>
+                        {exportFieldLoading ? (
+                            <div style={{ color: '#999' }}>{t('loading') || '加载中...'}</div>
+                        ) : exportFieldOptions.length ? (
+                            <Checkbox.Group
+                                value={exportFields}
+                                onChange={setExportFields}
+                                style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px 12px' }}
+                            >
+                                {exportFieldOptions.map((field) => (
+                                    <Checkbox key={field.value} value={field.value} style={{ minWidth: 0 }}>
+                                        <span title={field.label} style={{ display: 'inline-block', maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
+                                            {field.label}
+                                        </span>
+                                    </Checkbox>
+                                ))}
+                            </Checkbox.Group>
+                        ) : (
+                            <div style={{ color: '#999' }}>{t('noData') || '暂无数据'}</div>
+                        )}
+                    </div>
                 </div>
                 <div style={{ marginTop: '12px', color: '#999', fontSize: '0.8rem' }}>
                     {t('selectedCount') || '已选择'}: {selectArr.length} {t('items') || '项'}
@@ -1124,6 +1227,17 @@ const ColAndHistory = memo((props) => {
                                         }}>&#xe60a;</i>
                                     </div>
                                 </Popover>
+                                <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={t('generateReport') || '生成报告'}>
+                                    <div className='navIconContent'>
+                                        <FileTextOutlined className='cursor' onClick={() => {
+                                            if (operateStatus != 'report') {
+                                                setOperateStatus('report')
+                                            } else {
+                                                setOperateStatus('')
+                                            }
+                                        }} />
+                                    </div>
+                                </Popover>
                                 <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={t('compare') || '对比'}>
                                     <div className='navIconContent'>
                                         <i className='iconfont cursor' onClick={() => {
@@ -1159,7 +1273,8 @@ const ColAndHistory = memo((props) => {
                                     {
                                         operateStatus == 'delete' ? <div className='modalConfirmButton cursor' onClick={deleteData}>{t('delete')}</div> :
                                             operateStatus == 'download' ? <div className='modalConfirmButton cursor' onClick={download}>{t('download')}</div> :
-                                                operateStatus == 'contrast' ? <div className='modalConfirmButton cursor' onClick={startContrast}>{t('startCompare')}</div> : ''
+                                                operateStatus == 'report' ? <div className='modalConfirmButton cursor' onClick={openCopReport}>{t('startReport') || '生成报告'}</div> :
+                                                    operateStatus == 'contrast' ? <div className='modalConfirmButton cursor' onClick={startContrast}>{t('startCompare')}</div> : ''
                                     }
 
                                     <div className='modalConfirmButton cursor' onClick={() => {
@@ -1578,7 +1693,7 @@ const ColAndHistory = memo((props) => {
 
             {/* 旧的下载成功弹窗已替换为上方的下载进度 Modal */}
 
-            <div className='colAndHContent'>
+            <div className={`colAndHContent ${shouldShowPlaybackBar ? 'playbackDock' : 'collectDock'}`}>
                 <div className='colAndHistory'>
                     {shouldShowPlaybackBar
                         ? <DataPlay dataLength={dataLength} name={currentName} />

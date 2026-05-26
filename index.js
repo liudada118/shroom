@@ -360,6 +360,31 @@ app.whenReady().then(async () => {
     return true
   })
 
+  ipcMain.handle('export-current-page-pdf', async (event, options = {}) => {
+    const sourceWindow = BrowserWindow.fromWebContents(event.sender) || mainWindow
+    const rawName = options.fileName || `COP_Report_${Date.now()}.pdf`
+    const safeName = String(rawName).replace(/[\\/:*?"<>|]/g, '_')
+    const defaultPath = path.join(app.getPath('documents'), safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`)
+    const result = await dialog.showSaveDialog(sourceWindow, {
+      title: '导出 PDF 报告',
+      defaultPath,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { canceled: true }
+    }
+
+    const pdfData = await event.sender.printToPDF({
+      printBackground: true,
+      landscape: false,
+      margins: { marginType: 'none' },
+      pageSize: 'A4',
+    })
+    fs.writeFileSync(result.filePath, pdfData)
+    return { canceled: false, filePath: result.filePath }
+  })
+
   try {
     // 1. 并行执行：硬件指纹 + Port分配（互不依赖）
     console.log('[Main] Initializing...')
