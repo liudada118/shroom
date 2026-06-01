@@ -804,6 +804,18 @@ export function useMatrixData() {
     return true
   }
 
+  function clearMatrixData() {
+    lastSensorFrameRef.current = null
+    lastSensorFrameSourceRef.current = 'realtime'
+    activeFrameDirectionRef.current = {}
+    sitDataRef.current = {}
+    disPlayDataRef.current = {}
+    chartRef.current = {}
+    useEquipStore.getState().setStatus({})
+    useEquipStore.getState().setDisplayStatus({})
+    useEquipStore.getState().setEquipCop({})
+  }
+
   return {
     sitDataRef,
     disPlayDataRef,
@@ -812,6 +824,7 @@ export function useMatrixData() {
     setDataDirection,
     processSensorFrame,
     reprocessLastSensorFrame,
+    clearMatrixData,
     changeDataDirection,
     changeWsLocalData,
   }

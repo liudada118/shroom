@@ -405,13 +405,15 @@ function CopReport() {
   const [exporting, setExporting] = useState(false)
   const query = new URLSearchParams(location.search)
   const date = query.get('date') || query.get('time') || ''
+  const source = query.get('source') || ''
+  const fileName = query.get('fileName') || ''
 
   useEffect(() => {
-    if (!date) {
+    if (!date && !fileName) {
       setLoading(false)
       return
     }
-    const requestPayload = { date }
+    const requestPayload = { date, source, fileName }
     setLoading(true)
     axios({
       method: 'post',
@@ -429,7 +431,7 @@ function CopReport() {
       message.error(err.message || '报告数据读取失败')
       setPayload(null)
     }).finally(() => setLoading(false))
-  }, [date])
+  }, [date, source, fileName])
 
   const analysis = useMemo(() => buildAnalysis(payload), [payload])
   const generatedTime = payload?.generatedAt ? new Date(payload.generatedAt).toLocaleString() : new Date().toLocaleString()

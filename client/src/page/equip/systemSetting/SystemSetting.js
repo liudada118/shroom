@@ -143,9 +143,9 @@ export default function SystemSetting() {
     }, []);
 
     /* ────── 事件处理 ────── */
-    const handleInputChange = (objType, system, paramKey, value) => {
+    const handleInputChange = (system, paramKey, value) => {
         const obj = JSON.parse(JSON.stringify(inputValue));
-        obj[objType][system][paramKey] = value;
+        obj.optimalObj[system][paramKey] = value;
         setInputValue(obj);
     };
 
@@ -198,7 +198,6 @@ export default function SystemSetting() {
             paramKey: param.key,
             desc: t(param.descKey),
             optimal: inputValue.optimalObj[systemKey][param.key],
-            max: inputValue.maxObj[systemKey][param.key],
         }));
 
     const getColumns = (systemKey) => [
@@ -227,22 +226,7 @@ export default function SystemSetting() {
                     size="small"
                     style={{ width: '100%' }}
                     step={record.paramKey === 'gauss' || record.paramKey === 'height' ? 0.01 : 1}
-                    onChange={(val) => handleInputChange('optimalObj', systemKey, record.paramKey, val)}
-                />
-            )
-        },
-        {
-            title: t('maxValueLimit'),
-            dataIndex: 'max',
-            key: 'max',
-            width: 160,
-            render: (value, record) => (
-                <InputNumber
-                    value={value}
-                    size="small"
-                    style={{ width: '100%' }}
-                    step={record.paramKey === 'gauss' || record.paramKey === 'height' ? 0.01 : 1}
-                    onChange={(val) => handleInputChange('maxObj', systemKey, record.paramKey, val)}
+                    onChange={(val) => handleInputChange(systemKey, record.paramKey, val)}
                 />
             )
         }

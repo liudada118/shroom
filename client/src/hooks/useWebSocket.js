@@ -140,7 +140,7 @@ export function useWebSocket(handlers = {}) {
 
           // 回放结束信号
           if (jsonObj.playEnd != null && h.onPlayEnd) {
-            h.onPlayEnd(jsonObj.playEnd)
+            h.onPlayEnd(jsonObj.playEnd, jsonObj)
           }
 
           // 对比数据

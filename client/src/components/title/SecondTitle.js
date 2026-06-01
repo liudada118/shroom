@@ -12,7 +12,6 @@ import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
 import { localAddress, pointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
-import { buildFallbackParams } from '../../util/request'
 import { normalizeVisualSettingMax, saveVisualSettingValue } from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 
@@ -36,7 +35,6 @@ function SecondTitle(props) {
     const displayStatus = useEquipStore(s => s.displayStatus, shallow);
 
     const setSettingValue = useEquipStore.getState().setSettingValue
-    const setSettingValueMax = useEquipStore.getState().setSettingValueMax
 
     const getSettingKey = (a) => {
         return a.type
@@ -62,40 +60,6 @@ function SecondTitle(props) {
         saveVisualSettingValue(systemType || getSysType(), obj)
         setSettingValue(obj);
     };
-
-    const onMaxChange = (newValue, a) => {
-        if (newValue === null || newValue === undefined) return
-        const numericValue = Number(newValue)
-        if (!Number.isFinite(numericValue)) return
-        const currentSystem = systemType || getSysType()
-        const nextMaxValue = Math.max(a.min, numericValue)
-        const nextMax = { ...settingValueMax, [a.type]: nextMaxValue }
-        const key = getSettingKey(a)
-        const currentValue = Number(settingValue[key] ?? settingValue[a.type])
-        const nextSettingValue = {
-            ...settingValue,
-            [key]: Number.isFinite(currentValue) ? Math.min(currentValue, nextMaxValue) : a.min,
-        }
-        nextSettingValue[a.type] = nextSettingValue[key]
-
-        setSettingValueMax(nextMax)
-        setSettingValue(nextSettingValue)
-        saveVisualSettingValue(currentSystem, nextSettingValue)
-
-        const payload = {
-            config: {
-                maxObj: { [currentSystem]: nextMax },
-            },
-        }
-        axios({
-            method: 'post',
-            url: `${localAddress}/setSystemConfig`,
-            params: buildFallbackParams(payload),
-            data: payload,
-        }).catch(() => {
-            message.warning('最大值保存失败')
-        })
-    }
 
     const getSliderValue = (a) => {
         const value = Number(getRowValue(a))
@@ -180,6 +144,9 @@ function SecondTitle(props) {
         // }
         if (display == 'num' || display == 'contrast') {
             if (!onSelect) {
+                setOnMagnifier(false)
+                useEquipStore.getState().setNum2DZoom(100)
+                window.dispatchEvent(new CustomEvent('reset-num-2d-view'))
                 setOnSelect(true)
                 pageInfo?.brushInstance.startBrush();
             } else {
@@ -286,8 +253,15 @@ function SecondTitle(props) {
         const handleClearSelectionMode = () => {
             requestCloseSelection()
         }
+        const handleForceClearSelectionMode = () => {
+            forceCloseSelection()
+        }
         window.addEventListener('clear-selection-mode', handleClearSelectionMode)
-        return () => window.removeEventListener('clear-selection-mode', handleClearSelectionMode)
+        window.addEventListener('force-clear-selection-mode', handleForceClearSelectionMode)
+        return () => {
+            window.removeEventListener('clear-selection-mode', handleClearSelectionMode)
+            window.removeEventListener('force-clear-selection-mode', handleForceClearSelectionMode)
+        }
     }, [pageInfo?.brushInstance, setOnSelect])
 
     useEffect(() => {
@@ -440,18 +414,6 @@ function SecondTitle(props) {
                                             }}
 
                                         />
-                                        <span style={{ color: '#7f8a96', fontSize: '0.75rem', marginLeft: 4 }}>Max</span>
-                                        <InputNumber
-                                            min={a.min}
-                                            step={a.step}
-                                            style={{ margin: '0 0 0 6px' }}
-                                            className='setItemInput'
-                                            value={typeof settingValueMax[a.type] === 'number' ? settingValueMax[a.type] : a.max}
-                                            onChange={(value) => {
-                                                onMaxChange(value, a)
-                                            }}
-
-                                        />
                                     </ConfigProvider>
 
                                 </div>
@@ -528,7 +490,7 @@ function SecondTitle(props) {
                             message.info(t('use2DMode'))
                         }
                     }} text={t('magnifier')} show={show} icon={<div className='iconContentBox'> <i style={{ color: onMagnifier ? '#fff' : '#D1D9E1' }} className='iconfont fs16'>&#xe61f;</i></div>} />
-                    <IconAndText onClick={() => { setSetshow(!setshow) }} text={t('adjust')} show={show} icon={<div className='iconContentBox'><i className='iconfont fs16'>&#xe60d;</i></div>} />
+                    <IconAndText onClickStatus={setshow} onClick={() => { setSetshow(!setshow) }} text={t('adjust')} show={show} icon={<div className='iconContentBox'><i style={{ color: setshow ? '#fff' : '#D1D9E1' }} className='iconfont fs16'>&#xe60d;</i></div>} />
                 </div>
                 {/* {onSelect ? <div className='selectInputContent'>
                     <div className="selectInputTitle"> <div className="selectInputTitleInfo">框选区域</div>  

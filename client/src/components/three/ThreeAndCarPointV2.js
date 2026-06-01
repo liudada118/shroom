@@ -850,7 +850,13 @@ const Canvas =
                 chair.position.z = 60
                 chair.position.x = -0
                 scene.add(group);
-                focusControlsOnOverall(true)
+                const currentViewType = getDisplayType()
+                if (['back', 'sit'].includes(currentViewType)) {
+                    chair.visible = false
+                    requestAnimationFrame(() => actionSit(currentViewType))
+                } else {
+                    focusControlsOnOverall(true)
+                }
                 // group.position.x = -10;
                 // group.position.y = -20;
             });
@@ -1706,8 +1712,15 @@ const Canvas =
             // 靠垫数据
             init();
             animate();
+            const initialViewFrame = requestAnimationFrame(() => {
+                const initialType = getDisplayType()
+                if (['back', 'sit', 'all'].includes(initialType)) {
+                    actionSit(initialType)
+                }
+            })
 
             return () => {
+                cancelAnimationFrame(initialViewFrame)
                 renderer.setAnimationLoop(null);
                 cleanupZoomSync();
                 if (restoreZoomSyncTimerRef.current) clearTimeout(restoreZoomSyncTimerRef.current)

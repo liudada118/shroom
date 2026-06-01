@@ -729,6 +729,7 @@ export default function NumThree(props) {
       const overMagnifier = isPointerInsideMagnifier(event);
       if (!overCanvas && !overMagnifier) return;
       event.preventDefault();
+      if (interactionLockedRef.current) return;
       if (!overMagnifier) {
         const currentPercent = useEquipStore.getState().num2DZoom || props.zoom || 100;
         applyCanvasZoom(currentPercent + (event.deltaY < 0 ? 10 : -10), event);
@@ -785,6 +786,8 @@ export default function NumThree(props) {
     }
     if (locked) {
       dragRef.current.isDragging = false;
+      useEquipStore.getState().setNum2DZoom(100);
+      zoomRef.current = 1;
       if (resetCameraRef.current) {
         resetCameraRef.current();
       } else {

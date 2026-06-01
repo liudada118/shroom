@@ -15,6 +15,7 @@ function DataPlay(props) {
             showHistory
             speedLabel={t('speed')}
             historyLabel={t('history')}
+            onHistoryClick={props.onHistoryClick}
         />
     );
 }

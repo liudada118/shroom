@@ -5,12 +5,14 @@ import dayjs from 'dayjs'
 import { shallow } from 'zustand/shallow'
 import { pageContext } from '../../page/test/Test'
 import { useEquipStore } from '../../store/equipStore'
-import { localAddress } from '../../util/constant'
+import { localAddress, pointConfig } from '../../util/constant'
 import ContrastHeatmap from './ContrastHeatmap'
 import { useTranslation } from 'react-i18next'
 import './contrast.scss'
 
 const METRIC_KEYS = ['aver', 'max', 'min', 'press', 'area', 'points', 'center']
+const CONTRAST_PLAYBACK_SPEEDS = [0.5, 1, 2, 4]
+const BASE_PLAYBACK_INTERVAL_MS = 120
 
 const CONTRAST_COPY = {
     zh: {
@@ -19,7 +21,7 @@ const CONTRAST_COPY = {
             max: '最大压强',
             min: '最小压强',
             press: '压力总和',
-            area: '受压面积',
+            area: '受压面积(cm²)',
             points: '有效点数',
             center: '压力重心',
         },
@@ -57,6 +59,8 @@ const CONTRAST_COPY = {
         currentFrame: '当前帧',
         filterValue: '过滤值',
         object: '对象',
+        seatSensor: '坐垫传感器',
+        backSensor: '靠背传感器',
         sampleRate: '采样率',
         zero: '置零',
         direction: '方向',
@@ -95,7 +99,7 @@ const CONTRAST_COPY = {
             max: 'Max Pressure',
             min: 'Min Pressure',
             press: 'Pressure Sum',
-            area: 'Contact Area',
+            area: 'Contact Area(cm²)',
             points: 'Valid Points',
             center: 'Pressure Center',
         },
@@ -133,6 +137,8 @@ const CONTRAST_COPY = {
         currentFrame: 'Frame',
         filterValue: 'Filter',
         object: 'Object',
+        seatSensor: 'Seat Sensor',
+        backSensor: 'Back Sensor',
         sampleRate: 'Sample Rate',
         zero: 'Zero',
         direction: 'Direction',
@@ -238,13 +244,38 @@ function getRegionArr(arr = [], width, matrixRect) {
     return result
 }
 
-function calcMetrics(arr = [], width = 1, matrixRect = null) {
+function getPointAreaCm2(matrixKey = '') {
+    let [system, surface] = String(matrixKey || '').split('-')
+    if (!surface && (system === 'back' || system === 'sit')) {
+        surface = system
+        system = useEquipStore.getState().systemType || 'endi'
+    }
+    const config = pointConfig?.[system]?.[surface]
+    const widthDistance = Number(config?.pointWidthDistance) || 10
+    const heightDistance = Number(config?.pointHeightDistance) || 10
+    return (widthDistance * heightDistance) / 100
+}
+
+function getDisplayNumber(value) {
+    if (!Number.isFinite(value)) return NaN
+    const digits = Math.abs(value) >= 100 ? 0 : 1
+    return Number(value.toFixed(digits))
+}
+
+function calcDisplayDiff(a, b) {
+    const displayA = getDisplayNumber(a)
+    const displayB = getDisplayNumber(b)
+    return Number.isFinite(displayA) && Number.isFinite(displayB) ? displayB - displayA : 'N/A'
+}
+
+function calcMetrics(arr = [], width = 1, matrixRect = null, pointAreaCm2 = 1) {
     const positive = arr.filter((value) => Number(value) > 0)
     const press = positive.reduce((sum, value) => sum + Number(value), 0)
-    const area = positive.length
+    const points = positive.length
+    const area = points * pointAreaCm2
     const max = positive.length ? Math.max(...positive) : 0
     const min = positive.length ? Math.min(...positive) : 0
-    const aver = area ? press / area : 0
+    const aver = points ? press / points : 0
     let weightedX = 0
     let weightedY = 0
     let totalWeight = 0
@@ -260,7 +291,7 @@ function calcMetrics(arr = [], width = 1, matrixRect = null) {
     return {
         press,
         area,
-        points: area,
+        points,
         max,
         min,
         aver,
@@ -278,6 +309,18 @@ function fillTemplate(template, replacements = {}, fallback = '') {
     return Object.entries(replacements).reduce((text, [key, value]) => {
         return text.replace(new RegExp(`{{${key}}}`, 'g'), value)
     }, String(template || fallback))
+}
+
+function getContrastObjectLabel(key, copy = CONTRAST_COPY.zh) {
+    const text = String(key || '')
+    const normalized = text.toLowerCase()
+    if (normalized === 'endi-sit' || normalized === 'sit' || normalized.endsWith('-sit')) {
+        return copy.seatSensor || '坐垫传感器'
+    }
+    if (normalized === 'endi-back' || normalized === 'back' || normalized.endsWith('-back')) {
+        return copy.backSensor || '靠背传感器'
+    }
+    return text
 }
 
 function formatRate(a, b) {
@@ -378,12 +421,13 @@ function buildSingleSeries(values = []) {
 
 function buildMetricSeriesFromFrames(frames = [], matrixKey, metricKey, matrixRect = null) {
     if (!Array.isArray(frames) || !matrixKey) return []
+    const pointAreaCm2 = getPointAreaCm2(matrixKey)
     return frames.map((frame) => {
         const data = frame?.[matrixKey] || {}
         const width = data.width || 1
         const source = getRegionArr(data.arr || [], width, matrixRect)
         const metricWidth = matrixRect ? Math.max(1, matrixRect.xEnd - matrixRect.xStart) : width
-        return Number(calcMetrics(source, metricWidth, matrixRect)[metricKey]) || 0
+        return Number(calcMetrics(source, metricWidth, matrixRect, pointAreaCm2)[metricKey]) || 0
     })
 }
 
@@ -506,6 +550,7 @@ export default function NumThresContrast() {
     const displayType = useEquipStore(s => s.displayType, shallow)
     const settingValue = useEquipStore(s => s.settingValue, shallow)
     const [playing, setPlaying] = useState(false)
+    const [playbackSpeed, setPlaybackSpeed] = useState(1)
     const [playbackExpanded, setPlaybackExpanded] = useState(false)
     const [activeKey, setActiveKey] = useState('')
 
@@ -548,9 +593,9 @@ export default function NumThresContrast() {
         const timer = setInterval(() => {
             setPlaybackIndexA((current) => getClampedFrameIndex(leftFrameCount, current + 1))
             setPlaybackIndexB((current) => getClampedFrameIndex(rightFrameCount, current + 1))
-        }, 120)
+        }, Math.max(16, Math.round(BASE_PLAYBACK_INTERVAL_MS / playbackSpeed)))
         return () => clearInterval(timer)
-    }, [playing, isTimePointMode, leftFrameCount, rightFrameCount])
+    }, [playing, isTimePointMode, leftFrameCount, rightFrameCount, playbackSpeed])
 
     useEffect(() => {
         if (!playing || isTimePointMode) return
@@ -583,12 +628,13 @@ export default function NumThresContrast() {
         const sourceA = getRegionArr(leftArr, width, activeSelect)
         const sourceB = getRegionArr(rightArr, width, activeSelect)
         const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : width
-        const metricA = calcMetrics(sourceA, metricWidth, activeSelect)
-        const metricB = calcMetrics(sourceB, metricWidth, activeSelect)
+        const pointAreaCm2 = getPointAreaCm2(activeKey)
+        const metricA = calcMetrics(sourceA, metricWidth, activeSelect, pointAreaCm2)
+        const metricB = calcMetrics(sourceB, metricWidth, activeSelect, pointAreaCm2)
         return metrics.map((item) => {
             const a = metricA[item.key]
             const b = metricB[item.key]
-            const diff = typeof a === 'number' && typeof b === 'number' ? b - a : 'N/A'
+            const diff = typeof a === 'number' && typeof b === 'number' ? calcDisplayDiff(a, b) : 'N/A'
             return {
                 ...item,
                 a,
@@ -597,7 +643,7 @@ export default function NumThresContrast() {
                 rate: typeof a === 'number' && typeof b === 'number' ? formatRate(a, b) : 'N/A',
             }
         })
-    }, [leftArr, rightArr, width, activeSelect, metrics])
+    }, [leftArr, rightArr, width, activeSelect, activeKey, metrics])
 
     const conclusion = useMemo(() => {
         const pressRow = metricRows.find((row) => row.key === 'press')
@@ -722,6 +768,7 @@ export default function NumThresContrast() {
             message.warning(copy.noExportData)
             return
         }
+        const pointAreaCm2 = getPointAreaCm2(activeKey)
 
         if (isTimePointMode) {
             const leftFrameItem = getFrameByIndex(leftFrames, leftIndex)?.[activeKey] || {}
@@ -730,8 +777,8 @@ export default function NumThresContrast() {
             const leftSource = getRegionArr(leftFrameItem.arr || [], rowWidth, activeSelect)
             const rightSource = getRegionArr(rightFrameItem.arr || [], rowWidth, activeSelect)
             const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : rowWidth
-            const metricA = calcMetrics(leftSource, metricWidth, activeSelect)
-            const metricB = calcMetrics(rightSource, metricWidth, activeSelect)
+            const metricA = calcMetrics(leftSource, metricWidth, activeSelect, pointAreaCm2)
+            const metricB = calcMetrics(rightSource, metricWidth, activeSelect, pointAreaCm2)
             const maxAbsDiff = buildDiffArr(leftSource, rightSource).reduce((max, value) => Math.max(max, Math.abs(Number(value) || 0)), 0)
             const rows = [{
                 frame_index: 0,
@@ -743,16 +790,16 @@ export default function NumThresContrast() {
                 right_index: rightIndex,
                 a_pressure_sum: getMetricValue(metricA, 'press'),
                 b_pressure_sum: getMetricValue(metricB, 'press'),
-                diff_pressure_sum: getMetricValue(metricB, 'press') - getMetricValue(metricA, 'press'),
+                diff_pressure_sum: calcDisplayDiff(metricA.press, metricB.press),
                 a_contact_area: getMetricValue(metricA, 'area'),
                 b_contact_area: getMetricValue(metricB, 'area'),
-                diff_contact_area: getMetricValue(metricB, 'area') - getMetricValue(metricA, 'area'),
+                diff_contact_area: calcDisplayDiff(metricA.area, metricB.area),
                 a_avg_pressure: getMetricValue(metricA, 'aver'),
                 b_avg_pressure: getMetricValue(metricB, 'aver'),
-                diff_avg_pressure: getMetricValue(metricB, 'aver') - getMetricValue(metricA, 'aver'),
+                diff_avg_pressure: calcDisplayDiff(metricA.aver, metricB.aver),
                 a_max_pressure: getMetricValue(metricA, 'max'),
                 b_max_pressure: getMetricValue(metricB, 'max'),
-                diff_max_pressure: getMetricValue(metricB, 'max') - getMetricValue(metricA, 'max'),
+                diff_max_pressure: calcDisplayDiff(metricA.max, metricB.max),
                 a_center: getMetricValue(metricA, 'center'),
                 b_center: getMetricValue(metricB, 'center'),
                 max_abs_point_diff: maxAbsDiff,
@@ -778,8 +825,8 @@ export default function NumThresContrast() {
             const leftSource = getRegionArr(leftFrameItem.arr || [], rowWidth, activeSelect)
             const rightSource = getRegionArr(rightFrameItem.arr || [], rowWidth, activeSelect)
             const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : rowWidth
-            const metricA = calcMetrics(leftSource, metricWidth, activeSelect)
-            const metricB = calcMetrics(rightSource, metricWidth, activeSelect)
+            const metricA = calcMetrics(leftSource, metricWidth, activeSelect, pointAreaCm2)
+            const metricB = calcMetrics(rightSource, metricWidth, activeSelect, pointAreaCm2)
             const maxAbsDiff = buildDiffArr(leftSource, rightSource).reduce((max, value) => Math.max(max, Math.abs(Number(value) || 0)), 0)
 
             return {
@@ -792,16 +839,16 @@ export default function NumThresContrast() {
                 right_index: rightFrameIndex,
                 a_pressure_sum: getMetricValue(metricA, 'press'),
                 b_pressure_sum: getMetricValue(metricB, 'press'),
-                diff_pressure_sum: getMetricValue(metricB, 'press') - getMetricValue(metricA, 'press'),
+                diff_pressure_sum: calcDisplayDiff(metricA.press, metricB.press),
                 a_contact_area: getMetricValue(metricA, 'area'),
                 b_contact_area: getMetricValue(metricB, 'area'),
-                diff_contact_area: getMetricValue(metricB, 'area') - getMetricValue(metricA, 'area'),
+                diff_contact_area: calcDisplayDiff(metricA.area, metricB.area),
                 a_avg_pressure: getMetricValue(metricA, 'aver'),
                 b_avg_pressure: getMetricValue(metricB, 'aver'),
-                diff_avg_pressure: getMetricValue(metricB, 'aver') - getMetricValue(metricA, 'aver'),
+                diff_avg_pressure: calcDisplayDiff(metricA.aver, metricB.aver),
                 a_max_pressure: getMetricValue(metricA, 'max'),
                 b_max_pressure: getMetricValue(metricB, 'max'),
-                diff_max_pressure: getMetricValue(metricB, 'max') - getMetricValue(metricA, 'max'),
+                diff_max_pressure: calcDisplayDiff(metricA.max, metricB.max),
                 a_center: getMetricValue(metricA, 'center'),
                 b_center: getMetricValue(metricB, 'center'),
                 max_abs_point_diff: maxAbsDiff,
@@ -883,8 +930,12 @@ export default function NumThresContrast() {
                 <span className="volumeIcon">◕</span>
                 <Select
                     size="small"
-                    value="1.0x"
-                    options={[{ label: '1.0x', value: '1.0x' }]}
+                    value={playbackSpeed}
+                    options={CONTRAST_PLAYBACK_SPEEDS.map((speed) => ({
+                        label: `${speed.toFixed(1)}x`,
+                        value: speed,
+                    }))}
+                    onChange={setPlaybackSpeed}
                     style={{ width: 78 }}
                 />
             </>
@@ -941,7 +992,7 @@ export default function NumThresContrast() {
                 <Select
                     size="small"
                     value={activeKey}
-                    options={keys.map((key) => ({ label: key, value: key }))}
+                    options={keys.map((key) => ({ label: getContrastObjectLabel(key, copy), value: key }))}
                     onChange={changeActiveKey}
                     style={{ width: 150 }}
                 />
@@ -963,7 +1014,7 @@ export default function NumThresContrast() {
                     <Select
                         size="small"
                         value={activeKey}
-                        options={keys.map((key) => ({ label: key, value: key }))}
+                        options={keys.map((key) => ({ label: getContrastObjectLabel(key, copy), value: key }))}
                         onChange={changeActiveKey}
                         style={{ width: 130 }}
                     />
@@ -980,7 +1031,7 @@ export default function NumThresContrast() {
                 <span>{copy.currentScope}: {activeSelect ? copy.selectionRegion || 'Selection Area' : copy.fullMatrix}</span>
                 <span>{copy.currentFrame}: A {leftIndex + 1}/{leftFrameCount || 0}, B {rightIndex + 1}/{rightFrameCount || 0}</span>
                 <span>{copy.filterValue}: {settingValue?.filter ?? 0}</span>
-                <span>{copy.object}: {activeKey}</span>
+                <span>{copy.object}: {getContrastObjectLabel(activeKey, copy)}</span>
                 <span>{copy.sampleRate}: A {getSampleRateText(leftData, copy)} / B {getSampleRateText(rightData, copy)}</span>
                 <span>{copy.zero}: A {formatZeroState(leftData.zeroState, copy)} / B {formatZeroState(rightData.zeroState, copy)}</span>
                 <span>{copy.direction}: A {formatDirection(leftData.dataDirection, copy)} / B {formatDirection(rightData.dataDirection, copy)}</span>

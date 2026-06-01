@@ -36,10 +36,23 @@ function ChartsAside(props) {
     useEffect(() => {
         historyChartRef.current = historyChart
         if (historyChart) {
-            renderCharts1()
-            renderCharts2()
+            const emptyHistory = !Object.keys(historyChart.pressArr || {}).length && !Object.keys(historyChart.areaArr || {}).length
+            if (emptyHistory && !Object.keys(props.chartData.current || {}).length) {
+                clearChartViews()
+            } else {
+                renderCharts1()
+                renderCharts2()
+            }
         }
     }, [historyChart])
+
+    const clearChartViews = () => {
+        myChart1.current?.clear()
+        myChart2.current?.clear()
+        chart.current?.clear()
+        trackRef.current?.canvasInit?.()
+        setData({ t: Date.now() })
+    }
 
     /**
      * 构建 ECharts series 数组
@@ -173,6 +186,10 @@ function ChartsAside(props) {
         const onlyBoxStats = !useHistory && getBoxStats(chartData).length > 0
         let areaObj = {}
         let allArr = []
+        if (!keyArr.length) {
+            myChart1.current?.clear()
+            return
+        }
         if (keyArr.length) {
             for (let i = 0; i < keyArr.length; i++) {
                 const key = keyArr[i]
@@ -206,6 +223,10 @@ function ChartsAside(props) {
         const onlyBoxStats = !useHistory && getBoxStats(chartData).length > 0
         let areaObj = {}
         let allArr = []
+        if (!keyArr.length) {
+            myChart2.current?.clear()
+            return
+        }
         if (keyArr.length) {
             for (let i = 0; i < keyArr.length; i++) {
                 const key = keyArr[i]
@@ -230,7 +251,10 @@ function ChartsAside(props) {
     const renderCenter = () => {
         const chartData = props.chartData.current
         const keys = Object.keys(chartData)
-        if (!keys.length) return
+        if (!keys.length) {
+            trackRef.current?.canvasInit?.()
+            return
+        }
         const boxCenters = getBoxStats(chartData)
             .map((box) => ({
                 center: getCenterValues(box.center),
@@ -255,7 +279,10 @@ function ChartsAside(props) {
         if (!chart.current) return
         const chartData = props.chartData.current
         const keys = Object.keys(chartData)
-        if (!keys.length) return
+        if (!keys.length) {
+            chart.current.clear()
+            return
+        }
         const xData = Array.from({ length: 256 }, (_, i) => i);
 
         let series = [], Xmax = 0

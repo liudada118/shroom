@@ -619,8 +619,27 @@ function getPlaybackSnapshot(index = state.playIndex, options = {}) {
 
 function finishPlayback() {
   state.historyPlayFlag = false
-  broadcast(JSON.stringify({ playEnd: false }))
+  state.historyFlag = false
+  state.historySelectCache = null
   clearPlayTimer()
+  ensureRealtimeTimer()
+
+  const realtimeAvailable = Object.keys(state.parserArr || {}).length > 0
+  broadcast(JSON.stringify({ playEnd: false, realtimeAvailable }))
+  if (realtimeAvailable) {
+    try {
+      sendData()
+      setTimeout(() => {
+        try {
+          if (Object.keys(state.parserArr || {}).length) sendData()
+        } catch (err) {
+          console.warn('[Playback] Failed to push delayed realtime frame after playback end:', err.message)
+        }
+      }, 300)
+    } catch (err) {
+      console.warn('[Playback] Failed to push realtime frame after playback end:', err.message)
+    }
+  }
 }
 
 function getPlaybackIntervalMs() {

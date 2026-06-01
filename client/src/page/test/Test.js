@@ -95,6 +95,7 @@ function Test() {
         setDataDirection,
         processSensorFrame,
         reprocessLastSensorFrame,
+        clearMatrixData,
         changeDataDirection,
         changeWsLocalData,
     } = useMatrixData()
@@ -105,11 +106,36 @@ function Test() {
     // 持久化的数据对象（跨帧累积）
     const persistentDataRef = useRef({})
 
+    const clearVisualizationData = useCallback(() => {
+        persistentDataRef.current = {}
+        clearMatrixData()
+        const store = useEquipStore.getState()
+        store.setHistoryChart({ pressArr: {}, areaArr: {} })
+        store.setHistoryStatus({ index: 0, timestamp: '' })
+        store.setPlaybackHasSelection(false)
+        store.setPlaybackRecordDate('')
+        removeHistoryBox()
+    }, [clearMatrixData])
+
+    const shouldClearAfterPlaybackEnd = (payload) => {
+        if (payload?.realtimeAvailable === false) return true
+        if (payload?.realtimeAvailable === true) return false
+        const store = useEquipStore.getState()
+        if (store.connectState !== 'connected') return true
+        const statuses = Object.values(store.equipStatus || {})
+        if (!statuses.length) return true
+        return statuses.every((status) => status === 'offline' || status === undefined)
+    }
+
     // ─── WebSocket 连接 ──────────────────────────────────
     useWebSocket({
         onSitData: (sitData) => {
             const store = useEquipStore.getState()
+            const shouldClearReplayFrame = store.dataStatus === 'replay'
             if (store.display !== 'contrast' && store.dataStatus !== 'contrast') {
+                if (shouldClearReplayFrame) {
+                    clearVisualizationData()
+                }
                 store.setDataStatus('realtime')
                 store.setPlaybackHasSelection(false)
                 store.setPlaybackRecordDate('')
@@ -136,9 +162,19 @@ function Test() {
             const history = useEquipStore.getState().history
             useEquipStore.getState().setHistoryStatus({ ...history, timestamp })
         },
-        onPlayEnd: () => {
-            if (useEquipStore.getState().dataStatus === 'replay') {
+        onPlayEnd: (playing, payload) => {
+            if (playing === true) return
+            const store = useEquipStore.getState()
+            if (store.dataStatus === 'replay') {
                 setPlayBack(false)
+                store.setDataStatus('realtime')
+                store.setHistoryChart({ pressArr: {}, areaArr: {} })
+                store.setHistoryStatus({ index: 0, timestamp: '' })
+                store.setPlaybackHasSelection(false)
+                store.setPlaybackRecordDate('')
+                if (shouldClearAfterPlaybackEnd(payload)) {
+                    clearVisualizationData()
+                }
             }
         },
         onMacInfo: (macInfo) => {
@@ -201,28 +237,30 @@ function Test() {
 
             const systemType = getSysType()
             const displayType = getDisplayType()
-            const range = safeArr[0]
-            let typeKey = range.matrixKey || systemType
-            if (isMoreMatrix(systemType)) {
-                typeKey = range.matrixKey || `${systemType}-${displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : 'back'}`
-            }
-
-            // 使用第一个框作为回放查询的选区（后端目前只支持单选区）
-            if (!range) return
-            if (!systemPointConfig[typeKey]) return
-            const matrix = colSelectMatrix('canvasThree', range, systemPointConfig[typeKey])
-            if (!matrix) return
             const selectJson = {}
-            selectJson[typeKey] = {
-                xStart: matrix.xStart,
-                xEnd: matrix.xEnd,
-                yStart: matrix.yStart,
-                yEnd: matrix.yEnd,
-                width: systemPointConfig[typeKey].width,
-                height: systemPointConfig[typeKey].height,
-                name: formatSelectionName(range.name, 1, t)
-            }
-
+            safeArr.forEach((range, index) => {
+                let typeKey = range.matrixKey || systemType
+                if (isMoreMatrix(systemType)) {
+                    typeKey = range.matrixKey || `${systemType}-${displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : 'back'}`
+                }
+                const config = systemPointConfig[typeKey]
+                if (!config) return
+                const matrix = colSelectMatrix('canvasThree', range, config)
+                if (!matrix) return
+                if (!selectJson[typeKey]) selectJson[typeKey] = { regions: [] }
+                selectJson[typeKey].regions.push({
+                    xStart: matrix.xStart,
+                    xEnd: matrix.xEnd,
+                    yStart: matrix.yStart,
+                    yEnd: matrix.yEnd,
+                    width: config.width,
+                    height: config.height,
+                    name: formatSelectionName(range.name, index + 1, t),
+                    colorIndex: index,
+                })
+            })
+            if (!Object.keys(selectJson).length) return
+            // 缓存所有框选供导出使用，回放曲线仍按每个矩阵的第一个框计算。
             axios({
                 method: 'post',
                 url: `${localAddress}/getDbHistorySelect`,
@@ -379,7 +417,8 @@ function Test() {
                 setDisplayType,
                 displayType,
                 onRuler, setOnRuler, onSelect, setOnSelect,
-                onMagnifier, setOnMagnifier
+                onMagnifier, setOnMagnifier,
+                clearVisualizationData
             }} >
                 <Title hideSecondTitle={display === 'contrast'} />
                 {display !== 'contrast' ? <ViewSetting showProp={showProp} setShowProp={setShowProp} three={threeRef} /> : null}

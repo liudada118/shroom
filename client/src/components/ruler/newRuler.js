@@ -79,6 +79,7 @@ class ruler {
         // 临时起点（正在绘制中的起点）
         this.tempStart = null
         this.dragState = null
+        this.pendingEditClick = null
 
         // 统一使用 mousedown 事件，通过 e.button 区分左右键
         this.onMouseDown = (e) => {
@@ -109,6 +110,10 @@ class ruler {
                 if (!this.tempStart) {
                     const editTarget = this._hitTestEditTarget(e)
                     if (editTarget) {
+                        if (this.selectedIndices.has(editTarget.index)) {
+                            this.pendingEditClick = { target: editTarget, pageX: e.pageX, pageY: e.pageY }
+                            return
+                        }
                         this._startDrag(editTarget, e)
                         return
                     }
@@ -188,6 +193,18 @@ class ruler {
         this.onMouseMove = (e) => {
             if (!this.canvas) return
 
+            if (this.pendingEditClick) {
+                const moveX = e.pageX - this.pendingEditClick.pageX
+                const moveY = e.pageY - this.pendingEditClick.pageY
+                if (Math.sqrt(moveX * moveX + moveY * moveY) > 3) {
+                    const pending = this.pendingEditClick
+                    this.pendingEditClick = null
+                    this._startDrag(pending.target, { pageX: pending.pageX, pageY: pending.pageY })
+                    this._updateDrag(e)
+                }
+                return
+            }
+
             if (this.dragState) {
                 e.preventDefault()
                 this._updateDrag(e)
@@ -205,6 +222,14 @@ class ruler {
         }
 
         this.onMouseUp = () => {
+            if (this.pendingEditClick) {
+                const { target } = this.pendingEditClick
+                this.pendingEditClick = null
+                this.selectedIndices.delete(target.index)
+                if (this.canvas) this.canvas.style.cursor = target.mode === 'line' ? 'grab' : 'pointer'
+                this._redraw()
+                return
+            }
             if (this.dragState) {
                 this._finishDrag()
             }
@@ -215,6 +240,11 @@ class ruler {
 
             if (this.dragState) {
                 this._cancelDrag(true)
+                return
+            }
+
+            if (this.pendingEditClick) {
+                this.pendingEditClick = null
                 return
             }
 

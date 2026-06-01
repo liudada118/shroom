@@ -380,6 +380,7 @@ app.whenReady().then(async () => {
       landscape: false,
       margins: { marginType: 'none' },
       pageSize: 'A4',
+      preferCSSPageSize: true,
     })
     fs.writeFileSync(result.filePath, pdfData)
     return { canceled: false, filePath: result.filePath }

@@ -120,6 +120,10 @@ const normalizeFolderSelection = (value) => {
     return ''
 }
 
+const getImportedDataName = (item) => {
+    return normalizeCsvItem(item).split(/[\\/]/).pop().toLowerCase()
+}
+
 const scheduleIdleTask = (callback, timeout = 800) => {
     if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
         const id = window.requestIdleCallback(callback, { timeout })
@@ -177,6 +181,26 @@ const ColAndHistory = memo((props) => {
     const [contrastArr, setContrast] = useState(contrastInitArr)
     const [contrastMode, setContrastMode] = useState('record_pair')
 
+    const normalizeContrastSource = (source) => (source === 'csv' || source === 'import' ? 'csv' : 'history')
+    const getContrastRequestSource = (record) => (normalizeContrastSource(record?.source) === 'csv' ? 'csv' : '')
+    const getContrastSelectKey = (record) => `${normalizeContrastSource(record?.source)}:${record?.date ?? ''}`
+    const isSameContrastRecord = (left, right) => {
+        if (!left?.date || !right?.date) return false
+        return String(left.date) === String(right.date)
+            && normalizeContrastSource(left.source) === normalizeContrastSource(right.source)
+    }
+    const buildHistoryContrastRecord = (record = {}) => ({
+        ...record,
+        date: record.date,
+        name: record.name || record.date,
+        source: 'history',
+    })
+    const buildImportedContrastRecord = (name) => ({
+        date: name,
+        name,
+        source: 'csv',
+    })
+
     const resetOperateState = () => {
         setSelectArr([])
         setOperateStatus('')
@@ -188,7 +212,9 @@ const ColAndHistory = memo((props) => {
         if (nextIndex === Onindex) {
             return
         }
-        resetOperateState()
+        if (operateStatus !== 'contrast') {
+            resetOperateState()
+        }
         setIndex(nextIndex)
     }
 
@@ -251,6 +277,12 @@ const ColAndHistory = memo((props) => {
     const handleUpload = () => {
         if (!uploadFileRef.current) {
             message.info(t('selectDataFirst'))
+            return
+        }
+        const selectedName = getImportedDataName(uploadFileRef.current.name)
+        const duplicated = normalizeCsvList(localArr).some((item) => getImportedDataName(item) === selectedName)
+        if (duplicated) {
+            message.warning(i18n.language?.startsWith('zh') ? '该数据已导入，请勿重复导入' : 'This data has already been imported')
             return
         }
         setUploadLoading(true)
@@ -555,7 +587,15 @@ const ColAndHistory = memo((props) => {
             message.info(t('selectDataFirst'))
             return
         }
-        window.location.hash = `#/copReport?date=${encodeURIComponent(reportDate)}`
+        const reportParams = new URLSearchParams({ date: reportDate })
+        if (Onindex === 1) {
+            reportParams.set('source', 'csv')
+            reportParams.set('fileName', reportDate)
+        }
+        window.dispatchEvent(new CustomEvent('force-clear-selection-mode'))
+        removeHistoryBox()
+        useEquipStore.getState().setSelectArr([])
+        window.location.hash = `#/copReport?${reportParams.toString()}`
         resetOperateState()
         sethistoryDrawer(false)
     }
@@ -740,6 +780,7 @@ const ColAndHistory = memo((props) => {
         })
 
         removeHistoryBox()
+        pageInfo.clearVisualizationData?.()
         useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
         useEquipStore.getState().setDataStatus('realtime')
         useEquipStore.getState().setPlaybackHasSelection(false)
@@ -757,6 +798,8 @@ const ColAndHistory = memo((props) => {
     const startContrast = () => {
         const leftDate = contrastArr.left?.date
         const rightDate = contrastArr.right?.date
+        const leftSource = getContrastRequestSource(contrastArr.left)
+        const rightSource = getContrastRequestSource(contrastArr.right)
         if (!leftDate) {
             message.error(contrastMode === 'single_record_frame' ? 'Please select one history record first' : t('selectBaseDataFirst'))
             return
@@ -767,7 +810,7 @@ const ColAndHistory = memo((props) => {
                 message.error(t('selectCompareDataFirst'))
                 return
             }
-            if (leftDate === rightDate) {
+            if (isSameContrastRecord(contrastArr.left, contrastArr.right)) {
                 message.error(t('compareSameRecordInvalid'))
                 return
             }
@@ -777,11 +820,14 @@ const ColAndHistory = memo((props) => {
             ? {
                 mode: 'single_record_frame',
                 record: leftDate,
+                source: leftSource,
             }
             : {
                 mode: 'record_pair',
                 left: leftDate,
                 right: rightDate,
+                leftSource,
+                rightSource,
             }
 
         axios({
@@ -1300,10 +1346,54 @@ const ColAndHistory = memo((props) => {
                                             }
                                         }}>&#xe60f;</i>
                                     </div>
+                                </Popover>
+                                <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={t('generateReport') || '鐢熸垚鎶ュ憡'}>
+                                    <div className='navIconContent'>
+                                        <FileTextOutlined className='cursor' onClick={() => {
+                                            if (operateStatus != 'report') {
+                                                setOperateStatus('report')
+                                            } else {
+                                                setOperateStatus('')
+                                            }
+                                        }} />
+                                    </div>
+                                </Popover>
+                                <Popover className='navItempop' overlayClassName="navItempop" color='#32373E' placement="bottom" content={t('compare') || '瀵规瘮'}>
+                                    <div className='navIconContent'>
+                                        <i className='iconfont cursor' onClick={() => {
+                                            setOperateStatus('contrast')
+                                            setSelectArr([])
+                                            setContrast(contrastInitArr)
+                                        }}>&#xe60e;</i>
+                                    </div>
                                 </Popover></> :
                                 <>
                                     {
-                                        operateStatus == 'delete' ? <div className='modalConfirmButton cursor' onClick={deleteData}>{t('delete')}</div> : ''
+                                        operateStatus == 'contrast' ? <div className="contrastModeSwitch">
+                                            <button
+                                                type="button"
+                                                className={contrastMode === 'record_pair' ? 'active' : ''}
+                                                onClick={() => {
+                                                    setContrastMode('record_pair')
+                                                    setSelectArr([])
+                                                    setContrast(contrastInitArr)
+                                                }}
+                                            >{t('contrastRecordPair')}</button>
+                                            <button
+                                                type="button"
+                                                className={contrastMode === 'single_record_frame' ? 'active' : ''}
+                                                onClick={() => {
+                                                    setContrastMode('single_record_frame')
+                                                    setSelectArr([])
+                                                    setContrast(contrastInitArr)
+                                                }}
+                                            >{t('contrastSingleRecordTime')}</button>
+                                        </div> : ''
+                                    }
+                                    {
+                                        operateStatus == 'delete' ? <div className='modalConfirmButton cursor' onClick={deleteData}>{t('delete')}</div> :
+                                            operateStatus == 'report' ? <div className='modalConfirmButton cursor' onClick={openCopReport}>{t('startReport') || '鐢熸垚鎶ュ憡'}</div> :
+                                                operateStatus == 'contrast' ? <div className='modalConfirmButton cursor' onClick={startContrast}>{t('startCompare')}</div> : ''
                                     }
                                     <div className='modalConfirmButton cursor' onClick={() => {
                                         resetOperateState()
@@ -1320,9 +1410,10 @@ const ColAndHistory = memo((props) => {
                                     <div className="historyLoadingText">{i18n.language?.startsWith('zh') ? '加载中...' : 'Loading...'}</div>
                                 ) : Onindex == 0 && visibleHistoryArr.length ? visibleHistoryArr.map((dbInfo, index) => {
                                     const historyItemKey = getHistoryItemKey(dbInfo)
+                                    const historyContrastRecord = buildHistoryContrastRecord(dbInfo)
                                     const contrastRole = contrastMode === 'single_record_frame'
-                                        ? (contrastArr.left?.date === dbInfo.date ? 'T' : '')
-                                        : (contrastArr.left?.date === dbInfo.date ? 'A' : contrastArr.right?.date === dbInfo.date ? 'B' : '')
+                                        ? (isSameContrastRecord(contrastArr.left, historyContrastRecord) ? 'T' : '')
+                                        : (isSameContrastRecord(contrastArr.left, historyContrastRecord) ? 'A' : isSameContrastRecord(contrastArr.right, historyContrastRecord) ? 'B' : '')
 
                                     return (
                                         <div key={historyItemKey || `history-${index}`} className={`playbackItem cursor ${currentPlaybackKey === historyItemKey ? 'playbackItemActive' : ''}`}
@@ -1330,32 +1421,33 @@ const ColAndHistory = memo((props) => {
                                             onClick={() => {
                                                 if (operateStatus == 'contrast') {
                                                     const obj = { ...contrastArr }
+                                                    const clickedRecord = buildHistoryContrastRecord(dbInfo)
+                                                    const clickedKey = getContrastSelectKey(clickedRecord)
 
                                                     if (contrastMode === 'single_record_frame') {
-                                                        if (obj.left?.date === dbInfo.date) {
+                                                        if (isSameContrastRecord(obj.left, clickedRecord)) {
                                                             obj.left = {}
                                                             obj.right = {}
                                                             setSelectArr([])
                                                         } else {
-                                                            obj.left = dbInfo
+                                                            obj.left = clickedRecord
                                                             obj.right = {}
-                                                            setSelectArr([dbInfo.date])
+                                                            setSelectArr([clickedKey])
                                                         }
                                                     } else {
-                                                        const clickedDate = dbInfo.date
                                                         let arr = [...selectArr]
-                                                        if (obj.left?.date === clickedDate) {
+                                                        if (isSameContrastRecord(obj.left, clickedRecord)) {
                                                             obj.left = {}
-                                                            arr = arr.filter((b) => b !== clickedDate)
-                                                        } else if (obj.right?.date === clickedDate) {
+                                                            arr = arr.filter((b) => b !== clickedKey)
+                                                        } else if (isSameContrastRecord(obj.right, clickedRecord)) {
                                                             obj.right = {}
-                                                            arr = arr.filter((b) => b !== clickedDate)
+                                                            arr = arr.filter((b) => b !== clickedKey)
                                                         } else if (!obj.left?.date) {
-                                                            obj.left = dbInfo
-                                                            arr = [...arr.filter((b) => b !== clickedDate), clickedDate]
+                                                            obj.left = clickedRecord
+                                                            arr = [...arr.filter((b) => b !== clickedKey), clickedKey]
                                                         } else if (!obj.right?.date) {
-                                                            obj.right = dbInfo
-                                                            arr = [...arr.filter((b) => b !== clickedDate), clickedDate]
+                                                            obj.right = clickedRecord
+                                                            arr = [...arr.filter((b) => b !== clickedKey), clickedKey]
                                                         } else {
                                                             message.info(t('twoGroupsSelected'))
                                                         }
@@ -1465,9 +1557,48 @@ const ColAndHistory = memo((props) => {
                                     )
                                 }) : Onindex == 1 && visibleLocalArr.length ? visibleLocalArr.map((a, index) => {
                                     const localItemKey = getLocalItemKey(a)
+                                    const localContrastRecord = buildImportedContrastRecord(a)
+                                    const localContrastRole = contrastMode === 'single_record_frame'
+                                        ? (isSameContrastRecord(contrastArr.left, localContrastRecord) ? 'T' : '')
+                                        : (isSameContrastRecord(contrastArr.left, localContrastRecord) ? 'A' : isSameContrastRecord(contrastArr.right, localContrastRecord) ? 'B' : '')
                                     return (
                                         <div key={localItemKey || `local-${index}`} className={`playbackItem cursor ${currentPlaybackKey === localItemKey ? 'playbackItemActive' : ''}`} onClick={() => {
-                                            if (selectDataArrType.includes(operateStatus)) {
+                                            if (operateStatus == 'contrast') {
+                                                const localRecord = buildImportedContrastRecord(a)
+                                                const localKey = getContrastSelectKey(localRecord)
+                                                const obj = { ...contrastArr }
+
+                                                if (contrastMode === 'single_record_frame') {
+                                                    if (isSameContrastRecord(obj.left, localRecord)) {
+                                                        obj.left = {}
+                                                        obj.right = {}
+                                                        setSelectArr([])
+                                                    } else {
+                                                        obj.left = localRecord
+                                                        obj.right = {}
+                                                        setSelectArr([localKey])
+                                                    }
+                                                } else {
+                                                    let arr = [...selectArr]
+                                                    if (isSameContrastRecord(obj.left, localRecord)) {
+                                                        obj.left = {}
+                                                        arr = arr.filter((b) => b !== localKey)
+                                                    } else if (isSameContrastRecord(obj.right, localRecord)) {
+                                                        obj.right = {}
+                                                        arr = arr.filter((b) => b !== localKey)
+                                                    } else if (!obj.left?.date) {
+                                                        obj.left = localRecord
+                                                        arr = [...arr.filter((b) => b !== localKey), localKey]
+                                                    } else if (!obj.right?.date) {
+                                                        obj.right = localRecord
+                                                        arr = [...arr.filter((b) => b !== localKey), localKey]
+                                                    } else {
+                                                        message.info(t('twoGroupsSelected'))
+                                                    }
+                                                    setSelectArr(arr)
+                                                }
+                                                setContrast(obj)
+                                            } else if (selectDataArrType.includes(operateStatus)) {
                                                 let arr = [...selectArr]
                                                 if (arr.includes(a)) {
                                                     arr = arr.filter((b) => b != a)
@@ -1533,6 +1664,7 @@ const ColAndHistory = memo((props) => {
                                                     {/* <div style={{background : `no-repeat center/100% url(${selected})` , width : '100%' , height : '100%'}} src={selected} alt="" /> */}
                                                     <img style={{ transform: selectArr.includes(a) ? 'scale(1.1)' : 'scale(0)' }} src={selected} alt="" />
                                                 </div> : ''}
+                                                {operateStatus === 'contrast' && localContrastRole ? <div className="contrastRoleBadge">{localContrastRole}</div> : ''}
                                             </div>
                                             <div className='playbackItemInfo'>
                                                 {a}
@@ -1696,7 +1828,7 @@ const ColAndHistory = memo((props) => {
             <div className={`colAndHContent ${shouldShowPlaybackBar ? 'playbackDock' : 'collectDock'}`}>
                 <div className='colAndHistory'>
                     {shouldShowPlaybackBar
-                        ? <DataPlay dataLength={dataLength} name={currentName} />
+                        ? <DataPlay dataLength={dataLength} name={currentName} onHistoryClick={close} />
                         : <ColControl getColHistory={getColHistory} />}
                 </div>
             </div>

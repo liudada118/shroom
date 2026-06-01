@@ -30,7 +30,7 @@ const ViewSetting = (props) => {
     const { t, i18n } = props;
     const pageInfo = useContext(pageContext);
     console.log('ViewSetting')
-    const { setDisplay, display, setDisplayType, setOnRuler } = pageInfo
+    const { setDisplay, display, setDisplayType, setOnRuler, onSelect } = pageInfo
     // const display = useEquipStore(s => s.display, shallow);
     // const setDisplay = useEquipStore.getState().setDisplay
 
@@ -72,6 +72,7 @@ const ViewSetting = (props) => {
                 props.three?.current?.changeCamera(newVal, { previousValue: showProp })
             }
         } else if (display == 'num') {
+            if (onSelect) return
             const newVal = Math.max(NUM_2D_ZOOM_MIN, num2DZoom - ZOOM_STEP)
             if (newVal !== num2DZoom) {
                 setNum2DZoom(newVal)
@@ -88,6 +89,7 @@ const ViewSetting = (props) => {
                 props.three?.current?.changeCamera(newVal, { previousValue: showProp })
             }
         } else if (display == 'num') {
+            if (onSelect) return
             const newVal = Math.min(NUM_2D_ZOOM_MAX, num2DZoom + ZOOM_STEP)
             if (newVal !== num2DZoom) {
                 setNum2DZoom(newVal)
@@ -150,19 +152,30 @@ const ViewSetting = (props) => {
         return null
     }
 
-    const selectPoint3DView = (type) => {
+    const normalizePoint3DType = (type) => {
+        if (type && type !== 'current') return type
+        if (String(displayType || '').includes('back')) return 'back'
+        if (String(displayType || '').includes('sit')) return 'sit'
+        return 'all'
+    }
+
+    const selectPoint3DView = (type = 'current') => {
         if (!guard3D()) return
-        if (type !== 'all' && !hasDisplayData(type)) {
-            warnMissingDisplayData(type)
+        const nextType = normalizePoint3DType(type)
+        if (nextType !== 'all' && !hasDisplayData(nextType)) {
+            warnMissingDisplayData(nextType)
             return
         }
         setShowProp(100)
-        setCarType(type)
+        setCarType(nextType)
+        useEquipStore.getState().setDisplayType(nextType)
+        setDisplayType(nextType)
         if (display != 'point3D') {
             setDisplay('point3D')
         }
-        props.three.current?.actionSit(type)
-        useEquipStore.getState().setDisplayType(type)
+        requestAnimationFrame(() => {
+            props.three.current?.actionSit(nextType)
+        })
         setPointRotationIndex(0)
         changeAllFun()
     }
@@ -259,11 +272,7 @@ const ViewSetting = (props) => {
     const changeViewContent = <div style={{ color: '#E6EBF0' }}>
 
         <div className='cursor' onClick={() => {
-            if (!guard3D()) return
-            setShowProp(100)
-            setDisplay('point3D')
-            setPointRotationIndex(0)
-            changeAllFun()
+            selectPoint3DView('current')
 
         }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: display == 'point3D' ? '#0072EF' : 'unset' }}>{t('point3D')}</div>
 

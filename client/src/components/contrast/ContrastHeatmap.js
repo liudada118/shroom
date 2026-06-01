@@ -24,7 +24,8 @@ function diffColor(value, maxAbs) {
 }
 
 function shouldHideCell(matrixKey, row, col, width, height) {
-    return matrixKey === 'endi-back' && !isEndiBackVisibleCell(row, col, width, height)
+    const isEndiBack = matrixKey === 'endi-back' || (matrixKey === 'back' && Number(width) === 50 && Number(height) === 64)
+    return isEndiBack && !isEndiBackVisibleCell(row, col, width, height)
 }
 
 function getCellDisplay(rawValue, mode, maxAbs, colorMax) {

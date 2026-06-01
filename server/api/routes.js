@@ -63,16 +63,48 @@ function getComparableKeys(frame) {
     .sort()
 }
 
+function getCanonicalContrastKey(key) {
+  const value = String(key || '')
+  if (value === 'back' || /-back$/.test(value)) return 'back'
+  if (value === 'sit' || /-sit$/.test(value)) return 'sit'
+  return value
+}
+
+function normalizeContrastKeyAliases(frame) {
+  const result = {}
+  Object.keys(frame || {}).sort().forEach((key) => {
+    const item = frame[key]
+    if (!item || !Array.isArray(item.arr)) return
+    const canonicalKey = getCanonicalContrastKey(key)
+    if (!result[canonicalKey] || key === canonicalKey) {
+      result[canonicalKey] = { ...item, sourceMatrixKey: key }
+    }
+  })
+  return result
+}
+
+function inferMatrixSizeFromItem(key, item, arr) {
+  const width = Number(item?.width) || Number(item?.col) || Number(item?.matrixMeta?.width)
+  const height = Number(item?.height) || Number(item?.row) || Number(item?.matrixMeta?.height)
+  if (width > 0 && height > 0) return { width, height }
+  if (item?.sourceMatrixKey && CONTRAST_MATRIX_DIMENSIONS[item.sourceMatrixKey]) {
+    return CONTRAST_MATRIX_DIMENSIONS[item.sourceMatrixKey]
+  }
+  return inferMatrixSize(key, arr)
+}
+
 function getContrastCommonKeys(leftFrame, rightFrame) {
-  const leftKeys = getComparableKeys(leftFrame)
-  const rightKeySet = new Set(getComparableKeys(rightFrame))
+  const normalizedLeft = normalizeContrastKeyAliases(leftFrame)
+  const normalizedRight = normalizeContrastKeyAliases(rightFrame)
+  const leftKeys = getComparableKeys(normalizedLeft)
+  const rightKeySet = new Set(getComparableKeys(normalizedRight))
   return leftKeys.filter((key) => {
     if (!rightKeySet.has(key)) return false
-    const leftArr = leftFrame[key]?.arr
-    const rightArr = rightFrame[key]?.arr
+    const leftArr = normalizedLeft[key]?.arr
+    const rightArr = normalizedRight[key]?.arr
     if (!Array.isArray(leftArr) || !Array.isArray(rightArr)) return false
     if (leftArr.length !== rightArr.length) return false
-    const size = inferMatrixSize(key, leftArr)
+    const size = inferMatrixSizeFromItem(key, normalizedLeft[key], leftArr)
     return size.width * size.height === leftArr.length
   })
 }
@@ -85,15 +117,74 @@ function inferMatrixSize(key, arr) {
   return { width: length, height: 1 }
 }
 
+function resolveCsvFilePath(fileName) {
+  let csvFilePath = String(fileName || '').trim()
+  if (!csvFilePath) return ''
+  if (!fs.existsSync(csvFilePath)) {
+    const fallbackPath = path.join(state._dataPath || path.resolve('resources/data'), 'csv', path.basename(csvFilePath))
+    if (fs.existsSync(fallbackPath)) {
+      csvFilePath = fallbackPath
+    }
+  }
+  return csvFilePath
+}
+
+function isImportSource(source) {
+  return source === 'csv' || source === 'import'
+}
+
+function shouldLoadImportedPlayback(record, source) {
+  if (isImportSource(source)) return true
+  const value = String(record || '').trim()
+  if (!/\.(csv|xlsx|xls)$/i.test(value)) return false
+  const csvFilePath = resolveCsvFilePath(value)
+  return Boolean(csvFilePath && fs.existsSync(csvFilePath))
+}
+
+async function loadImportedPlayback(fileName) {
+  const csvFilePath = resolveCsvFilePath(fileName)
+  if (!csvFilePath || !fs.existsSync(csvFilePath)) {
+    const err = new Error('CSV file not found')
+    err.statusCode = 404
+    throw err
+  }
+  const data = await getCsvData(csvFilePath)
+  const playback = buildCsvPlaybackData(data)
+  return {
+    ...playback,
+    id: String(fileName || csvFilePath),
+    date: String(fileName || csvFilePath),
+    name: path.basename(csvFilePath),
+    filePath: csvFilePath,
+  }
+}
+
+async function loadHistoryPlayback(record, source, db) {
+  if (shouldLoadImportedPlayback(record, source)) {
+    return loadImportedPlayback(record)
+  }
+  const result = await dbGetData({ db, params: [record] })
+  return {
+    ...result,
+    id: String(record),
+    date: String(record),
+    name: result.rows?.[0]?.name || String(record),
+  }
+}
+
+function normalizeCompareSource(source) {
+  return isImportSource(source) ? 'csv' : 'history'
+}
+
 function normalizeContrastFrame(row, keys) {
-  const frame = parseMatrixFrame(row)
+  const frame = normalizeContrastKeyAliases(parseMatrixFrame(row))
   const result = {
     _timestamp: row?.timestamp ?? '',
   }
   keys.forEach((key) => {
     const source = frame[key] || {}
     const arr = Array.isArray(source.arr) ? source.arr.map((value) => Number(value) || 0) : []
-    const size = inferMatrixSize(key, arr)
+    const size = inferMatrixSizeFromItem(key, source, arr)
     result[key] = {
       ...source,
       arr,
@@ -130,7 +221,10 @@ function buildDiffFrame(leftFrame, rightFrame, keys) {
   keys.forEach((key) => {
     const leftArr = leftFrame[key]?.arr || []
     const rightArr = rightFrame[key]?.arr || []
-    const size = inferMatrixSize(key, leftArr.length ? leftArr : rightArr)
+    const size = {
+      width: Number(leftFrame[key]?.width) || Number(rightFrame[key]?.width) || inferMatrixSize(key, leftArr.length ? leftArr : rightArr).width,
+      height: Number(leftFrame[key]?.height) || Number(rightFrame[key]?.height) || inferMatrixSize(key, leftArr.length ? leftArr : rightArr).height,
+    }
     const length = Math.min(leftArr.length, rightArr.length)
     diff[key] = {
       arr: Array.from({ length }, (_, index) => (Number(rightArr[index]) || 0) - (Number(leftArr[index]) || 0)),
@@ -187,26 +281,28 @@ function buildContrastFrameByIndex(leftRows, rightRows, keys, leftIndex = 0, rig
   }
 }
 
-function validateContrastResults(leftResult, rightResult, leftId, rightId) {
+function validateContrastResults(leftResult, rightResult, leftId, rightId, leftSource, rightSource) {
   if (!leftId) return '请先选择基准数据 A。'
   if (!rightId) return '请先选择对比数据 B。'
-  if (String(leftId) === String(rightId)) return 'A 和 B 不能是同一条历史记录。'
+  if (String(leftId) === String(rightId) && normalizeCompareSource(leftSource) === normalizeCompareSource(rightSource)) return 'A 和 B 不能是同一条历史记录。'
   if (!leftResult.rows.length || !rightResult.rows.length) return '数据为空，不能对比。'
 
   const leftFirst = parseMatrixFrame(leftResult.rows[0])
   const rightFirst = parseMatrixFrame(rightResult.rows[0])
-  const leftKeys = getComparableKeys(leftFirst)
-  const rightKeys = getComparableKeys(rightFirst)
+  const normalizedLeft = normalizeContrastKeyAliases(leftFirst)
+  const normalizedRight = normalizeContrastKeyAliases(rightFirst)
+  const leftKeys = getComparableKeys(normalizedLeft)
+  const rightKeys = getComparableKeys(normalizedRight)
   if (!leftKeys.length || !rightKeys.length) return '数据缺少全量矩阵，不能对比。'
   const commonKeys = getContrastCommonKeys(leftFirst, rightFirst)
   if (!commonKeys.length) return '请分别选择坐垫对坐垫、靠背对靠背。'
 
   for (const key of commonKeys) {
-    const leftArr = leftFirst[key]?.arr
-    const rightArr = rightFirst[key]?.arr
+    const leftArr = normalizedLeft[key]?.arr
+    const rightArr = normalizedRight[key]?.arr
     if (!Array.isArray(leftArr) || !Array.isArray(rightArr)) return '数据缺少全量矩阵，不能对比。'
     if (leftArr.length !== rightArr.length) return '两组数据矩阵尺寸不同，不能直接对比。'
-    const size = inferMatrixSize(key, leftArr)
+    const size = inferMatrixSizeFromItem(key, normalizedLeft[key], leftArr)
     if (size.width * size.height !== leftArr.length) return '两组数据矩阵尺寸不同，不能直接对比。'
   }
 
@@ -218,11 +314,11 @@ function validateSingleRecordContrastResult(result, recordId) {
   if (!result.rows.length) return '数据为空，不能对比。'
   if (result.rows.length < 2) return '同记录时间点对比至少需要 2 帧数据。'
 
-  const firstFrame = parseMatrixFrame(result.rows[0])
+  const firstFrame = normalizeContrastKeyAliases(parseMatrixFrame(result.rows[0]))
   const keys = getComparableKeys(firstFrame).filter((key) => {
     const arr = firstFrame[key]?.arr
     if (!Array.isArray(arr)) return false
-    const size = inferMatrixSize(key, arr)
+    const size = inferMatrixSizeFromItem(key, firstFrame[key], arr)
     return size.width * size.height === arr.length
   })
 
@@ -253,6 +349,15 @@ function getSelectionForMatrixKey(selectJson, key) {
     if (matchedKey) return selectJson[matchedKey]
   }
   return null
+}
+
+function getFirstSelectionRegion(selection) {
+  if (!selection) return null
+  if (Array.isArray(selection)) return selection[0] || null
+  for (const key of ['regions', 'selections', 'boxes', 'areas', 'rangeArr', 'selectArr']) {
+    if (Array.isArray(selection[key])) return selection[key][0] || null
+  }
+  return selection
 }
 
 function readSystemConfig() {
@@ -1039,18 +1144,23 @@ router.post('/getDbHistory', asyncHandler(async (req, res) => {
 
 router.post('/copReportData', asyncHandler(async (req, res) => {
   const time = resolveRequestValue(req, ['time', 'date', 'timestamp'])
+  const source = resolveRequestValue(req, ['source', 'dataSource'])
+  const fileName = resolveRequestValue(req, ['fileName', 'file'])
   const db = await ensureCurrentDb()
+  const isImportSource = source === 'csv' || source === 'import'
 
-  if (!time) {
+  if (!time && !fileName) {
     res.json(new HttpResult(1, {}, 'history date required'))
     return
   }
-  if (!db) {
+  if (!db && !isImportSource) {
     res.json(new HttpResult(1, {}, 'Database not initialized'))
     return
   }
 
-  const { rows } = await dbGetData({ db, params: [time] })
+  const recordId = isImportSource ? (fileName || time) : time
+  const loaded = await loadHistoryPlayback(recordId, source, db)
+  const rows = loaded.rows || []
   if (!rows.length) {
     res.json(new HttpResult(1, {}, 'history data not found'))
     return
@@ -1063,16 +1173,16 @@ router.post('/copReportData', asyncHandler(async (req, res) => {
     const size = inferMatrixSize(key, arr)
     return size.width * size.height === arr.length
   })
-  const remark = await getRemark({ db, params: [time] }).catch(() => null)
+  const remark = isImportSource ? null : await getRemark({ db, params: [time] }).catch(() => null)
   const frames = rows.map((row) => normalizeReportFrame(row, keys))
   const timestamps = rows.map((row) => Number(row.timestamp)).filter(Number.isFinite)
   const durationMs = timestamps.length > 1 ? Math.max(0, timestamps[timestamps.length - 1] - timestamps[0]) : 0
   const sampleRate = durationMs > 0 ? ((timestamps.length - 1) * 1000 / durationMs) : 0
 
   res.json(new HttpResult(0, {
-    id: String(time),
-    date: String(time),
-    name: remark?.alias || String(time),
+    id: String(recordId),
+    date: String(recordId),
+    name: remark?.alias || loaded.name || String(recordId),
     alias: remark?.alias || '',
     remark: remark?.remark || '',
     select: tryParseRequestJson(remark?.select) || {},
@@ -1130,7 +1240,7 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
     for (const key of keyArr) {
       const item = dataObj[key]
       const arr = item && item.arr ? item.arr : []
-      const sel = getSelectionForMatrixKey(selectJson, key)
+      const sel = getFirstSelectionRegion(getSelectionForMatrixKey(selectJson, key))
 
       let press = 0
       let area = 0
@@ -1176,9 +1286,13 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
   const mode = resolveRequestValue(req, ['mode', 'compareMode']) || 'record_pair'
   const left = resolveRequestValue(req, ['left'])
   const right = resolveRequestValue(req, ['right'])
+  const source = resolveRequestValue(req, ['source', 'dataSource'])
+  const leftSource = resolveRequestValue(req, ['leftSource']) || source
+  const rightSource = resolveRequestValue(req, ['rightSource']) || source
   const db = await ensureCurrentDb()
+  const usesImport = [source, leftSource, rightSource].some((item) => item === 'csv' || item === 'import')
 
-  if (!db) {
+  if (!db && !usesImport) {
     res.json(new HttpResult(1, {}, 'Database not initialized'))
     return
   }
@@ -1190,7 +1304,7 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
       return
     }
 
-    const result = await dbGetData({ db, params: [record] })
+    const result = await loadHistoryPlayback(record, source, db)
     const validateMessage = validateSingleRecordContrastResult(result, record)
     if (validateMessage) {
       res.json(new HttpResult(1, {}, validateMessage))
@@ -1206,11 +1320,11 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
     clearPlayTimer()
     ensureRealtimeTimer()
 
-    const firstFrame = parseMatrixFrame(result.rows[0])
+    const firstFrame = normalizeContrastKeyAliases(parseMatrixFrame(result.rows[0]))
     const keys = getComparableKeys(firstFrame).filter((key) => {
       const arr = firstFrame[key]?.arr
       if (!Array.isArray(arr)) return false
-      const size = inferMatrixSize(key, arr)
+      const size = inferMatrixSizeFromItem(key, firstFrame[key], arr)
       return size.width * size.height === arr.length
     })
     const frames = result.rows.map((row) => normalizeContrastFrame(row, keys))
@@ -1221,7 +1335,7 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
       frameB = frameA === 0 ? 1 : 0
     }
     const initialFrame = buildContrastFrameByIndex(result.rows, result.rows, keys, frameA, frameB)
-    const name = result.rows[0]?.name || record
+    const name = result.name || result.rows[0]?.name || record
     const payload = {
       mode: 'single_record_frame',
       keys,
@@ -1276,17 +1390,17 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
     res.json(new HttpResult(1, {}, '请先选择对比数据 B。'))
     return
   }
-  if (String(left) === String(right)) {
+  if (String(left) === String(right) && normalizeCompareSource(leftSource) === normalizeCompareSource(rightSource)) {
     res.json(new HttpResult(1, {}, 'A 和 B 不能是同一条历史记录。'))
     return
   }
 
   const [leftResult, rightResult] = await Promise.all([
-    dbGetData({ db, params: [left] }),
-    dbGetData({ db, params: [right] })
+    loadHistoryPlayback(left, leftSource, db),
+    loadHistoryPlayback(right, rightSource, db)
   ])
 
-  const validateMessage = validateContrastResults(leftResult, rightResult, left, right)
+  const validateMessage = validateContrastResults(leftResult, rightResult, left, right, leftSource, rightSource)
   if (validateMessage) {
     res.json(new HttpResult(1, {}, validateMessage))
     return
@@ -1310,7 +1424,7 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
     keys,
     left: {
       id: left,
-      name: leftResult.rows[0]?.name || left,
+      name: leftResult.name || leftResult.rows[0]?.name || left,
       date: left,
       length: leftResult.length,
       pressArr: leftResult.pressArr,
@@ -1319,7 +1433,7 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
     },
     right: {
       id: right,
-      name: rightResult.rows[0]?.name || right,
+      name: rightResult.name || rightResult.rows[0]?.name || right,
       date: right,
       length: rightResult.length,
       pressArr: rightResult.pressArr,
@@ -1845,16 +1959,10 @@ router.post('/uploadCsv', csvUpload.single('file'), asyncHandler(async (req, res
 
 router.post('/getCsvData', asyncHandler(async (req, res) => {
   const fileName = resolveRequestValue(req, ['fileName'])
-  let csvFilePath = String(fileName || '').trim()
+  let csvFilePath = resolveCsvFilePath(fileName)
   if (!csvFilePath) {
     res.json(new HttpResult(1, {}, 'CSV file required'))
     return
-  }
-  if (!fs.existsSync(csvFilePath)) {
-    const fallbackPath = path.join(state._dataPath || path.resolve('resources/data'), 'csv', path.basename(csvFilePath))
-    if (fs.existsSync(fallbackPath)) {
-      csvFilePath = fallbackPath
-    }
   }
   if (!fs.existsSync(csvFilePath)) {
     res.json(new HttpResult(1, {}, 'CSV file not found'))

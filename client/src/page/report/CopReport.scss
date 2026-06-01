@@ -304,15 +304,37 @@
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 0;
+  }
+
+  html,
+  body,
+  #root,
+  .App,
+  .App-header {
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  .App {
+    text-align: initial !important;
+  }
+
+  .App-header {
+    display: block !important;
+    color: #111827 !important;
+    font-size: initial !important;
   }
 
   .cop-report-page {
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
-    padding: 0;
-    background: #fff;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #fff !important;
   }
 
   .report-toolbar {
@@ -320,11 +342,13 @@
   }
 
   .cop-report-sheet {
-    width: auto;
-    margin: 0;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
     border: 0;
     box-shadow: none;
-    padding: 0;
+    padding: 8mm;
   }
 
   .report-section,

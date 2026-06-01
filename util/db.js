@@ -559,28 +559,53 @@ function getExportKeyFieldId(key, field) {
   return `${key}_${field}`
 }
 
-function buildSingleKeyExportHeaders(key) {
-  const label = getExportKeyLabel(key)
-  return [
-    { id: getExportKeyFieldId(key, 'max_pressure'), title: `${label}最大压强(kPa)` },
-    { id: getExportKeyFieldId(key, 'max_pressure_coord'), title: `${label}最大压强坐标` },
-    { id: getExportKeyFieldId(key, 'avg_pressure'), title: `${label}平均压强(kPa)` },
-    { id: getExportKeyFieldId(key, 'contact_area'), title: `${label}受力面积(cm²)` },
-    { id: getExportKeyFieldId(key, 'real_data'), title: `${label}数据` },
-    { id: getExportKeyFieldId(key, 'point_count'), title: `${label}点数` },
-    { id: getExportKeyFieldId(key, 'total_pressure_n'), title: `${label}总压力(N)` },
-  ]
+const EXPORT_BASE_FIELDS = [
+  { id: 'max_pressure', title: '最大压强(kPa)' },
+  { id: 'max_pressure_coord', title: '最大压强坐标' },
+  { id: 'avg_pressure', title: '平均压强(kPa)' },
+  { id: 'contact_area', title: '受力面积(cm²)' },
+  { id: 'real_data', title: '数据' },
+  { id: 'point_count', title: '点数' },
+  { id: 'total_pressure_n', title: '总压力(N)' },
+]
+
+const EXPORT_FIXED_FIELDS = [
+  { id: 'timestamp', title: '时间戳' },
+  { id: 'device_mac', title: '设备MAC' },
+]
+
+const EXPORT_TRAILING_FIELDS = [
+  { id: 'remark', title: '备注' },
+]
+
+function formatExportDecimal(value, digits = 1) {
+  const num = Number(value)
+  return Number.isFinite(num) ? num.toFixed(digits) : Number(0).toFixed(digits)
 }
 
-function buildExportHeadersForKeys(keys) {
-  const headers = [
-    { id: 'timestamp', title: '时间戳' },
-    { id: 'device_mac', title: '设备MAC' },
-  ]
+function buildSingleKeyExportHeaders(key, options = {}) {
+  const { suffix = '', labelSuffix = '' } = options
+  const label = `${getExportKeyLabel(key)}${labelSuffix}`
+  const idPrefix = suffix ? `${key}_${suffix}` : key
+  return EXPORT_BASE_FIELDS.map((field) => ({
+    id: getExportKeyFieldId(idPrefix, field.id),
+    title: `${label}${field.title}`,
+  }))
+}
+
+function buildExportHeadersForKeys(keys, selectionMap = {}) {
+  const headers = [...EXPORT_FIXED_FIELDS]
   sortExportKeys(keys).forEach((key) => {
     headers.push(...buildSingleKeyExportHeaders(key))
+    const selectionCount = Math.min(4, Math.max(0, Number(selectionMap[key] || 0)))
+    for (let index = 1; index <= selectionCount; index++) {
+      headers.push(...buildSingleKeyExportHeaders(key, {
+        suffix: `selection_${index}`,
+        labelSuffix: `框选${index}`,
+      }))
+    }
   })
-  headers.push({ id: 'remark', title: '备注' })
+  headers.push(...EXPORT_TRAILING_FIELDS)
   return headers
 }
 
@@ -595,7 +620,12 @@ function normalizeExportOptions(options = {}) {
 function filterExportHeaders(headers, fields) {
   if (!Array.isArray(fields) || !fields.length) return headers
   const selected = new Set(fields)
-  const filtered = headers.filter((header) => selected.has(header.id))
+  const filtered = headers.filter((header) => {
+    if (selected.has(header.id)) return true
+    return EXPORT_BASE_FIELDS.some((field) => {
+      return selected.has(field.id) && header.id.endsWith(`_${field.id}`)
+    })
+  })
   return filtered.length ? filtered : headers
 }
 
@@ -625,25 +655,102 @@ async function writeXlsxFile(filePath, headers, records) {
 }
 
 async function getExportFieldOptions({ db, params }) {
-  const selected = Array.isArray(params) ? params.map((item) => String(item || '').trim()).filter(Boolean) : []
-  const keySet = new Set()
-  for (const param of selected) {
-    const row = await dbGet(db, 'SELECT data FROM matrix WHERE date = ? ORDER BY timestamp ASC LIMIT 1', [param])
-    let frame = {}
-    try {
-      frame = row?.data ? JSON.parse(row.data) : {}
-    } catch {
-      frame = {}
-    }
-    Object.keys(frame || {})
-      .filter((key) => key && key !== 'null' && key !== 'undefined' && Array.isArray(frame[key]?.arr))
-      .forEach((key) => keySet.add(key))
-  }
-  const headers = buildExportHeadersForKeys([...keySet])
+  const headers = [
+    ...EXPORT_FIXED_FIELDS,
+    ...EXPORT_BASE_FIELDS,
+    ...EXPORT_TRAILING_FIELDS,
+  ]
   return {
     fields: headers.map((header) => ({ value: header.id, label: header.title })),
     defaultFields: headers.map((header) => header.id),
   }
+}
+
+function isExportSelectionRegion(value) {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    Number.isFinite(Number(value.xStart)) &&
+    Number.isFinite(Number(value.xEnd)) &&
+    Number.isFinite(Number(value.yStart)) &&
+    Number.isFinite(Number(value.yEnd))
+  )
+}
+
+function normalizeExportSelectionRegion(region, key, data, item = {}) {
+  if (!isExportSelectionRegion(region)) return null
+  const matrixSize = inferExportMatrixSize(key, data, item)
+  const width = Number(region.width || matrixSize.width)
+  const height = Number(region.height || matrixSize.height)
+  const xStart = Math.max(0, Math.min(width, Math.floor(Number(region.xStart))))
+  const xEnd = Math.max(xStart, Math.min(width, Math.ceil(Number(region.xEnd))))
+  const yStart = Math.max(0, Math.min(height, Math.floor(Number(region.yStart))))
+  const yEnd = Math.max(yStart, Math.min(height, Math.ceil(Number(region.yEnd))))
+  if (xEnd <= xStart || yEnd <= yStart || width <= 0 || height <= 0) return null
+  return { ...region, xStart, xEnd, yStart, yEnd, width, height }
+}
+
+function collectExportSelectionRegions(raw) {
+  if (!raw) return []
+  if (isExportSelectionRegion(raw)) return [raw]
+  if (Array.isArray(raw)) return raw.flatMap((item) => collectExportSelectionRegions(item))
+  if (typeof raw !== 'object') return []
+
+  const directArray = raw.selections || raw.selectionList || raw.regions || raw.regionList || raw.boxes || raw.areas || raw.list
+  if (Array.isArray(directArray)) return collectExportSelectionRegions(directArray)
+
+  return Object.values(raw).flatMap((value) => collectExportSelectionRegions(value))
+}
+
+function getExportSelectionRegions(selectOverride, key, data, item = {}) {
+  if (!selectOverride || typeof selectOverride !== 'object') return []
+  const shortKey = String(key || '').split('-').pop()
+  const candidates = [
+    selectOverride[key],
+    shortKey ? selectOverride[shortKey] : null,
+    key.includes('-') ? selectOverride[key.replace(/^[^-]+-/, '')] : null,
+  ]
+  const regions = candidates.flatMap((candidate) => collectExportSelectionRegions(candidate))
+  const seen = new Set()
+  return regions
+    .map((region) => normalizeExportSelectionRegion(region, key, data, item))
+    .filter(Boolean)
+    .filter((region) => {
+      const signature = `${region.xStart}:${region.yStart}:${region.xEnd}:${region.yEnd}:${region.width}:${region.height}`
+      if (seen.has(signature)) return false
+      seen.add(signature)
+      return true
+    })
+    .slice(0, 4)
+}
+
+function sliceSelectionData(data, region) {
+  const result = []
+  if (!Array.isArray(data) || !region) return result
+  for (let y = region.yStart; y < region.yEnd; y++) {
+    for (let x = region.xStart; x < region.xEnd; x++) {
+      const value = data[y * region.width + x]
+      result.push(Number.isFinite(Number(value)) ? Number(value) : 0)
+    }
+  }
+  return result
+}
+
+function getSelectionCountMap(selectOverride, keys, firstData) {
+  const map = {}
+  if (!selectOverride || typeof selectOverride !== 'object') return map
+  keys.forEach((key) => {
+    const data = firstData?.[key]?.arr || []
+    map[key] = getExportSelectionRegions(selectOverride, key, data, firstData?.[key]).length
+  })
+  return map
+}
+
+function getExportTargetLabel(key, region = null, index = 0) {
+  const baseLabel = getExportKeyLabel(key)
+  if (!region) return baseLabel
+  const regionName = String(region.name || region.regionName || '').trim()
+  return regionName ? `${baseLabel}框选${index + 1}-${regionName}` : `${baseLabel}框选${index + 1}`
 }
 
 // ─── CSV 导出 ────────────────────────────────────────────
@@ -682,6 +789,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           // remarks 表可能不存在，忽略错误
         }
       }
+      const selectionCountMap = getSelectionCountMap(selectOverride, keyArr, firstData)
 
       // 根据前几帧 timestamp 自动推算帧率
       let detectedHz = 12 // 默认帧率
@@ -721,21 +829,10 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.time = timeStampTo_Date(rows[i].timestamp)
           rowEntry.sec = (i / detectedHz).toFixed(2)
 
-          // 框选区域计算
-          const selectArr = []
-          let obj = null
-          if (selectOverride && typeof selectOverride === 'object') {
-            obj = selectOverride[key]
-          }
-
-          if (obj && typeof obj === 'object') {
-            const { xStart, xEnd, yStart, yEnd, width, height } = obj
-            for (let y = yStart; y < yEnd; y++) {
-              for (let x = xStart; x < xEnd; x++) {
-                selectArr.push(data[y * width + x])
-              }
-            }
-          }
+          // 框选区域计算：导出保留整体靠背/坐垫列，同时按同一字段模板展开最多 4 个框选列。
+          const selectionRegions = getExportSelectionRegions(selectOverride, key, data, item)
+          const obj = selectionRegions[0] || null
+          const selectArr = obj ? sliceSelectionData(data, obj) : []
 
           const { press, area, max, min, aver, maxIndex } = colArrData(data)
           const { press: selectPress, area: selectArea, max: selectMax, min: selectMin, aver: selectAver, maxIndex: selectMaxIndex } = colArrData(selectArr)
@@ -826,25 +923,16 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             rowEntry[`${key}selectAver`] = sitYToX(selectAver)
           }
 
-          const hasSelectionData = Boolean(obj && selectArr.length)
-          if (hasSelectionData) {
-            rowEntry[`${key}max`] = rowEntry[`${key}selectMax`]
-            rowEntry[`${key}maxCoord`] = rowEntry[`${key}selectMaxCoord`]
-            rowEntry[`${key}aver`] = rowEntry[`${key}selectAver`]
-            rowEntry[`${key}pressureArea`] = selectAreaValue
-            rowEntry[`${key}realData`] = JSON.stringify(selectArr)
-          }
-
           if (pointInfo) {
             const averValue = Number(rowEntry[`${key}aver`]) || 0
-            const pointValue = hasSelectionData ? selectArea : area
+            const pointValue = area
             rowEntry[`${key}point`] = pointValue
             rowEntry[`${key}pressTotal`] = (averValue * pointArea * pointValue) / 1000
           }
 
           const activePointCount = pointInfo
-            ? (rowEntry[`${key}point`] ?? (hasSelectionData ? selectArea : area))
-            : (hasSelectionData ? selectArea : area)
+            ? (rowEntry[`${key}point`] ?? area)
+            : area
           rowEntry.max_pressure = rowEntry[`${key}max`]
           rowEntry.max_pressure_coord = rowEntry[`${key}maxCoord`]
           rowEntry.avg_pressure = rowEntry[`${key}aver`]
@@ -854,13 +942,45 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.total_pressure_n = pointInfo ? rowEntry[`${key}pressTotal`] : press
           rowEntry.remark = remarkText
 
-          frameEntry[getExportKeyFieldId(key, 'max_pressure')] = rowEntry[`${key}max`]
+          frameEntry[getExportKeyFieldId(key, 'max_pressure')] = formatExportDecimal(rowEntry[`${key}max`])
           frameEntry[getExportKeyFieldId(key, 'max_pressure_coord')] = rowEntry[`${key}maxCoord`]
-          frameEntry[getExportKeyFieldId(key, 'avg_pressure')] = rowEntry[`${key}aver`]
+          frameEntry[getExportKeyFieldId(key, 'avg_pressure')] = formatExportDecimal(rowEntry[`${key}aver`])
           frameEntry[getExportKeyFieldId(key, 'contact_area')] = rowEntry[`${key}pressureArea`]
           frameEntry[getExportKeyFieldId(key, 'real_data')] = rowEntry[`${key}realData`]
           frameEntry[getExportKeyFieldId(key, 'point_count')] = activePointCount
-          frameEntry[getExportKeyFieldId(key, 'total_pressure_n')] = rowEntry.total_pressure_n
+          frameEntry[getExportKeyFieldId(key, 'total_pressure_n')] = formatExportDecimal(rowEntry.total_pressure_n)
+          selectionRegions.forEach((region, regionIndex) => {
+            const regionArr = sliceSelectionData(data, region)
+            const regionStats = colArrData(regionArr)
+            let regionMax = regionStats.max
+            let regionAver = regionStats.aver
+            if (key === 'endi-back') {
+              regionMax = backYToX(regionMax)
+              regionAver = backYToX(regionAver)
+            }
+            if (key === 'endi-sit') {
+              regionMax = sitYToX(regionMax)
+              regionAver = sitYToX(regionAver)
+            }
+            const regionAreaValue = pointInfo ? (regionStats.area * pointArea / 100) : regionStats.area
+            const regionWidth = region.xEnd - region.xStart
+            const regionCoord = indexToCoord(regionStats.maxIndex, key, {
+              xStart: region.xStart,
+              yStart: region.yStart,
+              selectWidth: regionWidth,
+            })
+            const regionTotalPressure = pointInfo
+              ? ((Number(regionAver) || 0) * pointArea * regionStats.area) / 1000
+              : regionStats.press
+            const regionPrefix = `${key}_selection_${regionIndex + 1}`
+            frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure')] = formatExportDecimal(regionMax)
+            frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure_coord')] = regionCoord
+            frameEntry[getExportKeyFieldId(regionPrefix, 'avg_pressure')] = formatExportDecimal(regionAver)
+            frameEntry[getExportKeyFieldId(regionPrefix, 'contact_area')] = regionAreaValue
+            frameEntry[getExportKeyFieldId(regionPrefix, 'real_data')] = JSON.stringify(regionArr)
+            frameEntry[getExportKeyFieldId(regionPrefix, 'point_count')] = regionStats.area
+            frameEntry[getExportKeyFieldId(regionPrefix, 'total_pressure_n')] = formatExportDecimal(regionTotalPressure)
+          })
           hasFrameMatrixData = true
         }
 
@@ -889,8 +1009,8 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         return buildSingleKeyExportHeaders(key)
       }
 
-      function buildCombinedHeaders(keys) {
-        return buildExportHeadersForKeys(keys)
+      function buildCombinedHeaders(keys, selections = {}) {
+        return buildExportHeadersForKeys(keys, selections)
       }
 
       // 写入单个 CSV 文件的辅助函数
@@ -911,7 +1031,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         const normalizedExportOptions = normalizeExportOptions(exportOptions)
         const fileExt = normalizedExportOptions.format === 'xlsx' ? 'xlsx' : 'csv'
         const exportFilePath = path.join(csvPath, `${csvBaseName}_${safeName}.${fileExt}`)
-        const headers = filterExportHeaders(buildCombinedHeaders(keyArr), normalizedExportOptions.fields)
+        const headers = filterExportHeaders(buildCombinedHeaders(keyArr, selectionCountMap), normalizedExportOptions.fields)
         const records = [...csvDataRows]
         if (normalizedExportOptions.format === 'xlsx') {
           await writeXlsxFile(exportFilePath, headers, records)
@@ -1309,6 +1429,9 @@ async function validateImportedCsv(file) {
 
       let dataRowCount = 0
       for (const row of rows) {
+        if (isSelectionImportRow(row)) {
+          continue
+        }
         const filledDataColumns = headerInfo.realDataColumns.filter((header) => !isEmptyCsvValue(row[header]))
         if (!filledDataColumns.length) {
           const hasNonRemarkValue = Object.entries(row).some(([key, value]) => key !== 'remark' && key !== '备注' && key !== 'file' && !isEmptyCsvValue(value))
@@ -1381,6 +1504,7 @@ async function validateImportedCsv(file) {
 
     parser.on('data', (row) => {
       if (settled || !headerInfo?.valid) return
+      if (isSelectionImportRow(row)) return
 
       const filledDataColumns = headerInfo.realDataColumns.filter((header) => !isEmptyCsvValue(row[header]))
       if (!filledDataColumns.length) {
@@ -1471,6 +1595,14 @@ function getImportCell(row, names = []) {
   return ''
 }
 
+function getImportDataTarget(row = {}) {
+  return normalizeCsvHeader(row.data_target || row.dataTarget || row['数据对象'] || row['数据来源'])
+}
+
+function isSelectionImportRow(row = {}) {
+  return /框选|selection/i.test(getImportDataTarget(row))
+}
+
 function inferImportMatrixKey(arr = []) {
   const length = Array.isArray(arr) ? arr.length : 0
   const exact = Object.entries(pointConfig).find(([, config]) => config.width * config.height === length)
@@ -1494,7 +1626,8 @@ function resolveImportMatrixKey(preferredKey, arr, frameData = {}) {
 
 function getCsvRowMatrixEntries(row) {
   const entries = []
-  const fallbackKey = normalizeCsvMatrixKey(row.matrix_key || row.device_type || row['矩阵标识'] || row['设备类型'])
+  if (isSelectionImportRow(row)) return entries
+  const fallbackKey = normalizeCsvMatrixKey(row.matrix_key || row.device_type || row['矩阵标识'] || row['设备类型'] || getImportDataTarget(row))
 
   if (!isEmptyCsvValue(row.real_data)) {
     const arr = parseMatrixCsvValue(row.real_data)
@@ -1669,4 +1802,3 @@ module.exports = {
   resolveWritableDownloadDir,
   validateImportedCsv,
 }
-
