@@ -39,3 +39,5 @@ Desktop.ini
 *.rpm
 *.snap
 /dist-serial-cache-fix
+/resources
+/locales
