@@ -1,11 +1,12 @@
 import { useRef } from 'react'
 import { getDisplayType, getSelectArr, getSettingValue, getSysType, useEquipStore } from '../store/equipStore'
 import { systemPointConfig } from '../util/constant'
-import { backYToX, calcCentroidRatio, colSelectMatrix, kurtosis, mean, normalPDF, sitYToX, skewness, variance } from '../util/util'
+import { calcCentroidRatio, colSelectMatrix, kurtosis, mean, normalPDF, skewness, variance } from '../util/util'
 import { matrixGenBox, removeHistoryBox } from '../assets/util/selectMatrix'
 import { isMoreMatrix } from '../assets/util/util'
 import { message } from 'antd'
 import { formatSelectionName, getDefaultSelectionName } from '../util/selectionName'
+import { computePressureMetrics } from '../util/pressureMetrics'
 
 /**
  * 矩阵数据处理 Hook
@@ -14,7 +15,6 @@ import { formatSelectionName, getDefaultSelectionName } from '../util/selectionN
  * 支持多框选（最多4个），每个框独立计算统计数据
  */
 
-const divisor = 100 / 3
 const DEFAULT_DATA_DIRECTION = { left: true, up: true, rotateDegree: 0 }
 const DATA_DIRECTION_STORAGE_KEY = 'matrixDataDirection'
 const DATA_QUALITY_MESSAGE_INTERVAL = 3000
@@ -253,33 +253,20 @@ export function useMatrixData() {
     }
     const area = selectedArr.filter(a => a > 0).length
     const press = selectedArr.reduce((a, b) => a + b, 0)
+    const pressureMetrics = computePressureMetrics(selectedArr, fullKey)
 
-    stats.pressTotal = press.toFixed(1)
+    stats.pressTotal = pressureMetrics.total.toFixed(2)
     stats.areaTotal = area
     const positiveSelected = selectedArr.filter(a => a > 0)
     const min = positiveSelected.length ? Math.min(...positiveSelected).toFixed(1) : 0
-    stats.pressMax = Math.max(...selectedArr)
-    stats.total = press
+    stats.pressMax = pressureMetrics.pressMax.toFixed(2)
+    stats.total = pressureMetrics.total
     stats.pressMin = min || 0
-    stats.pressAver = (press / (area || 1)).toFixed(2)
-
-    // endi 类型单位转换
-    if (fullKey === 'endi-back') {
-      stats.pressMax = backYToX(Math.max(...selectedArr)).toFixed(2)
-      stats.pressMin = backYToX(min || 0).toFixed(2)
-      stats.pressAver = backYToX(press / (area || 1)).toFixed(2)
-    } else if (fullKey === 'endi-sit') {
-      stats.pressMax = sitYToX(Math.max(...selectedArr)).toFixed(2)
-      stats.pressMin = sitYToX(min || 0).toFixed(2)
-      stats.pressAver = sitYToX(press / (area || 1)).toFixed(2)
-    }
+    stats.pressAver = pressureMetrics.pressAver.toFixed(2)
 
     // carY 类型压力转换
     if (fullKey === 'carY-back' || fullKey === 'carY-sit') {
-      const pressTotal = press / divisor
-      stats.pressMax = (Math.max(...selectedArr) / divisor).toFixed(2)
-      stats.pressTotal = pressTotal.toFixed(2)
-      stats.pressAver = (pressTotal / (area || 1)).toFixed(2)
+      stats.pressTotal = pressureMetrics.total.toFixed(2)
     }
 
     return { area, press, stats }
@@ -337,6 +324,7 @@ export function useMatrixData() {
 
     const area = selectedArr.filter(a => a > 0).length
     const press = selectedArr.reduce((a, b) => a + b, 0)
+    const pressureMetrics = computePressureMetrics(selectedArr, matrixKey)
 
     data[key].center = selectedCenter
     data[key].normalDis = {
@@ -354,7 +342,7 @@ export function useMatrixData() {
       data[key].areaArr.shift()
       data[key].areaArr.push(area)
     }
-    const pressForChart = (matrixKey === 'carY-back' || matrixKey === 'carY-sit') ? press / (divisor) : press
+    const pressForChart = pressureMetrics.total
     if (data[key].pressArr.length < 20) {
       data[key].pressArr.push(pressForChart)
     } else {
@@ -362,32 +350,18 @@ export function useMatrixData() {
       data[key].pressArr.push(pressForChart)
     }
 
-    data[key].data.pressTotal = press.toFixed(1)
+    data[key].data.pressTotal = pressureMetrics.total.toFixed(2)
     data[key].data.areaTotal = area
     const positiveSelected = selectedArr.filter(a => a > 0)
     const min = positiveSelected.length ? Math.min(...positiveSelected).toFixed(1) : 0
-    data[key].data.pressMax = Math.max(...selectedArr)
-    data[key].data.total = press
+    data[key].data.pressMax = pressureMetrics.pressMax.toFixed(2)
+    data[key].data.total = pressureMetrics.total
     data[key].data.pressMin = min || 0
-    data[key].data.pressAver = (press / (area || 1)).toFixed(2)
-
-    // endi 类型单位转换
-    if (matrixKey === 'endi-back') {
-      data[key].data.pressMax = backYToX(Math.max(...selectedArr)).toFixed(2)
-      data[key].data.pressMin = backYToX(min || 0).toFixed(2)
-      data[key].data.pressAver = backYToX(press / (area || 1)).toFixed(2)
-    } else if (matrixKey === 'endi-sit') {
-      data[key].data.pressMax = sitYToX(Math.max(...selectedArr)).toFixed(2)
-      data[key].data.pressMin = sitYToX(min || 0).toFixed(2)
-      data[key].data.pressAver = sitYToX(press / (area || 1)).toFixed(2)
-    }
+    data[key].data.pressAver = pressureMetrics.pressAver.toFixed(2)
 
     // carY 类型压力转换
     if (matrixKey === 'carY-back' || matrixKey === 'carY-sit') {
-      const pressTotal = press / divisor
-      data[key].data.pressMax = (Math.max(...selectedArr) / divisor).toFixed(2)
-      data[key].data.pressTotal = pressTotal.toFixed(2)
-      data[key].data.pressAver = (pressTotal / (area || 1)).toFixed(2)
+      data[key].data.pressTotal = pressureMetrics.total.toFixed(2)
     }
 
     // ─── 多框选独立统计 ───────────────────────────────────
@@ -434,7 +408,7 @@ export function useMatrixData() {
           yData: xData.map(x => normalPDF(x, boxMu, boxSigma)),
         }
 
-        const bPressForChart = (matrixKey === 'carY-back' || matrixKey === 'carY-sit') ? bPress / divisor : bPress
+        const bPressForChart = Number(stats.pressTotal) || bPress
         if (boxStat.pressArr.length < 20) {
           boxStat.pressArr.push(bPressForChart)
         } else {

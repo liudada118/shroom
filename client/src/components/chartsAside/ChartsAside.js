@@ -386,9 +386,8 @@ function ChartsAside(props) {
                         dataObj[key].areaTotal = Math.round(preciseAreaTotal)
                         dataObj[key].pressAver = Number(chartData[key].data.pressAver || 0).toFixed(2)
                         dataObj[key].pressMax = chartData[key].data.pressMax
-                        dataObj[key].pressMin = chartData[key].data.pressMin
                         dataObj[key].pressTotal = chartData[key].data.pressTotal
-                        dataObj[key].total = (preciseAreaTotal * dataObj[key].pressAver / 10).toFixed(2)
+                        dataObj[key].total = Number(chartData[key].data.pressTotal ?? preciseAreaTotal * dataObj[key].pressAver).toFixed(2)
 
                         dataObj[key].μ = chartData[key].normalDis.μ
                         dataObj[key].Var = chartData[key].normalDis.Var
@@ -411,9 +410,8 @@ function ChartsAside(props) {
                                     areaTotal: Math.round(bPreciseArea),
                                     pressAver: Number(box.data.pressAver || 0).toFixed(2),
                                     pressMax: box.data.pressMax || 0,
-                                    pressMin: box.data.pressMin || 0,
                                     pressTotal: box.data.pressTotal || 0,
-                                    total: (bPreciseArea * Number(box.data.pressAver || 0) / 10).toFixed(2),
+                                    total: Number(box.data.pressTotal ?? bPreciseArea * Number(box.data.pressAver || 0)).toFixed(2),
                                     pressureCenter: getCenterValues(box.center) || ['-', '-'],
                                     normalDis: box.normalDis,
                                     μ: box.normalDis?.['\u03bc'],
@@ -451,7 +449,7 @@ function ChartsAside(props) {
     const { t, i18n } = useTranslation()
 
     const system = getSysType()
-    const pressDataArr = system === 'carY' ? ['pressAver', 'pressMax', 'pressTotal'] : ['pressAver', 'pressMax', 'pressMin', 'total']
+    const pressDataArr = ['pressAver', 'pressMax', 'total']
     const areaDataArr = ['pointTotal', 'areaTotal']
     const centerDataArr = ['pressureCenter']
 

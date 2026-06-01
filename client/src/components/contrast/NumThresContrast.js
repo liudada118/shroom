@@ -323,6 +323,14 @@ function getContrastObjectLabel(key, copy = CONTRAST_COPY.zh) {
     return text
 }
 
+function getPublicContrastKey(key = '') {
+    const text = String(key || '')
+    const normalized = text.toLowerCase()
+    if (normalized === 'endi-back') return 'back'
+    if (normalized === 'endi-sit') return 'sit'
+    return text.replace(/endi/ig, 'car')
+}
+
 function formatRate(a, b) {
     if (!Number.isFinite(a) || !Number.isFinite(b) || a === 0) return 'N/A'
     return `${(((b - a) / a) * 100).toFixed(1)}%`
@@ -783,7 +791,7 @@ export default function NumThresContrast() {
             const rows = [{
                 frame_index: 0,
                 progress: '',
-                object: activeKey,
+                object: getPublicContrastKey(activeKey),
                 scope: activeSelect ? 'selection' : 'full',
                 selection: activeSelect ? `${activeSelect.xStart}-${activeSelect.xEnd},${activeSelect.yStart}-${activeSelect.yEnd}` : '',
                 left_index: leftIndex,
@@ -809,7 +817,7 @@ export default function NumThresContrast() {
                 headers.join(','),
                 ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')),
             ].join('\n')
-            const filename = `contrast_time_${activeKey}_${dayjs().format('YYYYMMDD_HHmmss')}.csv`
+            const filename = `contrast_time_${getPublicContrastKey(activeKey)}_${dayjs().format('YYYYMMDD_HHmmss')}.csv`
             downloadText(filename, csv)
             message.success(copy.exportSuccess)
             return
@@ -832,7 +840,7 @@ export default function NumThresContrast() {
             return {
                 frame_index: index,
                 progress: rowProgress.toFixed(2),
-                object: activeKey,
+                object: getPublicContrastKey(activeKey),
                 scope: activeSelect ? 'selection' : 'full',
                 selection: activeSelect ? `${activeSelect.xStart}-${activeSelect.xEnd},${activeSelect.yStart}-${activeSelect.yEnd}` : '',
                 left_index: leftFrameIndex,
@@ -860,7 +868,7 @@ export default function NumThresContrast() {
             headers.join(','),
             ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')),
         ].join('\n')
-        const filename = `contrast_${activeKey}_${dayjs().format('YYYYMMDD_HHmmss')}.csv`
+        const filename = `contrast_${getPublicContrastKey(activeKey)}_${dayjs().format('YYYYMMDD_HHmmss')}.csv`
         downloadText(filename, csv)
         message.success(copy.exportSuccess)
     }

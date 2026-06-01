@@ -979,7 +979,7 @@ const ColAndHistory = memo((props) => {
     const selectDataArrType = ['delete', 'download', 'contrast', 'report']
 
 
-    const shouldShowPlaybackBar = dataStatus === 'replay' && display !== 'contrast'
+    const shouldShowPlaybackBar = (dataStatus === 'replay' || Boolean(currentPlaybackKey)) && display !== 'contrast'
 
     return (
         <>
