@@ -53,6 +53,7 @@ const CONNECTION_LOCK_MAX_AGE = 25000
 const SCAN_TIMEOUT = 3000
 const MAC_CONNECT_TIMEOUT = 3000
 const TYPE_RESOLVE_TIMEOUT = 2000
+const BACK_VALUE_MULTIPLIER = 1.8
 
 const CONNECTION_ERROR_META = {
   CONN_BUSY: { stage: 'lock', message: '正在连接中，请稍后再试' },
@@ -729,22 +730,35 @@ async function resolveDeviceType(uniqueId, options = {}) {
 //  Data Frame Processing Helpers
 // ═══════════════════════════════════════════════════════════
 
+function applyBackMultiplier(arr, dataItem) {
+  if (!Array.isArray(arr)) return arr
+  if (!String(dataItem?.type || '').endsWith('-back')) return arr
+  return arr.map((value) => {
+    const numeric = Number(value) || 0
+    return Number((numeric * BACK_VALUE_MULTIPLIER).toFixed(4))
+  })
+}
+
 function processMatrixData(pointArr, dataItem) {
   const t = dataItem.type
   if (t === 'hand') return hand(pointArr)
-  if (t === 'bed' || t === 'car-back') return jqbed(pointArr)
+  if (t === 'bed') return jqbed(pointArr)
+  if (t === 'car-back') return applyBackMultiplier(jqbed(pointArr), dataItem)
   if (t === 'endi-sit') return endiSit1024(pointArr)
-  if (t === 'endi-back') return endiBack1024(pointArr)
+  if (t === 'endi-back') return applyBackMultiplier(endiBack1024(pointArr), dataItem)
   if (t === 'carY-sit') return carYSitLine(pointArr)
-  if (t === 'carY-back') return carYBackLine(pointArr)
+  if (t === 'carY-back') return applyBackMultiplier(carYBackLine(pointArr), dataItem)
   return pointArr
 }
 
 function processTypedMatrixData(pointArr, dataItem) {
   const t = dataItem.type
-  if (t === 'car-back' || t === 'car-sit' || t === 'bed') return jqbed(pointArr)
+  if (t === 'car-back') return applyBackMultiplier(jqbed(pointArr), dataItem)
+  if (t === 'car-sit' || t === 'bed') return jqbed(pointArr)
+  if (t === 'endi-sit') return endiSit1024(pointArr)
+  if (t === 'endi-back') return applyBackMultiplier(endiBack1024(pointArr), dataItem)
   if (t === 'carY-sit') return carYSitLine(pointArr)
-  if (t === 'carY-back') return carYBackLine(pointArr)
+  if (t === 'carY-back') return applyBackMultiplier(carYBackLine(pointArr), dataItem)
   return pointArr
 }
 
@@ -931,11 +945,11 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       if (dataItem.type === 'endi-sit') {
         dataItem.arr = endiSit(pointArr)
       } else if (dataItem.type === 'endi-back') {
-        dataItem.arr = endiBack(pointArr)
+        dataItem.arr = applyBackMultiplier(endiBack(pointArr), dataItem)
       } else if (dataItem.type === 'carY-sit') {
         dataItem.arr = carYSitLine(pointArr)
       } else if (dataItem.type === 'carY-back') {
-        dataItem.arr = carYBackLine(pointArr)
+        dataItem.arr = applyBackMultiplier(carYBackLine(pointArr), dataItem)
       } else {
         dataItem.arr = pointArr
       }
@@ -980,11 +994,11 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       if (dataItem.type === 'endi-sit') {
         dataItem.arr = endiSit(matrixData)
       } else if (dataItem.type === 'endi-back') {
-        dataItem.arr = endiBack(matrixData)
+        dataItem.arr = applyBackMultiplier(endiBack(matrixData), dataItem)
       } else if (dataItem.type === 'carY-sit') {
         dataItem.arr = carYSitLine(matrixData)
       } else if (dataItem.type === 'carY-back') {
-        dataItem.arr = carYBackLine(matrixData)
+        dataItem.arr = applyBackMultiplier(carYBackLine(matrixData), dataItem)
       } else {
         dataItem.arr = matrixData
       }

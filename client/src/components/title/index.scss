@@ -161,6 +161,7 @@
     border: 3px solid #ff4444;
     background-color: rgba(255, 68, 68, 0.15);
     position: fixed;
+    box-sizing: border-box;
     z-index: 100;
     transition: box-shadow 0.12s ease, border-style 0.12s ease, transform 0.12s ease;
 }
@@ -400,7 +401,7 @@
     &.selectInputFloating {
         position: fixed;
         width: 17.8rem;
-        max-height: calc(100vh - 7rem);
+        max-height: none;
         overflow: visible;
         z-index: 170;
         backdrop-filter: blur(10px);

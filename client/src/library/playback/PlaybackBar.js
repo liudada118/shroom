@@ -106,6 +106,18 @@ export default function PlaybackBar(props) {
             return;
         }
 
+        const store = useEquipStore.getState();
+        const currentHistory = store.history || {};
+        const shouldRestartFromBeginning = maxIndex > 0 && Number(currentHistory.index) >= maxIndex;
+        store.setDataStatus('replay');
+        if (shouldRestartFromBeginning) {
+            store.setHistoryStatus({
+                ...currentHistory,
+                index: 0,
+                timestamp: '',
+            });
+        }
+
         prepareHistorySelect().then(() => axios({
             method: 'post',
             url: `${localAddress}/getDbHistoryPlay`,

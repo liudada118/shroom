@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { timeStampTo_Date } = require("./time");
 const constantObj = require("./config");
-const { backYToX, sitYToX } = require("./line");
+const { estimatePressure, estimateMaxPressure } = require("../server/kpa/pressureFormula_含单点_V2.7.37");
 
 // ─── 传感器点位配置 ──────────────────────────────────────
 const pointConfig = {
@@ -70,6 +70,64 @@ function colArrData(arr) {
   const min = positiveArr.length ? Math.min(...positiveArr) : 0
   const aver = area > 0 ? Number((press / area).toFixed(1)) : 0
   return { press, area, max, min, aver, maxIndex }
+}
+
+function getPressureSensor(key) {
+  const value = String(key || '').toLowerCase()
+  if (value.includes('back')) return 'backrest'
+  if (value.includes('sit') || value.includes('seat')) return 'seat'
+  return ''
+}
+
+function getPressureCalibrationMeta(sensor) {
+  if (sensor === 'backrest') return { topCount: 46, humanThreshold: 1000 }
+  if (sensor === 'seat') return { topCount: 70, humanThreshold: 1128 }
+  return null
+}
+
+function getCalibrationAverage(positiveValues, sensor) {
+  const meta = getPressureCalibrationMeta(sensor)
+  if (!meta || !positiveValues.length) return 0
+  if (positiveValues.length >= meta.humanThreshold) {
+    return positiveValues.reduce((sum, value) => sum + value, 0) / positiveValues.length
+  }
+  const topValues = [...positiveValues]
+    .sort((left, right) => right - left)
+    .slice(0, Math.min(meta.topCount, positiveValues.length))
+  return topValues.reduce((sum, value) => sum + value, 0) / topValues.length
+}
+
+function calcPressureFormulaStats(arr, key, pointAreaCm2) {
+  const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
+  const positiveValues = values.filter((value) => Number.isFinite(value) && value > 0)
+  const activeCount = positiveValues.length
+  const rawPress = values.reduce((sum, value) => sum + value, 0)
+  const rawMax = values.length ? Math.max(...values) : 0
+  const rawAvg = activeCount ? rawPress / activeCount : 0
+  const effectiveArea = activeCount * (Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1)
+  const sensor = getPressureSensor(key)
+  const toNewton = (kpa) => kpa * 1000 * effectiveArea / 10000
+
+  if (!sensor || !activeCount) {
+    return {
+      max: rawMax,
+      aver: rawAvg,
+      total: toNewton(rawAvg),
+      effectiveArea,
+      activeCount,
+    }
+  }
+
+  const adcAvg = getCalibrationAverage(positiveValues, sensor)
+  const aver = estimatePressure(adcAvg, activeCount, sensor) || 0
+  const max = estimateMaxPressure(rawMax, activeCount, sensor, adcAvg) || 0
+  return {
+    max,
+    aver,
+    total: toNewton(aver),
+    effectiveArea,
+    activeCount,
+  }
 }
 
 function isAllDigits(str) {
@@ -141,12 +199,16 @@ function sanitizeFileNameSegment(value) {
   return sanitized || 'export'
 }
 
+function toPublicExportName(value) {
+  return sanitizeFileNameSegment(String(value ?? '').replace(/endi/ig, 'car'))
+}
+
 function buildExportRecordName(param) {
   let value = String(param ?? '').trim()
   if (isAllDigits(value)) {
     value = timeStampTo_Date(Number(value))
   }
-  return sanitizeFileNameSegment(value)
+  return toPublicExportName(value)
 }
 
 function buildExportFileStem(param, aliasFromDb) {
@@ -159,8 +221,8 @@ function buildExportFileStem(param, aliasFromDb) {
 }
 
 function buildCsvBaseName(file, key) {
-  const keyText = String(key ?? '').trim()
-  const normalizedFile = sanitizeFileNameSegment(file || 'export')
+  const keyText = toPublicExportName(key ?? '')
+  const normalizedFile = toPublicExportName(file || 'export')
   const segments = keyText.split('-').filter(Boolean)
   const part = segments[segments.length - 1]
 
@@ -571,7 +633,8 @@ const EXPORT_BASE_FIELDS = [
 
 const EXPORT_FIXED_FIELDS = [
   { id: 'timestamp', title: '时间戳' },
-  { id: 'device_mac', title: '设备MAC' },
+  { id: 'back_device_mac', title: '靠背MAC' },
+  { id: 'sit_device_mac', title: '座椅MAC' },
 ]
 
 const EXPORT_TRAILING_FIELDS = [
@@ -635,7 +698,7 @@ function recordsForHeaders(records, headers) {
     const next = {}
     ids.forEach((id) => {
       const value = record[id] === undefined || record[id] === null ? '' : record[id]
-      next[id] = id === 'timestamp' || id === 'device_mac' ? String(value) : value
+      next[id] = ['timestamp', 'back_device_mac', 'sit_device_mac'].includes(id) ? String(value) : value
     })
     return next
   })
@@ -812,10 +875,10 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         const rowData = JSON.parse(rows[i].data)
         const frameEntry = {
           timestamp: rows[i].timestamp,
-          device_mac: '',
+          back_device_mac: '',
+          sit_device_mac: '',
           remark: remarkText,
         }
-        const frameDeviceMacSet = new Set()
         let hasFrameMatrixData = false
 
         for (let j = 0; j < keyArr.length; j++) {
@@ -835,7 +898,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const selectArr = obj ? sliceSelectionData(data, obj) : []
 
           const { press, area, max, min, aver, maxIndex } = colArrData(data)
-          const { press: selectPress, area: selectArea, max: selectMax, min: selectMin, aver: selectAver, maxIndex: selectMaxIndex } = colArrData(selectArr)
+          const { area: selectArea, min: selectMin, maxIndex: selectMaxIndex } = colArrData(selectArr)
 
           const pointInfo = pointConfig[key]
           const matrixSize = inferExportMatrixSize(key, data, item)
@@ -843,10 +906,13 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const zeroState = normalizeExportZeroState(item.zeroState)
           const pressureConversion = getPressureConversion(key)
           const pointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : null
+          const pointAreaCm2 = pointInfo ? pointArea / 100 : 1
           const pressureAreaValue = pointInfo ? (area * pointArea / 100) : area
+          const pressureStats = calcPressureFormulaStats(data, key, pointAreaCm2)
 
           // 计算框选区域受力面积
           const selectAreaValue = pointInfo ? (selectArea * pointArea / 100) : selectArea
+          const selectPressureStats = calcPressureFormulaStats(selectArr, key, pointAreaCm2)
 
           rowEntry.csv_format_version = CSV_FORMAT_VERSION
           rowEntry.software_version = SOFTWARE_VERSION
@@ -854,7 +920,13 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.frame_index = i
           rowEntry.created_at = new Date().toISOString()
           rowEntry.device_mac = getDeviceMacFromItem(item)
-          if (rowEntry.device_mac) frameDeviceMacSet.add(rowEntry.device_mac)
+          if (rowEntry.device_mac) {
+            if (String(key).includes('back')) {
+              frameEntry.back_device_mac = rowEntry.device_mac
+            } else if (String(key).includes('sit')) {
+              frameEntry.sit_device_mac = rowEntry.device_mac
+            }
+          }
           rowEntry.device_type = key
           rowEntry.system_type = String(file || '')
           rowEntry.matrix_key = key
@@ -875,24 +947,24 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.zero_time = zeroState.zero_time
           rowEntry.zero_state = zeroState.has_baseline ? 'baseline_recorded' : (zeroState.zero_enabled ? 'enabled_no_baseline' : 'disabled')
           rowEntry.timestamp = rows[i].timestamp
-          rowEntry.avg_pressure = aver
-          rowEntry.max_pressure = max
+          rowEntry.avg_pressure = pressureStats.aver
+          rowEntry.max_pressure = pressureStats.max
           rowEntry.max_pressure_coord = indexToCoord(maxIndex, key)
           rowEntry.min_pressure_non_zero = min
-          rowEntry.pressure_sum = press
+          rowEntry.pressure_sum = pressureStats.total
           rowEntry.contact_area = pressureAreaValue
           rowEntry.active_sensor_count = area
           rowEntry.real_data = JSON.stringify(data)
-          rowEntry[`${key}max`] = max
+          rowEntry[`${key}max`] = pressureStats.max
           rowEntry[`${key}maxCoord`] = indexToCoord(maxIndex, key)
-          rowEntry[`${key}aver`] = aver
+          rowEntry[`${key}aver`] = pressureStats.aver
           rowEntry[`${key}pressureArea`] = pressureAreaValue
           rowEntry[`${key}realData`] = JSON.stringify(data)
-          rowEntry[`${key}selectMax`] = selectMax
+          rowEntry[`${key}selectMax`] = selectPressureStats.max
           const selectWidth = (obj && obj.xEnd && obj.xStart !== undefined) ? (obj.xEnd - obj.xStart) : 0
           const selectCoordInfo = (obj && selectWidth > 0) ? { xStart: obj.xStart, yStart: obj.yStart, selectWidth } : null
           rowEntry[`${key}selectMaxCoord`] = indexToCoord(selectMaxIndex, key, selectCoordInfo)
-          rowEntry[`${key}selectAver`] = selectAver
+          rowEntry[`${key}selectAver`] = selectPressureStats.aver
           rowEntry[`${key}selectArea`] = selectAreaValue
           rowEntry[`${key}selectData`] = JSON.stringify(selectArr)
           rowEntry.select_data = JSON.stringify(selectArr)
@@ -900,34 +972,19 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.selection_1_name = obj ? (obj.name || obj.regionName || '框选1') : ''
           rowEntry.selection_1_row_range = obj ? `${obj.yStart}-${obj.yEnd}` : ''
           rowEntry.selection_1_column_range = obj ? `${obj.xStart}-${obj.xEnd}` : ''
-          rowEntry.selection_1_avg_pressure = selectAver
-          rowEntry.selection_1_max_pressure = selectMax
+          rowEntry.selection_1_avg_pressure = selectPressureStats.aver
+          rowEntry.selection_1_max_pressure = selectPressureStats.max
           rowEntry.selection_1_max_pressure_coord = rowEntry[`${key}selectMaxCoord`]
           rowEntry.selection_1_min_pressure_non_zero = selectMin
-          rowEntry.selection_1_pressure_sum = selectPress
+          rowEntry.selection_1_pressure_sum = selectPressureStats.total
           rowEntry.selection_1_contact_area = selectAreaValue
           rowEntry.selection_1_active_sensor_count = selectArea
           rowEntry.selection_1_data = JSON.stringify(selectArr)
 
-          // endi 类型需要做单位转换
-          if (key === 'endi-back') {
-            rowEntry[`${key}max`] = backYToX(max)
-            rowEntry[`${key}aver`] = backYToX(aver)
-            rowEntry[`${key}selectMax`] = backYToX(selectMax)
-            rowEntry[`${key}selectAver`] = backYToX(selectAver)
-          }
-          if (key === 'endi-sit') {
-            rowEntry[`${key}max`] = sitYToX(max)
-            rowEntry[`${key}aver`] = sitYToX(aver)
-            rowEntry[`${key}selectMax`] = sitYToX(selectMax)
-            rowEntry[`${key}selectAver`] = sitYToX(selectAver)
-          }
-
           if (pointInfo) {
-            const averValue = Number(rowEntry[`${key}aver`]) || 0
             const pointValue = area
             rowEntry[`${key}point`] = pointValue
-            rowEntry[`${key}pressTotal`] = (averValue * pointArea * pointValue) / 1000
+            rowEntry[`${key}pressTotal`] = pressureStats.total
           }
 
           const activePointCount = pointInfo
@@ -952,16 +1009,9 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           selectionRegions.forEach((region, regionIndex) => {
             const regionArr = sliceSelectionData(data, region)
             const regionStats = colArrData(regionArr)
-            let regionMax = regionStats.max
-            let regionAver = regionStats.aver
-            if (key === 'endi-back') {
-              regionMax = backYToX(regionMax)
-              regionAver = backYToX(regionAver)
-            }
-            if (key === 'endi-sit') {
-              regionMax = sitYToX(regionMax)
-              regionAver = sitYToX(regionAver)
-            }
+            const regionPressureStats = calcPressureFormulaStats(regionArr, key, pointAreaCm2)
+            const regionMax = regionPressureStats.max
+            const regionAver = regionPressureStats.aver
             const regionAreaValue = pointInfo ? (regionStats.area * pointArea / 100) : regionStats.area
             const regionWidth = region.xEnd - region.xStart
             const regionCoord = indexToCoord(regionStats.maxIndex, key, {
@@ -969,9 +1019,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
               yStart: region.yStart,
               selectWidth: regionWidth,
             })
-            const regionTotalPressure = pointInfo
-              ? ((Number(regionAver) || 0) * pointArea * regionStats.area) / 1000
-              : regionStats.press
+            const regionTotalPressure = regionPressureStats.total
             const regionPrefix = `${key}_selection_${regionIndex + 1}`
             frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure')] = formatExportDecimal(regionMax)
             frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure_coord')] = regionCoord
@@ -985,7 +1033,6 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         }
 
         if (hasFrameMatrixData) {
-          frameEntry.device_mac = [...frameDeviceMacSet].filter(Boolean).join(' / ')
           csvDataRows.push(frameEntry)
         }
       }
@@ -1603,6 +1650,17 @@ function isSelectionImportRow(row = {}) {
   return /框选|selection/i.test(getImportDataTarget(row))
 }
 
+function getImportDeviceMac(row = {}, matrixKey = '') {
+  const text = String(matrixKey || '').toLowerCase()
+  if (text.includes('back')) {
+    return row.back_device_mac || row.backDeviceMac || row['靠背MAC'] || row['靠背mac'] || ''
+  }
+  if (text.includes('sit')) {
+    return row.sit_device_mac || row.sitDeviceMac || row['座椅MAC'] || row['座椅mac'] || row['坐垫MAC'] || row['坐垫mac'] || ''
+  }
+  return row.device_mac || row.deviceMac || row['设备MAC'] || ''
+}
+
 function inferImportMatrixKey(arr = []) {
   const length = Array.isArray(arr) ? arr.length : 0
   const exact = Object.entries(pointConfig).find(([, config]) => config.width * config.height === length)
@@ -1705,7 +1763,7 @@ function buildCsvPlaybackData(csvRows) {
           rotateDegree: row.rotate_degree,
           data_direction: row.data_direction,
         }),
-        deviceMac: row.device_mac || row['设备MAC'] || '',
+        deviceMac: getImportDeviceMac(row, matrixKey),
         deviceType: matrixKey,
         pressureUnit: row.pressure_unit || PRESSURE_UNIT,
       }

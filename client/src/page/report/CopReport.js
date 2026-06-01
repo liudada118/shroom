@@ -5,6 +5,7 @@ import axios from 'axios'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
+import { computePressureMetrics } from '../../util/pressureMetrics'
 import './CopReport.scss'
 
 const EFFECTIVE_THRESHOLD = 5
@@ -58,14 +59,6 @@ const keyCandidates = (key) => {
   return [...new Set(candidates.filter(Boolean))]
 }
 
-const pickMatrixKey = (payload) => {
-  const keys = Array.isArray(payload?.keys) && payload.keys.length ? payload.keys : getMatrixKeys(payload?.frames)
-  const select = parseMaybeJson(payload?.select)
-  const selectKeys = Object.keys(select || {})
-  const selectedKey = keys.find((key) => keyCandidates(key).some((candidate) => selectKeys.includes(candidate) || selectKeys.some((selectKey) => selectKey.endsWith(`-${candidate}`))))
-  return selectedKey || keys[0] || ''
-}
-
 const getReportMatrixKeys = (payload) => {
   const keys = Array.isArray(payload?.keys) && payload.keys.length ? payload.keys : getMatrixKeys(payload?.frames)
   const validKeys = keys.filter((key) => {
@@ -82,8 +75,35 @@ const getReportMatrixKeys = (payload) => {
 
 const getMatrixLabel = (key) => {
   if (String(key).includes('back')) return '靠背'
-  if (String(key).includes('sit')) return '座椅'
+  if (String(key).includes('sit')) return '坐垫'
   return key || '传感面'
+}
+
+const getDeviceName = (key) => {
+  if (String(key).includes('back')) return '靠背传感器'
+  if (String(key).includes('sit')) return '坐垫传感器'
+  return String(key || '').replace(/endi-?/ig, '') || '传感器'
+}
+
+const getSensorTypeName = (key) => {
+  if (String(key).includes('back')) return '靠背'
+  if (String(key).includes('sit')) return '坐垫'
+  return String(key || '').replace(/endi-?/ig, '') || '传感器'
+}
+
+const formatReportDateTime = (value) => {
+  if (value === undefined || value === null || value === '') return '-'
+  const numeric = Number(value)
+  const date = Number.isFinite(numeric)
+    ? new Date(numeric < 1e12 ? numeric * 1000 : numeric)
+    : new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value).replace(/endi/ig, 'car')
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const getCollectionTime = (payload) => {
+  const firstFrameTime = safeArray(payload?.frames).find((frame) => frame?.timestamp)?.timestamp
+  return formatReportDateTime(payload?.collectedAt || firstFrameTime || payload?.date)
 }
 
 const normalizeRect = (source, matrixSize) => {
@@ -145,7 +165,7 @@ const normalizeSelections = (selectValue, matrixKey, matrixSize) => {
   }).filter(Boolean)
 }
 
-const calcFrameMetrics = (matrix, rect = null) => {
+const calcFrameMetrics = (matrix, rect = null, matrixKey = '') => {
   const arr = safeArray(matrix?.arr)
   const { width, height } = inferSize(matrix)
   const scope = rect || { xStart: 0, yStart: 0, xEnd: width, yEnd: height }
@@ -153,7 +173,6 @@ const calcFrameMetrics = (matrix, rect = null) => {
   let pSum = 0
   let adcSum = 0
   let adcMax = 0
-  let effectiveSum = 0
   let effectivePoints = 0
   let weightSum = 0
   let xWeighted = 0
@@ -167,7 +186,6 @@ const calcFrameMetrics = (matrix, rect = null) => {
       adcSum += value
       if (value > 0) pSum += value
       if (value >= EFFECTIVE_THRESHOLD) {
-        effectiveSum += value
         effectivePoints++
         weightSum += value
         xWeighted += x * value
@@ -176,7 +194,16 @@ const calcFrameMetrics = (matrix, rect = null) => {
     }
   }
 
-  const pAvg = effectivePoints ? effectiveSum / effectivePoints : 0
+  const scopeValues = []
+  for (let y = scope.yStart; y < scope.yEnd; y++) {
+    for (let x = scope.xStart; x < scope.xEnd; x++) {
+      scopeValues.push(Number(arr[y * width + x]) || 0)
+    }
+  }
+  const pressureMetrics = computePressureMetrics(scopeValues, matrixKey)
+  pMax = pressureMetrics.pressMax
+  const pAvg = pressureMetrics.pressAver
+  pSum = pressureMetrics.total
   const copXIndex = weightSum ? xWeighted / weightSum : width / 2
   const copYIndex = weightSum ? yWeighted / weightSum : height / 2
   return {
@@ -185,8 +212,8 @@ const calcFrameMetrics = (matrix, rect = null) => {
     pSum,
     adcSum,
     adcMax,
-    effectivePoints,
-    effectiveArea: effectivePoints * POINT_AREA_CM2,
+    effectivePoints: pressureMetrics.activeCount,
+    effectiveArea: pressureMetrics.effectiveArea || pressureMetrics.activeCount * POINT_AREA_CM2,
     copX: (copXIndex - (width - 1) / 2) * POINT_SPACING_MM,
     copY: ((height - 1) / 2 - copYIndex) * POINT_SPACING_MM,
   }
@@ -212,7 +239,7 @@ const buildSingleAnalysis = (payload, matrixKey) => {
   const averageMatrix = buildAverageMap(frames, matrixKey)
   const size = inferSize(averageMatrix)
   const selections = normalizeSelections(payload?.select, matrixKey, size)
-  const metrics = frames.map((frame) => calcFrameMetrics(frame.data?.[matrixKey]))
+  const metrics = frames.map((frame) => calcFrameMetrics(frame.data?.[matrixKey], null, matrixKey))
   const durationSeconds = Number(payload?.durationMs) > 0 ? Number(payload.durationMs) / 1000 : Math.max(1, frames.length / (Number(payload?.sampleRate) || 60))
   const copSeries = metrics.filter((item) => Number.isFinite(item.copX) && Number.isFinite(item.copY))
   const pathLength = copSeries.reduce((sum, item, index) => {
@@ -244,7 +271,7 @@ const buildSingleAnalysis = (payload, matrixKey) => {
   }
 
   const selectionAnalyses = selections.map((selection) => {
-    const series = frames.map((frame) => calcFrameMetrics(frame.data?.[matrixKey], selection.rect))
+    const series = frames.map((frame) => calcFrameMetrics(frame.data?.[matrixKey], selection.rect, matrixKey))
     const regionCop = series.filter((item) => item.effectivePoints > 0)
     const regionPath = regionCop.reduce((sum, item, index) => {
       if (!index) return 0
@@ -288,11 +315,8 @@ const buildSingleAnalysis = (payload, matrixKey) => {
 }
 
 const buildAnalysis = (payload) => {
-  const primaryKey = pickMatrixKey(payload)
   const keys = getReportMatrixKeys(payload)
-  const orderedKeys = primaryKey
-    ? [primaryKey, ...keys.filter((key) => key !== primaryKey)]
-    : keys
+  const orderedKeys = keys
   const analyses = orderedKeys
     .map((key) => buildSingleAnalysis(payload, key))
     .filter(Boolean)
@@ -469,6 +493,7 @@ function CopReport() {
 
   const { totalSummary, averageMatrix, metrics, selections, size } = analysis
   const allAnalyses = analysis.analyses || [analysis]
+  const collectionTime = getCollectionTime(payload)
 
   return (
     <div className="cop-report-page">
@@ -483,11 +508,11 @@ function CopReport() {
           <div><span>历史文档名称：</span>{payload.name || payload.date}</div>
           <div><span>历史文档ID：</span>{payload.id}</div>
           <div><span>矩阵尺寸：</span>{size.width} x {size.height}</div>
-          <div><span>设备名称：</span>{analysis.matrixKey}</div>
+          <div><span>设备名称：</span>{getDeviceName(analysis.matrixKey)}</div>
           <div><span>报告包含：</span>{allAnalyses.map((item) => getMatrixLabel(item.matrixKey)).join(' / ')}</div>
-          <div><span>采集时间：</span>{payload.date}</div>
+          <div><span>采集时间：</span>{collectionTime}</div>
           <div><span>传感器表面：</span>{analysis.matrixKey.includes('back') ? '靠背表面' : analysis.matrixKey.includes('sit') ? '坐垫表面' : '传感器表面'}</div>
-          <div><span>传感器类型：</span>{analysis.matrixKey}</div>
+          <div><span>传感器类型：</span>{getSensorTypeName(analysis.matrixKey)}</div>
           <div><span>生成时间：</span>{generatedTime}</div>
           <div><span>报告版本：</span>v1.0</div>
         </section>
@@ -595,7 +620,7 @@ function CopReport() {
                     <p>形状类型：{selection.shapeType}</p>
                     <p>坐标范围：X {selection.rect.xStart}-{selection.rect.xEnd - 1}，Y {selection.rect.yStart}-{selection.rect.yEnd - 1}</p>
                     <p>矩阵面积：{selection.rect.width} x {selection.rect.height}</p>
-                    <p>所属表面：{selection.sensorPart}</p>
+                    <p>所属表面：{getMatrixLabel(selection.sensorPart)}</p>
                   </div>
                 </div>
               </div>
@@ -645,7 +670,7 @@ function SurfaceAnalysisReport({ analysis, indexLabel }) {
     <ReportSection index={indexLabel} title={`${label}压力中心分析`}>
       <div className="surface-summary">
         <div><span>传感面：</span>{label}</div>
-        <div><span>矩阵 Key：</span>{matrixKey}</div>
+        <div><span>传感器类型：</span>{getSensorTypeName(matrixKey)}</div>
         <div><span>矩阵尺寸：</span>{size.width} x {size.height}</div>
         <div><span>框选数量：</span>{selections.length}</div>
       </div>

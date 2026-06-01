@@ -19,6 +19,8 @@ const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES }
 
 const router = express.Router()
 const historyIndexReady = new WeakSet()
+const VISUAL_COLOR_MAX = 255
+const VISUAL_COLOR_DEFAULT = 180
 
 function ensureHistoryListIndex(db) {
   if (!db || historyIndexReady.has(db)) return Promise.resolve()
@@ -360,9 +362,33 @@ function getFirstSelectionRegion(selection) {
   return selection
 }
 
+function normalizeVisualColorConfig(config = {}) {
+  const nextConfig = {
+    ...config,
+    optimalObj: { ...(config.optimalObj || {}) },
+    maxObj: { ...(config.maxObj || {}) },
+  }
+
+  Object.keys(nextConfig.maxObj).forEach((key) => {
+    nextConfig.maxObj[key] = {
+      ...nextConfig.maxObj[key],
+      color: VISUAL_COLOR_MAX,
+    }
+  })
+
+  Object.keys(nextConfig.optimalObj).forEach((key) => {
+    nextConfig.optimalObj[key] = {
+      ...nextConfig.optimalObj[key],
+      color: VISUAL_COLOR_DEFAULT,
+    }
+  })
+
+  return nextConfig
+}
+
 function readSystemConfig() {
   const configPath = state._configPath || path.join(__dirname, '..', '..', 'config.txt')
-  return readEncryptedSystemConfig(configPath)
+  return normalizeVisualColorConfig(readEncryptedSystemConfig(configPath))
 }
 
 function resolveCurrentSystemFile() {
@@ -710,12 +736,12 @@ router.post('/setSystemConfig', asyncHandler(async (req, res) => {
   }
 
   const current = readSystemConfig()
-  const nextConfig = {
+  const nextConfig = normalizeVisualColorConfig({
     ...current,
     ...incoming,
     optimalObj: mergeSystemConfigGroup(current.optimalObj, incoming.optimalObj),
     maxObj: mergeSystemConfigGroup(current.maxObj, incoming.maxObj),
-  }
+  })
 
   const configPath = state._configPath || path.join(__dirname, '..', '..', 'config.txt')
   fs.writeFileSync(configPath, module2.encStr(JSON.stringify(nextConfig)), 'utf-8')
@@ -832,6 +858,13 @@ router.get('/rescanPort', asyncHandler(async (req, res) => {
 
 router.get('/stopPort', asyncHandler(async (req, res) => {
   const result = await stopPort()
+  state.historyFlag = false
+  state.historyPlayFlag = false
+  state.historyDbArr = null
+  state.leftDbArr = null
+  state.rightDbArr = null
+  state.historySelectCache = null
+  clearPlayTimer()
   res.json(new HttpResult(0, result, 'All ports stopped'))
 }))
 
@@ -1178,10 +1211,12 @@ router.post('/copReportData', asyncHandler(async (req, res) => {
   const timestamps = rows.map((row) => Number(row.timestamp)).filter(Number.isFinite)
   const durationMs = timestamps.length > 1 ? Math.max(0, timestamps[timestamps.length - 1] - timestamps[0]) : 0
   const sampleRate = durationMs > 0 ? ((timestamps.length - 1) * 1000 / durationMs) : 0
+  const collectedAt = timestamps.length ? timestamps[0] : ''
 
   res.json(new HttpResult(0, {
     id: String(recordId),
     date: String(recordId),
+    collectedAt,
     name: remark?.alias || loaded.name || String(recordId),
     alias: remark?.alias || '',
     remark: remark?.remark || '',
@@ -2000,7 +2035,7 @@ router.post('/getCsvData', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getSysconfig', (req, res) => {
-  const config = resolveRequestValue(req, ['config'])
+  const config = normalizeVisualColorConfig(resolveRequestValue(req, ['config']) || {})
   const str = module2.encStr(JSON.stringify(config))
   res.json(new HttpResult(0, str, 'success'))
 })

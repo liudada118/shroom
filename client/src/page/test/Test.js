@@ -106,14 +106,17 @@ function Test() {
     // 持久化的数据对象（跨帧累积）
     const persistentDataRef = useRef({})
 
-    const clearVisualizationData = useCallback(() => {
+    const clearVisualizationData = useCallback((options = {}) => {
+        const { preservePlaybackStatus = false } = options
         persistentDataRef.current = {}
         clearMatrixData()
         const store = useEquipStore.getState()
         store.setHistoryChart({ pressArr: {}, areaArr: {} })
-        store.setHistoryStatus({ index: 0, timestamp: '' })
-        store.setPlaybackHasSelection(false)
-        store.setPlaybackRecordDate('')
+        if (!preservePlaybackStatus) {
+            store.setHistoryStatus({ index: 0, timestamp: '' })
+            store.setPlaybackHasSelection(false)
+            store.setPlaybackRecordDate('')
+        }
         removeHistoryBox()
     }, [clearMatrixData])
 
@@ -131,6 +134,10 @@ function Test() {
     useWebSocket({
         onSitData: (sitData) => {
             const store = useEquipStore.getState()
+            if (store.connectState === 'idle') {
+                clearVisualizationData()
+                return
+            }
             const shouldClearReplayFrame = store.dataStatus === 'replay'
             if (store.display !== 'contrast' && store.dataStatus !== 'contrast') {
                 if (shouldClearReplayFrame) {
@@ -169,11 +176,8 @@ function Test() {
                 setPlayBack(false)
                 store.setDataStatus('realtime')
                 store.setHistoryChart({ pressArr: {}, areaArr: {} })
-                store.setHistoryStatus({ index: 0, timestamp: '' })
-                store.setPlaybackHasSelection(false)
-                store.setPlaybackRecordDate('')
                 if (shouldClearAfterPlaybackEnd(payload)) {
-                    clearVisualizationData()
+                    clearVisualizationData({ preservePlaybackStatus: true })
                 }
             }
         },
@@ -294,7 +298,7 @@ function Test() {
     // ─── 状态 ────────────────────────────────────────────
     const [sitData, setSitData] = useState([])
     const [equipStatus, setStatus] = useState({ back: 'offline', sit: 'offline', data: new Array(4096).fill(0) })
-    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 1, color: 200, filter: 1, height: 1, coherent: 1 }
+    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 1, color: 180, filter: 1, height: 1, coherent: 1 }
     const [settingValue, setSettingValue] = useState(setValueData)
     const [selectArr, setSelectArr] = useState([])
     const [wsLocalData, setWsLocalData] = useState(new Array(4096).fill(0))

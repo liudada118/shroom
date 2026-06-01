@@ -9,6 +9,9 @@ const fs = require('fs')
 
 const isPackaged = app.isPackaged
 const isDev = !isPackaged
+const APP_NAME = 'SHROOM-SEAT'
+
+app.setName(APP_NAME)
 
 // ─── 开发模式前端策略 ────────────────────────────────────
 // 开发模式默认启动 Vite dev server（热更新），设置 USE_STATIC=1 可切换为 build 静态文件
@@ -268,6 +271,7 @@ function startStaticServer() {
 
 async function createWindow(port) {
   mainWindow = new BrowserWindow({
+    title: APP_NAME,
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),

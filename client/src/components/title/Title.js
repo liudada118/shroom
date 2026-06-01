@@ -4,7 +4,7 @@ import EquipStatus from '../EquipStatus/EquipStatus'
 import Select from '../select/Select'
 import IconAndText from '../iconAndText/IconAndText'
 import SecondTitle from './SecondTitle'
-import logo from '../../assets/image/logo.png'
+import logo from '../../assets/image/shroom.png'
 import axios from 'axios'
 import { withTranslation } from "react-i18next";
 import { pageContext } from '../../page/test/Test'
@@ -31,6 +31,7 @@ const Title = memo((props) => {
   const connectState = useEquipStore(s => s.connectState, shallow);
   const CONNECT_TIMEOUT_MS = 15000
   const autoConnectRef = useRef(false)
+  const pageInfo = useContext(pageContext);
 
   const getConnectErrorMessage = (err, fallback = t('connectFailedCheckDevice')) => {
     if (err?.code === 'ECONNABORTED') return t('connectTimeoutCheckDevice')
@@ -131,12 +132,23 @@ const Title = memo((props) => {
     })
 
     // 立即清空前端状态
+    pageInfo.clearVisualizationData?.()
     useEquipStore.getState().setConnectState('idle')
     useEquipStore.getState().setConnectionError(null)
     useEquipStore.getState().setEquipStatus({})
+    useEquipStore.getState().setMacInfo({})
+    useEquipStore.getState().setDataQuality({})
+    useEquipStore.getState().setStatus({})
+    useEquipStore.getState().setDisplayStatus({})
+    useEquipStore.getState().setEquipCop({})
+    useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
+    useEquipStore.getState().setHistoryStatus({ index: 0, timestamp: '' })
+    useEquipStore.getState().setDataStatus('realtime')
+    useEquipStore.getState().setPlaybackHasSelection(false)
+    useEquipStore.getState().setPlaybackRecordDate('')
+    useEquipStore.getState().setCollecting(false)
+    removeHistoryBox()
   }
-
-  const pageInfo = useContext(pageContext);
 
   const systemType = useEquipStore(s => s.systemType, shallow);
   const systemTypeArr = useEquipStore(s => s.systemTypeArr, shallow);

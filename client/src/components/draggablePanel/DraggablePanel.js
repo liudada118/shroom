@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ReloadOutlined } from '@ant-design/icons'
+import { resolvePanelPosition } from '../../util/panelPosition'
 import './index.scss'
 
 const PANEL_Z_INDEX_BASE = 120
@@ -25,11 +26,16 @@ function nextPanelZIndex() {
 export default function DraggablePanel({ children, defaultPosition, title, className = '' }) {
     const { t } = useTranslation()
     const panelRef = useRef(null)
-    const [position, setPosition] = useState(defaultPosition || { x: 0, y: 0 })
+    const [position, setPosition] = useState(() => ({
+        x: defaultPosition?.x || 0,
+        y: defaultPosition?.y || 0,
+    }))
     const [zoomPercent, setZoomPercent] = useState(100)
     const [zIndex, setZIndex] = useState(nextPanelZIndex)
     const [isDragging, setIsDragging] = useState(false)
     const dragOffset = useRef({ x: 0, y: 0 })
+    const userMovedRef = useRef(false)
+    const usesEdgeAnchor = defaultPosition?.right != null || defaultPosition?.bottom != null
 
     // 点击面板时置顶
     const bringToFront = useCallback(() => {
@@ -42,6 +48,7 @@ export default function DraggablePanel({ children, defaultPosition, title, class
         if (!e.target.closest('.draggable-panel-header')) return
         e.preventDefault()
         bringToFront()
+        userMovedRef.current = true
         setIsDragging(true)
         const rect = panelRef.current.getBoundingClientRect()
         dragOffset.current = {
@@ -49,6 +56,28 @@ export default function DraggablePanel({ children, defaultPosition, title, class
             y: e.clientY - rect.top
         }
     }, [bringToFront])
+
+    const syncAnchoredPosition = useCallback(() => {
+        if (!usesEdgeAnchor || userMovedRef.current || !panelRef.current) return
+        const rect = panelRef.current.getBoundingClientRect()
+        setPosition(resolvePanelPosition(defaultPosition, {
+            width: rect.width,
+            height: rect.height,
+        }, {
+            width: window.innerWidth,
+            height: window.innerHeight,
+        }))
+    }, [defaultPosition, usesEdgeAnchor])
+
+    useLayoutEffect(() => {
+        syncAnchoredPosition()
+    }, [syncAnchoredPosition])
+
+    useEffect(() => {
+        if (!usesEdgeAnchor) return undefined
+        window.addEventListener('resize', syncAnchoredPosition)
+        return () => window.removeEventListener('resize', syncAnchoredPosition)
+    }, [syncAnchoredPosition, usesEdgeAnchor])
 
     useEffect(() => {
         if (!isDragging) return

@@ -4,7 +4,7 @@ import i18n from 'i18next';
 import { getDisplayType, getSysType } from '../../store/equipStore';
 import { systemPointConfig } from '../../util/constant';
 import { isMoreMatrix } from '../../assets/util/util';
-import { calMatrixToSelect } from '../../assets/util/selectMatrix';
+import { calMatrixToSelect, snapPixelRangeToMatrixRect } from '../../assets/util/selectMatrix';
 import { getDefaultSelectionName } from '../../util/selectionName';
 import { isEndiBackVisibleCell } from '../../util/endiBackVisibleMask';
 
@@ -214,6 +214,33 @@ export class BrushManager {
         return true;
     }
 
+    _applyRangeToElement(range, el = range?._element) {
+        if (!range || !el) return;
+        el.style.left = range.x1 + 'px';
+        el.style.top = range.y1 + 'px';
+        el.style.width = (range.x2 - range.x1) + 'px';
+        el.style.height = (range.y2 - range.y1) + 'px';
+    }
+
+    _snapRangeToMatrixGrid(range, context = this._getMatrixContext()) {
+        if (!range || !context?.matrixConfig) return false;
+        const snapped = snapPixelRangeToMatrixRect(context.canvasRect, range, context.matrixConfig, context.effectiveRect);
+        if (!snapped || !this._isValidMatrixSelection(snapped.matrixRect, context)) return false;
+
+        range.x1 = snapped.x1;
+        range.y1 = snapped.y1;
+        range.x2 = snapped.x2;
+        range.y2 = snapped.y2;
+        range.matrixRect = snapped.matrixRect;
+        range.matrixKey = context.matrixKey;
+        range.displayType = context.displayType;
+        range.systemType = context.systemType;
+        range.updatedAt = Date.now();
+        if (!range.createdAt) range.createdAt = range.updatedAt;
+        this._applyRangeToElement(range);
+        return true;
+    }
+
     _getRangeMatrixRect(range) {
         return this._rangeToMatrixRect(range) || range?.matrixRect || null;
     }
@@ -361,6 +388,8 @@ export class BrushManager {
                 el.style.top = obj.y1 + 'px';
                 this._syncRangeMetadata(obj);
                 message.warning(tr('selectionOutOfValidRange'));
+            } else {
+                this._snapRangeToMatrixGrid(obj);
             }
             this._updateMeasureBadge(el, obj);
             this.notify(this.rangeArr);
@@ -556,6 +585,7 @@ export class BrushManager {
             top: selectY + 'px',
             width: pixelWidth + 'px',
             height: pixelHeight + 'px',
+            boxSizing: 'border-box',
             border: `2px solid ${displayColor}`,
             backgroundColor: getSelectBoxFillColor(bgc),
             boxShadow: `0 0 0 1px ${displayColor}`,
@@ -662,6 +692,8 @@ export class BrushManager {
                 el.style.width = (origX2 - origX1) + 'px';
                 el.style.height = (origY2 - origY1) + 'px';
                 this._syncRangeMetadata(rangeObj);
+            } else {
+                this._snapRangeToMatrixGrid(rangeObj);
             }
             this._updateMeasureBadge(el, rangeObj);
             this.notify(this.rangeArr);
@@ -719,6 +751,8 @@ export class BrushManager {
                 el.style.left = origX1 + 'px';
                 el.style.top = origY1 + 'px';
                 this._syncRangeMetadata(rangeObj);
+            } else {
+                this._snapRangeToMatrixGrid(rangeObj);
             }
             this._updateMeasureBadge(el, rangeObj);
             this.notify(this.rangeArr);
@@ -768,6 +802,7 @@ export class BrushManager {
         this.element.classList.add('selectBox');
         this.element.classList.add('selectBox-drawing');
         this.element.style.pointerEvents = 'none';
+        this.element.style.boxSizing = 'border-box';
         document.body.appendChild(this.element);
 
         this.element.style.left = e.clientX + 'px';
@@ -848,6 +883,7 @@ export class BrushManager {
                 this.pointBottomRight = { x: 0, y: 0 };
                 return;
             }
+            this._snapRangeToMatrixGrid(this.range);
             this.rangeArr.push(this.range);
             this.element.classList.remove('selectBox-drawing');
             this.isBrushing = false;

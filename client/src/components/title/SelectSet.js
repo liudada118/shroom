@@ -411,7 +411,6 @@ export default function SelectSet(props) {
                 left: `${left}px`,
                 top: `${top}px`,
                 width: `${width}px`,
-                maxHeight: `${Math.max(220, window.innerHeight - top - 24)}px`,
             }
 
             if (floatingMovedRef.current && floatingStyleRef.current) {
