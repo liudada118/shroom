@@ -4,7 +4,7 @@ import EquipStatus from '../EquipStatus/EquipStatus'
 import Select from '../select/Select'
 import IconAndText from '../iconAndText/IconAndText'
 import SecondTitle from './SecondTitle'
-import logo from '../../assets/image/logo.png'
+import logo from '../../assets/image/shroom.png'
 import axios from 'axios'
 import { withTranslation } from "react-i18next";
 import { pageContext } from '../../page/test/Test'

@@ -614,7 +614,7 @@ function ChartsAside(props) {
                 </div>
             </DraggablePanel>
 
-            <DraggablePanel title={t('pressureCenterCurve') + ' / ' + t('pressureNormalDist')} defaultPosition={{ x: window.innerWidth - 380, y: 80 }}>
+            <DraggablePanel title={t('pressureCenterCurve') + ' / ' + t('pressureNormalDist')} defaultPosition={{ right: 20, y: 80 }}>
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{t('pressureCenterCurve')}</div>

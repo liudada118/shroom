@@ -63,46 +63,86 @@ export function calMatrixToSelect(className, selectConfig, matrixConfig) {
     const canvas = document.querySelector(`.${className}`)
     const canvasInfo = canvas.getBoundingClientRect()
 
-    const canvasObj = {
-        canvasX1: canvasInfo.left, canvasX2: canvasInfo.right,
-        canvasY1: canvasInfo.top, canvasY2: canvasInfo.bottom
-    }
+    return matrixRectToSelectRect({
+        left: canvasInfo.left,
+        right: canvasInfo.right,
+        top: canvasInfo.top,
+        bottom: canvasInfo.bottom,
+    }, selectConfig, matrixConfig)
+}
 
-    const { canvasX1, canvasX2, canvasY1, canvasY2 } = canvasObj
+export function matrixRectToSelectRect(canvasRect, selectConfig, matrixConfig) {
+    const { left, right, top, bottom } = canvasRect
     const { xStart, yStart, sWidth, sHeight } = selectConfig
 
     const { width, height } = matrixConfig
     const max = Math.max(width, height)
 
-
-    const canvasWidth = canvasX2 - canvasX1
-    const canvasHeight = canvasY2 - canvasY1
+    const canvasWidth = right - left
+    const canvasHeight = bottom - top
     const widthUtil = canvasWidth / max
     const heightUtil = canvasHeight / max
 
-
     if (width < height) {
-        const selectX = canvasX1 + (xStart + (height - width) / 2) * widthUtil + 1
-        const selectY = canvasY1 + yStart * heightUtil + 1
-        const selectWidth = sWidth * widthUtil - 2
-        const selectHeight = sHeight * heightUtil - 2
-        console.log(selectX)
+        const selectX = left + (xStart + (height - width) / 2) * widthUtil
+        const selectY = top + yStart * heightUtil
+        const selectWidth = sWidth * widthUtil
+        const selectHeight = sHeight * heightUtil
         return {
             selectX, selectY, selectWidth, selectHeight
         }
     } else {
-        const selectX = canvasX1 + xStart * widthUtil + 1
-        const selectY = canvasY1 + (yStart + (height - width) / 2) * heightUtil + 1
-        const selectWidth = sWidth * widthUtil - 2
-        const selectHeight = sHeight * heightUtil - 2
+        const selectX = left + xStart * widthUtil
+        const selectY = top + (yStart + (width - height) / 2) * heightUtil
+        const selectWidth = sWidth * widthUtil
+        const selectHeight = sHeight * heightUtil
         return {
             selectX, selectY, selectWidth, selectHeight
         }
     }
+}
 
+function normalizeRect(rect) {
+    return {
+        left: rect.left ?? rect.canvasX1,
+        right: rect.right ?? rect.canvasX2,
+        top: rect.top ?? rect.canvasY1,
+        bottom: rect.bottom ?? rect.canvasY2,
+    }
+}
 
+export function snapPixelRangeToMatrixRect(canvasRect, pixelRange, matrixConfig, effectiveRect = canvasRect) {
+    const canvas = normalizeRect(canvasRect)
+    const effective = normalizeRect(effectiveRect)
+    const { width, height } = matrixConfig
+    const left = Math.min(pixelRange.x1, pixelRange.x2)
+    const right = Math.max(pixelRange.x1, pixelRange.x2)
+    const top = Math.min(pixelRange.y1, pixelRange.y2)
+    const bottom = Math.max(pixelRange.y1, pixelRange.y2)
 
+    const unitWidth = (effective.right - effective.left) / width
+    const unitHeight = (effective.bottom - effective.top) / height
+    const xStart = neatValue(0, width, Math.floor((left - effective.left) / unitWidth))
+    const xEnd = neatValue(0, width, Math.ceil((right - effective.left) / unitWidth))
+    const yStart = neatValue(0, height, Math.floor((top - effective.top) / unitHeight))
+    const yEnd = neatValue(0, height, Math.ceil((bottom - effective.top) / unitHeight))
 
+    if (xEnd <= xStart || yEnd <= yStart) return null
+
+    const selectRect = matrixRectToSelectRect(canvas, {
+        xStart,
+        yStart,
+        sWidth: xEnd - xStart,
+        sHeight: yEnd - yStart,
+    }, matrixConfig)
+
+    return {
+        x1: selectRect.selectX,
+        y1: selectRect.selectY,
+        x2: selectRect.selectX + selectRect.selectWidth,
+        y2: selectRect.selectY + selectRect.selectHeight,
+        matrixRect: { xStart, yStart, xEnd, yEnd, width, height },
+    }
 }
 
 
@@ -159,10 +199,10 @@ function buildSingleHistoryBox(region, index, canvasArea, max, matrixConfig) {
         else if (mh < mw) offsetY = (mw - mh) / 2 * heightUtil
     }
 
-    const boxX = canvasX1 + xStart * widthUtil + offsetX + 1
-    const boxY = canvasY1 + yStart * heightUtil + offsetY + 1
-    const boxWidth = selectWidth * widthUtil - 2
-    const boxHeight = selectHeight * heightUtil - 2
+    const boxX = canvasX1 + xStart * widthUtil + offsetX
+    const boxY = canvasY1 + yStart * heightUtil + offsetY
+    const boxWidth = selectWidth * widthUtil
+    const boxHeight = selectHeight * heightUtil
 
     const colorIndex = Number.isFinite(Number(region.colorIndex)) ? Number(region.colorIndex) : index
     const baseColor = region.bgc || region.color || HISTORY_SELECT_COLORS[colorIndex % HISTORY_SELECT_COLORS.length]
@@ -178,6 +218,7 @@ function buildSingleHistoryBox(region, index, canvasArea, max, matrixConfig) {
         top: boxY + 'px',
         width: boxWidth + 'px',
         height: boxHeight + 'px',
+        boxSizing: 'border-box',
         border: `2px solid ${borderColor}`,
         backgroundColor: fillColor,
         boxShadow: `0 0 0 1px ${borderColor}`,
