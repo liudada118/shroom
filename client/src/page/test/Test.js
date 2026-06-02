@@ -120,6 +120,21 @@ function Test() {
         removeHistoryBox()
     }, [clearMatrixData])
 
+    useEffect(() => {
+        const handleReportReturnRealtime = () => {
+            const store = useEquipStore.getState()
+            store.setDataStatus('realtime')
+            store.setPlaybackHasSelection(false)
+            store.setPlaybackRecordDate('')
+            store.setHistoryChart({ pressArr: {}, areaArr: {} })
+            store.setHistoryStatus({ index: 0, timestamp: '' })
+            clearVisualizationData()
+            setPlayBack(false)
+        }
+        window.addEventListener('report-return-realtime', handleReportReturnRealtime)
+        return () => window.removeEventListener('report-return-realtime', handleReportReturnRealtime)
+    }, [clearVisualizationData])
+
     const shouldClearAfterPlaybackEnd = (payload) => {
         if (payload?.realtimeAvailable === false) return true
         if (payload?.realtimeAvailable === true) return false
@@ -298,7 +313,7 @@ function Test() {
     // ─── 状态 ────────────────────────────────────────────
     const [sitData, setSitData] = useState([])
     const [equipStatus, setStatus] = useState({ back: 'offline', sit: 'offline', data: new Array(4096).fill(0) })
-    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 1, color: 180, filter: 1, height: 1, coherent: 1 }
+    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 3, color: 50, filter: 10, height: 150, coherent: 1 }
     const [settingValue, setSettingValue] = useState(setValueData)
     const [selectArr, setSelectArr] = useState([])
     const [wsLocalData, setWsLocalData] = useState(new Array(4096).fill(0))

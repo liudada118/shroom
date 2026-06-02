@@ -9,13 +9,13 @@
     "504330390150432304": {
       "type": "endi-back",
       "deviceClass": "foot",
-      "lastSeen": "2026-05-26T05:46:41.802Z",
+      "lastSeen": "2026-06-02T11:08:13.533Z",
       "alias": ""
     },
     "344637300F50323802": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-01T12:18:01.372Z",
+      "lastSeen": "2026-06-02T11:08:14.044Z",
       "alias": ""
     },
     "344637301050320D99": {
@@ -27,7 +27,7 @@
     "464134391150431AAA": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-01T11:40:04.871Z",
+      "lastSeen": "2026-06-02T03:51:13.182Z",
       "alias": ""
     },
     "504330390250435F24": {
@@ -41,7 +41,13 @@
       "deviceClass": "foot",
       "lastSeen": "2026-06-01T12:18:01.888Z",
       "alias": ""
+    },
+    "504330390250435306": {
+      "type": "endi-back",
+      "deviceClass": "foot",
+      "lastSeen": "2026-06-02T03:51:12.672Z",
+      "alias": ""
     }
   },
-  "updatedAt": "2026-06-01T12:18:01.888Z"
+  "updatedAt": "2026-06-02T11:08:14.044Z"
 }

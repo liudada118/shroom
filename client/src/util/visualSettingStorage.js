@@ -1,16 +1,27 @@
 const VISUAL_SETTING_MAP_KEY = 'visualSettingValueBySystemV1'
 const LEGACY_SETTING_KEY = 'setValueData'
-const VISUAL_COLOR_DEFAULT_VERSION_KEY = 'visualColorDefaultVersion'
-const VISUAL_COLOR_DEFAULT_VERSION = '180'
-const VISUAL_COLOR_DEFAULT = 180
+const VISUAL_DEFAULT_VERSION_KEY = 'visualDefaultVersion'
+const VISUAL_DEFAULT_VERSION = '2026-06-02-visual-defaults'
+const VISUAL_SETTING_DEFAULTS = { gauss: 3, color: 50, filter: 10, height: 150 }
 const LEGACY_DEFAULT_COLORS = new Set([200, 255, 355, 495])
+const LEGACY_DEFAULT_VALUES = {
+  gauss: new Set([1, 2, 2.6]),
+  color: new Set([180, ...LEGACY_DEFAULT_COLORS]),
+  filter: new Set([0, 1, 6]),
+  height: new Set([1, 2.02, 3.36, 10]),
+}
 const SETTING_KEYS = ['gauss', 'color', 'filter', 'height', 'coherent']
 export const DEFAULT_HEIGHT_SETTING_MAX = 200
+export const DEFAULT_FILTER_SETTING_MAX = 200
 
 export function normalizeVisualSettingMax(maxValue = {}) {
   const heightMax = Number(maxValue?.height)
+  const filterMax = Number(maxValue?.filter)
   return {
     ...maxValue,
+    filter: Number.isFinite(filterMax)
+      ? Math.max(filterMax, DEFAULT_FILTER_SETTING_MAX)
+      : DEFAULT_FILTER_SETTING_MAX,
     height: Number.isFinite(heightMax)
       ? Math.max(heightMax, DEFAULT_HEIGHT_SETTING_MAX)
       : DEFAULT_HEIGHT_SETTING_MAX,
@@ -49,9 +60,27 @@ function isLegacyDefaultColor(value) {
   return Number.isFinite(color) && LEGACY_DEFAULT_COLORS.has(color)
 }
 
-function migrateVisualColorDefaultMap() {
+function isLegacyDefaultSetting(key, value) {
+  const legacySet = LEGACY_DEFAULT_VALUES[key]
+  const numberValue = Number(value)
+  return legacySet && Number.isFinite(numberValue) && legacySet.has(numberValue)
+}
+
+function migrateVisualDefaultValue(value) {
+  if (!value || typeof value !== 'object') return value
+  let changed = false
+  const nextValue = { ...value }
+  Object.entries(VISUAL_SETTING_DEFAULTS).forEach(([key, defaultValue]) => {
+    if (!isLegacyDefaultSetting(key, nextValue[key])) return
+    nextValue[key] = defaultValue
+    changed = true
+  })
+  return changed ? nextValue : value
+}
+
+function migrateVisualDefaultMap() {
   const map = safeParse(localStorage.getItem(VISUAL_SETTING_MAP_KEY), {})
-  if (localStorage.getItem(VISUAL_COLOR_DEFAULT_VERSION_KEY) === VISUAL_COLOR_DEFAULT_VERSION) {
+  if (localStorage.getItem(VISUAL_DEFAULT_VERSION_KEY) === VISUAL_DEFAULT_VERSION) {
     return map
   }
 
@@ -59,20 +88,26 @@ function migrateVisualColorDefaultMap() {
   const nextMap = { ...map }
   Object.keys(nextMap).forEach((key) => {
     if (!nextMap[key] || typeof nextMap[key] !== 'object') return
-    if (!isLegacyDefaultColor(nextMap[key].color)) return
-    nextMap[key] = { ...nextMap[key], color: VISUAL_COLOR_DEFAULT }
+    const migratedValue = migrateVisualDefaultValue(nextMap[key])
+    if (migratedValue === nextMap[key]) return
+    nextMap[key] = migratedValue
     changed = true
   })
 
   const legacyValue = safeParse(localStorage.getItem(LEGACY_SETTING_KEY), null)
-  if (legacyValue && typeof legacyValue === 'object' && isLegacyDefaultColor(legacyValue.color)) {
-    localStorage.setItem(LEGACY_SETTING_KEY, JSON.stringify({ ...legacyValue, color: VISUAL_COLOR_DEFAULT }))
+  if (legacyValue && typeof legacyValue === 'object') {
+    const migratedLegacyValue = migrateVisualDefaultValue(legacyValue)
+    if (migratedLegacyValue !== legacyValue) {
+      localStorage.setItem(LEGACY_SETTING_KEY, JSON.stringify(migratedLegacyValue))
+    } else if (isLegacyDefaultColor(legacyValue.color)) {
+      localStorage.setItem(LEGACY_SETTING_KEY, JSON.stringify({ ...legacyValue, color: VISUAL_SETTING_DEFAULTS.color }))
+    }
   }
 
   if (changed) {
     localStorage.setItem(VISUAL_SETTING_MAP_KEY, JSON.stringify(nextMap))
   }
-  localStorage.setItem(VISUAL_COLOR_DEFAULT_VERSION_KEY, VISUAL_COLOR_DEFAULT_VERSION)
+  localStorage.setItem(VISUAL_DEFAULT_VERSION_KEY, VISUAL_DEFAULT_VERSION)
   return nextMap
 }
 
@@ -81,7 +116,7 @@ export function loadVisualSettingValue(system, fallback = {}, maxValue = {}) {
     return normalizeSettingValue(fallback, fallback, maxValue)
   }
 
-  const map = migrateVisualColorDefaultMap()
+  const map = migrateVisualDefaultMap()
   if (system && map?.[system]) {
     return normalizeSettingValue(map[system], fallback, maxValue)
   }

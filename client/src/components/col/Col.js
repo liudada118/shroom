@@ -12,7 +12,7 @@ import { colSelectMatrix } from '../../util/util'
 
 export default function Col(props) {
     const { t } = useTranslation()
-    const { colName, remark, HZ, setStartTime, col, setCol, className = '', children, onBeforeStart } = props
+    const { colName, remark, HZ, setStartTime, col, setCol, className = '', children, onBeforeStart, onCollectEnd } = props
     const pageInfo = useContext(pageContext)
     const currentCollectDateRef = useRef('')
 
@@ -162,6 +162,7 @@ export default function Col(props) {
                     message.success(t('collectSuccess'))
                     setCol(!col)
                     useEquipStore.getState().setCollecting(false)
+                    onCollectEnd?.({ date: collectDate })
                 }
             })
             setStartTime(0)

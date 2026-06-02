@@ -200,7 +200,7 @@ graph TD
 
 9. **打包版本元数据**
     - Electron 安装包依赖根目录 `package.json` 的 `version` 字段，必须是合法 SemVer；诸如 `endi1.0.1` 这类业务前缀版本不能直接用于 `electron-builder`
-    - 前端界面显示版本由 `client/src/util/version.js` 的 `APP_VERSION` 单独维护，因此可以保留业务展示版本，同时将打包元数据保持为合法的 `1.0.1`
+    - 前端界面显示版本由 `client/src/util/version.js` 读取根目录 `package.json.version`，底部版本号与打包元数据保持一致。
     - 打包配置中的 `npmRebuild` 已显式关闭，避免 `electron-builder` 在本机已有 N-API 预编译二进制时仍强制重编 `sqlite3` / `serialport`，从而被缺失的 VS C++ 工具链阻塞
 
 10. **本地串口缓存写入路径**
@@ -1227,8 +1227,8 @@ graph TD
 
 ## 2026-06-01 统计压强公式与报告靠背优先
 - 实时统计和 COP 报告新增压强指标计算口径：最大压强使用 `estimateMaxPressure`，平均压强使用 `estimatePressure`，`adcAvg` 按坐垫 TOP-70、靠背 TOP-46（真人段全部有效点）计算；压力总和统一按 `平均压强(kPa) * 1000 * 有效面积(cm²) / 10000` 转为 N；前端使用同公式常量的 ESM 实现，避免浏览器运行时直接加载后端 CommonJS 公式文件。
-- `util/db.js` 下载 CSV 直接引用 `server/kpa/pressureFormula_含单点_V2.7.37.js` 中的 `estimateMaxPressure/estimatePressure`，整面数据和框选区域导出的最大压强、平均压强、压力总和保持同一公式口径。
-- COP 报告主分析顺序固定靠背优先，报告前部概览、整体压力/COP、整体统计和 COP 指标优先展示靠背数据；实时右侧可视化统计移除“最小压强”显示。
+- `util/db.js` 下载 CSV 直接引用 `server/kpa/pressureFormula_V2.7.38.js` 中的 `estimateMaxPressure/estimatePressure`，整面数据和框选区域导出的最大压强、平均压强、压力总和保持同一公式口径。
+- COP 报告主分析顺序固定靠背优先，报告压力分布、统计和 COP 指标按靠背/座椅传感面分别展示；实时右侧可视化统计移除“最小压强”显示。
 | 2026-06-01 | 修复缺陷 | 修正实时、CSV 和 COP 报告的最大/平均/总压力公式口径，并让 COP 报告靠背数据优先展示 |
 
 ## 2026-06-01 可视化颜色默认值调整
@@ -1236,3 +1236,78 @@ graph TD
 - `visualSettingStorage` 增加一次性本地缓存迁移，首次加载时把历史默认色值 `200/255/355/495` 更新为 `180`，迁移后用户手动设置的颜色值继续按本地保存值读取。
 - 后端系统配置归一化会在读取、保存和加密配置时把默认颜色值写回 `180`，避免旧配置文件继续显示 `255`。
 | 2026-06-01 | 配置变更 | 将可视化颜色默认值调整为 180，颜色最大值保持 255 |
+
+## 2026-06-02 版本显示与框选命名修正
+- `client/src/util/version.js` 不再硬编码 `endi1.0.1`，改为读取根目录 `package.json.version`，左下角版本显示与打包版本保持一致。
+- `SelectSet` 为框选名称输入增加编辑态缓存，输入过程中允许清空文本；失焦时若仍为空再恢复默认框选名，避免删除到空值时立即跳回原名称。
+| 2026-06-02 | 修复缺陷 | 左下角版本号跟随 package 版本，并允许框选名称编辑时临时清空 |
+
+## 2026-06-02 采集结束刷新历史列表
+- `Col` 在 `/endCol` 成功后通过 `onCollectEnd` 通知父组件当前采集已结束。
+- `ColControlV2` 将采集结束回调透传给采集按钮；`ColAndHistory` 收到通知后清空历史列表缓存，历史抽屉已打开且处于本地历史页时会强制重新请求 `/getColHistory`。
+| 2026-06-02 | 修复缺陷 | 修复直接打开历史数据后采集，采集完毕历史列表不刷新的问题 |
+
+## 2026-06-02 COP 报告使用当前框选模板
+- `ColAndHistory.openCopReport()` 在跳转报告页前读取当前 `brushInstance.rangeArr`，按矩阵 key 生成 `selectJson` 并通过 `sessionStorage` 临时传给报告页，避免清空框选模式后丢失当前模板。
+- `CopReport` 读取临时框选并随 `/copReportData` 请求提交；后端优先使用请求中的 `selectJson`，没有传入时才回退到历史备注保存的框选。
+| 2026-06-02 | 修复缺陷 | 修复当前框选模板生成 COP 报告时仍使用历史旧框选的问题 |
+
+## 2026-06-02 COP 报告按传感面展示压力分布
+- `CopReport` 将原先“整体压力分布/整体统计/整体 COP”标题改为按当前矩阵动态显示“靠背”或“座椅”，避免把单个传感面的压力分布误标为整体。
+- 其他传感面继续通过 `SurfaceAnalysisReport` 输出独立的“压力分布与 COP 分析”，因此报告中会分别呈现靠背压力分布和座椅压力分布。
+| 2026-06-02 | 修复缺陷 | COP 报告压力分布改为靠背/座椅分面展示，取消整体压力分布口径 |
+
+## 2026-06-02 COP 报告图表 ECharts 化
+- `CopReport` 将压力总和趋势、COP 偏移趋势和 COP 轨迹图从手绘 SVG 改为 ECharts 渲染，统一坐标轴、网格、tooltip 和曲线样式，减少趋势图被容器拉伸导致的失真。
+- COP 轨迹图使用正方形 ECharts 容器，并在标题中带上当前传感面名称，区分靠背 COP 轨迹与座椅 COP 轨迹；框选区域局部 COP 图也同步标明所属传感面。
+| 2026-06-02 | 优化重构 | COP 报告所有折线/轨迹图改用 ECharts，并区分靠背与座椅 COP 轨迹 |
+
+## 2026-06-02 COP 报告信息与框选来源修正
+- COP 报告顶部报告信息移除设备名称、传感器表面和传感器类型，只保留历史文档、矩阵尺寸、报告包含、采集/生成时间和版本等必要元数据。
+- `/copReportData` 不再默认回退使用历史备注里的采集框选；只有报告请求显式传入当前 `selectJson` 时才展示框选区域，避免采集时的旧框选自动进入新报告。
+- 报告页 ECharts 压力趋势图把 Y 轴备注旋转放到轴线中部，并增加左侧 grid 空间，避免备注文字超出图表盒子。
+| 2026-06-02 | 修复缺陷 | 移除 COP 报告冗余传感器信息，取消采集框选默认进报告，并修正压力趋势图 Y 轴备注溢出 |
+
+## 2026-06-02 COP 报告折线图留白微调
+- `CopReport` 的 ECharts 折线图绘图区向左、向下微调，Y 轴备注保持靠近坐标轴顶部的横向显示位置，避免备注竖排影响阅读。
+| 2026-06-02 | 优化重构 | 微调 COP 报告折线图 grid 留白和 Y 轴备注位置 |
+
+## 2026-06-02 COP 报告框选折线图刻度优化
+- `CopReport` 的 ECharts 折线图限制 Y 轴刻度数量并启用标签避让，数值格式去除无意义尾零，避免框选详情小图中 Y 轴坐标文字重叠。
+| 2026-06-02 | 修复缺陷 | 修复 COP 报告框选折线图 Y 轴坐标重叠 |
+
+## 2026-06-02 COP 报告框选图表放大
+- `CopReport` 将框选详情里的小图高度从 130px 提升到 150px，并把 ECharts 坐标轴文字和 Y 轴备注字号略微放大，提升报告中框选趋势图的可读性。
+| 2026-06-02 | 优化重构 | 放大 COP 报告框选详情图表和坐标文字 |
+
+## 2026-06-02 COP 报告返回清理回放态
+- `CopReport` 的返回按钮会先将 zustand 中的 `dataStatus/playbackRecordDate/playbackHasSelection/historyChart/history` 恢复到实时默认态，并调用 `/cancalDbPlay` 清理后端历史回放上下文，再返回首页。
+- 该处理避免从历史数据进入报告后返回首页时仍残留播放控件，导致“开始采集/历史数据”入口不显示。
+| 2026-06-02 | 修复缺陷 | 修复 COP 报告返回首页后播放控件残留、采集和历史入口消失的问题 |
+
+## 2026-06-02 COP 报告返回实时状态补强
+- `CopReport` 返回首页时广播 `report-return-realtime`，`Test` 和 `ColAndHistory` 监听后同步清空历史最后一帧、历史曲线、播放记录、本地播放 key 和历史抽屉状态。
+- 返回报告页时后端改为调用 `/cancalDbPlay`，不仅停止播放，还会清理 `historyFlag/historyDbArr/historySelectCache` 并恢复实时发送，避免界面显示实时但后端仍停留在历史上下文。
+| 2026-06-02 | 修复缺陷 | 修复 COP 报告返回实时页后状态仍停留在历史上下文的问题 |
+
+## 2026-06-02 测量系统可视化默认值调整
+- 前端可视化默认推荐值统一调整为：图像润滑 `gauss=3`、颜色调节 `color=50`、噪点消除 `filter=10`、亮度调节 `height=150`，实时初始化、系统设置页兜底配置和旧 `setValueData` 兜底值保持一致。
+- 可视化参数最大值继续保持颜色上限 `255`，并将噪点消除上限 `filter` 从旧配置的 `20` 归一化提升到 `200`；`height` 上限继续不低于 `200`。
+- `visualSettingStorage` 增加新版默认值本地缓存迁移，首次加载时仅把历史默认值范围内的旧润滑、颜色、噪点、亮度值迁移到新版默认值，尽量保留用户已经手动调整过的非默认配置。
+- 后端系统配置归一化从单独颜色归一扩展为完整可视化配置归一，`/getSystem`、`/changeSystemType`、`/setSystemConfig` 和 `/getSysconfig` 都会返回同一套默认值与上限。
+| 2026-06-02 | 配置变更 | 将测量系统可视化默认值改为 3/50/10/150，并把噪点消除上限提升到 200 |
+
+## 2026-06-02 压强公式切换到 V2.7.38
+- `util/db.js` 的 CSV 导出压强统计从 `pressureFormula_含单点_V2.7.37.js` 切换为 `server/kpa/pressureFormula_V2.7.38.js`，直接使用其中的 `estimatePressure` 和 `estimateMaxPressure`。
+- 前端实时统计和 COP 报告继续使用 `client/src/util/pressureMetrics.js` 的浏览器安全实现，并标注其公式常量需要与 `pressureFormula_V2.7.38.js` 保持同步，避免浏览器直接加载后端 CommonJS 文件导致模块导出错误。
+| 2026-06-02 | 配置变更 | 将压强统计公式来源切换到 pressureFormula_V2.7.38.js |
+
+## 2026-06-02 坐垫默认顺时针旋转
+- 前端 `useMatrixData` 和后端 `DataService/state` 的数据方向默认值新增坐垫矩阵 byKey 配置，`endi-sit`、`carY-sit`、`car-sit` 默认 `rotateDegree=90`，靠背仍保持默认不旋转。
+- 前端本地 `matrixDataDirection` 缓存和后端 `data_direction.json` 在加载时会把旧的坐垫 `rotate270` 默认态迁移为 `rotate90`；迁移只发生在加载旧缓存时，用户之后手动旋转到其它角度不会被通用归一化强制改回。
+| 2026-06-02 | 配置变更 | 坐垫矩阵默认顺时针旋转 90 度，并兼容旧 270 度方向缓存 |
+
+## 2026-06-02 坐垫默认上下翻转
+- 在坐垫默认顺时针旋转 `90°` 的基础上，`useMatrixData`、`DataService` 和 `state` 的坐垫默认方向继续增加 `up=false`，即默认执行 `rotate90 + vertical flip`。
+- 旧方向缓存中坐垫 `rotate90/rotate270` 且 `up=true` 的默认态会在加载时迁移为 `rotate90 + up=false`；用户之后手动设置其它方向仍按实际保存值生效。
+| 2026-06-02 | 配置变更 | 坐垫默认方向在顺时针 90 度基础上增加上下翻转 |

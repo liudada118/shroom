@@ -1,13 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, message, Spin } from 'antd'
 import { ArrowLeftOutlined, DownloadOutlined, FilePdfOutlined } from '@ant-design/icons'
 import axios from 'axios'
+import * as echarts from 'echarts'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import { computePressureMetrics } from '../../util/pressureMetrics'
+import { useEquipStore } from '../../store/equipStore'
 import './CopReport.scss'
 
+const COP_REPORT_SELECTION_PREFIX = 'copReportSelection:'
 const EFFECTIVE_THRESHOLD = 5
 const POINT_AREA_CM2 = 1
 const POINT_SPACING_MM = 10
@@ -77,12 +80,6 @@ const getMatrixLabel = (key) => {
   if (String(key).includes('back')) return '靠背'
   if (String(key).includes('sit')) return '坐垫'
   return key || '传感面'
-}
-
-const getDeviceName = (key) => {
-  if (String(key).includes('back')) return '靠背传感器'
-  if (String(key).includes('sit')) return '坐垫传感器'
-  return String(key || '').replace(/endi-?/ig, '') || '传感器'
 }
 
 const getSensorTypeName = (key) => {
@@ -363,50 +360,153 @@ function Heatmap({ matrix, selections = [], activeSelection = null, title }) {
   )
 }
 
-function LineChart({ series = [], title, color = '#1677ff', yLabel = '' }) {
-  const sampled = downsample(series.filter(Number.isFinite), 180)
-  const max = Math.max(...sampled, 1)
-  const min = Math.min(...sampled, 0)
-  const range = max - min || 1
-  const points = sampled.map((value, index) => {
-    const x = sampled.length > 1 ? index * 100 / (sampled.length - 1) : 0
-    const y = 60 - ((value - min) / range) * 52
-    return `${x},${y}`
-  }).join(' ')
+function ReportEChart({ option, title, className = '' }) {
+  const chartRef = useRef(null)
+  const chartInstanceRef = useRef(null)
+
+  useEffect(() => {
+    if (!chartRef.current) return undefined
+    const chart = echarts.init(chartRef.current, null, { renderer: 'canvas' })
+    chartInstanceRef.current = chart
+    chart.setOption(option, true)
+
+    const resize = () => chart.resize()
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(resize)
+      : null
+    observer?.observe(chartRef.current)
+    window.addEventListener('resize', resize)
+
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', resize)
+      chart.dispose()
+      chartInstanceRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    chartInstanceRef.current?.setOption(option, true)
+  }, [option])
+
   return (
     <div className="report-chart">
       <div className="chart-title">{title}</div>
-      <svg viewBox="0 0 100 68" className="line-svg" preserveAspectRatio="none">
-        <line x1="0" y1="60" x2="100" y2="60" stroke="#ccd8ea" strokeWidth="0.6" />
-        <line x1="0" y1="8" x2="0" y2="60" stroke="#ccd8ea" strokeWidth="0.6" />
-        <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" />
-        <text x="2" y="7" fontSize="4" fill="#64748b">{yLabel}</text>
-      </svg>
+      <div ref={chartRef} className={`report-echart ${className}`} />
     </div>
   )
+}
+
+function LineChart({ series = [], title, color = '#1677ff', yLabel = '' }) {
+  const sampled = downsample(series.filter(Number.isFinite), 180)
+  const option = useMemo(() => ({
+    animation: false,
+    grid: { left: 28, right: 12, top: 38, bottom: 30, containLabel: true },
+    tooltip: { trigger: 'axis', confine: true },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: sampled.map((_, index) => index + 1),
+      axisLine: { lineStyle: { color: '#cbdaf0' } },
+      axisTick: { show: false },
+      axisLabel: { color: '#64748b', fontSize: 11 },
+    },
+    yAxis: {
+      type: 'value',
+      name: yLabel,
+      nameGap: 8,
+      nameTextStyle: { color: '#64748b', fontSize: 11 },
+      splitNumber: 4,
+      splitLine: { lineStyle: { color: '#e5edf8' } },
+      axisLine: { show: true, lineStyle: { color: '#cbdaf0' } },
+      axisLabel: {
+        color: '#64748b',
+        fontSize: 11,
+        hideOverlap: true,
+        margin: 8,
+        formatter: (value) => Number(value).toFixed(2).replace(/\.?0+$/, ''),
+      },
+    },
+    series: [{
+      type: 'line',
+      data: sampled,
+      smooth: true,
+      showSymbol: sampled.length <= 60,
+      symbolSize: 4,
+      lineStyle: { color, width: 2 },
+      itemStyle: { color },
+      areaStyle: { color: 'rgba(22, 119, 255, 0.08)' },
+    }],
+  }), [color, sampled, yLabel])
+
+  return <ReportEChart title={title} option={option} />
 }
 
 function CopChart({ series = [], title }) {
   const points = downsample(series.filter((item) => Number.isFinite(item.copX) && Number.isFinite(item.copY)), 180)
   const maxAbs = Math.max(40, ...points.flatMap((item) => [Math.abs(item.copX), Math.abs(item.copY)]))
-  const toX = (x) => 50 + x / maxAbs * 45
-  const toY = (y) => 50 - y / maxAbs * 45
-  const path = points.map((item) => `${toX(item.copX)},${toY(item.copY)}`).join(' ')
   const start = points[0]
   const end = points[points.length - 1]
-  return (
-    <div className="report-chart">
-      <div className="chart-title">{title}</div>
-      <svg viewBox="0 0 100 100" className="cop-svg">
-        <line x1="50" y1="5" x2="50" y2="95" stroke="#d6e1f0" strokeWidth="0.6" />
-        <line x1="5" y1="50" x2="95" y2="50" stroke="#d6e1f0" strokeWidth="0.6" />
-        <circle cx="50" cy="50" r="2.2" fill="#fa8c16" />
-        <polyline points={path} fill="none" stroke="#1d4ed8" strokeWidth="1.6" />
-        {start && <circle cx={toX(start.copX)} cy={toY(start.copY)} r="2.4" fill="#16a34a" />}
-        {end && <circle cx={toX(end.copX)} cy={toY(end.copY)} r="2.4" fill="#dc2626" />}
-      </svg>
-    </div>
-  )
+  const option = useMemo(() => ({
+    animation: false,
+    grid: { left: 32, right: 14, top: 14, bottom: 28 },
+    tooltip: {
+      trigger: 'item',
+      confine: true,
+      formatter: (params) => {
+        const value = params.value || []
+        return `${params.seriesName}<br/>Dx: ${formatNumber(value[0])} mm<br/>Dy: ${formatNumber(value[1])} mm`
+      },
+    },
+    xAxis: {
+      type: 'value',
+      min: -maxAbs,
+      max: maxAbs,
+      axisLine: { lineStyle: { color: '#cbdaf0' } },
+      axisLabel: { color: '#64748b', fontSize: 11 },
+      splitLine: { lineStyle: { color: '#e5edf8' } },
+    },
+    yAxis: {
+      type: 'value',
+      min: -maxAbs,
+      max: maxAbs,
+      axisLine: { lineStyle: { color: '#cbdaf0' } },
+      axisLabel: { color: '#64748b', fontSize: 11 },
+      splitLine: { lineStyle: { color: '#e5edf8' } },
+    },
+    series: [
+      {
+        name: 'COP',
+        type: 'line',
+        data: points.map((item) => [item.copX, item.copY]),
+        showSymbol: false,
+        lineStyle: { color: '#1d4ed8', width: 2 },
+      },
+      {
+        name: '中心点',
+        type: 'scatter',
+        data: [[0, 0]],
+        symbolSize: 6,
+        itemStyle: { color: '#fa8c16' },
+      },
+      {
+        name: '起点',
+        type: 'scatter',
+        data: start ? [[start.copX, start.copY]] : [],
+        symbolSize: 7,
+        itemStyle: { color: '#16a34a' },
+      },
+      {
+        name: '终点',
+        type: 'scatter',
+        data: end ? [[end.copX, end.copY]] : [],
+        symbolSize: 7,
+        itemStyle: { color: '#dc2626' },
+      },
+    ],
+  }), [end, maxAbs, points, start])
+
+  return <ReportEChart title={title} option={option} className="cop-echart" />
 }
 
 function MetricCard({ label, value, unit }) {
@@ -431,6 +531,7 @@ function CopReport() {
   const date = query.get('date') || query.get('time') || ''
   const source = query.get('source') || ''
   const fileName = query.get('fileName') || ''
+  const selectionId = query.get('selectionId') || ''
 
   useEffect(() => {
     if (!date && !fileName) {
@@ -438,6 +539,14 @@ function CopReport() {
       return
     }
     const requestPayload = { date, source, fileName }
+    if (selectionId) {
+      const selectionKey = `${COP_REPORT_SELECTION_PREFIX}${selectionId}`
+      const selectJson = parseMaybeJson(sessionStorage.getItem(selectionKey))
+      if (selectJson && Object.keys(selectJson).length) {
+        requestPayload.selectJson = selectJson
+      }
+      sessionStorage.removeItem(selectionKey)
+    }
     setLoading(true)
     axios({
       method: 'post',
@@ -455,10 +564,23 @@ function CopReport() {
       message.error(err.message || '报告数据读取失败')
       setPayload(null)
     }).finally(() => setLoading(false))
-  }, [date, source, fileName])
+  }, [date, source, fileName, selectionId])
 
   const analysis = useMemo(() => buildAnalysis(payload), [payload])
   const generatedTime = payload?.generatedAt ? new Date(payload.generatedAt).toLocaleString() : new Date().toLocaleString()
+
+  const backToHome = () => {
+    const store = useEquipStore.getState()
+    store.setDataStatus('realtime')
+    store.setPlaybackHasSelection(false)
+    store.setPlaybackRecordDate('')
+    store.setHistoryChart({ pressArr: {}, areaArr: {} })
+    store.setHistoryStatus({ index: 0, timestamp: '' })
+    store.setSelectArr([])
+    window.dispatchEvent(new CustomEvent('report-return-realtime'))
+    axios.post(`${localAddress}/cancalDbPlay`).catch(() => {})
+    navigate('/')
+  }
 
   const exportPdf = async () => {
     setExporting(true)
@@ -484,7 +606,7 @@ function CopReport() {
     return (
       <div className="cop-report-page">
         <div className="report-toolbar">
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/')}>返回</Button>
+          <Button icon={<ArrowLeftOutlined />} onClick={backToHome}>返回</Button>
         </div>
         <Empty description="未找到可生成报告的历史数据" />
       </div>
@@ -494,11 +616,12 @@ function CopReport() {
   const { totalSummary, averageMatrix, metrics, selections, size } = analysis
   const allAnalyses = analysis.analyses || [analysis]
   const collectionTime = getCollectionTime(payload)
+  const primaryLabel = getMatrixLabel(analysis.matrixKey)
 
   return (
     <div className="cop-report-page">
       <div className="report-toolbar">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/')}>返回</Button>
+        <Button icon={<ArrowLeftOutlined />} onClick={backToHome}>返回</Button>
         <Button type="primary" icon={<DownloadOutlined />} loading={exporting} onClick={exportPdf}>导出 PDF</Button>
       </div>
 
@@ -508,11 +631,8 @@ function CopReport() {
           <div><span>历史文档名称：</span>{payload.name || payload.date}</div>
           <div><span>历史文档ID：</span>{payload.id}</div>
           <div><span>矩阵尺寸：</span>{size.width} x {size.height}</div>
-          <div><span>设备名称：</span>{getDeviceName(analysis.matrixKey)}</div>
           <div><span>报告包含：</span>{allAnalyses.map((item) => getMatrixLabel(item.matrixKey)).join(' / ')}</div>
           <div><span>采集时间：</span>{collectionTime}</div>
-          <div><span>传感器表面：</span>{analysis.matrixKey.includes('back') ? '靠背表面' : analysis.matrixKey.includes('sit') ? '坐垫表面' : '传感器表面'}</div>
-          <div><span>传感器类型：</span>{getSensorTypeName(analysis.matrixKey)}</div>
           <div><span>生成时间：</span>{generatedTime}</div>
           <div><span>报告版本：</span>v1.0</div>
         </section>
@@ -529,18 +649,18 @@ function CopReport() {
           </div>
         </ReportSection>
 
-        <ReportSection index="2" title="整体压力分布与COP轨迹">
+        <ReportSection index="2" title={`${primaryLabel}压力分布与COP轨迹`}>
           <div className="chart-grid four">
-            <Heatmap matrix={averageMatrix} selections={selections} title="整体平均压力热力图 (kPa)" />
-            <CopChart series={metrics} title="整体COP轨迹图 (mm)" />
-            <Heatmap matrix={averageMatrix} selections={selections} title="框选区域叠加图" />
-            <LineChart series={metrics.map((item) => item.pSum)} title="压力总和趋势图 (kPa/N)" color="#1d4ed8" yLabel="压力" />
+            <Heatmap matrix={averageMatrix} selections={selections} title={`${primaryLabel}平均压力热力图 (kPa)`} />
+            <CopChart series={metrics} title={`${primaryLabel}COP轨迹图 (mm)`} />
+            <Heatmap matrix={averageMatrix} selections={selections} title={`${primaryLabel}框选区域叠加图`} />
+            <LineChart series={metrics.map((item) => item.pSum)} title={`${primaryLabel}压力总和趋势图 (N)`} color="#1d4ed8" yLabel="压力" />
           </div>
         </ReportSection>
 
-        <ReportSection index="3" title="整体统计指标">
+        <ReportSection index="3" title={`${primaryLabel}统计指标`}>
           <DataTable
-            columns={['最大压强 (kPa)', '平均压强 (kPa)', '压力总和 (kPa/N)', 'ADC总和 (ADC)', 'ADC最大值 (ADC)', '有效面积 (cm²)', '有效点数 (个)']}
+            columns={['最大压强 (kPa)', '平均压强 (kPa)', '压力总和 (N)', 'ADC总和 (ADC)', 'ADC最大值 (ADC)', '有效面积 (cm²)', '有效点数 (个)']}
             rows={[[
               formatNumber(totalSummary.pMax),
               formatNumber(totalSummary.pAvg),
@@ -553,7 +673,7 @@ function CopReport() {
           />
         </ReportSection>
 
-        <ReportSection index="4" title="整体COP分析">
+        <ReportSection index="4" title={`${primaryLabel}COP分析`}>
           <DataTable
             columns={['COP坐标 (mm)', '左右偏移 Dx (mm)', '前后偏移 Dy (mm)', '轨迹长度 (mm)', '平均速度 (mm/s)', '摆动范围 (mm)', '稳定性评分']}
             rows={[[
@@ -567,15 +687,15 @@ function CopReport() {
             ]]}
           />
           <div className="chart-grid two">
-            <CopChart series={metrics} title="COP轨迹详图" />
-            <LineChart series={metrics.map((item) => item.copX)} title="COP偏移趋势图 Dx" color="#1677ff" yLabel="Dx" />
+            <CopChart series={metrics} title={`${primaryLabel}COP轨迹详图`} />
+            <LineChart series={metrics.map((item) => item.copX)} title={`${primaryLabel}COP偏移趋势图 Dx`} color="#1677ff" yLabel="Dx" />
           </div>
         </ReportSection>
 
         <ReportSection index="5" title="框选区域总览">
           {selections.length ? (
             <DataTable
-              columns={['序号', '区域名称', '形状类型', '面积 (cm²)', '压力总和 (kPa/N)', '占整体比例 (%)', '最大压强 (kPa)', '平均压强 (kPa)', '风险等级']}
+              columns={['序号', '区域名称', '形状类型', '面积 (cm²)', '压力总和 (N)', '占当前传感面比例 (%)', '最大压强 (kPa)', '平均压强 (kPa)', '风险等级']}
               rows={selections.map((selection, index) => [
                 index + 1,
                 selection.name,
@@ -600,14 +720,14 @@ function CopReport() {
                 <h3><span style={{ background: selection.color }}>{index + 1}</span>{selection.name}</h3>
                 <div className="selection-detail-grid">
                   <Heatmap matrix={averageMatrix} selections={[selection]} activeSelection={selection} title="区域叠加图" />
-                  <LineChart series={selection.series.map((item) => item.pSum)} title="区域压力总和趋势 (kPa/N)" color={selection.color} yLabel="压力" />
-                  <CopChart series={selection.series} title="区域局部COP轨迹 (mm)" />
+                  <LineChart series={selection.series.map((item) => item.pSum)} title="区域压力总和趋势 (N)" color={selection.color} yLabel="压力" />
+                  <CopChart series={selection.series} title={`${primaryLabel}区域局部COP轨迹 (mm)`} />
                   <DataTable
                     columns={['指标', '数值']}
                     rows={[
                       ['最大压强 (kPa)', formatNumber(selection.summary.pMax)],
                       ['平均压强 (kPa)', formatNumber(selection.summary.pAvg)],
-                      ['压力总和 (kPa/N)', `${formatNumber(selection.summary.pSum)} (${formatNumber(selection.summary.pressureRatio, 1)}%)`],
+                      ['压力总和 (N)', `${formatNumber(selection.summary.pSum)} (${formatNumber(selection.summary.pressureRatio, 1)}%)`],
                       ['ADC总和 (ADC)', formatNumber(selection.summary.adcSum, 0)],
                       ['有效面积 (cm²)', formatNumber(selection.summary.effectiveArea)],
                       ['有效点数 (个)', formatNumber(selection.summary.effectivePoints, 0)],
@@ -667,7 +787,7 @@ function SurfaceAnalysisReport({ analysis, indexLabel }) {
   const { totalSummary, averageMatrix, metrics, selections, size, matrixKey } = analysis
   const label = getMatrixLabel(matrixKey)
   return (
-    <ReportSection index={indexLabel} title={`${label}压力中心分析`}>
+    <ReportSection index={indexLabel} title={`${label}压力分布与COP分析`}>
       <div className="surface-summary">
         <div><span>传感面：</span>{label}</div>
         <div><span>传感器类型：</span>{getSensorTypeName(matrixKey)}</div>
@@ -678,10 +798,10 @@ function SurfaceAnalysisReport({ analysis, indexLabel }) {
         <Heatmap matrix={averageMatrix} selections={selections} title={`${label}平均压力热力图 (kPa)`} />
         <CopChart series={metrics} title={`${label} COP轨迹图 (mm)`} />
         <Heatmap matrix={averageMatrix} selections={selections} title={`${label}框选叠加图`} />
-        <LineChart series={metrics.map((item) => item.pSum)} title={`${label}压力总和趋势 (kPa/N)`} color="#1d4ed8" yLabel="压力" />
+        <LineChart series={metrics.map((item) => item.pSum)} title={`${label}压力总和趋势 (N)`} color="#1d4ed8" yLabel="压力" />
       </div>
       <DataTable
-        columns={['最大压强 (kPa)', '平均压强 (kPa)', '压力总和 (kPa/N)', 'ADC总和 (ADC)', 'ADC最大值 (ADC)', '有效面积 (cm²)', '有效点数 (个)']}
+        columns={['最大压强 (kPa)', '平均压强 (kPa)', '压力总和 (N)', 'ADC总和 (ADC)', 'ADC最大值 (ADC)', '有效面积 (cm²)', '有效点数 (个)']}
         rows={[[
           formatNumber(totalSummary.pMax),
           formatNumber(totalSummary.pAvg),
@@ -711,14 +831,14 @@ function SurfaceAnalysisReport({ analysis, indexLabel }) {
               <h3><span style={{ background: selection.color }}>{index + 1}</span>{selection.name}</h3>
               <div className="selection-detail-grid">
                 <Heatmap matrix={averageMatrix} selections={[selection]} activeSelection={selection} title="区域叠加图" />
-                <LineChart series={selection.series.map((item) => item.pSum)} title="区域压力总和趋势 (kPa/N)" color={selection.color} yLabel="压力" />
-                <CopChart series={selection.series} title="区域局部COP轨迹 (mm)" />
+                <LineChart series={selection.series.map((item) => item.pSum)} title="区域压力总和趋势 (N)" color={selection.color} yLabel="压力" />
+                <CopChart series={selection.series} title={`${label}区域局部COP轨迹 (mm)`} />
                 <DataTable
                   columns={['指标', '数值']}
                   rows={[
                     ['最大压强 (kPa)', formatNumber(selection.summary.pMax)],
                     ['平均压强 (kPa)', formatNumber(selection.summary.pAvg)],
-                    ['压力总和 (kPa/N)', `${formatNumber(selection.summary.pSum)} (${formatNumber(selection.summary.pressureRatio, 1)}%)`],
+                    ['压力总和 (N)', `${formatNumber(selection.summary.pSum)} (${formatNumber(selection.summary.pressureRatio, 1)}%)`],
                     ['有效面积 (cm²)', formatNumber(selection.summary.effectiveArea)],
                     ['有效点数 (个)', formatNumber(selection.summary.effectivePoints, 0)],
                     ['局部COP (mm)', `(${formatNumber(selection.summary.copX)}, ${formatNumber(selection.summary.copY)})`],

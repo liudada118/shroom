@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { timeStampTo_Date } = require("./time");
 const constantObj = require("./config");
-const { estimatePressure, estimateMaxPressure } = require("../server/kpa/pressureFormula_含单点_V2.7.37");
+const { estimatePressure, estimateMaxPressure } = require("../server/kpa/pressureFormula_V2.7.38");
 
 // ─── 传感器点位配置 ──────────────────────────────────────
 const pointConfig = {

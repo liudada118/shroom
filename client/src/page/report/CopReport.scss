@@ -166,6 +166,21 @@
   height: 178px;
 }
 
+.report-echart {
+  display: block;
+  width: 100%;
+  height: 178px;
+  border: 1px solid #d7e4f7;
+  background: #f8fbff;
+  box-sizing: border-box;
+}
+
+.cop-echart {
+  width: min(100%, 178px);
+  height: 178px;
+  margin: 0 auto;
+}
+
 .report-table {
   width: 100%;
   border-collapse: collapse;
@@ -259,8 +274,14 @@
 
   .heatmap-svg,
   .cop-svg,
-  .line-svg {
-    height: 130px;
+  .line-svg,
+  .report-echart {
+    height: 150px;
+  }
+
+  .cop-echart {
+    width: min(100%, 150px);
+    height: 150px;
   }
 }
 

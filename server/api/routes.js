@@ -20,7 +20,17 @@ const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES }
 const router = express.Router()
 const historyIndexReady = new WeakSet()
 const VISUAL_COLOR_MAX = 255
-const VISUAL_COLOR_DEFAULT = 180
+const VISUAL_SETTING_DEFAULTS = {
+  gauss: 3,
+  color: 50,
+  filter: 10,
+  height: 150,
+}
+const VISUAL_SETTING_MAXIMUMS = {
+  color: VISUAL_COLOR_MAX,
+  filter: 200,
+  height: 200,
+}
 
 function ensureHistoryListIndex(db) {
   if (!db || historyIndexReady.has(db)) return Promise.resolve()
@@ -362,7 +372,7 @@ function getFirstSelectionRegion(selection) {
   return selection
 }
 
-function normalizeVisualColorConfig(config = {}) {
+function normalizeVisualConfig(config = {}) {
   const nextConfig = {
     ...config,
     optimalObj: { ...(config.optimalObj || {}) },
@@ -372,14 +382,14 @@ function normalizeVisualColorConfig(config = {}) {
   Object.keys(nextConfig.maxObj).forEach((key) => {
     nextConfig.maxObj[key] = {
       ...nextConfig.maxObj[key],
-      color: VISUAL_COLOR_MAX,
+      ...VISUAL_SETTING_MAXIMUMS,
     }
   })
 
   Object.keys(nextConfig.optimalObj).forEach((key) => {
     nextConfig.optimalObj[key] = {
       ...nextConfig.optimalObj[key],
-      color: VISUAL_COLOR_DEFAULT,
+      ...VISUAL_SETTING_DEFAULTS,
     }
   })
 
@@ -388,7 +398,7 @@ function normalizeVisualColorConfig(config = {}) {
 
 function readSystemConfig() {
   const configPath = state._configPath || path.join(__dirname, '..', '..', 'config.txt')
-  return normalizeVisualColorConfig(readEncryptedSystemConfig(configPath))
+  return normalizeVisualConfig(readEncryptedSystemConfig(configPath))
 }
 
 function resolveCurrentSystemFile() {
@@ -736,7 +746,7 @@ router.post('/setSystemConfig', asyncHandler(async (req, res) => {
   }
 
   const current = readSystemConfig()
-  const nextConfig = normalizeVisualColorConfig({
+  const nextConfig = normalizeVisualConfig({
     ...current,
     ...incoming,
     optimalObj: mergeSystemConfigGroup(current.optimalObj, incoming.optimalObj),
@@ -1207,6 +1217,10 @@ router.post('/copReportData', asyncHandler(async (req, res) => {
     return size.width * size.height === arr.length
   })
   const remark = isImportSource ? null : await getRemark({ db, params: [time] }).catch(() => null)
+  const requestSelectJson = tryParseRequestJson(resolveRequestValue(req, ['selectJson', 'select']))
+  const reportSelectJson = requestSelectJson && typeof requestSelectJson === 'object'
+    ? requestSelectJson
+    : {}
   const frames = rows.map((row) => normalizeReportFrame(row, keys))
   const timestamps = rows.map((row) => Number(row.timestamp)).filter(Number.isFinite)
   const durationMs = timestamps.length > 1 ? Math.max(0, timestamps[timestamps.length - 1] - timestamps[0]) : 0
@@ -1220,7 +1234,7 @@ router.post('/copReportData', asyncHandler(async (req, res) => {
     name: remark?.alias || loaded.name || String(recordId),
     alias: remark?.alias || '',
     remark: remark?.remark || '',
-    select: tryParseRequestJson(remark?.select) || {},
+    select: reportSelectJson,
     keys,
     frameCount: rows.length,
     durationMs,
@@ -2035,7 +2049,7 @@ router.post('/getCsvData', asyncHandler(async (req, res) => {
 }))
 
 router.post('/getSysconfig', (req, res) => {
-  const config = normalizeVisualColorConfig(resolveRequestValue(req, ['config']) || {})
+  const config = normalizeVisualConfig(resolveRequestValue(req, ['config']) || {})
   const str = module2.encStr(JSON.stringify(config))
   res.json(new HttpResult(0, str, 'success'))
 })

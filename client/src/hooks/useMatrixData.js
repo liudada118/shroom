@@ -15,7 +15,17 @@ import { computePressureMetrics } from '../util/pressureMetrics'
  * 支持多框选（最多4个），每个框独立计算统计数据
  */
 
-const DEFAULT_DATA_DIRECTION = { left: true, up: true, rotateDegree: 0 }
+const DEFAULT_SIT_ROTATE_DEGREE = 90
+const DEFAULT_DATA_DIRECTION = {
+  left: true,
+  up: true,
+  rotateDegree: 0,
+  byKey: {
+    'endi-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'carY-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'car-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+  },
+}
 const DATA_DIRECTION_STORAGE_KEY = 'matrixDataDirection'
 const DATA_QUALITY_MESSAGE_INTERVAL = 3000
 
@@ -48,9 +58,25 @@ function normalizeDataDirection(direction) {
   return normalized
 }
 
+function isSeatDirectionKey(key) {
+  const value = String(key || '').toLowerCase()
+  return value === 'sit' || value.endsWith('-sit')
+}
+
+function shouldMigrateLegacySeatDirection(key, direction) {
+  const normalized = normalizeDataDirection(direction)
+  return isSeatDirectionKey(key)
+    && normalized.left === true
+    && normalized.up === true
+    && (normalized.rotateDegree === 90 || normalized.rotateDegree === 270)
+}
+
 function normalizeDataDirectionState(direction) {
   const base = normalizeDataDirection(direction)
   const byKey = {}
+  Object.keys(DEFAULT_DATA_DIRECTION.byKey || {}).forEach((key) => {
+    byKey[key] = normalizeDataDirection(DEFAULT_DATA_DIRECTION.byKey[key])
+  })
   if (direction?.byKey && typeof direction.byKey === 'object') {
     Object.keys(direction.byKey).forEach((key) => {
       byKey[key] = normalizeDataDirection(direction.byKey[key])
@@ -61,7 +87,15 @@ function normalizeDataDirectionState(direction) {
 
 function loadStoredDataDirection() {
   try {
-    return normalizeDataDirectionState(JSON.parse(localStorage.getItem(DATA_DIRECTION_STORAGE_KEY) || '{}'))
+    const storedDirection = JSON.parse(localStorage.getItem(DATA_DIRECTION_STORAGE_KEY) || '{}')
+    if (storedDirection?.byKey && typeof storedDirection.byKey === 'object') {
+      Object.keys(storedDirection.byKey).forEach((key) => {
+        if (shouldMigrateLegacySeatDirection(key, storedDirection.byKey[key])) {
+          storedDirection.byKey[key] = { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE }
+        }
+      })
+    }
+    return normalizeDataDirectionState(storedDirection)
   } catch {
     return normalizeDataDirectionState(DEFAULT_DATA_DIRECTION)
   }

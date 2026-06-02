@@ -10,16 +10,20 @@ import DataPlay from './DataPlay'
 import ColControl from './ColControlV2'
 import { withTranslation } from 'react-i18next'
 import { useDebounce } from '../../hooks/useDebounce'
-import { useEquipStore } from '../../store/equipStore'
+import { getDisplayType, getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
-import { localAddress } from '../../util/constant'
+import { localAddress, systemPointConfig } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import dayjs from 'dayjs'
 import { pageContext } from '../../page/test/Test'
 import { FileTextOutlined } from '@ant-design/icons'
+import { isMoreMatrix } from '../../assets/util/util'
+import { colSelectMatrix } from '../../util/util'
+import { formatSelectionName } from '../../util/selectionName'
 
 const CSV_STORAGE_KEY = 'csvArr'
+const COP_REPORT_SELECTION_PREFIX = 'copReportSelection:'
 const DRAWER_RENDER_CHUNK = 24
 const HISTORY_PREFETCH_DELAY = 800
 const HISTORY_CACHE_MAX_AGE = 30000
@@ -363,6 +367,17 @@ const ColAndHistory = memo((props) => {
         })
     }
 
+    const handleCollectEnd = useCallback(() => {
+        historyFetchRef.current.lastFetchAt = 0
+        if (historyDrawer && Onindex === 0) {
+            setHistoryRenderCount(DRAWER_RENDER_CHUNK)
+            loadColHistory({ force: true })
+            return
+        }
+        setColHistoryArr(undefined)
+        setDisplayHistoryArr(undefined)
+    }, [Onindex, historyDrawer, loadColHistory])
+
     useEffect(() => {
         const timer = setTimeout(() => {
             const cancelIdle = scheduleIdleTask(() => loadColHistory(), 1200)
@@ -592,12 +607,57 @@ const ColAndHistory = memo((props) => {
             reportParams.set('source', 'csv')
             reportParams.set('fileName', reportDate)
         }
+        const currentSelectJson = buildCurrentReportSelectJson()
+        if (currentSelectJson) {
+            const selectionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+            sessionStorage.setItem(`${COP_REPORT_SELECTION_PREFIX}${selectionId}`, JSON.stringify(currentSelectJson))
+            reportParams.set('selectionId', selectionId)
+        }
         window.dispatchEvent(new CustomEvent('force-clear-selection-mode'))
         removeHistoryBox()
         useEquipStore.getState().setSelectArr([])
         window.location.hash = `#/copReport?${reportParams.toString()}`
         resetOperateState()
         sethistoryDrawer(false)
+    }
+
+    const buildCurrentReportSelectJson = () => {
+        const ranges = Array.isArray(pageInfo?.brushInstance?.rangeArr)
+            ? pageInfo.brushInstance.rangeArr
+            : []
+        if (!ranges.length) return null
+
+        const systemType = getSysType()
+        const displayType = getDisplayType()
+        const selectJson = {}
+        ranges.forEach((range, index) => {
+            if (!range) return
+            let typeKey = range.matrixKey || systemType
+            if (isMoreMatrix(systemType)) {
+                const part = String(displayType || '').includes('sit') ? 'sit' : 'back'
+                typeKey = range.matrixKey || `${systemType}-${part}`
+            }
+            const config = systemPointConfig[typeKey]
+            if (!config) return
+            const matrix = range.matrixRect || colSelectMatrix('canvasThree', range, config)
+            if (!matrix) return
+
+            if (!selectJson[typeKey]) selectJson[typeKey] = { regions: [] }
+            selectJson[typeKey].regions.push({
+                xStart: matrix.xStart,
+                xEnd: matrix.xEnd,
+                yStart: matrix.yStart,
+                yEnd: matrix.yEnd,
+                width: matrix.width || config.width,
+                height: matrix.height || config.height,
+                name: formatSelectionName(range.name, index + 1, t),
+                color: range.bgc,
+                colorIndex: range.colorIndex != null ? range.colorIndex : index,
+                templateId: range.templateId,
+            })
+        })
+
+        return Object.keys(selectJson).length ? selectJson : null
     }
 
     const confirmDownload = async () => {
@@ -794,6 +854,26 @@ const ColAndHistory = memo((props) => {
             timestamp: '',
         })
     }
+
+    useEffect(() => {
+        const handleReportReturnRealtime = () => {
+            removeHistoryBox()
+            pageInfo.clearVisualizationData?.()
+            sethistoryDrawer(false)
+            setCurrentName('')
+            setCurrentPlaybackKey('')
+            setOperateStatus('')
+            resetOperateState()
+            const store = useEquipStore.getState()
+            store.setDataStatus('realtime')
+            store.setPlaybackHasSelection(false)
+            store.setPlaybackRecordDate('')
+            store.setHistoryChart({ pressArr: {}, areaArr: {} })
+            store.setHistoryStatus({ index: 0, timestamp: '' })
+        }
+        window.addEventListener('report-return-realtime', handleReportReturnRealtime)
+        return () => window.removeEventListener('report-return-realtime', handleReportReturnRealtime)
+    }, [pageInfo])
 
     const startContrast = () => {
         const leftDate = contrastArr.left?.date
@@ -1829,7 +1909,7 @@ const ColAndHistory = memo((props) => {
                 <div className='colAndHistory'>
                     {shouldShowPlaybackBar
                         ? <DataPlay dataLength={dataLength} name={currentName} onHistoryClick={close} />
-                        : <ColControl getColHistory={getColHistory} />}
+                        : <ColControl getColHistory={getColHistory} onCollectEnd={handleCollectEnd} />}
                 </div>
             </div>
         </>

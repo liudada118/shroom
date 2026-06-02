@@ -28,7 +28,16 @@ const state = {
   colFlag: false,           // 采集开关
   colName: '',              // 采集命名
   selectArr: [],            // 框选区域
-  dataDirection: { left: true, up: true, rotateDegree: 0 }, // collection save direction; false means the axis is flipped
+  dataDirection: {
+    left: true,
+    up: true,
+    rotateDegree: 0,
+    byKey: {
+      'endi-sit': { left: true, up: false, rotateDegree: 90 },
+      'carY-sit': { left: true, up: false, rotateDegree: 90 },
+      'car-sit': { left: true, up: false, rotateDegree: 90 },
+    },
+  }, // collection save direction; false means the axis is flipped
   zeroState: { enabled: false, zeroTime: null, data: {} },
 
   // ─── 历史回放 ────────────────────────────────────────

@@ -11,7 +11,17 @@ const { broadcast } = require('../websocket')
 
 const { blue } = constantObj
 const DEFAULT_PLAYBACK_HZ = 1
-const DEFAULT_DATA_DIRECTION = { left: true, up: true, rotateDegree: 0 }
+const DEFAULT_SIT_ROTATE_DEGREE = 90
+const DEFAULT_DATA_DIRECTION = {
+  left: true,
+  up: true,
+  rotateDegree: 0,
+  byKey: {
+    'endi-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'carY-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'car-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+  },
+}
 const MATRIX_DIMENSIONS = {
   'endi-back': { width: 50, height: 64 },
   'endi-sit': { width: 46, height: 46 },
@@ -54,9 +64,25 @@ function normalizeDataDirection(direction) {
   return normalized
 }
 
+function isSeatDirectionKey(key) {
+  const value = String(key || '').toLowerCase()
+  return value === 'sit' || value.endsWith('-sit')
+}
+
+function shouldMigrateLegacySeatDirection(key, direction) {
+  const normalized = normalizeDataDirection(direction)
+  return isSeatDirectionKey(key)
+    && normalized.left === true
+    && normalized.up === true
+    && (normalized.rotateDegree === 90 || normalized.rotateDegree === 270)
+}
+
 function normalizeDataDirectionState(direction) {
   const base = normalizeDataDirection(direction)
   const byKey = {}
+  Object.keys(DEFAULT_DATA_DIRECTION.byKey || {}).forEach((key) => {
+    byKey[key] = normalizeDataDirection(DEFAULT_DATA_DIRECTION.byKey[key])
+  })
   if (direction?.byKey && typeof direction.byKey === 'object') {
     Object.keys(direction.byKey).forEach((key) => {
       byKey[key] = normalizeDataDirection(direction.byKey[key])
@@ -80,7 +106,15 @@ function loadPersistedDataDirection() {
       return state.dataDirection
     }
     const payload = JSON.parse(fs.readFileSync(directionPath, 'utf-8'))
-    state.dataDirection = normalizeDataDirectionState(payload.dataDirection || payload)
+    const persistedDirection = payload.dataDirection || payload
+    if (persistedDirection?.byKey && typeof persistedDirection.byKey === 'object') {
+      Object.keys(persistedDirection.byKey).forEach((key) => {
+        if (shouldMigrateLegacySeatDirection(key, persistedDirection.byKey[key])) {
+          persistedDirection.byKey[key] = { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE }
+        }
+      })
+    }
+    state.dataDirection = normalizeDataDirectionState(persistedDirection)
   } catch (err) {
     console.warn('[DataDirection] Load failed:', err.message)
     state.dataDirection = normalizeDataDirectionState(state.dataDirection || DEFAULT_DATA_DIRECTION)

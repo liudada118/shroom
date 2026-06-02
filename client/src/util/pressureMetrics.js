@@ -1,3 +1,5 @@
+// Browser-safe mirror of server/kpa/pressureFormula_V2.7.38.js.
+// Keep estimatePressure/estimateMaxPressure constants synchronized with that file.
 const SEAT_SEGS = [
   { lo: 92.78, hi: 129.75, a: 0.001170994, b: -0.1905968, c: 10.059837 },
   { lo: 129.75, hi: 146.465, a: 0.002622218, b: -0.5732986, c: 35.228319 },

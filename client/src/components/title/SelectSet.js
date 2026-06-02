@@ -276,6 +276,7 @@ export default function SelectSet(props) {
     const [templateName, setTemplateName] = useState('')
     const [templates, setTemplates] = useState(() => readSelectionTemplates())
     const [selectedTemplateId, setSelectedTemplateId] = useState('')
+    const [editingBoxNames, setEditingBoxNames] = useState({})
     const [floatingStyle, setFloatingStyle] = useState(null)
     const floatingStyleRef = useRef(null)
     const floatingMovedRef = useRef(false)
@@ -501,7 +502,26 @@ export default function SelectSet(props) {
 
     const handleRenameBox = (idx, name) => {
         const rangeIndex = boxes[idx]?.rangeIndex
-        pageInfo.brushInstance.updateSelectName(rangeIndex ?? idx, name.trim() || getDefaultSelectionName(idx + 1, t))
+        const key = rangeIndex ?? idx
+        setEditingBoxNames(prev => ({ ...prev, [key]: name }))
+        if (name.trim()) {
+            pageInfo.brushInstance.updateSelectName(key, name.trim())
+        }
+    }
+
+    const handleRenameBoxBlur = (idx) => {
+        const rangeIndex = boxes[idx]?.rangeIndex
+        const key = rangeIndex ?? idx
+        const editingName = Object.prototype.hasOwnProperty.call(editingBoxNames, key)
+            ? editingBoxNames[key]
+            : boxes[idx]?.name
+        const nextName = String(editingName || '').trim() || getDefaultSelectionName(idx + 1, t)
+        pageInfo.brushInstance.updateSelectName(key, nextName)
+        setEditingBoxNames(prev => {
+            const next = { ...prev }
+            delete next[key]
+            return next
+        })
     }
 
     const handleDeleteAll = () => {
@@ -794,8 +814,9 @@ export default function SelectSet(props) {
                 <div key={`box-${box.rangeIndex}-${idx}`} className="selectRegionCard">
                     <div className="selectRegionIndex" style={{ backgroundColor: box.bgc }}>{idx + 1}</div>
                     <Input
-                        value={box.name}
+                        value={Object.prototype.hasOwnProperty.call(editingBoxNames, box.rangeIndex) ? editingBoxNames[box.rangeIndex] : box.name}
                         onChange={(e) => handleRenameBox(idx, e.target.value)}
+                        onBlur={() => handleRenameBoxBlur(idx)}
                         className="selectRegionNameInput"
                     />
                     <span className="selectRegionMeta">({box.xStart},{box.yStart}) {box.width}x{box.height}</span>

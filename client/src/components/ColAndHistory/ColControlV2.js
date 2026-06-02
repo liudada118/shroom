@@ -9,7 +9,7 @@ const COL_REMARK_MAX_LENGTH = 200
 const limitText = (value, maxLength) => String(value || '').slice(0, maxLength)
 
 function ColControl(props) {
-    const { t, i18n, getColHistory } = props
+    const { t, i18n, getColHistory, onCollectEnd } = props
     const isEnglish = String(i18n.language || localStorage.getItem('language') || '').toLowerCase().startsWith('en')
     const text = (zh, en) => (isEnglish ? en : zh)
 
@@ -70,6 +70,7 @@ function ColControl(props) {
                 col={col}
                 setCol={setCol}
                 onBeforeStart={openCollectModal}
+                onCollectEnd={onCollectEnd}
             >
                 <span className="collectTopButtonText">
                     {!col ? text('开始采集', 'Start') : startTime === 0 ? '00:00:00' : <ColTime startTime={startTime} />}
