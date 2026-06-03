@@ -14,6 +14,7 @@ const { state } = require('../state')
 const { broadcast } = require('../websocket')
 const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
 const { colAndSendData, sendData, clearPlayTimer, ensureRealtimeTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot, saveDataDirection } = require('../services/DataService')
+const { loadPressureConfig, savePressureConfig, listPressureFormulaFiles } = require('../services/PressureConfig')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES } = require('../../util/deviceConfigValidation')
 
@@ -793,6 +794,27 @@ router.post('/changeSystemType', asyncHandler(async (req, res) => {
 }))
 
 // ─── 串口管理 ────────────────────────────────────────────
+
+router.get('/getPressureConfig', asyncHandler(async (req, res) => {
+  res.json(new HttpResult(0, {
+    config: loadPressureConfig(),
+    formulaFiles: listPressureFormulaFiles(),
+  }, 'success'))
+}))
+
+router.post('/setPressureConfig', asyncHandler(async (req, res) => {
+  const rawConfig = resolveRequestValue(req, ['config']) || req.body || {}
+  const incoming = tryParseRequestJson(rawConfig)
+  if (!incoming || typeof incoming !== 'object') {
+    res.json(new HttpResult(1, {}, 'pressure config required'))
+    return
+  }
+  const nextConfig = savePressureConfig(incoming)
+  res.json(new HttpResult(0, {
+    config: nextConfig,
+    formulaFiles: listPressureFormulaFiles(),
+  }, 'success'))
+}))
 
 router.get('/getPort', asyncHandler(async (req, res) => {
   const { SerialPort } = require('serialport')

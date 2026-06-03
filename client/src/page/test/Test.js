@@ -35,6 +35,7 @@ import NumThres from '../../components/three/NumThres'
 import { buildFallbackParams } from '../../util/request'
 import { formatSelectionName } from '../../util/selectionName'
 import { loadVisualSettingValue, normalizeVisualSettingMax } from '../../util/visualSettingStorage'
+import { loadPressureRuntimeConfig } from '../../util/pressureConfig'
 
 export const pageContext = createContext(null)
 
@@ -85,6 +86,10 @@ function Test() {
     }
 
     useWindowSize()
+
+    useEffect(() => {
+        loadPressureRuntimeConfig()
+    }, [])
 
     // ─── 使用抽取的 Hook ─────────────────────────────────
     const {

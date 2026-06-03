@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import {
-    Checkbox, Radio, Input, Button, Card, Table, Tag,
+    Checkbox, Radio, Input, Button, Card, Table, Tag, Select,
     Space, Divider, Typography, message, Collapse, Tooltip, InputNumber, Spin
 } from 'antd';
 import {
@@ -13,6 +13,7 @@ import axios from 'axios';
 import { localAddress } from '../../../util/constant';
 import { useTranslation } from 'react-i18next';
 import { buildFallbackParams } from '../../../util/request';
+import { loadPressureRuntimeConfig } from '../../../util/pressureConfig';
 
 const { Title, Text } = Typography;
 
@@ -75,6 +76,22 @@ const fallbackConfig = {
     }
 };
 
+const fallbackPressureConfig = {
+    backValueMultiplier: 1.8,
+    pressureFormulaFile: 'pressureFormula_V2.7.38.js',
+    pressureFormulaProfile: 'V2.7.38',
+};
+
+function getPressureFormulaProfileFromFile(fileName) {
+    const profile = String(fileName || '')
+        .split(/[\\/]/)
+        .pop()
+        .replace(/^pressureFormula_?/i, '')
+        .replace(/\.js$/i, '')
+        .trim();
+    return profile || fallbackPressureConfig.pressureFormulaProfile;
+}
+
 const CheckboxGroup = Checkbox.Group;
 
 export default function SystemSetting() {
@@ -89,6 +106,9 @@ export default function SystemSetting() {
     const [loadError, setLoadError] = useState(false);
 
     const [inputValue, setInputValue] = useState(fallbackConfig);
+    const [pressureConfig, setPressureConfig] = useState(fallbackPressureConfig);
+    const [pressureFormulaFiles, setPressureFormulaFiles] = useState([fallbackPressureConfig.pressureFormulaFile]);
+    const [pressureSaving, setPressureSaving] = useState(false);
 
     /* ────── 页面加载时从后端读取默认配置 ────── */
     const loadConfigFromBackend = () => {
@@ -142,8 +162,31 @@ export default function SystemSetting() {
             });
     };
 
+    const loadPressureConfigFromBackend = () => {
+        axios.get(`${localAddress}/getPressureConfig`)
+            .then((res) => {
+                if (res.data?.code !== 0) return;
+                const data = res.data?.data || {};
+                const nextPressureConfig = {
+                    ...fallbackPressureConfig,
+                    ...(data.config || {}),
+                };
+                setPressureConfig(nextPressureConfig);
+                setPressureFormulaFiles(
+                    Array.from(new Set([
+                        ...(data.formulaFiles || []),
+                        nextPressureConfig.pressureFormulaFile,
+                    ].filter(Boolean)))
+                );
+            })
+            .catch((err) => {
+                console.warn('load pressure config failed:', err.message);
+            });
+    };
+
     useEffect(() => {
         loadConfigFromBackend();
+        loadPressureConfigFromBackend();
     }, []);
 
     /* ────── 事件处理 ────── */
@@ -151,6 +194,54 @@ export default function SystemSetting() {
         const obj = JSON.parse(JSON.stringify(inputValue));
         obj.optimalObj[system][paramKey] = value;
         setInputValue(obj);
+    };
+
+    const handlePressureConfigChange = (key, value) => {
+        setPressureConfig(prev => {
+            const next = { ...prev, [key]: value };
+            if (key === 'pressureFormulaFile') {
+                next.pressureFormulaProfile = getPressureFormulaProfileFromFile(value);
+            }
+            return next;
+        });
+    };
+
+    const handleSavePressureConfig = async () => {
+        setPressureSaving(true);
+        const payload = {
+            ...pressureConfig,
+            backValueMultiplier: Number(pressureConfig.backValueMultiplier),
+            pressureFormulaProfile: String(pressureConfig.pressureFormulaProfile || '').trim() || getPressureFormulaProfileFromFile(pressureConfig.pressureFormulaFile),
+        };
+        try {
+            const res = await axios({
+                method: 'post',
+                url: `${localAddress}/setPressureConfig`,
+                params: buildFallbackParams({ config: payload }),
+                data: { config: payload },
+            });
+            if (res.data?.code !== 0) {
+                throw new Error(res.data?.message || t('pressureConfigSaveFailed'));
+            }
+            const data = res.data?.data || {};
+            const nextPressureConfig = {
+                ...fallbackPressureConfig,
+                ...(data.config || payload),
+            };
+            setPressureConfig(nextPressureConfig);
+            setPressureFormulaFiles(
+                Array.from(new Set([
+                    ...(data.formulaFiles || pressureFormulaFiles),
+                    nextPressureConfig.pressureFormulaFile,
+                ].filter(Boolean)))
+            );
+            await loadPressureRuntimeConfig();
+            message.success(t('pressureConfigSaved'));
+        } catch (err) {
+            message.error(err?.message || t('pressureConfigSaveFailed'));
+        } finally {
+            setPressureSaving(false);
+        }
     };
 
     const handleGenerate = () => {
@@ -281,7 +372,10 @@ export default function SystemSetting() {
                                 type="text"
                                 size="small"
                                 icon={<ReloadOutlined />}
-                                onClick={loadConfigFromBackend}
+                                onClick={() => {
+                                    loadConfigFromBackend();
+                                    loadPressureConfigFromBackend();
+                                }}
                                 style={{ color: '#1677ff' }}
                             />
                         </Tooltip>
@@ -356,6 +450,49 @@ export default function SystemSetting() {
                         defaultActiveKey={['bed']}
                         className="system-collapse"
                     />
+                </Card>
+
+                <Card
+                    size="small"
+                    title={<Space><ControlOutlined style={{ color: '#1677ff' }} /><span>{t('pressureCalcParams') || '压强计算参数'}</span></Space>}
+                    className="setting-card"
+                >
+                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                        <div className="setting-row">
+                            <Text className="setting-label">{t('backValueMultiplier') || '靠背乘数'}</Text>
+                            <InputNumber
+                                value={pressureConfig.backValueMultiplier}
+                                min={0}
+                                step={0.1}
+                                precision={4}
+                                style={{ width: 220 }}
+                                onChange={(value) => handlePressureConfigChange('backValueMultiplier', value)}
+                            />
+                        </div>
+                        <div className="setting-row">
+                            <Text className="setting-label">{t('pressureFormulaFile') || '公式文件'}</Text>
+                            <Select
+                                value={pressureConfig.pressureFormulaFile}
+                                style={{ width: 320 }}
+                                options={pressureFormulaFiles.map(file => ({ label: file, value: file }))}
+                                onChange={(value) => handlePressureConfigChange('pressureFormulaFile', value)}
+                            />
+                        </div>
+                        <div className="setting-row">
+                            <Text className="setting-label">{t('pressureFormulaProfile') || '公式版本'}</Text>
+                            <Input
+                                value={pressureConfig.pressureFormulaProfile}
+                                style={{ width: 220 }}
+                                onChange={(event) => handlePressureConfigChange('pressureFormulaProfile', event.target.value)}
+                            />
+                        </div>
+                        <div className="setting-row">
+                            <Text className="setting-label" />
+                            <Button type="primary" icon={<SaveOutlined />} loading={pressureSaving} onClick={handleSavePressureConfig}>
+                                {t('savePressureConfig') || '保存压强配置'}
+                            </Button>
+                        </div>
+                    </Space>
                 </Card>
 
                 {/* 卡片 3：生成 & 输出 */}

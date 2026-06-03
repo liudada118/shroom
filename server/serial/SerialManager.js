@@ -28,6 +28,7 @@ const { hand, jqbed, endiSit, endiBack, endiSit1024, endiBack1024, carYLine, car
 const { default: axios } = require('axios')
 const { state } = require('../state')
 const { getTypeFromCache, setTypeToCache } = require('../../util/serialCache')
+const { getBackValueMultiplier } = require('../services/PressureConfig')
 
 // ═══════════════════════════════════════════════════════════
 //  Constants
@@ -53,7 +54,6 @@ const CONNECTION_LOCK_MAX_AGE = 25000
 const SCAN_TIMEOUT = 3000
 const MAC_CONNECT_TIMEOUT = 3000
 const TYPE_RESOLVE_TIMEOUT = 2000
-const BACK_VALUE_MULTIPLIER = 1.8
 
 const CONNECTION_ERROR_META = {
   CONN_BUSY: { stage: 'lock', message: '正在连接中，请稍后再试' },
@@ -733,9 +733,10 @@ async function resolveDeviceType(uniqueId, options = {}) {
 function applyBackMultiplier(arr, dataItem) {
   if (!Array.isArray(arr)) return arr
   if (!String(dataItem?.type || '').endsWith('-back')) return arr
+  const multiplier = getBackValueMultiplier()
   return arr.map((value) => {
     const numeric = Number(value) || 0
-    return Number((numeric * BACK_VALUE_MULTIPLIER).toFixed(4))
+    return Number((numeric * multiplier).toFixed(4))
   })
 }
 

@@ -1,5 +1,7 @@
 // Browser-safe mirror of server/kpa/pressureFormula_V2.7.38.js.
 // Keep estimatePressure/estimateMaxPressure constants synchronized with that file.
+const DEFAULT_PRESSURE_FORMULA_PROFILE = 'V2.7.38'
+
 const SEAT_SEGS = [
   { lo: 92.78, hi: 129.75, a: 0.001170994, b: -0.1905968, c: 10.059837 },
   { lo: 129.75, hi: 146.465, a: 0.002622218, b: -0.5732986, c: 35.228319 },
@@ -24,25 +26,49 @@ const BACK_SEGS = [
   { lo: 204.608, hi: 214.466, a: 0.0, b: 0.2536011, c: -29.388821 },
 ]
 
-const SENSOR_META = {
-  seat: {
-    topCount: 70,
-    humanThreshold: 1128,
-    humanAlpha: 6.33355500e-04,
-    segs: SEAT_SEGS,
-    leftSlope: 2.64748071e-02,
-    pHi: 24.99999132,
-    rightSlope: 0.32258060,
+const PRESSURE_FORMULA_PROFILES = {
+  'V2.7.38': {
+    seat: {
+      topCount: 70,
+      humanThreshold: 1128,
+      humanAlpha: 6.33355500e-04,
+      segs: SEAT_SEGS,
+      leftSlope: 2.64748071e-02,
+      pHi: 24.99999132,
+      rightSlope: 0.32258060,
+    },
+    backrest: {
+      topCount: 46,
+      humanThreshold: 1000,
+      humanAlpha: 4.15552300e-04,
+      segs: BACK_SEGS,
+      leftSlope: 1.95092216e-02,
+      pHi: 24.99999251,
+      rightSlope: 0.25360110,
+    },
   },
-  backrest: {
-    topCount: 46,
-    humanThreshold: 1000,
-    humanAlpha: 4.15552300e-04,
-    segs: BACK_SEGS,
-    leftSlope: 1.95092216e-02,
-    pHi: 24.99999251,
-    rightSlope: 0.25360110,
-  },
+}
+
+PRESSURE_FORMULA_PROFILES['V2.7.37'] = PRESSURE_FORMULA_PROFILES['V2.7.38']
+
+let activePressureFormulaProfile = DEFAULT_PRESSURE_FORMULA_PROFILE
+
+function getActiveSensorMeta(sensor) {
+  return (PRESSURE_FORMULA_PROFILES[activePressureFormulaProfile] || PRESSURE_FORMULA_PROFILES[DEFAULT_PRESSURE_FORMULA_PROFILE])[sensor]
+}
+
+export function setPressureFormulaProfile(profile) {
+  const nextProfile = String(profile || '').trim()
+  if (!PRESSURE_FORMULA_PROFILES[nextProfile]) {
+    activePressureFormulaProfile = DEFAULT_PRESSURE_FORMULA_PROFILE
+    return activePressureFormulaProfile
+  }
+  activePressureFormulaProfile = nextProfile
+  return activePressureFormulaProfile
+}
+
+export function getPressureFormulaProfile() {
+  return activePressureFormulaProfile
 }
 
 export function getPressureSensor(key) {
@@ -63,7 +89,7 @@ function calcFiveSegment(adc, meta) {
 }
 
 export function estimatePressure(adcAvg, nValid, sensor) {
-  const meta = SENSOR_META[sensor]
+  const meta = getActiveSensorMeta(sensor)
   if (!meta || adcAvg <= 0) return null
   if (nValid !== undefined && nValid >= meta.humanThreshold) {
     return Number(Math.max(0, meta.humanAlpha * adcAvg * adcAvg).toFixed(2))
@@ -88,7 +114,7 @@ export function getPressurePointAreaCm2(key) {
 }
 
 function getCalibrationAverage(positiveValues, sensor) {
-  const meta = SENSOR_META[sensor]
+  const meta = getActiveSensorMeta(sensor)
   if (!meta || !positiveValues.length) return 0
   if (positiveValues.length >= meta.humanThreshold) {
     return positiveValues.reduce((sum, value) => sum + value, 0) / positiveValues.length

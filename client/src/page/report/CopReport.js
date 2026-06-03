@@ -8,6 +8,7 @@ import { localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import { computePressureMetrics } from '../../util/pressureMetrics'
 import { useEquipStore } from '../../store/equipStore'
+import { loadPressureRuntimeConfig } from '../../util/pressureConfig'
 import './CopReport.scss'
 
 const COP_REPORT_SELECTION_PREFIX = 'copReportSelection:'
@@ -568,6 +569,10 @@ function CopReport() {
 
   const analysis = useMemo(() => buildAnalysis(payload), [payload])
   const generatedTime = payload?.generatedAt ? new Date(payload.generatedAt).toLocaleString() : new Date().toLocaleString()
+
+  useEffect(() => {
+    loadPressureRuntimeConfig()
+  }, [])
 
   const backToHome = () => {
     const store = useEquipStore.getState()

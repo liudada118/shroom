@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { timeStampTo_Date } = require("./time");
 const constantObj = require("./config");
-const { estimatePressure, estimateMaxPressure } = require("../server/kpa/pressureFormula_V2.7.38");
+const { loadPressureFormula } = require("../server/services/PressureConfig");
 
 // ─── 传感器点位配置 ──────────────────────────────────────
 const pointConfig = {
@@ -119,6 +119,7 @@ function calcPressureFormulaStats(arr, key, pointAreaCm2) {
   }
 
   const adcAvg = getCalibrationAverage(positiveValues, sensor)
+  const { estimatePressure, estimateMaxPressure } = loadPressureFormula()
   const aver = estimatePressure(adcAvg, activeCount, sensor) || 0
   const max = estimateMaxPressure(rawMax, activeCount, sensor, adcAvg) || 0
   return {

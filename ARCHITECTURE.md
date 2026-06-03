@@ -1311,3 +1311,12 @@ graph TD
 - 在坐垫默认顺时针旋转 `90°` 的基础上，`useMatrixData`、`DataService` 和 `state` 的坐垫默认方向继续增加 `up=false`，即默认执行 `rotate90 + vertical flip`。
 - 旧方向缓存中坐垫 `rotate90/rotate270` 且 `up=true` 的默认态会在加载时迁移为 `rotate90 + up=false`；用户之后手动设置其它方向仍按实际保存值生效。
 | 2026-06-02 | 配置变更 | 坐垫默认方向在顺时针 90 度基础上增加上下翻转 |
+
+## 2026-06-03 压强计算参数配置化
+- 新增 `server/services/PressureConfig.js`，统一读取和保存 `pressure_config.json`，配置项包含 `backValueMultiplier`、`pressureFormulaFile` 和 `pressureFormulaProfile`，默认分别为 `1.8`、`pressureFormula_V2.7.38.js`、`V2.7.38`。
+- `SerialManager` 的靠背点值乘数不再硬编码，所有 `*-back` 矩阵线序转换后统一通过 `getBackValueMultiplier()` 读取配置值。
+- `util/db.js` 的 CSV/历史导出压强统计不再固定 require 单个公式文件，而是通过 `loadPressureFormula()` 按配置动态加载公式模块，并校验必须导出 `estimatePressure` 与 `estimateMaxPressure`；公式文件按修改时间刷新缓存，直接覆盖同名公式文件后也会重新加载。
+- 后端新增 `/getPressureConfig` 与 `/setPressureConfig`，返回当前配置和可选公式文件列表；保存时校验公式文件存在且导出函数完整。
+- 前端新增 `client/src/util/pressureConfig.js`，实时页和 COP 报告页加载时读取后端压强配置，并把 `pressureFormulaProfile` 注入 `pressureMetrics` 的浏览器公式 profile。
+- 系统设置页新增“压强计算参数”卡片，可维护靠背点值乘数、后端压强公式文件和前端公式版本，并通过 `/setPressureConfig` 写回配置。
+| 2026-06-03 | 配置变更 | 将靠背点值乘数和压强公式来源抽为可配置项 |
