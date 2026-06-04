@@ -114,21 +114,29 @@ function ChartsAside(props) {
     }
 
     const initCharts1 = (props) => {
+        const xLength = props.xData?.length || 20
+        const xLabelInterval = Math.max(0, Math.ceil(xLength / 5) - 1)
         let option = {
             animation: false,
-            grid: { left: 34, right: 34, top: 26, bottom: 28, containLabel: false },
+            grid: { left: 42, right: 36, top: 30, bottom: 34, containLabel: false },
             xAxis: {
                 type: 'category',
                 show: true,
-                name: props.xName || '时间',
+                name: props.xName || '时间(帧)',
                 nameLocation: 'end',
                 nameGap: 8,
                 nameTextStyle: { color: '#AEB8C4', fontSize: 10, align: 'right', verticalAlign: 'top' },
                 axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
-                axisTick: { show: false },
+                axisTick: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
                 splitLine: { show: false },
                 data: props.xData,
-                axisLabel: { show: false },
+                axisLabel: {
+                    show: true,
+                    interval: xLabelInterval,
+                    color: '#AEB8C4',
+                    fontSize: 9,
+                    margin: 6,
+                },
             },
             yAxis: {
                 type: 'value',
@@ -139,39 +147,62 @@ function ChartsAside(props) {
                 nameRotate: 0,
                 nameTextStyle: { color: '#AEB8C4', fontSize: 10, align: 'left', verticalAlign: 'bottom' },
                 axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
-                axisTick: { show: false },
-                splitLine: { show: false },
+                axisTick: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
+                splitLine: { show: true, lineStyle: { width: 0.5, color: '#32373E' } },
                 max: props.yMax,
-                axisLabel: { show: false },
+                axisLabel: {
+                    show: true,
+                    color: '#AEB8C4',
+                    fontSize: 9,
+                    margin: 4,
+                    formatter: (value) => {
+                        const num = Number(value)
+                        if (!Number.isFinite(num)) return value
+                        if (Math.abs(num) >= 10000) return `${Math.round(num / 1000)}k`
+                        if (Math.abs(num) >= 1000) return Math.round(num)
+                        if (Number.isInteger(num)) return num
+                        return num.toFixed(1)
+                    },
+                },
             },
             series: props.series
         };
         option && props.myChart.setOption(option, { notMerge: true });
     };
 
+    const getChartYMax = (maxValue) => {
+        const value = Number(maxValue)
+        if (!Number.isFinite(value) || value <= 0) return 1
+        const padded = value * 1.18
+        const step = Math.pow(10, Math.max(0, Math.floor(Math.log10(padded)) - 1))
+        return Math.ceil(padded / step) * step
+    }
+
     const handleCharts = (pressObj, value, isHistory = false) => {
         if (!myChart1.current) return
         const series = buildSeries(pressObj, 'press', true, isHistory)
+        const xLength = Math.max(20, ...series.map(item => Array.isArray(item.data) ? item.data.length : 0))
         initCharts1({
             series,
-            xData: Array.from({ length: 20 }, (_, i) => i + 1),
+            xData: Array.from({ length: xLength }, (_, i) => i + 1),
             myChart: myChart1.current,
-            yMax: value,
-            xName: '时间',
-            yName: '压力总和',
+            yMax: getChartYMax(value),
+            xName: '时间(帧)',
+            yName: '压力总和(N)',
         });
     }
 
     const handleChartsArea = (areaObj, value, isHistory = false) => {
         if (!myChart2.current) return
         const series = buildSeries(areaObj, 'area', true, isHistory)
+        const xLength = Math.max(20, ...series.map(item => Array.isArray(item.data) ? item.data.length : 0))
         initCharts1({
             series,
-            xData: Array.from({ length: 20 }, (_, i) => i + 1),
+            xData: Array.from({ length: xLength }, (_, i) => i + 1),
             myChart: myChart2.current,
-            yMax: value,
-            xName: '时间',
-            yName: '面积',
+            yMax: getChartYMax(value),
+            xName: '时间(帧)',
+            yName: '点数(个)',
         });
     }
 
@@ -228,7 +259,7 @@ function ChartsAside(props) {
                 }
             }
             const max = allArr.length ? Math.max(...allArr) : 0
-            handleCharts(areaObj, max + 5000, !!useHistory)
+            handleCharts(areaObj, max, !!useHistory)
         }
     }
 
@@ -265,7 +296,7 @@ function ChartsAside(props) {
                 }
             }
             const max = allArr.length ? Math.max(...allArr) : 0
-            handleChartsArea(areaObj, Math.max(3200, max + 50), !!useHistory)
+            handleChartsArea(areaObj, max, !!useHistory)
         }
     }
 
@@ -291,9 +322,14 @@ function ChartsAside(props) {
         for (let i = 0; i < keys.length; i++) {
             const key = keys[i]
             const center = getCenterValues(chartData[key].center)
-            if (center) centerArr.push(center)
+            if (center) {
+                centerArr.push({
+                    center,
+                    color: getDeviceChartColor(key, pressColorArr, i),
+                })
+            }
         }
-        trackRef.current?.circleMove(...centerArr);
+        trackRef.current?.circleMove(centerArr);
     }
 
     const renderNormal = () => {
@@ -324,40 +360,44 @@ function ChartsAside(props) {
                 symbol: 'none',
                 data: xDataRes,
                 type: 'line',
+                smooth: true,
                 showSymbol: false,
                 color: color,
+                lineStyle: { width: 2 },
             })
             Xmax = Math.max(Xmax, ...xDataRes.map((a) => a[1]))
         }
 
         chart.current.setOption({
-            grid: { left: 52, right: 38, top: 50, bottom: 44, containLabel: true },
+            grid: { left: 42, right: 36, top: 30, bottom: 58, containLabel: false },
             title: { left: 'center' },
             tooltip: {
                 trigger: 'axis',
                 formatter: p => {
                     const { value } = p[0];
-                    return `压力值：${value[0]}<br/>概率密度：${value[1].toFixed(6)}`;
+                    return `压力值(ADC)：${value[0]}<br/>概率密度(%)：${(value[1] * 100).toFixed(2)}`;
                 }
             },
             xAxis: {
                 type: 'value', min: 0, max: 255,
-                name: '压力值', splitNumber: 5,
-                nameLocation: 'end',
-                nameGap: 8,
-                nameTextStyle: { color: '#E6EBF0', fontSize: 11, fontWeight: 600, align: 'right', verticalAlign: 'top', padding: [4, 0, 0, 0] },
-                axisLabel: { color: '#AEB8C4', fontSize: 10 },
-                axisTick: { lineStyle: { width: 0.5 } },
-                splitLine: { lineStyle: { width: 0.5, color: '#32373E' } }
+                name: '压力值(ADC)', splitNumber: 5,
+                nameLocation: 'middle',
+                nameGap: 34,
+                nameTextStyle: { color: '#AEB8C4', fontSize: 10, align: 'center', verticalAlign: 'top' },
+                axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
+                axisLabel: { color: '#AEB8C4', fontSize: 9, margin: 6 },
+                axisTick: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
+                splitLine: { show: false }
             },
             yAxis: {
-                type: 'value', name: '概率密度', splitNumber: 3,
+                type: 'value', name: '概率密度(%)', splitNumber: 3,
                 nameLocation: 'end',
-                nameGap: 16,
+                nameGap: 8,
                 nameRotate: 0,
-                nameTextStyle: { color: '#E6EBF0', fontSize: 11, fontWeight: 600, align: 'left', verticalAlign: 'bottom', padding: [0, 0, 6, 0] },
-                axisLabel: { color: '#AEB8C4', fontSize: 10, formatter: (value) => `${(Number(value) * 100).toFixed(2)}%` },
-                axisTick: { lineStyle: { width: 0.5, color: '#32373E' } },
+                nameTextStyle: { color: '#AEB8C4', fontSize: 10, align: 'left', verticalAlign: 'bottom' },
+                axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
+                axisLabel: { color: '#AEB8C4', fontSize: 9, margin: 4, formatter: (value) => `${(Number(value) * 100).toFixed(2)}%` },
+                axisTick: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
                 splitLine: { lineStyle: { width: 0.5, color: '#32373E' } },
                 scale: false,
             },

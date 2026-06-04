@@ -293,6 +293,9 @@ export default function NumThree(props) {
       const {
         gauss, color, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
+      if (Number.isFinite(Number(filter)) && Number(filter) > 0) {
+        data = data.map(value => (Number(value) < Number(filter) ? 0 : value))
+      }
       const nextTextureMax = getTextureColorMax(color)
       if (currentTextureMax !== nextTextureMax) {
         const oldTexture = material.uniforms.map.value

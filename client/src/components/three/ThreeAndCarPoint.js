@@ -19,7 +19,7 @@ import { jetWhite3, lineInterp } from "../../assets/util/line";
 import { getDisplayType, getSettingValue, getStatus } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
-import { getColorLimit, getDisplayColorValue } from "../../util/displayMapping";
+import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -848,7 +848,8 @@ const Canvas =
             let dataArr = []
             for (let ix = 0; ix < AMOUNTX; ix++) {
                 for (let iy = 0; iy < AMOUNTY; iy++) {
-                    const value = bigArrg[l] * 10;
+                    const rawValue = bigArrg[l];
+                    const value = shouldHideDisplayPoint(rawValue, filter) ? 0 : rawValue * 10;
                     //柔化处理smooth
                     smoothBig[l] = smoothBig[l] + (value - smoothBig[l]) / coherent;
 

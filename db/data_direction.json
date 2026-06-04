@@ -15,14 +15,14 @@
       },
       "carY-sit": {
         "left": true,
-        "up": true,
+        "up": false,
         "rotateDegree": 90,
         "rotate_degree": 90,
         "data_direction": "rotate90"
       },
       "car-sit": {
         "left": true,
-        "up": true,
+        "up": false,
         "rotateDegree": 90,
         "rotate_degree": 90,
         "data_direction": "rotate90"
@@ -36,5 +36,5 @@
       }
     }
   },
-  "updatedAt": "2026-06-02T11:06:01.293Z"
+  "updatedAt": "2026-06-04T08:36:24.370Z"
 }

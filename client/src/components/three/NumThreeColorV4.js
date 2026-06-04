@@ -5,7 +5,7 @@ import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
-import { NUMBER_TEXT_COLOR_ALPHA, gaussBlur_return, jetWhite3NoWhite } from '../../assets/util/line';
+import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, gaussBlur_return, jetWhite3NoWhite, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
 import { isEndiBackVisibleCell, isEndiBackVisibleIndex } from '../../util/endiBackVisibleMask';
 
 function jet(min, max, x) {
@@ -93,6 +93,9 @@ function prepareDisplayData(data, width, height, settings) {
   const effectiveGauss = Number.isFinite(gauss) ? gauss * NUM_2D_GAUSS_KERNEL_FACTOR : NUM_2D_GAUSS_KERNEL_FACTOR;
   if (effectiveGauss > 0.01) {
     next = gaussBlur_return(next, width, height, effectiveGauss);
+  }
+  if (Number.isFinite(filter) && filter > 0) {
+    next = next.map(value => (value < filter ? 0 : value));
   }
   return next;
 }
@@ -204,6 +207,7 @@ export default function NumThree(props) {
 
 
   function createDigitSpriteSheetWithJet(value = 22) {
+    syncDynamicColorRange(value);
     const canvas = document.createElement("canvas");
     // document.body.appendChild(canvas)
     canvas.width = canvas.height = DIGIT_ATLAS_SIZE;
@@ -464,18 +468,19 @@ export default function NumThree(props) {
 
       const settingValue = getSettingValue()
       const {
-        gauss, color, filter, height, coherent,
+        gauss, color, filter, height, coherent, autoColor,
       } = settingValue //pageRef.current.settingValue
+      setDynamicGammaColorEnabled(Boolean(autoColor));
       data = prepareDisplayData(data, gridSize1, gridSize2, settingValue);
       if (systemType === 'endi' && displayType === 'back2D') {
         data = data.map((value, index) => isEndiBackVisibleIndex(index, gridSize1, gridSize2) ? value : 0);
       }
-      data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}`);
+      data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}-g${gauss}-f${filter}`);
       dataRef.current = data;
       gridRef.current = { width: gridSize1, height: gridSize2 };
 
-      const nextMax = getTextureColorMax(color)
-      if (currentTextureMax !== nextMax) {
+      const nextMax = Math.round(beginDynamicColorFrame(data, color) || getTextureColorMax(color));
+      if (Math.abs(currentTextureMax - nextMax) >= 1) {
         console.log('colorChange')
         const texture = createDigitSpriteSheetWithJet(nextMax)
         material.uniforms.map.value = texture

@@ -11,7 +11,7 @@ const { broadcast } = require('../websocket')
 
 const { blue } = constantObj
 const DEFAULT_PLAYBACK_HZ = 1
-const DEFAULT_SIT_ROTATE_DEGREE = 90
+const DEFAULT_SIT_ROTATE_DEGREE = 270
 const DEFAULT_DATA_DIRECTION = {
   left: true,
   up: true,
@@ -73,7 +73,7 @@ function shouldMigrateLegacySeatDirection(key, direction) {
   const normalized = normalizeDataDirection(direction)
   return isSeatDirectionKey(key)
     && normalized.left === true
-    && normalized.up === true
+    && (normalized.up === true || normalized.up === false)
     && (normalized.rotateDegree === 90 || normalized.rotateDegree === 270)
 }
 
@@ -653,27 +653,10 @@ function getPlaybackSnapshot(index = state.playIndex, options = {}) {
 
 function finishPlayback() {
   state.historyPlayFlag = false
-  state.historyFlag = false
-  state.historySelectCache = null
   clearPlayTimer()
-  ensureRealtimeTimer()
 
   const realtimeAvailable = Object.keys(state.parserArr || {}).length > 0
   broadcast(JSON.stringify({ playEnd: false, realtimeAvailable }))
-  if (realtimeAvailable) {
-    try {
-      sendData()
-      setTimeout(() => {
-        try {
-          if (Object.keys(state.parserArr || {}).length) sendData()
-        } catch (err) {
-          console.warn('[Playback] Failed to push delayed realtime frame after playback end:', err.message)
-        }
-      }, 300)
-    } catch (err) {
-      console.warn('[Playback] Failed to push realtime frame after playback end:', err.message)
-    }
-  }
 }
 
 function getPlaybackIntervalMs() {

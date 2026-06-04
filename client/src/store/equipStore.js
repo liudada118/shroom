@@ -3,7 +3,7 @@ import { maxObj } from '../assets/util/constant'
 import { loadVisualSettingValue, normalizeVisualSettingMax } from '../util/visualSettingStorage'
 
 // ─── 持久化设置值 ────────────────────────────────────────
-const DEFAULT_SETTINGS = { gauss: 3, color: 50, filter: 10, height: 150, coherent: 1 }
+const DEFAULT_SETTINGS = { gauss: 3, color: 50, filter: 10, height: 150, coherent: 1, autoColor: 0 }
 
 function loadSettingValue() {
   return loadVisualSettingValue('default', DEFAULT_SETTINGS, maxObj.bed)

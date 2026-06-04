@@ -268,6 +268,21 @@
 
 }
 
+.setItemColor {
+    flex-wrap: wrap;
+
+    .autoColorSwitchRow {
+        flex-basis: 100%;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.55rem;
+        margin-left: 5.8rem;
+        color: #AEB8C4;
+        font-size: 0.75rem;
+    }
+}
+
 .popover {
     background-color: #32373E !important;
 }

@@ -691,10 +691,11 @@
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0);
-    z-index: 400;
+    z-index: 200000;
 
     .rightClickMenu {
         position: absolute;
+        z-index: 200001;
         padding: 10px;
         border-radius: 5px;
         background-color: #202327;

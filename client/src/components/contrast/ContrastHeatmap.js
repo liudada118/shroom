@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { NUMBER_TEXT_COLOR_ALPHA, jetWhite3NoWhite } from '../../assets/util/line'
+import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicGammaColorEnabled } from '../../assets/util/line'
+import { useEquipStore } from '../../store/equipStore'
 import { isEndiBackVisibleCell } from '../../util/endiBackVisibleMask'
 
 function normalizeDisplayValue(value) {
@@ -84,6 +85,11 @@ export default function ContrastHeatmap(props) {
         if (!canvas || !wrap) return cleanup
         const ctx = canvas.getContext('2d')
         const draw = () => {
+            const autoColor = Boolean(useEquipStore.getState().settingValue?.autoColor)
+            setDynamicGammaColorEnabled(autoColor)
+            if (mode !== 'diff') {
+                beginDynamicColorFrame(arr, colorMax)
+            }
             const drawWidth = Math.max(1, Number(width) || 1)
             const drawHeight = Math.max(1, Number(height) || 1)
             const rect = wrap.getBoundingClientRect()

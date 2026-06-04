@@ -15,7 +15,7 @@ import { computePressureMetrics } from '../util/pressureMetrics'
  * 支持多框选（最多4个），每个框独立计算统计数据
  */
 
-const DEFAULT_SIT_ROTATE_DEGREE = 90
+const DEFAULT_SIT_ROTATE_DEGREE = 270
 const DEFAULT_DATA_DIRECTION = {
   left: true,
   up: true,
@@ -67,7 +67,7 @@ function shouldMigrateLegacySeatDirection(key, direction) {
   const normalized = normalizeDataDirection(direction)
   return isSeatDirectionKey(key)
     && normalized.left === true
-    && normalized.up === true
+    && (normalized.up === true || normalized.up === false)
     && (normalized.rotateDegree === 90 || normalized.rotateDegree === 270)
 }
 
@@ -330,7 +330,21 @@ export function useMatrixData() {
    * 计算统计指标（压力、面积、重心、正态分布等）
    * 支持多框选：data[key].boxStats = [{colorIndex, bgc, pressArr, areaArr, data}]
    */
-  function computeStats(data, arr, selectResult, key, fullKey) {
+  function setTrendValue(target, value, options = {}) {
+    if (!Array.isArray(target)) return
+    if (options.replaceLast && target.length > 0) {
+      target[target.length - 1] = value
+      return
+    }
+    if (target.length < 20) {
+      target.push(value)
+    } else {
+      target.shift()
+      target.push(value)
+    }
+  }
+
+  function computeStats(data, arr, selectResult, key, fullKey, options = {}) {
     const { key: matrixKey, config } = getMatrixConfigEntry(fullKey, key)
     if (!config) return
     const { width, height } = config
@@ -370,19 +384,9 @@ export function useMatrixData() {
     }
 
     // 默认统计（全部数据或第一个框）
-    if (data[key].areaArr.length < 20) {
-      data[key].areaArr.push(area)
-    } else {
-      data[key].areaArr.shift()
-      data[key].areaArr.push(area)
-    }
+    setTrendValue(data[key].areaArr, area, options)
     const pressForChart = pressureMetrics.total
-    if (data[key].pressArr.length < 20) {
-      data[key].pressArr.push(pressForChart)
-    } else {
-      data[key].pressArr.shift()
-      data[key].pressArr.push(pressForChart)
-    }
+    setTrendValue(data[key].pressArr, pressForChart, options)
 
     data[key].data.pressTotal = pressureMetrics.total.toFixed(2)
     data[key].data.areaTotal = area
@@ -443,18 +447,8 @@ export function useMatrixData() {
         }
 
         const bPressForChart = Number(stats.pressTotal) || bPress
-        if (boxStat.pressArr.length < 20) {
-          boxStat.pressArr.push(bPressForChart)
-        } else {
-          boxStat.pressArr.shift()
-          boxStat.pressArr.push(bPressForChart)
-        }
-        if (boxStat.areaArr.length < 20) {
-          boxStat.areaArr.push(bArea)
-        } else {
-          boxStat.areaArr.shift()
-          boxStat.areaArr.push(bArea)
-        }
+        setTrendValue(boxStat.pressArr, bPressForChart, options)
+        setTrendValue(boxStat.areaArr, bArea, options)
       }
     } else {
       // 无框选时清空 boxStats
@@ -581,6 +575,35 @@ export function useMatrixData() {
     return res
   }
 
+  function buildFilteredMatrixFromRaw(rawArr, keyArr) {
+    let resArr = {}
+    for (let i = 0; i < keyArr.length; i++) {
+      const key = keyArr[i].includes('-') ? keyArr[i].split('-')[1] : keyArr[i]
+      if (!rawArr[key]) continue
+      const wsLocalData = wsLocalDataRef.current.data
+      const flag = wsLocalDataRef.current.flag
+      resArr[key] = rawArr[key].map((a, index) => {
+        if (!flag || !wsLocalData[key]) return a
+        return Math.max(0, a - wsLocalData[key][index])
+      })
+    }
+
+    const { filter } = getSettingValue()
+    if (filter) {
+      for (const fullKey of keyArr) {
+        const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
+        if (!resArr[key]) continue
+        resArr[key] = resArr[key].map(a => a < filter ? 0 : a)
+      }
+    }
+
+    return resArr
+  }
+
+  function buildDisplayMatrixFromRaw(rawArr, keyArr, sitData) {
+    return applyDisplayDirection(buildFilteredMatrixFromRaw(rawArr, keyArr), keyArr, sitData)
+  }
+
   /**
    * 处理传感器数据帧（实时或回放）
    */
@@ -599,22 +622,32 @@ export function useMatrixData() {
     const keyArr = Object.keys(sitData)
     const arr = {}
 
-    // 1. 解析矩阵数据 + 框选计算
+    // 1. 解析矩阵数据
     for (let i = 0; i < keyArr.length; i++) {
       const fullKey = keyArr[i]
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       if (!sitData[fullKey]?.arr) continue
 
       arr[key] = clampEndi([...sitData[fullKey].arr], fullKey, key)
-      const selectResult = computeSelectArr(arr[key], key, fullKey, select, displayType, sitData[fullKey])
-      computeStats(data, arr[key], selectResult, key, fullKey)
+    }
+
+    const statsArr = buildFilteredMatrixFromRaw(arr, keyArr)
+
+    // 2. Compute selections, trends, and distribution from the zeroed/filtered matrix.
+    for (let i = 0; i < keyArr.length; i++) {
+      const fullKey = keyArr[i]
+      const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
+      if (!statsArr[key]) continue
+
+      const selectResult = computeSelectArr(statsArr[key], key, fullKey, select, displayType, sitData[fullKey])
+      computeStats(data, statsArr[key], selectResult, key, fullKey)
     }
 
     chartRef.current = data
     sitDataRef.current = arr
     disPlayDataRef.current = arr
 
-    // 2. 设备状态更新
+    // 3. Update device status.
     let stamp, cop
     for (const k of keyArr) {
       if (sitData[k]?.stamp != null) { stamp = sitData[k].stamp; break }
@@ -677,34 +710,7 @@ export function useMatrixData() {
     useEquipStore.getState().setEquipStamp(stamp)
     if (cop) useEquipStore.getState().setEquipCop(cop)
 
-    // 3. 预压力置零
-    let resArr = {}
-    for (let i = 0; i < keyArr.length; i++) {
-      const key = keyArr[i].includes('-') ? keyArr[i].split('-')[1] : keyArr[i]
-      if (!arr[key]) continue
-      const wsLocalData = wsLocalDataRef.current.data
-      const flag = wsLocalDataRef.current.flag
-      resArr[key] = arr[key].map((a, index) => {
-        if (!flag || !wsLocalData[key]) return a
-        return Math.max(0, a - wsLocalData[key][index])
-      })
-      disPlayDataRef.current = resArr
-    }
-
-    // 4. 噪点过滤
-    const settingValue = getSettingValue()
-    const { filter } = settingValue
-    if (filter) {
-      for (const fullKey of keyArr) {
-        const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
-        if (!resArr[key]) continue
-        resArr[key] = resArr[key].map(a => a < filter ? 0 : a)
-        disPlayDataRef.current = resArr
-      }
-    }
-
-    // 5. 翻转处理：实时帧按当前方向翻转；历史帧按保存方向和当前方向的差异修正，避免重复翻转
-    resArr = applyDisplayDirection(resArr, keyArr, sitData)
+    const resArr = applyDisplayDirection(statsArr, keyArr, sitData)
     disPlayDataRef.current = resArr
 
     useEquipStore.getState().setDisplayStatus(resArr)
@@ -743,7 +749,8 @@ export function useMatrixData() {
     const applyChange = (direction) => {
       const next = normalizeDataDirection(direction)
       if (dir === 'rotate') {
-        next.rotateDegree = normalizeRotateDegree(next.rotateDegree + 90)
+        const rotateDelta = targetPart === 'sit' ? -90 : 90
+        next.rotateDegree = normalizeRotateDegree(next.rotateDegree + rotateDelta)
       } else {
         const prop = dir === 'left' ? 'left' : 'up'
         next[prop] = !next[prop]
@@ -797,6 +804,7 @@ export function useMatrixData() {
       flag: enabled,
       zeroTime,
     }
+    refreshDisplayWithCurrentSettings(chartRef.current)
     return {
       enabled,
       zeroTime,
@@ -809,6 +817,33 @@ export function useMatrixData() {
     processSensorFrame(lastSensorFrameRef.current, data, {
       source: options.source || lastSensorFrameSourceRef.current || 'realtime',
     })
+    return true
+  }
+
+  function refreshDisplayWithCurrentSettings(data = chartRef.current) {
+    const sitData = lastSensorFrameRef.current
+    const rawArr = sitDataRef.current
+    if (!sitData || !Object.keys(sitData).length || !rawArr || !Object.keys(rawArr).length) return false
+    const keyArr = Object.keys(sitData)
+    const sysType = getSysType()
+    if (!keyArr.some(a => a.includes(sysType))) return false
+    const statsArr = buildFilteredMatrixFromRaw(rawArr, keyArr)
+    if (data && typeof data === 'object') {
+      const select = getSelectArr()
+      const displayType = getDisplayType()
+      for (let i = 0; i < keyArr.length; i++) {
+        const fullKey = keyArr[i]
+        const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
+        if (!statsArr[key]) continue
+
+        const selectResult = computeSelectArr(statsArr[key], key, fullKey, select, displayType, sitData[fullKey])
+        computeStats(data, statsArr[key], selectResult, key, fullKey, { replaceLast: true })
+      }
+      chartRef.current = data
+    }
+    const resArr = applyDisplayDirection(statsArr, keyArr, sitData)
+    disPlayDataRef.current = resArr
+    useEquipStore.getState().setDisplayStatus(resArr)
     return true
   }
 
@@ -835,5 +870,6 @@ export function useMatrixData() {
     clearMatrixData,
     changeDataDirection,
     changeWsLocalData,
+    refreshDisplayWithCurrentSettings,
   }
 }

@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-03
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-04
 
 ## 1. 项目概述
 
@@ -1341,6 +1341,86 @@ graph TD
 ## 2026-06-03 实时图表坐标描述
 - `ChartsAside` 保留压力总和曲线、面积曲线和对应指标行，左侧面板继续同时展示压力总和与面积趋势。
 - 压力总和曲线与面积曲线的 ECharts 坐标轴补充文字描述，Y 轴描述放在纵轴上方，X 轴描述放在横轴右侧。
+- 压力总和曲线与面积曲线打开横纵坐标刻度，X 轴按实际曲线长度生成帧序号，Y 轴显示紧凑数值并恢复浅色网格线辅助读取。
 - 压力正态分布图同步调整轴名位置，使用“压力值 / 概率密度”并增加图表上方与右侧留白，避免轴名压住曲线区域。
 - 压力正态分布图的设备曲线颜色改为复用压力总和曲线的颜色映射，靠背/坐垫不再依赖数据顺序取色。
 | 2026-06-03 | 交互优化 | 为实时压力总和、面积和正态分布图补充坐标描述 |
+
+## 2026-06-04 正态分布图样式统一
+- `ChartsAside` 的压力正态分布图改为复用压力总和曲线同款视觉规则：相同的坐标轴留白、轴线/刻度颜色、字号、网格线和曲线线宽。
+- 正态分布图容器高度调整为 `8.25rem`，与压力总和曲线、面积曲线保持一致，避免同一侧栏内图表高度不统一。
+| 2026-06-04 | 交互优化 | 将压力正态分布图样式统一为压力曲线风格 |
+
+## 2026-06-04 图表坐标单位补充
+- `ChartsAside` 的压力总和曲线横轴改为“时间(帧)”，纵轴改为“压力总和(ADC)”。
+- 面积曲线当前数据源为有效点数，横轴改为“时间(帧)”，纵轴改为“点数(个)”；下方指标行继续同时展示点数和按点间距换算的面积(cm²)。
+- 压力正态分布图横轴改为“压力值(ADC)”，纵轴改为“概率密度(%)”，tooltip 同步展示单位。
+| 2026-06-04 | 交互优化 | 为实时侧栏图表横纵坐标补充单位 |
+
+## 2026-06-04 压强公式切换到中英文 logo 版
+- 后端压强公式默认文件和当前 `db/pressure_config.json` 切换为 `pressureFormula_V2.7.38中英文logo.js`，配置 profile 为 `V2.7.38中英文logo`。
+- 前端 `pressureMetrics` 新增同名浏览器公式 profile，同步新公式的真人段阈值、真人段系数和右端外推斜率，保证实时指标与后端导出使用同一标定口径。
+- `pressureConfig` 前端默认配置同步改为新公式文件名和 profile；后端已验证中文文件名可正常加载并导出 `estimatePressure/estimateMaxPressure`。
+| 2026-06-04 | 配置变更 | 将压强标定公式切换为 pressureFormula_V2.7.38中英文logo.js |
+
+## 2026-06-04 噪点消除可视化同步
+- `displayMapping.shouldHideDisplayPoint()` 修复为真正按 `filter` 阈值隐藏低值点，3D 点图不再忽略噪点消除配置。
+- 2D 数字视图 `NumThreeColorV3/V4` 在高斯平滑后再次应用噪点过滤，并把 `gauss/filter` 纳入稳定缓存 key，拖动噪点消除后会立即按新配置重算显示。
+- 旧数字视图和旧 3D 渲染路径同步使用当前 `filter`，低于阈值的点以 0 参与高度和颜色计算，保证热力图、数字图和 3D 可视化口径一致。
+| 2026-06-04 | 修复缺陷 | 修复噪点消除只影响热力图、其它可视化变化不明显的问题 |
+
+## 2026-06-04 坐垫方向与曲线比例修正
+- 坐垫默认方向从 `rotateDegree=90` 调整为 `270`，以匹配当前画布坐标系下肉眼看到的顺时针 90°；前端、后端和 `db/data_direction.json` 同步更新。
+- 旧坐垫方向缓存中 `rotate90/rotate270` 会迁移到新的默认坐垫方向，避免本地缓存继续沿用旧的反向默认值。
+- 实时压力总和曲线与面积/点数曲线的 Y 轴上限改为按真实最大值的 1.18 倍自适应取整，不再使用固定 `+5000` 或 `3200` 下限，提升曲线占图比例。
+- `useMatrixData` 新增仅刷新显示矩阵的 `refreshDisplayWithCurrentSettings()`，可视化调节的 `gauss/filter` 改变时不追加曲线点，只按最后一帧重算热力图、数字图和 3D 显示。
+| 2026-06-04 | 修复缺陷 | 修正坐垫默认旋转方向、曲线 Y 轴比例和噪点消除即时刷新 |
+
+## 2026-06-04 3D point view and filtered chart statistics
+- `ThreeAndCarPointV2` now keeps every real point visible in the 3D point view. Noise-filtered values are rendered as zero-height/low-color points instead of hiding the point geometry; only non-real backrest padding points remain hidden.
+- `useMatrixData` now builds a shared zeroed and noise-filtered matrix before calculating selected regions, pressure total trend, point-count trend, center data, and normal distribution. This keeps charts consistent with pre-pressure zero and visualization noise removal.
+- `refreshDisplayWithCurrentSettings()` can recompute the latest frame statistics with `replaceLast`, so changing noise removal or toggling pre-pressure zero updates the current chart values without appending a duplicate frame.
+| 2026-06-04 | Fix | Keep real points visible in the 3D point view and make pre-pressure zero/noise removal affect trend and normal-distribution chart data |
+
+## 2026-06-04 Seat rotation and selection drag stability
+- Seat direction persistence is normalized back to `rotate270 + vertical flip` for `endi-sit`, `carY-sit`, and `car-sit`, matching the current visual default for clockwise seat rotation.
+- The seat-only "rotate 90° clockwise" action now applies the inverse matrix rotation delta used by the seat visual coordinate system, so the UI action rotates clockwise as seen on screen without changing backrest behavior.
+- `BrushManager` now preserves the original matrix rectangle width and height when moving an existing selection box. Drag and keyboard movement snap only the top-left matrix position, preventing the selection from growing by one cell after repeated moves.
+| 2026-06-04 | Fix | Correct seat clockwise rotation behavior and keep selection size stable while dragging |
+
+## 2026-06-04 Replay end and contrast metrics
+- `DataService.finishPlayback()` now ends only the playback timer and playback flag. It keeps the history playback context active and does not force `historyFlag` back to realtime or push realtime frames after natural playback completion.
+- `Test` keeps `dataStatus='replay'` when the websocket receives `playEnd`, so the page stays in history replay mode after the last frame instead of switching directly to realtime.
+- The history right-click rename menu has a higher overlay z-index so it remains clickable above the history drawer and playback overlays.
+- `NumThresContrast` now computes average pressure, max pressure, pressure total, effective area, and pressure center through the same frontend pressure metric and centroid utilities used by realtime visualization. The contrast metric list removes minimum pressure.
+| 2026-06-04 | Fix | Keep playback in history mode after natural end, restore history rename context menu visibility, and align contrast pressure/center metrics with realtime |
+
+## 2026-06-04 Pressure formula profile synchronization
+- `NumThresContrast` now loads the active backend pressure runtime config on mount and recalculates contrast metrics after the formula profile is applied. This prevents average and max pressure from being calculated with the browser default profile when the backend formula/profile has changed.
+- `util/db.js` now derives calibration-average threshold behavior from the active pressure config. The `logo` formula profile uses the same `nValid > 300` human-segment rule as `pressureFormula_V2.7.38中英文logo.js`, while older V2.7.38 profiles keep their previous 1000/1128 thresholds.
+| 2026-06-04 | Fix | Synchronize contrast and CSV pressure average/max calculations with the active pressure formula profile |
+
+## 2026-06-04 Dynamic color adjustment toggle
+- `assets/util/line.js` keeps the existing `rainbowTextColorsxy` palette as the shared color source. Fixed color adjustment remains the default; when `autoColor` is enabled, only the dynamic max smoothing and gamma normalization from `colorMap_dynamic_gamma.js` are applied.
+- `SecondTitle` adds an auto-adjust switch on the row below the color adjustment control. The switch is persisted as `settingValue.autoColor` and defaults to off in system visual settings.
+- 2D numeric heatmaps, 3D point rendering, and contrast heatmaps set the dynamic-color mode per render frame, preventing disabled auto-adjust from changing the user's selected fixed color range.
+| 2026-06-04 | Feature | Add an auto-adjust switch under color adjustment; enabled mode uses dynamic max/gamma logic while preserving the original color palette |
+
+## 2026-06-04 3D scoped dynamic color ranges
+- `assets/util/line.js` now keeps dynamic color max smoothing by scope. Existing 2D and contrast callers continue to use the default scope, while callers can pass a sensor key to isolate automatic color adjustment state.
+- `ThreeAndCarPointV2` passes `back` and `sit` separately when rendering 3D point clouds, so backrest and seat dynamic max/gamma normalization no longer influence each other in the same 3D frame.
+| 2026-06-04 | Fix | Split 3D automatic color adjustment state between backrest and seat point-cloud rendering |
+
+## 2026-06-04 Backrest 3D point border removal
+- `ThreeAndCarPointV2` no longer creates or shows a `back_border` line loop for the backrest 3D point-cloud animation. Seat point-cloud border behavior remains unchanged.
+| 2026-06-04 | Fix | Remove the backrest border from the animated 3D point-cloud view |
+
+## 2026-06-04 Chart unit and axis label spacing
+- `ChartsAside` updates the pressure-total chart Y-axis label to `压力总和(N)`, matching the Newton-based pressure total calculated by `computePressureMetrics`.
+- The pressure normal-distribution chart reserves more bottom grid space and increases the X-axis name gap, preventing the `压力值(ADC)` label from overlapping the coordinate axis.
+| 2026-06-04 | Fix | Correct the pressure-total chart unit and separate the normal-distribution X-axis label from the axis line |
+
+## 2026-06-04 Pressure-center chart color alignment
+- `ChartsAside` now passes `{ center, color }` objects to `FootTrack` for normal backrest/seat pressure-center points, so the plotted center marker color matches the legend color.
+- The pressure normal-distribution chart moves the X-axis title to the middle below the axis and increases bottom spacing, avoiding title overlap with the coordinate axis.
+| 2026-06-04 | Fix | Align pressure-center marker colors with legends and move the normal-distribution X-axis title below the axis |

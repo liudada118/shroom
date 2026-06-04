@@ -18,7 +18,7 @@ import { pageContext } from "../../page/test/Test";
 import { jetWhite3, lineInterp } from "../../assets/util/line";
 import { getSettingValue, getStatus } from "../../store/equipStore";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
-import { getColorLimit, getDisplayColorValue } from "../../util/displayMapping";
+import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
 
 let camera
 let baseCameraDistance = null
@@ -722,7 +722,8 @@ const Canvas = memo(React.forwardRef((props, refs) => {
     let dataArr = []
     for (let ix = 0; ix < AMOUNTX; ix++) {
       for (let iy = 0; iy < AMOUNTY; iy++) {
-        const value = bigArr[l] * 10;
+        const rawValue = bigArr[l];
+        const value = shouldHideDisplayPoint(rawValue, filter) ? 0 : rawValue * 10;
 
         //柔化处理smooth
         smoothBig[l] = smoothBig[l] + (value - smoothBig[l]) / coherent;

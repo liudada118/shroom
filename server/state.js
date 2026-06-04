@@ -33,9 +33,9 @@ const state = {
     up: true,
     rotateDegree: 0,
     byKey: {
-      'endi-sit': { left: true, up: false, rotateDegree: 90 },
-      'carY-sit': { left: true, up: false, rotateDegree: 90 },
-      'car-sit': { left: true, up: false, rotateDegree: 90 },
+      'endi-sit': { left: true, up: false, rotateDegree: 270 },
+      'carY-sit': { left: true, up: false, rotateDegree: 270 },
+      'car-sit': { left: true, up: false, rotateDegree: 270 },
     },
   }, // collection save direction; false means the axis is flipped
   zeroState: { enabled: false, zeroTime: null, data: {} },

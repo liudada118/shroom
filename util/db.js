@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { timeStampTo_Date } = require("./time");
 const constantObj = require("./config");
-const { loadPressureFormula } = require("../server/services/PressureConfig");
+const { loadPressureConfig, loadPressureFormula } = require("../server/services/PressureConfig");
 
 // ─── 传感器点位配置 ──────────────────────────────────────
 const pointConfig = {
@@ -80,15 +80,29 @@ function getPressureSensor(key) {
 }
 
 function getPressureCalibrationMeta(sensor) {
-  if (sensor === 'backrest') return { topCount: 46, humanThreshold: 1000 }
-  if (sensor === 'seat') return { topCount: 70, humanThreshold: 1128 }
+  const config = loadPressureConfig()
+  const profileText = `${config.pressureFormulaProfile || ''} ${config.pressureFormulaFile || ''}`.toLowerCase()
+  const isLogoProfile = profileText.includes('logo')
+  if (sensor === 'backrest') {
+    return isLogoProfile
+      ? { topCount: 46, humanThreshold: 300, humanThresholdMode: 'gt' }
+      : { topCount: 46, humanThreshold: 1000, humanThresholdMode: 'gte' }
+  }
+  if (sensor === 'seat') {
+    return isLogoProfile
+      ? { topCount: 70, humanThreshold: 300, humanThresholdMode: 'gt' }
+      : { topCount: 70, humanThreshold: 1128, humanThresholdMode: 'gte' }
+  }
   return null
 }
 
 function getCalibrationAverage(positiveValues, sensor) {
   const meta = getPressureCalibrationMeta(sensor)
   if (!meta || !positiveValues.length) return 0
-  if (positiveValues.length >= meta.humanThreshold) {
+  const useHumanAverage = meta.humanThresholdMode === 'gt'
+    ? positiveValues.length > meta.humanThreshold
+    : positiveValues.length >= meta.humanThreshold
+  if (useHumanAverage) {
     return positiveValues.reduce((sum, value) => sum + value, 0) / positiveValues.length
   }
   const topValues = [...positiveValues]

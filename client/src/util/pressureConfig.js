@@ -4,8 +4,8 @@ import { setPressureFormulaProfile } from './pressureMetrics'
 
 const DEFAULT_PRESSURE_CONFIG = {
   backValueMultiplier: 1.8,
-  pressureFormulaFile: 'pressureFormula_V2.7.38.js',
-  pressureFormulaProfile: 'V2.7.38',
+  pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
+  pressureFormulaProfile: 'V2.7.38中英文logo',
 }
 
 let pressureConfigCache = DEFAULT_PRESSURE_CONFIG

@@ -3,7 +3,7 @@ import axios from 'axios'
 import IconAndText from '../iconAndText/IconAndText'
 import IconAndTextAndSelect from '../iconAndTextAndSelect/IconAndTextAndSelect'
 import Drawer from '../Drawer/Drawer'
-import { Col, ConfigProvider, Input, InputNumber, message, Modal, Popover, Row, Slider } from 'antd'
+import { Col, ConfigProvider, Input, InputNumber, message, Modal, Popover, Row, Slider, Switch } from 'antd'
 import { pageContext } from '../../page/test/Test'
 import { SelectionHelper } from '../selectBox/SelectBox'
 import { withTranslation } from 'react-i18next'
@@ -64,6 +64,12 @@ function SecondTitle(props) {
         setSettingValue(obj);
     };
 
+    const onToggleAutoColor = (checked) => {
+        const obj = { ...settingValue, autoColor: checked ? 1 : 0 }
+        saveVisualSettingValue(systemType || getSysType(), obj)
+        setSettingValue(obj)
+    }
+
     const getSliderValue = (a) => {
         const value = Number(getRowValue(a))
         if (!Number.isFinite(value)) return 0
@@ -103,6 +109,9 @@ function SecondTitle(props) {
                 const effectiveGauss = Number.isFinite(gauss) ? gauss * 0.5 : 0.5
                 if (effectiveGauss > 0.01) {
                     next = gaussBlur_return(next, matrixConfig.width, matrixConfig.height, effectiveGauss)
+                }
+                if (Number.isFinite(filter) && filter > 0) {
+                    next = next.map(value => (value < filter ? 0 : value))
                 }
                 if (fullKey === 'endi-back') {
                     next = next.map((value, index) => isEndiBackVisibleIndex(index, matrixConfig.width, matrixConfig.height) ? value : 0)
@@ -392,7 +401,7 @@ function SecondTitle(props) {
                     {
                         setType.map((a, index) => {
                             return (
-                                <div key={a.type} className="setItem">
+                                <div key={a.type} className={`setItem ${a.type === 'color' ? 'setItemColor' : ''}`}>
                                     <Popover color='#32373E' className='set-popover' placement="bottomLeft" content={a.content} >
                                         <div className="setItemLabel">
                                             <span>{a.title}</span>
@@ -438,6 +447,17 @@ function SecondTitle(props) {
 
                                         />
                                     </ConfigProvider>
+
+                                    {a.type === 'color' ? (
+                                        <div className="autoColorSwitchRow">
+                                            <Switch
+                                                size="small"
+                                                checked={Boolean(settingValue.autoColor)}
+                                                onChange={onToggleAutoColor}
+                                            />
+                                            <span>{t('autoColorAdj')}</span>
+                                        </div>
+                                    ) : null}
 
                                 </div>
                             )

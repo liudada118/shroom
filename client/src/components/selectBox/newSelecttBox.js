@@ -4,7 +4,7 @@ import i18n from 'i18next';
 import { getDisplayType, getSysType } from '../../store/equipStore';
 import { systemPointConfig } from '../../util/constant';
 import { isMoreMatrix } from '../../assets/util/util';
-import { calMatrixToSelect, snapPixelRangeToMatrixRect } from '../../assets/util/selectMatrix';
+import { calMatrixToSelect, matrixRectToSelectRect, snapPixelRangeToMatrixRect } from '../../assets/util/selectMatrix';
 import { getDefaultSelectionName } from '../../util/selectionName';
 import { isEndiBackVisibleCell } from '../../util/endiBackVisibleMask';
 
@@ -241,6 +241,58 @@ export class BrushManager {
         return true;
     }
 
+    _snapMovedRangeToMatrixGrid(range, originalMatrixRect = range?.matrixRect, context = this._getMatrixContext()) {
+        if (!range || !originalMatrixRect || !context?.matrixConfig || !context?.effectiveRect) {
+            return this._snapRangeToMatrixGrid(range, context);
+        }
+
+        const { matrixConfig, effectiveRect, canvasRect } = context;
+        const { width, height } = matrixConfig;
+        const selectWidth = Number(originalMatrixRect.xEnd) - Number(originalMatrixRect.xStart);
+        const selectHeight = Number(originalMatrixRect.yEnd) - Number(originalMatrixRect.yStart);
+        if (!Number.isFinite(selectWidth) || !Number.isFinite(selectHeight) || selectWidth <= 0 || selectHeight <= 0) {
+            return this._snapRangeToMatrixGrid(range, context);
+        }
+
+        const unitWidth = (effectiveRect.right - effectiveRect.left) / width;
+        const unitHeight = (effectiveRect.bottom - effectiveRect.top) / height;
+        const left = Math.min(range.x1, range.x2);
+        const top = Math.min(range.y1, range.y2);
+        const maxXStart = Math.max(0, width - selectWidth);
+        const maxYStart = Math.max(0, height - selectHeight);
+        const xStart = this._clampValue(Math.round((left - effectiveRect.left) / unitWidth), 0, maxXStart);
+        const yStart = this._clampValue(Math.round((top - effectiveRect.top) / unitHeight), 0, maxYStart);
+        const matrixRect = {
+            xStart,
+            yStart,
+            xEnd: xStart + selectWidth,
+            yEnd: yStart + selectHeight,
+            width,
+            height,
+        };
+        if (!this._isValidMatrixSelection(matrixRect, context)) return false;
+
+        const selectRect = matrixRectToSelectRect(canvasRect, {
+            xStart,
+            yStart,
+            sWidth: selectWidth,
+            sHeight: selectHeight,
+        }, matrixConfig);
+
+        range.x1 = selectRect.selectX;
+        range.y1 = selectRect.selectY;
+        range.x2 = selectRect.selectX + selectRect.selectWidth;
+        range.y2 = selectRect.selectY + selectRect.selectHeight;
+        range.matrixRect = matrixRect;
+        range.matrixKey = context.matrixKey;
+        range.displayType = context.displayType;
+        range.systemType = context.systemType;
+        range.updatedAt = Date.now();
+        if (!range.createdAt) range.createdAt = range.updatedAt;
+        this._applyRangeToElement(range);
+        return true;
+    }
+
     _getRangeMatrixRect(range) {
         return this._rangeToMatrixRect(range) || range?.matrixRect || null;
     }
@@ -367,6 +419,7 @@ export class BrushManager {
             const h = obj.y2 - obj.y1;
             const rect = this._getEffectiveCanvasRect();
             const prev = { x1: obj.x1, y1: obj.y1, x2: obj.x2, y2: obj.y2 };
+            const prevMatrixRect = obj.matrixRect ? { ...obj.matrixRect } : null;
             let nextX = obj.x1 + dx;
             let nextY = obj.y1 + dy;
             if (rect) {
@@ -379,7 +432,7 @@ export class BrushManager {
             obj.y2 = nextY + h;
             el.style.left = obj.x1 + 'px';
             el.style.top = obj.y1 + 'px';
-            if (!this._syncRangeMetadata(obj)) {
+            if (!this._rangeToMatrixRect(obj) || !this._snapMovedRangeToMatrixGrid(obj, prevMatrixRect)) {
                 obj.x1 = prev.x1;
                 obj.y1 = prev.y1;
                 obj.x2 = prev.x2;
@@ -388,8 +441,6 @@ export class BrushManager {
                 el.style.top = obj.y1 + 'px';
                 this._syncRangeMetadata(obj);
                 message.warning(tr('selectionOutOfValidRange'));
-            } else {
-                this._snapRangeToMatrixGrid(obj);
             }
             this._updateMeasureBadge(el, obj);
             this.notify(this.rangeArr);
@@ -712,6 +763,7 @@ export class BrushManager {
         const origY1 = rangeObj.y1;
         const w = rangeObj.x2 - rangeObj.x1;
         const h = rangeObj.y2 - rangeObj.y1;
+        const origMatrixRect = rangeObj.matrixRect ? { ...rangeObj.matrixRect } : null;
 
         const onMove = (ev) => {
             if (!this._dragging) return;
@@ -742,7 +794,7 @@ export class BrushManager {
             el.classList.remove('selectBox-active');
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp, true);
-            if (!this._syncRangeMetadata(rangeObj)) {
+            if (!this._rangeToMatrixRect(rangeObj) || !this._snapMovedRangeToMatrixGrid(rangeObj, origMatrixRect)) {
                 message.warning(tr('selectionOutOfValidRange'));
                 rangeObj.x1 = origX1;
                 rangeObj.y1 = origY1;
@@ -751,8 +803,6 @@ export class BrushManager {
                 el.style.left = origX1 + 'px';
                 el.style.top = origY1 + 'px';
                 this._syncRangeMetadata(rangeObj);
-            } else {
-                this._snapRangeToMatrixGrid(rangeObj);
             }
             this._updateMeasureBadge(el, rangeObj);
             this.notify(this.rangeArr);

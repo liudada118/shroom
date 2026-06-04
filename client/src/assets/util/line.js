@@ -1,14 +1,49 @@
+import {
+  GAMMA,
+  MIN_RANGE_MAX,
+  RANGE_MIN,
+  SMOOTH_ALPHA,
+} from './colorMap_dynamic_gamma';
+
+const DEFAULT_DYNAMIC_COLOR_SCOPE = 'default';
+
+let dynamicGammaEnabled = false;
+let dynamicGammaScope = DEFAULT_DYNAMIC_COLOR_SCOPE;
+const dynamicColorRangeMap = new Map();
+
+function getDynamicColorScope(scope) {
+  return scope == null || scope === '' ? DEFAULT_DYNAMIC_COLOR_SCOPE : String(scope);
+}
+
+function getScopedDynamicRangeMax(scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
+  const key = getDynamicColorScope(scope);
+  return dynamicColorRangeMap.get(key) || MIN_RANGE_MAX;
+}
+
+function updateScopedFrameMax(frameMax, scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
+  const key = getDynamicColorScope(scope);
+  const value = Number(frameMax);
+  const safeFrameMax = Number.isFinite(value) ? value : 0;
+  const currentMax = getScopedDynamicRangeMax(key);
+  const nextMax = Math.max(
+    SMOOTH_ALPHA * safeFrameMax + (1 - SMOOTH_ALPHA) * currentMax,
+    MIN_RANGE_MAX
+  );
+  dynamicColorRangeMap.set(key, nextMax);
+  return nextMax;
+}
+
 export function lineInterp(smallMat, width, height, interp1, interp2) {
 
   const bigMat = new Array((width * interp1) * (height * interp2)).fill(0)
   // return bigMat
   for (let i = 0; i < height; i++) {
     for (let j = 0; j < width - 1; j++) {
-      const realValue = smallMat[i * width + j] 
-      const rowValue = smallMat[i * width + j + 1]  ? smallMat[i * width + j + 1]  : 0
-      const colValue = smallMat[(i + 1) * width + j]  ? smallMat[(i + 1) * width + j]  : 0
+      const realValue = smallMat[i * width + j]
+      const rowValue = smallMat[i * width + j + 1] ? smallMat[i * width + j + 1] : 0
+      const colValue = smallMat[(i + 1) * width + j] ? smallMat[(i + 1) * width + j] : 0
       bigMat[(width * interp1) * i * interp2 + (j * interp1)
-      ] = smallMat[i * width + j] 
+      ] = smallMat[i * width + j]
       // for (let k = 0; k < interp1; k++) {
       //   // for (let z = 0; z < interp2; z++) {
       //   //   bigMat[(width * interp1) * (i * interp2 + k) + ((j * interp1) + z)
@@ -32,7 +67,7 @@ export function lineInterp(smallMat, width, height, interp1, interp2) {
       const realValue = bigMat[i * interp2 * newWidth + j]
       // const rowValue = bigMat[i * width + j + 1] * 10 ? bigMat[i * width + j + 1] * 10 : 0
       // const colValue = bigMat[(i + 1) * width + j] * 10 ? bigMat[(i + 1) * width + j] * 10 : 0
-      const colValue = bigMat[((i + 1) * interp2) * newWidth + j] ? bigMat[(((i + 1) * interp2) ) * newWidth + j] : 0
+      const colValue = bigMat[((i + 1) * interp2) * newWidth + j] ? bigMat[(((i + 1) * interp2)) * newWidth + j] : 0
       for (let k = 0; k < interp2; k++) {
         bigMat[newWidth * (i * interp2 + k) + ((j))] = realValue + (colValue - realValue) * (k) / interp2
       }
@@ -111,6 +146,68 @@ export function gaussBlur_return(scl, w, h, r) {
 }
 
 
+export function beginDynamicColorFrame(values = [], fallbackMax = 0, scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
+  if (!dynamicGammaEnabled) return null;
+  const arr = Array.isArray(values) || ArrayBuffer.isView(values) ? values : [];
+  let frameMax = 0;
+  for (let i = 0; i < arr.length; i++) {
+    const value = Number(arr[i]);
+    if (Number.isFinite(value) && value > frameMax) frameMax = value;
+  }
+  const fallback = Number(fallbackMax);
+  return updateScopedFrameMax(frameMax > 0 ? frameMax : (Number.isFinite(fallback) ? fallback : 0), scope);
+}
+
+export function syncDynamicColorRange(maxValue, scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
+  if (!dynamicGammaEnabled) return null;
+  const value = Number(maxValue);
+  return updateScopedFrameMax(Number.isFinite(value) ? value : 0, scope);
+}
+
+export function setDynamicGammaColorEnabled(enabled, scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
+  dynamicGammaEnabled = Boolean(enabled);
+  dynamicGammaScope = getDynamicColorScope(scope);
+}
+
+export function isDynamicGammaColorEnabled() {
+  return dynamicGammaEnabled;
+}
+
+export function getDynamicColorRangeMax(scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
+  return getScopedDynamicRangeMax(scope);
+}
+
+export function resetPressureColorRange(scope) {
+  if (scope == null) {
+    dynamicColorRangeMap.clear();
+    return;
+  }
+  dynamicColorRangeMap.set(getDynamicColorScope(scope), MIN_RANGE_MAX);
+}
+
+export function getPressureColorGradient() {
+  const stops = rainbowTextColorsxyNoWhite
+    .map((color, index) => {
+      const pct = Math.round((index / (rainbowTextColorsxyNoWhite.length - 1)) * 100);
+      return `rgb(${color[0]},${color[1]},${color[2]}) ${pct}%`;
+    });
+  return `linear-gradient(to right, ${stops.join(', ')})`;
+}
+
+export function getPressureColorLegendTicks() {
+  const rangeMax = getDynamicColorRangeMax();
+  const tickCount = 6;
+  return Array.from({ length: tickCount + 1 }, (_, index) => {
+    const ratio = index / tickCount;
+    const value = Math.round(RANGE_MIN + ratio * (rangeMax - RANGE_MIN));
+    return {
+      adc: value,
+      t: ratio,
+      color: jetWhite3NoWhite(0, rangeMax, value),
+    };
+  });
+}
+
 export function jetWhite3(min, max, x) {
   return jetFromPalette(rainbowTextColorsxy, min, max, x)
 }
@@ -119,6 +216,15 @@ function jetFromPalette(palette, min, max, x) {
   const value = Number(x);
   if (!Number.isFinite(value) || value <= 0) {
     return palette[palette.length - 1]
+  }
+
+  if (dynamicGammaEnabled) {
+    const rangeMax = Math.max(Number(getScopedDynamicRangeMax(dynamicGammaScope)) || 0, RANGE_MIN + 1);
+    let ratio = (value - RANGE_MIN) / (rangeMax - RANGE_MIN);
+    ratio = Math.max(0, Math.min(1, ratio));
+    ratio = Math.pow(ratio, GAMMA);
+    const index = Math.round((1 - ratio) * (palette.length - 1));
+    return palette[index];
   }
 
   const minValue = Number.isFinite(Number(min)) ? Number(min) : 0;
@@ -151,8 +257,10 @@ export const rainbowTextColorsxy = [
   [0, 255, 255],
   [0, 204, 255],
   [0, 153, 255],
-  ...new Array(5).fill([0, 102, 255]),
-  [255, 255, 255],
+  // ...new Array(5).fill([0, 102, 255]),
+  // [255, 255, 255],
+
+  [0, 102, 255],
   [255, 255, 255],
   [255, 255, 255],
 ];

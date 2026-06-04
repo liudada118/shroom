@@ -1,6 +1,6 @@
-// Browser-safe mirror of server/kpa/pressureFormula_V2.7.38.js.
+// Browser-safe mirror of server/kpa pressure formula files.
 // Keep estimatePressure/estimateMaxPressure constants synchronized with that file.
-const DEFAULT_PRESSURE_FORMULA_PROFILE = 'V2.7.38'
+const DEFAULT_PRESSURE_FORMULA_PROFILE = 'V2.7.38中英文logo'
 
 const SEAT_SEGS = [
   { lo: 92.78, hi: 129.75, a: 0.001170994, b: -0.1905968, c: 10.059837 },
@@ -27,6 +27,26 @@ const BACK_SEGS = [
 ]
 
 const PRESSURE_FORMULA_PROFILES = {
+  'V2.7.38中英文logo': {
+    seat: {
+      topCount: 70,
+      humanThreshold: 301,
+      humanAlpha: 6.33442500e-04,
+      segs: SEAT_SEGS,
+      leftSlope: 2.6474807109609803e-02,
+      pHi: 24.999991319999992,
+      rightSlope: 1.428571,
+    },
+    backrest: {
+      topCount: 46,
+      humanThreshold: 301,
+      humanAlpha: 6.33442500e-04,
+      segs: BACK_SEGS,
+      leftSlope: 1.9509221590333563e-02,
+      pHi: 24.99999251260001,
+      rightSlope: 1.345533,
+    },
+  },
   'V2.7.38': {
     seat: {
       topCount: 70,

@@ -16,7 +16,7 @@ import {
 } from "../../util/util";
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
-import { jetWhite3, lineInterp } from "../../assets/util/line";
+import { beginDynamicColorFrame, jetWhite3, lineInterp, setDynamicGammaColorEnabled } from "../../assets/util/line";
 import { getDisplayType, getSettingValue, getStatus } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
@@ -780,6 +780,7 @@ const Canvas =
             //     实际 x 范围: [-(AMOUNTX*SEP)/2, (AMOUNTY-1)*SEP - (AMOUNTX*SEP)/2]
             //   z 方向: ix * SEPARATION - (AMOUNTY * SEPARATION) / 2, ix 范围 [0, AMOUNTX-1]
             //     实际 z 范围: [-(AMOUNTY*SEP)/2, (AMOUNTX-1)*SEP - (AMOUNTY*SEP)/2]
+            if (name !== 'back') {
             const xMin = -(AMOUNTX * SEPARATION) / 2
             const xMax = (AMOUNTY - 1) * SEPARATION - (AMOUNTX * SEPARATION) / 2
             const zMin = -(AMOUNTY * SEPARATION) / 2
@@ -807,6 +808,7 @@ const Canvas =
             // 默认隐藏，只在单独坐垫/靠背模式下显示
             borderLine.visible = false
             group.add(borderLine);
+            }
         }
 
         function initPoints() {
@@ -1175,8 +1177,9 @@ const Canvas =
 
             // const gauss = 1, color  =1, filter=1, height = 1, coherent = 1
             const {
-                gauss = 1, color, filter, height = 1, coherent = 1
+                gauss = 1, color, filter, height = 1, coherent = 1, autoColor
             } = getSettingValue() //pageRef.current.settingValue
+            setDynamicGammaColorEnabled(Boolean(autoColor), name)
             const colorLimit = getColorLimit(color)
 
             // height , width , heightInterp , widthInterp
@@ -1201,12 +1204,14 @@ const Canvas =
                 pointStableRef.current,
                 `${name}-${AMOUNTX}x${AMOUNTY}`
             )
+            beginDynamicColorFrame(bigArrg, colorLimit, name)
 
             let k = 0, l = 0, j = 0;
             let dataArr = []
             for (let ix = 0; ix < AMOUNTX; ix++) {
                 for (let iy = 0; iy < AMOUNTY; iy++) {
-                    const value = bigArrg[l];
+                    const rawValue = bigArrg[l];
+                    const value = shouldHideDisplayPoint(rawValue, filter) ? 0 : rawValue;
                     //柔化处理smooth
                     smoothBig[l] = value < 0.5 ? 0 : smoothBig[l] + (value - smoothBig[l]) / coherent;
 
@@ -1238,12 +1243,12 @@ const Canvas =
                     // The 3D backrest is visually flipped vertically relative to the 2D matrix.
                     const visibleRow = name === 'back' ? sitnum1 - 1 - sourceRow : sourceRow
                     const isPaddingPoint = name === 'back' && !isEndiBackPointVisible(visibleRow, sourceCol, sitnum2, sitnum1)
-                    const isHidden = isPaddingPoint || shouldHideDisplayPoint(smoothBig[l], filter);
+                    const isHidden = isPaddingPoint;
                     scales[j] = isHidden ? 0 : 1;
 
 
 
-                    rgb = jetWhite3(0, colorLimit, getDisplayColorValue(smoothBig[l], colorLimit));
+                    rgb = jetWhite3(0, colorLimit, smoothBig[l]);
 
 
 
@@ -1614,7 +1619,6 @@ const Canvas =
                 pointGroup.children.forEach((a) => a.visible = false)
                 if (chair) chair.visible = false
                 hideBorders()
-                showBorder('back')
 
                 const particles = pointGroup.children.find((a) => a.name == 'back')
                 particles.visible = true;

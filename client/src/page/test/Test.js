@@ -100,6 +100,7 @@ function Test() {
         setDataDirection,
         processSensorFrame,
         reprocessLastSensorFrame,
+        refreshDisplayWithCurrentSettings,
         clearMatrixData,
         changeDataDirection,
         changeWsLocalData,
@@ -139,16 +140,6 @@ function Test() {
         window.addEventListener('report-return-realtime', handleReportReturnRealtime)
         return () => window.removeEventListener('report-return-realtime', handleReportReturnRealtime)
     }, [clearVisualizationData])
-
-    const shouldClearAfterPlaybackEnd = (payload) => {
-        if (payload?.realtimeAvailable === false) return true
-        if (payload?.realtimeAvailable === true) return false
-        const store = useEquipStore.getState()
-        if (store.connectState !== 'connected') return true
-        const statuses = Object.values(store.equipStatus || {})
-        if (!statuses.length) return true
-        return statuses.every((status) => status === 'offline' || status === undefined)
-    }
 
     // ─── WebSocket 连接 ──────────────────────────────────
     useWebSocket({
@@ -194,11 +185,7 @@ function Test() {
             const store = useEquipStore.getState()
             if (store.dataStatus === 'replay') {
                 setPlayBack(false)
-                store.setDataStatus('realtime')
-                store.setHistoryChart({ pressArr: {}, areaArr: {} })
-                if (shouldClearAfterPlaybackEnd(payload)) {
-                    clearVisualizationData({ preservePlaybackStatus: true })
-                }
+                store.setDataStatus('replay')
             }
         },
         onMacInfo: (macInfo) => {
@@ -335,6 +322,11 @@ function Test() {
     const setting = useRef()
 
     const systemType = useEquipStore(s => s.systemType, shallow)
+    const visualSettingValue = useEquipStore(s => s.settingValue, shallow)
+
+    useEffect(() => {
+        refreshDisplayWithCurrentSettings(persistentDataRef.current)
+    }, [visualSettingValue.gauss, visualSettingValue.filter])
 
     useLayoutEffect(() => {
         const { setSystemType, setSystemTypeArr } = useEquipStore.getState()
