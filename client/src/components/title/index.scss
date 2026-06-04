@@ -487,12 +487,12 @@
 
     .selectRegionCard {
         display: grid;
-        grid-template-columns: 1.8rem minmax(0, 1fr) 2rem 2rem;
+        grid-template-columns: 1.8rem minmax(0, 1fr) 1.45rem;
         align-items: center;
         gap: 0.35rem;
         min-height: 2.55rem;
         margin-bottom: 0.42rem;
-        padding: 0 0.45rem;
+        padding: 0.34rem 0.28rem 0.38rem 0.45rem;
         border: 1px solid rgba(92, 111, 134, 0.38);
         border-radius: 0.65rem;
         background: rgba(22, 31, 43, 0.72);
@@ -538,7 +538,7 @@
     }
 
     .selectRegionMeta {
-        grid-column: 2 / -1;
+        grid-column: 2 / 3;
         grid-row: 2;
         color: #b9c6d8;
         font-size: 0.72rem;
@@ -559,11 +559,8 @@
         font-size: 1rem;
     }
 
-    .selectRegionEyeButton {
-        color: #2f83ff;
-    }
-
     .selectRegionDeleteButton {
+        justify-self: end;
         color: #ff5f66;
     }
 

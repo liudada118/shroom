@@ -10,10 +10,12 @@ import { withTranslation } from 'react-i18next'
 import { getDisplayType, getSettingValue, getSettingValueOptimal, getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
-import { localAddress, pointConfig } from '../../util/constant'
+import { localAddress, pointConfig, systemPointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
 import { normalizeVisualSettingMax, saveVisualSettingValue } from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
+import { gaussBlur_return } from '../../assets/util/line'
+import { isEndiBackVisibleIndex } from '../../util/endiBackVisibleMask'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
@@ -32,6 +34,7 @@ function SecondTitle(props) {
     const settingValueMax = normalizeVisualSettingMax(rawSettingValueMax);
     const systemType = useEquipStore(s => s.systemType, shallow);
     const currentDisplayType = useEquipStore(s => s.displayType, shallow);
+    const activeDisplayType = pageInfo.displayType || currentDisplayType;
     const displayStatus = useEquipStore(s => s.displayStatus, shallow);
 
     const setSettingValue = useEquipStore.getState().setSettingValue
@@ -80,15 +83,35 @@ function SecondTitle(props) {
         if (!displayStatus || typeof displayStatus !== 'object') return null
         const values = Object.entries(displayStatus)
         if (!values.length) return null
-        const target = currentDisplayType?.includes('back') ? 'back' : currentDisplayType?.includes('sit') ? 'sit' : ''
+        const target = activeDisplayType?.includes('back') ? 'back' : activeDisplayType?.includes('sit') ? 'sit' : ''
         const matched = target
             ? values.filter(([key]) => key === target || key.endsWith(`-${target}`))
             : values
         const maxList = (matched.length ? matched : values)
-            .map(([, arr]) => getMax(arr))
+            .map(([key, arr]) => {
+                if (!Array.isArray(arr)) return null
+                const fullKey = key.includes('-') ? key : (target && systemType ? `${systemType}-${target}` : key)
+                const matrixConfig = systemPointConfig[fullKey]
+                if (!matrixConfig?.width || !matrixConfig?.height) return getMax(arr)
+                const count = matrixConfig.width * matrixConfig.height
+                let next = Array.from({ length: count }, (_, index) => Number(arr[index]) || 0)
+                const filter = Number(settingValue.filter)
+                if (Number.isFinite(filter) && filter > 0) {
+                    next = next.map(value => (value < filter ? 0 : value))
+                }
+                const gauss = Number(settingValue.gauss)
+                const effectiveGauss = Number.isFinite(gauss) ? gauss * 0.5 : 0.5
+                if (effectiveGauss > 0.01) {
+                    next = gaussBlur_return(next, matrixConfig.width, matrixConfig.height, effectiveGauss)
+                }
+                if (fullKey === 'endi-back') {
+                    next = next.map((value, index) => isEndiBackVisibleIndex(index, matrixConfig.width, matrixConfig.height) ? value : 0)
+                }
+                return getMax(next.map(value => Math.max(0, Math.min(255, Math.round(Number(value) || 0)))))
+            })
             .filter((value) => value !== null)
         return maxList.length ? Math.max(...maxList) : null
-    }, [displayStatus, currentDisplayType])
+    }, [displayStatus, activeDisplayType, systemType, settingValue.gauss, settingValue.filter])
 
 
 

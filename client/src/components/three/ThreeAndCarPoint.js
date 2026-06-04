@@ -245,7 +245,7 @@ const Canvas =
             controls.panSpeed = 0.8;
             controls.minDistance = 40;         // 最近距离（对应300%）
             controls.maxDistance = 1200;       // 最远距离（对应10%）
-            controls.dynamicDampingFactor = 0.15;
+            controls.dynamicDampingFactor = 0.5;
             baseCameraDistance = camera.position.distanceTo(controls.target);
             applyZoomBounds(controls, baseCameraDistance);
             controls.update();

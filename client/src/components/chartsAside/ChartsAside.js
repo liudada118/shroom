@@ -93,8 +93,7 @@ function ChartsAside(props) {
             } else {
                 // 无框选模式：按设备分色
                 if (onlyBoxStats) continue
-                const colorKey = key.includes('back') ? 'back' : key.includes('sit') ? 'sit' : key
-                const color = colorMap[colorKey] || Object.values(colorMap)[i]
+                const color = getDeviceChartColor(key, colorMap, i)
                 series.push({
                     symbol: 'none',
                     data: historyLine || dataMap[key],
@@ -109,20 +108,38 @@ function ChartsAside(props) {
         return series
     }
 
+    const getDeviceChartColor = (key, colorMap, index = 0) => {
+        const colorKey = key.includes('back') ? 'back' : key.includes('sit') ? 'sit' : key
+        return colorMap[colorKey] || Object.values(colorMap)[index]
+    }
+
     const initCharts1 = (props) => {
         let option = {
             animation: false,
-            grid: { x: 10, x2: 10, y: 10, y2: 10 },
+            grid: { left: 34, right: 34, top: 26, bottom: 28, containLabel: false },
             xAxis: {
                 type: 'category',
-                show: false,
+                show: true,
+                name: props.xName || '时间',
+                nameLocation: 'end',
+                nameGap: 8,
+                nameTextStyle: { color: '#AEB8C4', fontSize: 10, align: 'right', verticalAlign: 'top' },
+                axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
+                axisTick: { show: false },
                 splitLine: { show: false },
                 data: props.xData,
                 axisLabel: { show: false },
             },
             yAxis: {
                 type: 'value',
-                show: false,
+                show: true,
+                name: props.yName || '数值',
+                nameLocation: 'end',
+                nameGap: 8,
+                nameRotate: 0,
+                nameTextStyle: { color: '#AEB8C4', fontSize: 10, align: 'left', verticalAlign: 'bottom' },
+                axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
+                axisTick: { show: false },
                 splitLine: { show: false },
                 max: props.yMax,
                 axisLabel: { show: false },
@@ -140,6 +157,8 @@ function ChartsAside(props) {
             xData: Array.from({ length: 20 }, (_, i) => i + 1),
             myChart: myChart1.current,
             yMax: value,
+            xName: '时间',
+            yName: '压力总和',
         });
     }
 
@@ -151,6 +170,8 @@ function ChartsAside(props) {
             xData: Array.from({ length: 20 }, (_, i) => i + 1),
             myChart: myChart2.current,
             yMax: value,
+            xName: '时间',
+            yName: '面积',
         });
     }
 
@@ -292,7 +313,7 @@ function ChartsAside(props) {
             : keys.map((key, idx) => ({
                 key,
                 normalDis: chartData[key].normalDis,
-                bgc: Object.values(pressColorArr)[idx],
+                bgc: getDeviceChartColor(key, pressColorArr, idx),
             }))
 
         for (let i = 0; i < seriesSource.length; i++) {
@@ -310,24 +331,32 @@ function ChartsAside(props) {
         }
 
         chart.current.setOption({
-            grid: { x: 35, x2: 10, y: 30, y2: 20 },
+            grid: { left: 52, right: 38, top: 50, bottom: 44, containLabel: true },
             title: { left: 'center' },
             tooltip: {
                 trigger: 'axis',
                 formatter: p => {
                     const { value } = p[0];
-                    return `灰度值: ${value[0]}<br>(概率密度): ${value[1].toFixed(6)}`;
+                    return `压力值：${value[0]}<br/>概率密度：${value[1].toFixed(6)}`;
                 }
             },
             xAxis: {
                 type: 'value', min: 0, max: 255,
-                name: '灰度值 (0–255)', splitNumber: 5,
+                name: '压力值', splitNumber: 5,
+                nameLocation: 'end',
+                nameGap: 8,
+                nameTextStyle: { color: '#E6EBF0', fontSize: 11, fontWeight: 600, align: 'right', verticalAlign: 'top', padding: [4, 0, 0, 0] },
+                axisLabel: { color: '#AEB8C4', fontSize: 10 },
                 axisTick: { lineStyle: { width: 0.5 } },
                 splitLine: { lineStyle: { width: 0.5, color: '#32373E' } }
             },
             yAxis: {
                 type: 'value', name: '概率密度', splitNumber: 3,
-                axisLabel: { formatter: (value) => value * 100 + '%' },
+                nameLocation: 'end',
+                nameGap: 16,
+                nameRotate: 0,
+                nameTextStyle: { color: '#E6EBF0', fontSize: 11, fontWeight: 600, align: 'left', verticalAlign: 'bottom', padding: [0, 0, 6, 0] },
+                axisLabel: { color: '#AEB8C4', fontSize: 10, formatter: (value) => `${(Number(value) * 100).toFixed(2)}%` },
                 axisTick: { lineStyle: { width: 0.5, color: '#32373E' } },
                 splitLine: { lineStyle: { width: 0.5, color: '#32373E' } },
                 scale: false,
@@ -338,7 +367,7 @@ function ChartsAside(props) {
 
     useEffect(() => {
         myChart1.current = echarts.init(myChart1Dom.current)
-        myChart2.current = echarts.init(myChart2Dom.current)
+        myChart2.current = myChart2Dom.current ? echarts.init(myChart2Dom.current) : null
         chart.current = echarts.init(normalChartDom.current);
         const chartPanel = document.querySelector('.charts-panel')
         const resizeCharts = () => {
@@ -600,7 +629,7 @@ function ChartsAside(props) {
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{t('areaCurve')}</div>
-                        <div className="chartType">{renderLegend(areaColorArr)}</div>
+                        <div className="chartType">{renderLegend(pressColorArr)}</div>
                     </div>
                     <div ref={myChart2Dom} id="myChart2" className="chartCanvas" style={{ opacity: '0.8' }}></div>
                     {areaDataArr.map((item) => (

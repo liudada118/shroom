@@ -7,6 +7,12 @@ import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore }
 import { isMoreMatrix } from '../../assets/util/util';
 import { NUMBER_TEXT_COLOR_ALPHA, jetWhite3NoWhite } from '../../assets/util/line';
 
+const DIGIT_ATLAS_GRID = 64;
+const DIGIT_ATLAS_CELL = 32;
+const DIGIT_ATLAS_SIZE = DIGIT_ATLAS_GRID * DIGIT_ATLAS_CELL;
+const DIGIT_ATLAS_COUNT = DIGIT_ATLAS_GRID * DIGIT_ATLAS_GRID;
+const DIGIT_DISPLAY_MAX = DIGIT_ATLAS_COUNT - 1;
+
 function jet(min, max, x) {
   let red, g, blue;
   let dv;
@@ -47,12 +53,17 @@ function jet(min, max, x) {
 function normalizeDisplayValue(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
-  return Math.max(0, Math.min(255, Math.round(numeric)));
+  return Math.max(0, Math.min(DIGIT_DISPLAY_MAX, Math.round(numeric)));
+}
+
+function getTextureColorMax(color) {
+  const value = Number(color);
+  return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 function drawCellValue(ctx, value, cx, cy, cellSize) {
   const text = String(value);
-  const fontSize = value >= 100 ? 32 : 40;
+  const fontSize = value >= 1000 ? 11 : value >= 100 ? 14 : 18;
   ctx.font = `bold ${fontSize}px monospace`;
   ctx.globalAlpha = 1;
   ctx.fillStyle = "white";
@@ -90,25 +101,26 @@ export default function NumThree(props) {
   // }
 
 
-  function createDigitSpriteSheetWithJet() {
+  function createDigitSpriteSheetWithJet(colorMax = 22) {
     const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 1024;
+    canvas.width = canvas.height = DIGIT_ATLAS_SIZE;
     const ctx = canvas.getContext("2d");
 
-    const gridSize = 16;
-    const cellSize = 64;
+    const gridSize = DIGIT_ATLAS_GRID;
+    const cellSize = DIGIT_ATLAS_CELL;
+    const safeColorMax = getTextureColorMax(colorMax);
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    for (let i = 0; i < 256; i++) {
+    for (let i = 0; i < DIGIT_ATLAS_COUNT; i++) {
       const x = i % gridSize;
       const y = Math.floor(i / gridSize);
       const cx = x * cellSize;
       const cy = y * cellSize;
 
       // ✅ 计算背景颜色
-      const [r, g, b] = jetWhite3NoWhite(0, 22, i);
+      const [r, g, b] = jetWhite3NoWhite(0, safeColorMax, Math.min(i, safeColorMax));
       ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
@@ -161,14 +173,15 @@ export default function NumThree(props) {
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
     camera.position.z = 1000;
 
-    const texture = createDigitSpriteSheetWithJet();
+    let currentTextureMax = getTextureColorMax(getSettingValue()?.color);
+    const texture = createDigitSpriteSheetWithJet(currentTextureMax);
     // texture.flipY = false;
 
 
     const material = new THREE.ShaderMaterial({
       uniforms: {
         map: { value: texture },
-        tileSize: { value: 1.0 / 16.0 }
+        tileSize: { value: 1.0 / DIGIT_ATLAS_GRID }
       },
       vertexShader: `
         attribute vec3 instanceColor;
@@ -280,6 +293,14 @@ export default function NumThree(props) {
       const {
         gauss, color, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
+      const nextTextureMax = getTextureColorMax(color)
+      if (currentTextureMax !== nextTextureMax) {
+        const oldTexture = material.uniforms.map.value
+        const nextTexture = createDigitSpriteSheetWithJet(nextTextureMax)
+        material.uniforms.map.value = nextTexture
+        if (oldTexture && oldTexture !== nextTexture) oldTexture.dispose()
+        currentTextureMax = nextTextureMax
+      }
       // const { wsLocalData } = pageRef.current
       // if (wsLocalData) {
       //   data = data.map((a, index) => {
@@ -319,8 +340,8 @@ export default function NumThree(props) {
         mesh.setMatrixAt(i, dummy.matrix);
 
         const d = normalizeDisplayValue(data[i])//Math.floor(Math.random() * 256);
-        uvOffsets[i * 2] = (d % 16) / 16;
-        uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
+        uvOffsets[i * 2] = (d % DIGIT_ATLAS_GRID) / DIGIT_ATLAS_GRID;
+        uvOffsets[i * 2 + 1] = Math.floor(d / DIGIT_ATLAS_GRID) / DIGIT_ATLAS_GRID;
 
         colorArray[i * 3 + 0] = 1;
         colorArray[i * 3 + 1] = 1;

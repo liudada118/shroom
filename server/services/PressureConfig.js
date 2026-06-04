@@ -3,7 +3,7 @@ const path = require('path')
 const { state } = require('../state')
 
 const DEFAULT_PRESSURE_CONFIG = {
-  backValueMultiplier: 1.8,
+  backValueMultiplier: 3,
   pressureFormulaFile: 'pressureFormula_V2.7.38.js',
   pressureFormulaProfile: 'V2.7.38',
 }

@@ -442,7 +442,7 @@ const Canvas =
             controls.current.panSpeed = 0.8;          // 平移灵敏度
             controls.current.minDistance = 40;        // 最近距离（对应300%）
             controls.current.maxDistance = 1200;      // 最远距离（对应10%）
-            controls.current.dynamicDampingFactor = 0.15; // 阻尼系数，使缩放有惯性过渡
+            controls.current.dynamicDampingFactor = 0.5; // 阻尼系数，使缩放有惯性过渡
             baseCameraDistanceRef.current = camera.current.position.distanceTo(controls.current.target)
             applyZoomBounds(controls.current, baseCameraDistanceRef.current)
             controls.current?.update();

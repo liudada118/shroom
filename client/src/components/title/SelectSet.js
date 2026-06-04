@@ -1,5 +1,5 @@
 import { Input, message, Modal, Popover, Select } from 'antd'
-import { CloseOutlined, DeleteOutlined, EditOutlined, EyeOutlined, InfoCircleOutlined } from '@ant-design/icons'
+import { CloseOutlined, DeleteOutlined, EditOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import React, { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -618,7 +618,7 @@ export default function SelectSet(props) {
         pageInfo.brushInstance.notify?.(rangeArr)
     }
 
-    const saveTemplateByName = async (rawName) => {
+    const saveTemplateByName = async (rawName, options = {}) => {
         const name = String(rawName || '').trim()
         const regions = getCurrentRegions()
         if (!regions.length) {
@@ -631,6 +631,16 @@ export default function SelectSet(props) {
         }
         const now = Date.now()
         const existingTemplate = templates.find(item => item.templateName === name)
+        if (existingTemplate && !options.overwriteConfirmed) {
+            Modal.confirm({
+                title: t('templateNameExists') || '模板名称已存在',
+                content: t('overwriteTemplateConfirm', { name }) || `已存在同名模板「${name}」，是否覆盖原有模板？`,
+                okText: t('overwrite') || '覆盖',
+                cancelText: t('cancel') || '取消',
+                onOk: () => saveTemplateByName(name, { overwriteConfirmed: true }),
+            })
+            return false
+        }
         const currentType = sysType || getCurrentMatrixType()
         const matrixConfig = getCurrentMatrixConfig() || matrixInfo
         const nextTemplate = {
@@ -820,9 +830,6 @@ export default function SelectSet(props) {
                         className="selectRegionNameInput"
                     />
                     <span className="selectRegionMeta">({box.xStart},{box.yStart}) {box.width}x{box.height}</span>
-                    <button type="button" className="selectRegionIconButton selectRegionEyeButton" aria-label="view selection">
-                        <EyeOutlined />
-                    </button>
                     <button
                         type="button"
                         className="selectRegionIconButton selectRegionDeleteButton cursor"
