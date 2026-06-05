@@ -26,11 +26,13 @@ const VISUAL_SETTING_DEFAULTS = {
   color: 180,
   filter: 10,
   height: 80,
+  autoColor: 1,
 }
 const VISUAL_SETTING_MAXIMUMS = {
   color: VISUAL_COLOR_MAX,
   filter: 200,
   height: 200,
+  autoColor: 1,
 }
 
 function ensureHistoryListIndex(db) {

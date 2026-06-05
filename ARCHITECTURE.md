@@ -1440,3 +1440,8 @@ graph TD
 - `util/line.js` no longer applies hardcoded opposite scaling in `endiSit1024` and `endiBack1024`. Seat matrix conversion removed the final `* 1.5`, and backrest matrix conversion removed the final `/ 1.5`.
 - Backrest and seat display matrices now keep the same ADC value口径 after line-order conversion; sensor-specific pressure calibration remains handled by pressure formulas and `backValueMultiplier` instead of modifying matrix values inside line conversion.
 | 2026-06-05 | Fix | Remove hardcoded Endi seat/backrest matrix scaling from line conversion |
+
+## 2026-06-05 Auto color adjustment default
+- Visualization setting defaults now enable `autoColor=1` across frontend constants, zustand fallback state, test-page fallback state, system-setting fallback config, and backend visual-setting completion.
+- `visualSettingStorage` advances the visual default migration version to `2026-06-05-auto-color-default` and treats old `autoColor=0` defaults as migratable, so existing default caches move to the new enabled state.
+| 2026-06-05 | Config | Enable automatic color adjustment by default |

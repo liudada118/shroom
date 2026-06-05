@@ -59,20 +59,20 @@ const paramConfig = [
 /* ────── 前端硬编码的默认值（后端不可用时的兜底） ────── */
 const fallbackConfig = {
     optimalObj: {
-        bed:     { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1 },
-        car:     { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1 },
-        endi:    { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1 },
-        carY:    { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1 },
-        bigHand: { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1 },
-        hand:    { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1 }
+        bed:     { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1, autoColor: 1 },
+        car:     { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1, autoColor: 1 },
+        endi:    { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1, autoColor: 1 },
+        carY:    { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1, autoColor: 1 },
+        bigHand: { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1, autoColor: 1 },
+        hand:    { gauss: 2, color: 180, filter: 10, height: 80, coherent: 1, autoColor: 1 }
     },
     maxObj: {
-        bed:     { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10 },
-        car:     { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10 },
-        endi:    { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10 },
-        carY:    { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10 },
-        bigHand: { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10 },
-        hand:    { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10 },
+        bed:     { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        car:     { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        endi:    { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        carY:    { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        bigHand: { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        hand:    { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
     }
 };
 
