@@ -23,7 +23,7 @@ const historyIndexReady = new WeakSet()
 const VISUAL_COLOR_MAX = 255
 const VISUAL_SETTING_DEFAULTS = {
   gauss: 2,
-  color: 180,
+  color: 120,
   filter: 10,
   height: 80,
   autoColor: 1,

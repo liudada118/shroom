@@ -21,9 +21,12 @@ const DEFAULT_DATA_DIRECTION = {
   up: true,
   rotateDegree: 0,
   byKey: {
-    'endi-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
-    'carY-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
-    'car-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'endi-back': { left: true, up: true, rotateDegree: 0 },
+    'endi-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'carY-back': { left: true, up: true, rotateDegree: 0 },
+    'carY-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'car-back': { left: true, up: true, rotateDegree: 0 },
+    'car-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
   },
 }
 const DATA_DIRECTION_STORAGE_KEY = 'matrixDataDirection'
@@ -91,7 +94,7 @@ function loadStoredDataDirection() {
     if (storedDirection?.byKey && typeof storedDirection.byKey === 'object') {
       Object.keys(storedDirection.byKey).forEach((key) => {
         if (shouldMigrateLegacySeatDirection(key, storedDirection.byKey[key])) {
-          storedDirection.byKey[key] = { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE }
+          storedDirection.byKey[key] = { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE }
         }
       })
     }

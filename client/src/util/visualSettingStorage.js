@@ -1,8 +1,8 @@
 const VISUAL_SETTING_MAP_KEY = 'visualSettingValueBySystemV1'
 const LEGACY_SETTING_KEY = 'setValueData'
 const VISUAL_DEFAULT_VERSION_KEY = 'visualDefaultVersion'
-const VISUAL_DEFAULT_VERSION = '2026-06-05-auto-color-default'
-const VISUAL_SETTING_DEFAULTS = { gauss: 2, color: 180, filter: 10, height: 80, autoColor: 1 }
+const VISUAL_DEFAULT_VERSION = '2026-06-05-color-120-default'
+const VISUAL_SETTING_DEFAULTS = { gauss: 2, color: 120, filter: 10, height: 80, autoColor: 1 }
 const LEGACY_DEFAULT_COLORS = new Set([200, 255, 355, 495])
 const LEGACY_DEFAULT_VALUES = {
   gauss: new Set([1, 2, 2.6, 3]),

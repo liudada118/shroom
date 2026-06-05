@@ -6,33 +6,47 @@
     "rotate_degree": 0,
     "data_direction": "none",
     "byKey": {
-      "endi-sit": {
-        "left": true,
-        "up": false,
-        "rotateDegree": 90,
-        "rotate_degree": 90,
-        "data_direction": "rotate90"
-      },
-      "carY-sit": {
-        "left": true,
-        "up": false,
-        "rotateDegree": 90,
-        "rotate_degree": 90,
-        "data_direction": "rotate90"
-      },
-      "car-sit": {
-        "left": true,
-        "up": false,
-        "rotateDegree": 90,
-        "rotate_degree": 90,
-        "data_direction": "rotate90"
-      },
       "endi-back": {
-        "left": false,
+        "left": true,
         "up": true,
         "rotateDegree": 0,
         "rotate_degree": 0,
-        "data_direction": "horizontal"
+        "data_direction": "none"
+      },
+      "endi-sit": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 270,
+        "rotate_degree": 270,
+        "data_direction": "rotate270"
+      },
+      "carY-back": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 0,
+        "rotate_degree": 0,
+        "data_direction": "none"
+      },
+      "carY-sit": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 270,
+        "rotate_degree": 270,
+        "data_direction": "rotate270"
+      },
+      "car-back": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 0,
+        "rotate_degree": 0,
+        "data_direction": "none"
+      },
+      "car-sit": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 270,
+        "rotate_degree": 270,
+        "data_direction": "rotate270"
       }
     }
   },

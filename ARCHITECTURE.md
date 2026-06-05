@@ -1445,3 +1445,19 @@ graph TD
 - Visualization setting defaults now enable `autoColor=1` across frontend constants, zustand fallback state, test-page fallback state, system-setting fallback config, and backend visual-setting completion.
 - `visualSettingStorage` advances the visual default migration version to `2026-06-05-auto-color-default` and treats old `autoColor=0` defaults as migratable, so existing default caches move to the new enabled state.
 | 2026-06-05 | Config | Enable automatic color adjustment by default |
+
+## 2026-06-05 Seat default direction and color default value
+- Seat matrix defaults now use `left=true, up=true, rotateDegree=270` for `endi-sit`, `carY-sit`, and `car-sit`, matching the visual state after applying the seat up/down flip once from the previous default. The same value is applied in backend state, backend persisted-direction migration, frontend local-direction migration, and `db/data_direction.json`.
+- Visualization color adjustment defaults are reduced from `180` to `120` across backend visual-setting completion, frontend constants, zustand fallback state, test-page fallback state, and system-setting fallback config.
+- `visualSettingStorage` advances the visual default migration version to `2026-06-05-color-120-default`, so previous default-like color values, including `180`, migrate to the new `120` default while preserving non-default user edits.
+| 2026-06-05 | Config | Make seat default direction include the requested up/down flip and set color adjustment default to 120 |
+
+## 2026-06-05 Backrest default horizontal flip
+- Backrest matrix defaults now include `left=false, up=true, rotateDegree=0` for `endi-back`, `carY-back`, and `car-back`, so the backrest starts with the requested left/right flip in both realtime display and collection persistence.
+- The same backrest defaults are seeded in backend state, backend direction normalization, frontend local direction normalization, and `db/data_direction.json`, ensuring systems without an existing backrest entry no longer fall back to the unflipped global direction.
+| 2026-06-05 | Config | Make backrest default direction include the requested left/right flip |
+
+## 2026-06-05 Backrest default direction second turn
+- Backrest matrix defaults are toggled one more time to `left=true, up=true, rotateDegree=0` for `endi-back`, `carY-back`, and `car-back`, matching the latest requested backrest default orientation.
+- The second-turn default is applied consistently in backend state, backend direction normalization, frontend local direction normalization, and `db/data_direction.json`.
+| 2026-06-05 | Config | Toggle the backrest default direction one more time |

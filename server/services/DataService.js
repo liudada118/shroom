@@ -17,9 +17,12 @@ const DEFAULT_DATA_DIRECTION = {
   up: true,
   rotateDegree: 0,
   byKey: {
-    'endi-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
-    'carY-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
-    'car-sit': { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'endi-back': { left: true, up: true, rotateDegree: 0 },
+    'endi-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'carY-back': { left: true, up: true, rotateDegree: 0 },
+    'carY-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'car-back': { left: true, up: true, rotateDegree: 0 },
+    'car-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
   },
 }
 const MATRIX_DIMENSIONS = {
@@ -110,7 +113,7 @@ function loadPersistedDataDirection() {
     if (persistedDirection?.byKey && typeof persistedDirection.byKey === 'object') {
       Object.keys(persistedDirection.byKey).forEach((key) => {
         if (shouldMigrateLegacySeatDirection(key, persistedDirection.byKey[key])) {
-          persistedDirection.byKey[key] = { left: true, up: false, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE }
+          persistedDirection.byKey[key] = { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE }
         }
       })
     }
