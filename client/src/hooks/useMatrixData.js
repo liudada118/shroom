@@ -195,20 +195,26 @@ export function useMatrixData() {
     const { width, height } = config
 
     // 实时框选 — 支持多个框
-    if (select.length && displayType.includes(key)) {
+    const currentSelect = select
+      .map((sel, originalIndex) => ({ sel, originalIndex }))
+      .filter(({ sel }) => {
+        if (sel?.matrixKey) return matrixKeysMatch(sel.matrixKey, fullKey)
+        return displayType.includes(key)
+      })
+
+    if (currentSelect.length) {
       const boxes = []
-      for (let i = 0; i < select.length; i++) {
-        const sel = select[i]
-        if (sel.matrixKey && !matrixKeysMatch(sel.matrixKey, fullKey)) continue
+      for (let i = 0; i < currentSelect.length; i++) {
+        const { sel, originalIndex } = currentSelect[i]
         const matrix = colSelectMatrix('canvasThree', sel, systemPointConfig[fullKey])
         if (matrix) {
           const data = extractSelectData(arr, matrix, width)
           if (data) {
             boxes.push({
               data,
-              colorIndex: sel.colorIndex != null ? sel.colorIndex : i,
+              colorIndex: sel.colorIndex != null ? sel.colorIndex : originalIndex,
               bgc: sel.bgc || '#FF6B6B',
-              name: formatSelectionName(sel.name, i + 1),
+              name: formatSelectionName(sel.name, originalIndex + 1),
               matrix,
             })
           }

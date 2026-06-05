@@ -369,8 +369,36 @@ function ChartsAside(props) {
         }
 
         chart.current.setOption({
-            grid: { left: 42, right: 36, top: 30, bottom: 58, containLabel: false },
+            grid: { left: 42, right: 36, top: 30, bottom: 34, containLabel: false },
             title: { left: 'center' },
+            graphic: [
+                {
+                    type: 'text',
+                    left: 42,
+                    top: 6,
+                    silent: true,
+                    style: {
+                        text: '概率密度(%)',
+                        fill: '#AEB8C4',
+                        fontSize: 10,
+                        fontWeight: 500,
+                        align: 'left',
+                    },
+                },
+                {
+                    type: 'text',
+                    right: 36,
+                    bottom: 0,
+                    silent: true,
+                    style: {
+                        text: '压力值(ADC)',
+                        fill: '#AEB8C4',
+                        fontSize: 10,
+                        fontWeight: 500,
+                        align: 'right',
+                    },
+                },
+            ],
             tooltip: {
                 trigger: 'axis',
                 formatter: p => {
@@ -380,21 +408,14 @@ function ChartsAside(props) {
             },
             xAxis: {
                 type: 'value', min: 0, max: 255,
-                name: '压力值(ADC)', splitNumber: 5,
-                nameLocation: 'middle',
-                nameGap: 34,
-                nameTextStyle: { color: '#AEB8C4', fontSize: 10, align: 'center', verticalAlign: 'top' },
+                name: '', splitNumber: 5,
                 axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
                 axisLabel: { color: '#AEB8C4', fontSize: 9, margin: 6 },
                 axisTick: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
                 splitLine: { show: false }
             },
             yAxis: {
-                type: 'value', name: '概率密度(%)', splitNumber: 3,
-                nameLocation: 'end',
-                nameGap: 8,
-                nameRotate: 0,
-                nameTextStyle: { color: '#AEB8C4', fontSize: 10, align: 'left', verticalAlign: 'bottom' },
+                type: 'value', name: '', splitNumber: 3,
                 axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
                 axisLabel: { color: '#AEB8C4', fontSize: 9, margin: 4, formatter: (value) => `${(Number(value) * 100).toFixed(2)}%` },
                 axisTick: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },

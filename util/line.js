@@ -279,7 +279,7 @@ function endiSit1024(arr) {
     for (let i = 0; i < 46; i++) {
         for (let j = 0; j < 46; j++) {
             const width = yArr[i]
-            res.push(newArr[width * 46 + 45 - j]*1.5)
+            res.push(newArr[width * 46 + 45 - j])
         }
     }
  
@@ -328,7 +328,7 @@ function endiBack1024(arr) {
         const row = Math.floor(index / displayWidth)
         const col = index % displayWidth
         const isTopPadding = row < 18 && (col < 14 || col > 34)
-        return isTopPadding ? 0 : value / 1.5
+        return isTopPadding ? 0 : value
     })
 }
 

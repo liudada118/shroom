@@ -314,7 +314,12 @@ function SecondTitle(props) {
         if (!onSelect) return
         pageInfo?.brushInstance.deleteAll()
         useEquipStore.getState().setSelectArr([])
-    }, [systemType, currentDisplayType])
+    }, [systemType])
+
+    useEffect(() => {
+        if (!onSelect) return
+        pageInfo?.brushInstance.refreshCurrentMatrix?.()
+    }, [currentDisplayType, onSelect])
     // const brush = useContext(BrushContext);
 
     const [onZero, setOnZero] = useState(false)

@@ -1,14 +1,14 @@
 const VISUAL_SETTING_MAP_KEY = 'visualSettingValueBySystemV1'
 const LEGACY_SETTING_KEY = 'setValueData'
 const VISUAL_DEFAULT_VERSION_KEY = 'visualDefaultVersion'
-const VISUAL_DEFAULT_VERSION = '2026-06-02-visual-defaults'
-const VISUAL_SETTING_DEFAULTS = { gauss: 3, color: 50, filter: 10, height: 150, autoColor: 0 }
+const VISUAL_DEFAULT_VERSION = '2026-06-04-visual-defaults'
+const VISUAL_SETTING_DEFAULTS = { gauss: 2, color: 180, filter: 10, height: 80, autoColor: 0 }
 const LEGACY_DEFAULT_COLORS = new Set([200, 255, 355, 495])
 const LEGACY_DEFAULT_VALUES = {
-  gauss: new Set([1, 2, 2.6]),
-  color: new Set([180, ...LEGACY_DEFAULT_COLORS]),
+  gauss: new Set([1, 2, 2.6, 3]),
+  color: new Set([50, 180, ...LEGACY_DEFAULT_COLORS]),
   filter: new Set([0, 1, 6]),
-  height: new Set([1, 2.02, 3.36, 10]),
+  height: new Set([1, 2.02, 3.36, 10, 150]),
 }
 const SETTING_KEYS = ['gauss', 'color', 'filter', 'height', 'coherent', 'autoColor']
 export const DEFAULT_HEIGHT_SETTING_MAX = 200

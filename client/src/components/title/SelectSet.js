@@ -452,10 +452,7 @@ export default function SelectSet(props) {
             const { width, height } = systemPointConfig[type]
             setMatrixInfo({ width, height })
         }
-        if (pageInfo.brushInstance.rangeArr.some(range => range.matrixKey && range.matrixKey !== type)) {
-            pageInfo.brushInstance.deleteAll()
-            useEquipStore.getState().setSelectArr([])
-        }
+        pageInfo.brushInstance.refreshCurrentMatrix?.(false)
 
         const cb = (rangeArr) => {
             const newBoxes = rangeArr.map((range, rangeIndex) => ({ range, rangeIndex }))
@@ -525,7 +522,7 @@ export default function SelectSet(props) {
     }
 
     const handleDeleteAll = () => {
-        pageInfo.brushInstance.deleteAll()
+        pageInfo.brushInstance.deleteByMatrixKey?.(sysType || getCurrentMatrixType())
     }
 
     const handleAddByInput = () => {
@@ -689,7 +686,7 @@ export default function SelectSet(props) {
             return
         }
         const runApply = () => {
-            pageInfo.brushInstance.removeChild?.()
+            pageInfo.brushInstance.deleteByMatrixKey?.(sysType || getCurrentMatrixType())
             const templateWidth = Number(template.matrixWidth) || matrixInfo.width
             const templateHeight = Number(template.matrixHeight) || matrixInfo.height
             template.regions.slice(0, 4).forEach((region) => {

@@ -1422,5 +1422,21 @@ graph TD
 
 ## 2026-06-04 Pressure-center chart color alignment
 - `ChartsAside` now passes `{ center, color }` objects to `FootTrack` for normal backrest/seat pressure-center points, so the plotted center marker color matches the legend color.
-- The pressure normal-distribution chart moves the X-axis title to the middle below the axis and increases bottom spacing, avoiding title overlap with the coordinate axis.
-| 2026-06-04 | Fix | Align pressure-center marker colors with legends and move the normal-distribution X-axis title below the axis |
+- Pressure-center markers now use the same color mapping as the legend for backrest, seat, and selection-region series.
+| 2026-06-04 | Fix | Align pressure-center marker colors with legends |
+
+## 2026-06-04 Normal-distribution axis title placement
+- `ChartsAside` keeps the pressure normal-distribution chart at the previous size and keeps the X-axis range at 0-255 ADC.
+- The normal-distribution chart renders `概率密度(%)` as a fixed left-aligned label above the Y axis and `压力值(ADC)` as a fixed right-aligned label below the X axis, avoiding overlap without adding icons or changing the card background.
+| 2026-06-04 | Fix | Position normal-distribution axis titles above the Y axis and below the X axis without overlap |
+
+## 2026-06-04 Visualization defaults and cross-matrix selection persistence
+- Visualization defaults are updated across backend config completion, frontend constants, zustand fallback state, visual-setting storage migration, and system-setting fallback values: image smoothing `gauss=2`, color adjustment `color=180`, noise removal `filter=10`, and height adjustment `height=80`.
+- `BrushManager` now keeps the full selection range list across backrest/seat view switches. It detaches selection DOM nodes that do not belong to the current matrix and rebuilds them from saved matrix coordinates when the user switches back.
+- `SelectSet` and `SecondTitle` no longer clear all selections when switching between backrest and seat 2D views; template application and "clear all" replace only the current matrix selections. `useMatrixData` computes selection statistics by `matrixKey`, so hidden selections for the other matrix remain available to data processing.
+| 2026-06-04 | Fix | Update visualization defaults and preserve backrest/seat selections across matrix view switches |
+
+## 2026-06-05 Endi matrix ADC scaling alignment
+- `util/line.js` no longer applies hardcoded opposite scaling in `endiSit1024` and `endiBack1024`. Seat matrix conversion removed the final `* 1.5`, and backrest matrix conversion removed the final `/ 1.5`.
+- Backrest and seat display matrices now keep the same ADC value口径 after line-order conversion; sensor-specific pressure calibration remains handled by pressure formulas and `backValueMultiplier` instead of modifying matrix values inside line conversion.
+| 2026-06-05 | Fix | Remove hardcoded Endi seat/backrest matrix scaling from line conversion |

@@ -22,10 +22,10 @@ const router = express.Router()
 const historyIndexReady = new WeakSet()
 const VISUAL_COLOR_MAX = 255
 const VISUAL_SETTING_DEFAULTS = {
-  gauss: 3,
-  color: 50,
+  gauss: 2,
+  color: 180,
   filter: 10,
-  height: 150,
+  height: 80,
 }
 const VISUAL_SETTING_MAXIMUMS = {
   color: VISUAL_COLOR_MAX,

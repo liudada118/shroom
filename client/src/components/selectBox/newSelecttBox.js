@@ -345,6 +345,85 @@ export class BrushManager {
         });
     }
 
+    _removeRangeElement(range) {
+        const element = range?._element;
+        if (element && element.parentNode) {
+            element.parentNode.removeChild(element);
+        }
+        if (range) delete range._element;
+    }
+
+    _createRangeElement(range, selectInfo) {
+        if (!range || !selectInfo) return null;
+        const bgc = range.bgc || SELECT_COLORS[range.colorIndex] || SELECT_COLORS[0];
+        const displayColor = getSelectBoxDisplayColor(bgc);
+        const { selectX, selectY, selectWidth: pixelWidth, selectHeight: pixelHeight } = selectInfo;
+        const element = document.createElement('div');
+        element.classList.add('selectBox');
+        Object.assign(element.style, {
+            position: 'fixed',
+            left: selectX + 'px',
+            top: selectY + 'px',
+            width: pixelWidth + 'px',
+            height: pixelHeight + 'px',
+            boxSizing: 'border-box',
+            border: `2px solid ${displayColor}`,
+            backgroundColor: getSelectBoxFillColor(bgc),
+            boxShadow: `0 0 0 1px ${displayColor}`,
+            opacity: 1,
+            zIndex: 999,
+            display: 'block',
+        });
+        document.body.appendChild(element);
+        range.x1 = selectX;
+        range.x2 = selectX + pixelWidth;
+        range.y1 = selectY;
+        range.y2 = selectY + pixelHeight;
+        range._element = element;
+        this._makeInteractive(element, range, this.rangeArr.indexOf(range));
+        return element;
+    }
+
+    _attachRangeElementForContext(range, context = this._getMatrixContext()) {
+        if (!range || !context?.matrixConfig || !range.matrixRect) return false;
+        if (range.matrixKey && range.matrixKey !== context.matrixKey) return false;
+        const matrixRect = range.matrixRect;
+        const selectWidth = Number(matrixRect.xEnd) - Number(matrixRect.xStart);
+        const selectHeight = Number(matrixRect.yEnd) - Number(matrixRect.yStart);
+        if (selectWidth <= 0 || selectHeight <= 0) return false;
+        const selectInfo = calMatrixToSelect('canvasThree', {
+            xStart: Number(matrixRect.xStart),
+            yStart: Number(matrixRect.yStart),
+            sWidth: selectWidth,
+            sHeight: selectHeight,
+        }, context.matrixConfig);
+        if (!selectInfo) return false;
+        const element = range._element || this._createRangeElement(range, selectInfo);
+        if (!element) return false;
+        const { selectX, selectY, selectWidth: pixelWidth, selectHeight: pixelHeight } = selectInfo;
+        range.x1 = selectX;
+        range.x2 = selectX + pixelWidth;
+        range.y1 = selectY;
+        range.y2 = selectY + pixelHeight;
+        this._applyRangeToElement(range, element);
+        this._updateMeasureBadge(element, range);
+        return true;
+    }
+
+    refreshCurrentMatrix(notify = true) {
+        const context = this._getMatrixContext();
+        this.rangeArr.forEach((range) => {
+            const shouldAttach = context?.matrixConfig && (!range.matrixKey || range.matrixKey === context.matrixKey);
+            if (shouldAttach) {
+                this._attachRangeElementForContext(range, context);
+            } else {
+                this._removeRangeElement(range);
+            }
+        });
+        this._refreshBoxLabels();
+        if (notify) this.notify(this.rangeArr);
+    }
+
     /**
      * 检查坐标是否在真实矩阵区域内
      */
@@ -410,7 +489,7 @@ export class BrushManager {
     onKeyDown = (e) => {
         if (this._shouldIgnoreKeyboardTarget(e.target || document.activeElement)) return;
         // 方向键移动最后一个框
-        const obj = this.rangeArr[this.rangeArr.length - 1];
+        const obj = [...this.rangeArr].reverse().find(range => range?._element);
         if (!obj) return;
         const el = obj._element;
         if (!el) return;
@@ -462,8 +541,9 @@ export class BrushManager {
             case 'Delete':
             case 'Backspace':
                 // 删除最后一个框
-                if (this.rangeArr.length > 0) {
-                    this.deleteSelect(this.rangeArr.length - 1);
+                if (obj) {
+                    const idx = this.rangeArr.indexOf(obj);
+                    if (idx >= 0) this.deleteSelect(idx);
                 }
                 break;
             default:
@@ -968,6 +1048,18 @@ export class BrushManager {
     /**
      * 删除所有框选
      */
+    deleteByMatrixKey = (matrixKey = this._getMatrixContext()?.matrixKey) => {
+        if (!matrixKey) return;
+        for (let i = this.rangeArr.length - 1; i >= 0; i--) {
+            const range = this.rangeArr[i];
+            if (range.matrixKey && range.matrixKey !== matrixKey) continue;
+            this._removeRangeElement(range);
+            this.rangeArr.splice(i, 1);
+        }
+        this._refreshBoxLabels();
+        this.notify(this.rangeArr);
+    }
+
     deleteAll = () => {
         for (let i = this.rangeArr.length - 1; i >= 0; i--) {
             const element = this.rangeArr[i]._element;
