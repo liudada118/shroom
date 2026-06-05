@@ -22,4 +22,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
 
   exportCurrentPagePdf: (options) => ipcRenderer.invoke('export-current-page-pdf', options),
+
+  exportContrastData: (options) => ipcRenderer.invoke('export-contrast-data', options),
 })

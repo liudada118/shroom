@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
-import { Button, Select, Slider, message } from 'antd'
+import { Button, Input, Modal, Progress, Radio, Select, Slider, message } from 'antd'
 import dayjs from 'dayjs'
 import { shallow } from 'zustand/shallow'
 import { pageContext } from '../../page/test/Test'
@@ -52,6 +52,20 @@ const CONTRAST_COPY = {
         exportFieldValue: 'A / B / B-A 指标',
         noExportData: '暂无可导出的对比数据',
         exportSuccess: '对比结果已导出',
+        exportFailed: '对比结果导出失败',
+        downloadPathSelect: '下载路径选择',
+        downloadPathHint: '请确认或修改导出保存路径：',
+        exportFormat: '导出格式',
+        startExport: '开始导出',
+        browse: '浏览',
+        open: '打开',
+        openFolder: '打开文件夹',
+        inputPath: '请输入导出路径',
+        pathRequired: '请先选择导出路径',
+        downloadedFiles: '已导出文件',
+        clickToOpen: '点击打开',
+        cancel: '取消',
+        close: '关闭',
         empty: '暂无可对比数据，请先在历史数据中选择 A/B 后开始对比。',
         title: '数据对比',
         exportResult: '导出结果',
@@ -66,7 +80,6 @@ const CONTRAST_COPY = {
         sampleRate: '采样率',
         zero: '置零',
         direction: '方向',
-        diffRange: '差值范围',
         currentConclusion: '当前帧结论',
         redBlueTip: '红色表示 B 大于 A，蓝色表示 B 小于 A',
         baselineA: 'A 基准数据',
@@ -129,6 +142,20 @@ const CONTRAST_COPY = {
         exportFieldValue: 'A / B / B-A Metrics',
         noExportData: 'No comparison data to export',
         exportSuccess: 'Comparison result exported',
+        exportFailed: 'Failed to export comparison result',
+        downloadPathSelect: 'Download Path',
+        downloadPathHint: 'Confirm or change the export save path:',
+        exportFormat: 'Export Format',
+        startExport: 'Start Export',
+        browse: 'Browse',
+        open: 'Open',
+        openFolder: 'Open Folder',
+        inputPath: 'Enter export path',
+        pathRequired: 'Please select an export path first',
+        downloadedFiles: 'Exported files',
+        clickToOpen: 'Click to open',
+        cancel: 'Cancel',
+        close: 'Close',
         empty: 'No comparison data. Select A/B in history first.',
         title: 'Data Comparison',
         exportResult: 'Export Result',
@@ -143,7 +170,6 @@ const CONTRAST_COPY = {
         sampleRate: 'Sample Rate',
         zero: 'Zero',
         direction: 'Direction',
-        diffRange: 'Diff Range',
         currentConclusion: 'Current Frame',
         redBlueTip: 'Red means B is greater than A; blue means B is less than A',
         baselineA: 'A Baseline',
@@ -582,6 +608,11 @@ export default function NumThresContrast() {
     const [playing, setPlaying] = useState(false)
     const [playbackSpeed, setPlaybackSpeed] = useState(1)
     const [playbackExpanded, setPlaybackExpanded] = useState(false)
+    const [exportResult, setExportResult] = useState(null)
+    const [exportModalOpen, setExportModalOpen] = useState(false)
+    const [exportPath, setExportPath] = useState('')
+    const [exportFormat, setExportFormat] = useState('csv')
+    const [exporting, setExporting] = useState(false)
     const [activeKey, setActiveKey] = useState('')
     const [pressureFormulaRevision, setPressureFormulaRevision] = useState(0)
 
@@ -601,6 +632,18 @@ export default function NumThresContrast() {
             active = false
         }
     }, [])
+
+    useEffect(() => {
+        if (!exportModalOpen || exportPath) return
+        let active = true
+        axios.get(`${localAddress}/getDownloadPath`).then((res) => {
+            const pathValue = res.data?.data?.path
+            if (active && pathValue) setExportPath(pathValue)
+        }).catch(() => {})
+        return () => {
+            active = false
+        }
+    }, [exportModalOpen, exportPath])
     const leftFrameCount = contrast?.left?.frames?.length || 0
     const rightFrameCount = contrast?.right?.frames?.length || 0
 
@@ -801,13 +844,12 @@ export default function NumThresContrast() {
         setPlaybackIndexB(getClampedFrameIndex(rightFrameCount, nextValue))
     }
 
-    const exportContrastResult = () => {
+    const buildContrastExportPayload = () => {
         const leftFrames = contrast?.left?.frames || []
         const rightFrames = contrast?.right?.frames || []
         const count = Math.max(leftFrames.length, rightFrames.length)
         if (!count || !activeKey) {
-            message.warning(copy.noExportData)
-            return
+            return null
         }
         if (isTimePointMode) {
             const leftFrameItem = getFrameByIndex(leftFrames, leftIndex)?.[activeKey] || {}
@@ -846,14 +888,8 @@ export default function NumThresContrast() {
                 max_abs_point_diff: maxAbsDiff,
             }]
             const headers = Object.keys(rows[0])
-            const csv = [
-                headers.join(','),
-                ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')),
-            ].join('\n')
-            const filename = `contrast_time_${getPublicContrastKey(activeKey)}_${dayjs().format('YYYYMMDD_HHmmss')}.csv`
-            downloadText(filename, csv)
-            message.success(copy.exportSuccess)
-            return
+            const fileBaseName = `contrast_time_${getPublicContrastKey(activeKey)}_${dayjs().format('YYYYMMDD_HHmmss')}`
+            return { rows, headers, fileBaseName }
         }
 
         const rows = Array.from({ length: count }, (_, index) => {
@@ -899,13 +935,111 @@ export default function NumThresContrast() {
         })
 
         const headers = Object.keys(rows[0])
-        const csv = [
-            headers.join(','),
-            ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(',')),
-        ].join('\n')
-        const filename = `contrast_${getPublicContrastKey(activeKey)}_${dayjs().format('YYYYMMDD_HHmmss')}.csv`
-        downloadText(filename, csv)
-        message.success(copy.exportSuccess)
+        const fileBaseName = `contrast_${getPublicContrastKey(activeKey)}_${dayjs().format('YYYYMMDD_HHmmss')}`
+        return { rows, headers, fileBaseName }
+    }
+
+    const exportContrastResult = () => {
+        const payload = buildContrastExportPayload()
+        if (!payload) {
+            message.warning(copy.noExportData)
+            return
+        }
+        setExportModalOpen(true)
+    }
+
+    const handleSelectExportFolder = async () => {
+        if (!window.electronAPI?.selectFolder) return
+        const pathValue = await window.electronAPI.selectFolder()
+        if (pathValue) {
+            setExportPath(pathValue)
+            axios.post(`${localAddress}/setDownloadPath`, { path: pathValue }).catch(() => {})
+        }
+    }
+
+    const handleOpenExportFolder = async (pathValue = exportPath) => {
+        if (!pathValue || !window.electronAPI?.openPath) return
+        await window.electronAPI.openPath(pathValue)
+    }
+
+    const saveContrastExport = async () => {
+        const directory = String(exportPath || '').trim()
+        if (!directory) {
+            message.warning(copy.pathRequired)
+            return
+        }
+        const payload = buildContrastExportPayload()
+        if (!payload) {
+            message.warning(copy.noExportData)
+            return
+        }
+        const format = exportFormat === 'xlsx' ? 'xlsx' : 'csv'
+        const fileName = `${payload.fileBaseName}.${format}`
+        setExporting(true)
+        try {
+            let result
+            if (window.electronAPI?.exportContrastData) {
+                try {
+                    result = await window.electronAPI.exportContrastData({
+                        directory,
+                        format,
+                        fileName,
+                        headers: payload.headers,
+                        rows: payload.rows,
+                    })
+                } catch (err) {
+                    const messageText = String(err?.message || err || '')
+                    if (!messageText.includes('No handler registered')) {
+                        throw err
+                    }
+                }
+            }
+            if (!result) {
+                try {
+                    const res = await axios.post(`${localAddress}/exportContrastData`, {
+                        path: directory,
+                        format,
+                        fileName,
+                        headers: payload.headers,
+                        rows: payload.rows,
+                    })
+                    if (res.data?.code !== 0) {
+                        throw new Error(res.data?.message || copy.exportFailed)
+                    }
+                    result = res.data?.data
+                } catch (err) {
+                    if (format !== 'csv') {
+                        throw err
+                    }
+                }
+            }
+            if (!result) {
+                if (format === 'xlsx') {
+                    message.warning('XLSX export requires Electron')
+                    return
+                }
+                const csv = [
+                    payload.headers.join(','),
+                    ...payload.rows.map((row) => payload.headers.map((header) => csvCell(row[header])).join(',')),
+                ].join('\n')
+                downloadText(fileName, csv)
+                result = { fileName, filePath: '' }
+            }
+            axios.post(`${localAddress}/setDownloadPath`, { path: directory }).catch(() => {})
+            setExportModalOpen(false)
+            setExportResult({
+                fileName: result?.fileName || fileName,
+                filePath: result?.filePath || '',
+                directory,
+                percent: 100,
+                status: 'done',
+            })
+            message.success(copy.exportSuccess)
+        } catch (err) {
+            message.error(err?.message || copy.exportFailed)
+        } finally {
+            setExporting(false)
+        }
     }
 
     const modeLabel = isTimePointMode ? (copy.modeTimePoint || '同记录时间点对比') : (copy.modeRecordPair || '逐帧对比')
@@ -920,7 +1054,6 @@ export default function NumThresContrast() {
         { label: '采样率', value: `A ${getSampleRateText(leftData, copy)} / B ${getSampleRateText(rightData, copy)}` },
         { label: '对齐方式', value: isTimePointMode ? '同记录时间点' : '方向/进度对齐' },
         { label: '重采样', value: leftFrameCount !== rightFrameCount ? '已启用' : '未启用' },
-        { label: '差值阈值', value: `± ${formatValue(conclusion.maxAbsDiff)}` },
     ]
     const insightText = `B 相比 A：${conclusion.pressText}，${conclusion.areaText}`
 
@@ -1025,7 +1158,7 @@ export default function NumThresContrast() {
                         <div className="insightTitle">数据洞察</div>
                         <div className="insightText">{insightText}</div>
                     </div>
-                    <Button type="primary" size="small" onClick={exportContrastResult}>导出结果</Button>
+                    <Button type="primary" size="small" onClick={exportContrastResult}>{copy.exportResult}</Button>
                     <Button size="small" onClick={exitContrast}>退出对比</Button>
                 </div>
             </div>
@@ -1078,7 +1211,6 @@ export default function NumThresContrast() {
                 <span>{copy.sampleRate}: A {getSampleRateText(leftData, copy)} / B {getSampleRateText(rightData, copy)}</span>
                 <span>{copy.zero}: A {formatZeroState(leftData.zeroState, copy)} / B {formatZeroState(rightData.zeroState, copy)}</span>
                 <span>{copy.direction}: A {formatDirection(leftData.dataDirection, copy)} / B {formatDirection(rightData.dataDirection, copy)}</span>
-                <span>{copy.diffRange}: ±{formatValue(conclusion.maxAbsDiff)}</span>
             </div>
 
             <div className="contrastSummary">
@@ -1220,6 +1352,81 @@ export default function NumThresContrast() {
                 <span />
                 {copy.timeB}: {(rightFrame?._timestamp || contrast.frame?.rightTimestamp) ? dayjs(rightFrame?._timestamp || contrast.frame.rightTimestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}
             </div>
+            <Modal
+                title={copy.downloadPathSelect}
+                open={exportModalOpen}
+                onOk={saveContrastExport}
+                onCancel={() => setExportModalOpen(false)}
+                okText={copy.startExport}
+                cancelText={copy.cancel}
+                confirmLoading={exporting}
+                width={640}
+            >
+                <div style={{ marginBottom: 12, color: '#666', fontSize: '0.85rem' }}>
+                    {copy.downloadPathHint}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Input
+                        value={exportPath}
+                        onChange={(event) => setExportPath(event.target.value)}
+                        placeholder={copy.inputPath}
+                        style={{ flex: 1 }}
+                    />
+                    <Button onClick={handleSelectExportFolder}>{copy.browse}</Button>
+                    <Button onClick={() => handleOpenExportFolder()}>{copy.open}</Button>
+                </div>
+                <div style={{ marginTop: 16 }}>
+                    <div style={{ marginBottom: 8, fontWeight: 600 }}>{copy.exportFormat}</div>
+                    <Radio.Group
+                        value={exportFormat}
+                        onChange={(event) => setExportFormat(event.target.value)}
+                        options={[
+                            { label: 'CSV', value: 'csv' },
+                            { label: 'XLSX', value: 'xlsx' },
+                        ]}
+                    />
+                </div>
+            </Modal>
+            <Modal
+                title={copy.exportSuccess}
+                open={!!exportResult}
+                footer={[
+                    exportResult?.directory ? (
+                        <Button key="openFolder" type="primary" onClick={() => {
+                            handleOpenExportFolder(exportResult.directory)
+                            setExportResult(null)
+                        }}>{copy.openFolder}</Button>
+                    ) : null,
+                    <Button key="close" type="primary" onClick={() => setExportResult(null)}>{copy.close}</Button>,
+                ].filter(Boolean)}
+                onCancel={() => setExportResult(null)}
+                width={480}
+            >
+                <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                    <Progress
+                        percent={exportResult?.percent || 0}
+                        status={exportResult?.status === 'done' ? 'success' : 'active'}
+                        strokeColor="#52c41a"
+                    />
+                    <div style={{ fontSize: '0.85rem', color: '#333', marginBottom: 8, fontWeight: 'bold' }}>
+                        {copy.downloadedFiles}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', backgroundColor: '#f6ffed', borderRadius: 4, border: '1px solid #b7eb8f' }}>
+                        <span style={{ flex: 1, fontSize: '0.8rem', color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {exportResult?.fileName}
+                        </span>
+                        {exportResult?.filePath && window.electronAPI?.openPath ? (
+                            <span
+                                className="cursor"
+                                style={{ color: '#1890ff', fontSize: '0.8rem', whiteSpace: 'nowrap', textDecoration: 'underline' }}
+                                onClick={() => window.electronAPI.openPath(exportResult.filePath)}
+                            >
+                                {copy.clickToOpen}
+                            </span>
+                        ) : null}
+                    </div>
+                </div>
+            </Modal>
         </div>
     )
 }

@@ -63,13 +63,11 @@ export default function ContrastHeatmap(props) {
         bGreater: 'B > A',
         nearlyNoChange: 'Nearly no change',
         bLess: 'B < A',
-        range: 'Range',
     } : {
         diffTitle: 'B-A 差值',
         bGreater: 'B 大于 A',
         nearlyNoChange: '接近无变化',
         bLess: 'B 小于 A',
-        range: '范围',
     }
     const canvasRef = useRef(null)
     const wrapRef = useRef(null)
@@ -221,7 +219,6 @@ export default function ContrastHeatmap(props) {
                         <div><span className="legendRed" />{copy.bGreater}</div>
                         <div><span className="legendWhite" />{copy.nearlyNoChange}</div>
                         <div><span className="legendBlue" />{copy.bLess}</div>
-                        <div className="diffLegendRange">{copy.range} 卤{maxAbs.toFixed(maxAbs >= 100 ? 0 : 1)}</div>
                     </div>
                 ) : null}
             </div>

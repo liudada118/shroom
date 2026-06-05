@@ -116,13 +116,43 @@ function ChartsAside(props) {
     const initCharts1 = (props) => {
         const xLength = props.xData?.length || 20
         const xLabelInterval = Math.max(0, Math.ceil(xLength / 5) - 1)
+        const xAxisTitle = props.xName || '时间(帧)'
+        const yAxisTitle = props.yName || '数值'
         let option = {
             animation: false,
             grid: { left: 42, right: 36, top: 30, bottom: 34, containLabel: false },
+            graphic: [
+                {
+                    type: 'text',
+                    left: 42,
+                    top: 6,
+                    silent: true,
+                    style: {
+                        text: yAxisTitle,
+                        fill: '#AEB8C4',
+                        fontSize: 10,
+                        fontWeight: 500,
+                        textAlign: 'left',
+                    },
+                },
+                {
+                    type: 'text',
+                    right: 36,
+                    bottom: 0,
+                    silent: true,
+                    style: {
+                        text: xAxisTitle,
+                        fill: '#AEB8C4',
+                        fontSize: 10,
+                        fontWeight: 500,
+                        textAlign: 'right',
+                    },
+                },
+            ],
             xAxis: {
                 type: 'category',
                 show: true,
-                name: props.xName || '时间(帧)',
+                name: '',
                 nameLocation: 'end',
                 nameGap: 8,
                 nameTextStyle: { color: '#AEB8C4', fontSize: 10, align: 'right', verticalAlign: 'top' },
@@ -141,7 +171,7 @@ function ChartsAside(props) {
             yAxis: {
                 type: 'value',
                 show: true,
-                name: props.yName || '数值',
+                name: '',
                 nameLocation: 'end',
                 nameGap: 8,
                 nameRotate: 0,
@@ -187,8 +217,8 @@ function ChartsAside(props) {
             xData: Array.from({ length: xLength }, (_, i) => i + 1),
             myChart: myChart1.current,
             yMax: getChartYMax(value),
-            xName: '时间(帧)',
-            yName: '压力总和(N)',
+            xName: props.t('timeFrame'),
+            yName: props.t('pressureTotalAxis'),
         });
     }
 
@@ -201,8 +231,8 @@ function ChartsAside(props) {
             xData: Array.from({ length: xLength }, (_, i) => i + 1),
             myChart: myChart2.current,
             yMax: getChartYMax(value),
-            xName: '时间(帧)',
-            yName: '点数(个)',
+            xName: props.t('timeFrame'),
+            yName: props.t('pointsAxis'),
         });
     }
 
@@ -368,6 +398,8 @@ function ChartsAside(props) {
             Xmax = Math.max(Xmax, ...xDataRes.map((a) => a[1]))
         }
 
+        const pressureValueLabel = props.t('pressureValue') || '压力值'
+        const probabilityDensityLabel = props.t('probabilityDensity') || '概率密度'
         chart.current.setOption({
             grid: { left: 42, right: 36, top: 30, bottom: 34, containLabel: false },
             title: { left: 'center' },
@@ -378,7 +410,7 @@ function ChartsAside(props) {
                     top: 6,
                     silent: true,
                     style: {
-                        text: '概率密度(%)',
+                        text: `${probabilityDensityLabel}(%)`,
                         fill: '#AEB8C4',
                         fontSize: 10,
                         fontWeight: 500,
@@ -391,7 +423,7 @@ function ChartsAside(props) {
                     bottom: 0,
                     silent: true,
                     style: {
-                        text: '压力值(ADC)',
+                        text: `${pressureValueLabel}(ADC)`,
                         fill: '#AEB8C4',
                         fontSize: 10,
                         fontWeight: 500,
@@ -403,7 +435,7 @@ function ChartsAside(props) {
                 trigger: 'axis',
                 formatter: p => {
                     const { value } = p[0];
-                    return `压力值(ADC)：${value[0]}<br/>概率密度(%)：${(value[1] * 100).toFixed(2)}`;
+                    return `${pressureValueLabel}(ADC)：${value[0]}<br/>${probabilityDensityLabel}(%)：${(value[1] * 100).toFixed(2)}`;
                 }
             },
             xAxis: {

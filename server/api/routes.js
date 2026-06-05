@@ -24,7 +24,7 @@ const VISUAL_COLOR_MAX = 255
 const VISUAL_SETTING_DEFAULTS = {
   gauss: 2,
   color: 120,
-  filter: 10,
+  filter: 30,
   height: 80,
   autoColor: 1,
 }
@@ -577,7 +577,7 @@ function extractPathCandidate(source, depth = 0) {
     return ''
   }
 
-  for (const key of ['path', 'folderPath', 'selectedPath', 'filePath', 'value']) {
+  for (const key of ['path', 'folderPath', 'selectedPath', 'filePath', 'directory', 'value']) {
     const candidate = extractPathCandidate(parsedSource[key], depth + 1)
     if (candidate) {
       return candidate
@@ -1713,6 +1713,50 @@ router.post('/setDownloadPath', asyncHandler(async (req, res) => {
     console.warn('[Server] Failed to persist download path:', e.message)
   }
   res.json(new HttpResult(0, { path: writablePath }, 'success'))
+}))
+
+router.post('/exportContrastData', asyncHandler(async (req, res) => {
+  const format = String(req.body?.format || 'csv').toLowerCase() === 'xlsx' ? 'xlsx' : 'csv'
+  const directory = ensureWritableDir(resolveDownloadPathRequest(req) || state.downloadPath || state._defaultDownloadPath)
+  const rawName = req.body?.fileName || `contrast_${Date.now()}.${format}`
+  const fileName = String(rawName).replace(/[\\/:*?"<>|]/g, '_').replace(/\.(csv|xlsx)$/i, '') + `.${format}`
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : []
+  const headers = Array.isArray(req.body?.headers) && req.body.headers.length
+    ? req.body.headers.map(item => String(item))
+    : Object.keys(rows[0] || {})
+
+  if (!directory) {
+    res.json(new HttpResult(1, {}, 'download path required'))
+    return
+  }
+  if (!rows.length || !headers.length) {
+    res.json(new HttpResult(1, {}, 'export data required'))
+    return
+  }
+
+  const filePath = path.join(directory, fileName)
+  if (format === 'xlsx') {
+    const XLSX = require('xlsx')
+    const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers })
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'contrast')
+    XLSX.writeFile(workbook, filePath, { bookType: 'xlsx' })
+  } else {
+    const escapeCsv = (value) => {
+      if (value === null || value === undefined) return ''
+      const text = String(value)
+      if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`
+      return text
+    }
+    const content = [
+      headers.map(escapeCsv).join(','),
+      ...rows.map(row => headers.map(header => escapeCsv(row[header])).join(',')),
+    ].join('\n')
+    fs.writeFileSync(filePath, `\uFEFF${content}`, 'utf-8')
+  }
+
+  state.downloadPath = directory
+  res.json(new HttpResult(0, { fileName, filePath, format }, 'success'))
 }))
 
 router.post('/openFile', asyncHandler(async (req, res) => {

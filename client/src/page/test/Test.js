@@ -305,7 +305,7 @@ function Test() {
     // ─── 状态 ────────────────────────────────────────────
     const [sitData, setSitData] = useState([])
     const [equipStatus, setStatus] = useState({ back: 'offline', sit: 'offline', data: new Array(4096).fill(0) })
-    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 2, color: 120, filter: 10, height: 80, coherent: 1, autoColor: 1 }
+    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 }
     const [settingValue, setSettingValue] = useState(setValueData)
     const [selectArr, setSelectArr] = useState([])
     const [wsLocalData, setWsLocalData] = useState(new Array(4096).fill(0))

@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-04
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-05
 
 ## 1. 项目概述
 
@@ -491,11 +491,15 @@ graph TD
 | 2026-05-18 | 数据对比曲线与汇总表细节 | 压力/面积曲线补齐横纵轴、网格、刻度、单位和曲线说明；汇总表新增说明，差值和变化率按正负着色并显示上下箭头 |
 | 2026-05-18 | 数据对比新版 UI 细节 | 对比页控件统一暗色化，曲线说明移入标题区并用彩色点突出，热力图和播放框补充放大 icon，汇总表说明合并到标题 |
 | 2026-05-18 | 数据对比热力图放大查看 | 热力图放大 icon 支持点击打开全屏弹窗，以更大画布展示当前热力图并保留 5x5 放大镜查看细节 |
+| 2026-06-05 | 细节文案、导出弹窗与端口稳定性修复 | 统一 `total` 文案为压力总和/Total Pressure，移除回放条历史入口和对比差值范围提示，对比导出改为下载完成弹窗，图表轴标题支持中英文并按固定角标布局，前端端口启动改为固定首选端口并清理残留进程 |
+| 2026-06-05 | 数据对比导出路径与格式选择 | 数据对比导出新增下载路径选择弹框和 CSV/XLSX 格式选择；渲染进程优先通过 preload 调用 Electron 主进程写入指定目录，IPC 未注册时兜底调用后端 `/exportContrastData`，XLSX 使用 `xlsx` 生成工作簿 |
 
 ## 9. 更新日志
 
 | 日期 | 变更类型 | 描述 |
 | :--- | :--- | :--- |
+| 2026-06-05 | 新增功能 | 数据对比导出支持选择保存路径和 CSV/XLSX 两种格式 |
+| 2026-06-05 | 修复缺陷 | 修复播放控件、数据对比、图表轴标题、下载提示和前端端口递增等界面/启动问题 |
 | 2026-03-02 | 初始化 | 按照 update-tech-doc 技能规范创建 ARCHITECTURE.md |
 | 2026-03-02 | 优化重构 | P0: 修复 14 个 Three.js 组件内存泄漏，创建 disposeThree 工具 |
 | 2026-03-02 | 优化重构 | P1: structuredClone 替换深拷贝、SQLite WAL 模式、WebSocket MessagePack |
@@ -1461,3 +1465,9 @@ graph TD
 - Backrest matrix defaults are toggled one more time to `left=true, up=true, rotateDegree=0` for `endi-back`, `carY-back`, and `car-back`, matching the latest requested backrest default orientation.
 - The second-turn default is applied consistently in backend state, backend direction normalization, frontend local direction normalization, and `db/data_direction.json`.
 | 2026-06-05 | Config | Toggle the backrest default direction one more time |
+
+## 2026-06-05 Visualization persistence and defaults
+- Visualization defaults are now `gauss=2`, `color=120`, `filter=30`, `height=80`, and `autoColor=1` across backend completion, frontend constants, zustand fallback state, test-page fallback state, and system-setting fallback config.
+- `visualSettingStorage.saveVisualSettingValue()` persists every adjustment to both the active system key and the `default` fallback key, so refreshes before `/getSystem` returns still show the last adjusted value.
+- Existing persisted values remain authoritative. The default migration version advances to `2026-06-05-visual-defaults-filter-30`, but `filter=10` is not listed as a legacy default to migrate, preserving users who already saved that value.
+| 2026-06-05 | Config | Set visualization defaults to 2/120/30/80 and strengthen local persistence |

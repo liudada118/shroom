@@ -253,6 +253,7 @@ function startStaticServer() {
     })
 
     try {
+      await killPortProcess(PORTS.frontendProd)
       const port = useReactDevServer ? PORTS.frontendProd : PORTS.frontendProd
       const actualPort = await listenWithRetry(staticServer, port, '127.0.0.1')
       PORTS.frontendProd = actualPort
@@ -390,12 +391,58 @@ app.whenReady().then(async () => {
     return { canceled: false, filePath: result.filePath }
   })
 
+  ipcMain.handle('export-contrast-data', async (event, options = {}) => {
+    const format = String(options.format || 'csv').toLowerCase() === 'xlsx' ? 'xlsx' : 'csv'
+    const directory = String(options.directory || '').trim()
+    const rawName = options.fileName || `contrast_${Date.now()}.${format}`
+    const safeName = String(rawName).replace(/[\\/:*?"<>|]/g, '_')
+    const fileName = safeName.toLowerCase().endsWith(`.${format}`) ? safeName : `${safeName}.${format}`
+    const rows = Array.isArray(options.rows) ? options.rows : []
+    const headers = Array.isArray(options.headers) && options.headers.length
+      ? options.headers.map(item => String(item))
+      : Object.keys(rows[0] || {})
+
+    if (!directory) {
+      throw new Error('Download directory is empty')
+    }
+    if (!fs.existsSync(directory)) {
+      fs.mkdirSync(directory, { recursive: true })
+    }
+    const stat = fs.statSync(directory)
+    if (!stat.isDirectory()) {
+      throw new Error('Download path is not a directory')
+    }
+
+    const filePath = path.join(directory, fileName)
+    if (format === 'xlsx') {
+      const XLSX = require('xlsx')
+      const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers })
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'contrast')
+      XLSX.writeFile(workbook, filePath, { bookType: 'xlsx' })
+    } else {
+      const escapeCsv = (value) => {
+        if (value === null || value === undefined) return ''
+        const text = String(value)
+        if (/[",\r\n]/.test(text)) {
+          return `"${text.replace(/"/g, '""')}"`
+        }
+        return text
+      }
+      const content = [
+        headers.map(escapeCsv).join(','),
+        ...rows.map(row => headers.map(header => escapeCsv(row[header])).join(',')),
+      ].join('\n')
+      fs.writeFileSync(filePath, `\uFEFF${content}`, 'utf-8')
+    }
+
+    return { filePath, fileName, format }
+  })
+
   try {
     // 1. 并行执行：硬件指纹 + Port分配（互不依赖）
     console.log('[Main] Initializing...')
-    const portsToAllocate = useReactDevServer
-      ? { api: PREFERRED_PORTS.api, ws: PREFERRED_PORTS.ws, frontend: PREFERRED_PORTS.frontend }
-      : { api: PREFERRED_PORTS.api, ws: PREFERRED_PORTS.ws, frontendProd: PREFERRED_PORTS.frontendProd }
+    const portsToAllocate = { api: PREFERRED_PORTS.api, ws: PREFERRED_PORTS.ws }
 
     const [uuid, allocatedPorts] = await Promise.all([
       getHardwareFingerprint(),

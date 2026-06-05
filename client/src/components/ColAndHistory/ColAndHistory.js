@@ -1281,13 +1281,6 @@ const ColAndHistory = memo((props) => {
                                     </span>
                                 </div>
                             ))}
-                            <div
-                                className="cursor"
-                                style={{ marginTop: '8px', color: '#1890ff', fontSize: '0.8rem', textDecoration: 'underline' }}
-                                onClick={() => handleOpenFolder()}
-                            >
-                                {t('openDownloadFolder') || '打开下载文件夹'}: {downloadPath}
-                            </div>
                         </div>
                     )}
                 </div>
