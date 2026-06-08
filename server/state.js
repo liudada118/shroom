@@ -33,11 +33,11 @@ const state = {
     up: true,
     rotateDegree: 0,
     byKey: {
-      'endi-back': { left: true, up: true, rotateDegree: 0 },
+      'endi-back': { left: false, up: true, rotateDegree: 0 },
       'endi-sit': { left: true, up: true, rotateDegree: 270 },
-      'carY-back': { left: true, up: true, rotateDegree: 0 },
+      'carY-back': { left: false, up: true, rotateDegree: 0 },
       'carY-sit': { left: true, up: true, rotateDegree: 270 },
-      'car-back': { left: true, up: true, rotateDegree: 0 },
+      'car-back': { left: false, up: true, rotateDegree: 0 },
       'car-sit': { left: true, up: true, rotateDegree: 270 },
     },
   }, // collection save direction; false means the axis is flipped

@@ -7,11 +7,11 @@
     "data_direction": "none",
     "byKey": {
       "endi-back": {
-        "left": true,
+        "left": false,
         "up": true,
         "rotateDegree": 0,
         "rotate_degree": 0,
-        "data_direction": "none"
+        "data_direction": "horizontal"
       },
       "endi-sit": {
         "left": true,
@@ -21,11 +21,11 @@
         "data_direction": "rotate270"
       },
       "carY-back": {
-        "left": true,
+        "left": false,
         "up": true,
         "rotateDegree": 0,
         "rotate_degree": 0,
-        "data_direction": "none"
+        "data_direction": "horizontal"
       },
       "carY-sit": {
         "left": true,
@@ -35,11 +35,11 @@
         "data_direction": "rotate270"
       },
       "car-back": {
-        "left": true,
+        "left": false,
         "up": true,
         "rotateDegree": 0,
         "rotate_degree": 0,
-        "data_direction": "none"
+        "data_direction": "horizontal"
       },
       "car-sit": {
         "left": true,
@@ -50,5 +50,5 @@
       }
     }
   },
-  "updatedAt": "2026-06-04T08:36:24.370Z"
+  "updatedAt": "2026-06-05T00:00:00.000Z"
 }

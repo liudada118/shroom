@@ -21,11 +21,11 @@ const DEFAULT_DATA_DIRECTION = {
   up: true,
   rotateDegree: 0,
   byKey: {
-    'endi-back': { left: true, up: true, rotateDegree: 0 },
+    'endi-back': { left: false, up: true, rotateDegree: 0 },
     'endi-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
-    'carY-back': { left: true, up: true, rotateDegree: 0 },
+    'carY-back': { left: false, up: true, rotateDegree: 0 },
     'carY-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
-    'car-back': { left: true, up: true, rotateDegree: 0 },
+    'car-back': { left: false, up: true, rotateDegree: 0 },
     'car-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
   },
 }
@@ -66,12 +66,25 @@ function isSeatDirectionKey(key) {
   return value === 'sit' || value.endsWith('-sit')
 }
 
+function isBackDirectionKey(key) {
+  const value = String(key || '').toLowerCase()
+  return value === 'back' || value.endsWith('-back')
+}
+
 function shouldMigrateLegacySeatDirection(key, direction) {
   const normalized = normalizeDataDirection(direction)
   return isSeatDirectionKey(key)
     && normalized.left === true
     && (normalized.up === true || normalized.up === false)
     && (normalized.rotateDegree === 90 || normalized.rotateDegree === 270)
+}
+
+function shouldMigrateLegacyBackDirection(key, direction) {
+  const normalized = normalizeDataDirection(direction)
+  return isBackDirectionKey(key)
+    && normalized.left === true
+    && normalized.up === true
+    && normalized.rotateDegree === 0
 }
 
 function normalizeDataDirectionState(direction) {
@@ -95,6 +108,8 @@ function loadStoredDataDirection() {
       Object.keys(storedDirection.byKey).forEach((key) => {
         if (shouldMigrateLegacySeatDirection(key, storedDirection.byKey[key])) {
           storedDirection.byKey[key] = { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE }
+        } else if (shouldMigrateLegacyBackDirection(key, storedDirection.byKey[key])) {
+          storedDirection.byKey[key] = { left: false, up: true, rotateDegree: 0 }
         }
       })
     }
