@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dark-900 text-gray-100 font-sans antialiased;
+    overflow: hidden;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-dark-800 rounded;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-dark-600 rounded hover:bg-dark-500;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-dark-800 border border-dark-700 rounded-xl p-4 shadow-lg;
+  }
+
+  .card-header {
+    @apply text-sm font-medium text-dark-400 uppercase tracking-wider mb-2;
+  }
+
+  .stat-value {
+    @apply text-3xl font-bold tabular-nums;
+  }
+
+  .stat-unit {
+    @apply text-sm text-dark-400 ml-1;
+  }
+
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 
+           disabled:opacity-50 disabled:cursor-not-allowed
+           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-dark-900;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary-600 hover:bg-primary-700 text-white focus:ring-primary-500;
+  }
+
+  .btn-success {
+    @apply btn bg-emerald-600 hover:bg-emerald-700 text-white focus:ring-emerald-500;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 hover:bg-red-700 text-white focus:ring-red-500;
+  }
+
+  .btn-ghost {
+    @apply btn bg-dark-700 hover:bg-dark-600 text-gray-300 focus:ring-dark-500;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply badge bg-emerald-900/50 text-emerald-400 border border-emerald-700/50;
+  }
+
+  .badge-warning {
+    @apply badge bg-amber-900/50 text-amber-400 border border-amber-700/50;
+  }
+
+  .badge-danger {
+    @apply badge bg-red-900/50 text-red-400 border border-red-700/50;
+  }
+
+  .badge-info {
+    @apply badge bg-blue-900/50 text-blue-400 border border-blue-700/50;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg
+           text-gray-200 placeholder-dark-400
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  }
+
+  .switch {
+    @apply relative inline-flex h-6 w-11 items-center rounded-full
+           transition-colors duration-200 focus:outline-none;
+  }
+
+  .switch-on {
+    @apply bg-primary-600;
+  }
+
+  .switch-off {
+    @apply bg-dark-600;
+  }
+}
+
+/* 动画 */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+@keyframes slide-in {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
