@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-05
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-10
 
 ## 1. 项目概述
 
@@ -110,6 +110,15 @@ shroom/
 │   └── index.js
 ├── test/
 │   └── portFinder.test.js      # 端口分配单元测试
+├── sdk/                        # 独立 Core SDK（无后端服务依赖）
+│   ├── package.json            # SDK 独立包配置
+│   ├── index.js                # 底层函数聚合入口
+│   ├── index.d.ts              # TypeScript 类型声明
+│   ├── api-client.js           # 可选 HTTP/WebSocket client
+│   ├── core/                   # 矩阵、框选、回放、压强纯函数
+│   ├── node/serial.js          # Node 直连串口 adapter
+│   ├── test/                   # SDK 独立测试
+│   └── README.md               # SDK 使用说明
 ├── scripts/
 │   └── migrate_remarks.py      # 数据迁移脚本
 └── swagger.yaml                # API 文档
@@ -126,6 +135,7 @@ shroom/
 | `/client/src/store` | zustand 状态管理 |
 | `/util` | 后端通用工具：端口管理、数据库、日志、加密等 |
 | `/client/src/util` | 前端通用工具：echarts 按需引入、端口配置、Three.js 清理 |
+| `/sdk` | 可独立复制/发布的 Core SDK，默认导出矩阵方向、置零、框选统计、回放帧校验和压强计算等底层能力；`node/serial.js` 提供不启后端服务的 Node 串口直连 adapter，`api-client.js` 仅作为可选 HTTP/WebSocket 调用层 |
 
 ## 4. 核心模块与数据流
 
@@ -494,6 +504,7 @@ graph TD
 | 2026-06-05 | 细节文案、导出弹窗与端口稳定性修复 | 统一 `total` 文案为压力总和/Total Pressure，移除回放条历史入口和对比差值范围提示，对比导出改为下载完成弹窗，图表轴标题支持中英文并按固定角标布局，前端端口启动改为固定首选端口并清理残留进程 |
 | 2026-06-05 | 数据对比导出路径与格式选择 | 数据对比导出新增下载路径选择弹框和 CSV/XLSX 格式选择；渲染进程优先通过 preload 调用 Electron 主进程写入指定目录，IPC 未注册时兜底调用后端 `/exportContrastData`，XLSX 使用 `xlsx` 生成工作簿 |
 | 2026-06-05 | 靠背默认水平翻转 | 靠背矩阵默认方向切换为 `left=false, up=true, rotateDegree=0`，并在前后端方向加载时迁移旧的未翻转靠背默认值 |
+| 2026-06-10 | 独立 Core SDK | 将 SDK 调整为无后端服务依赖的底层能力包，新增矩阵、框选、回放、压强 core 模块和 Node 串口直连 adapter，并把 HTTP/WebSocket client 降为可选能力 |
 
 ## 9. 更新日志
 
@@ -623,6 +634,7 @@ graph TD
 | 2026-05-18 | 优化重构 | 数据对比页移除高亮荧光阴影，统一回主页黑底、深灰边框、`#0072EF` 蓝色交互和克制的状态色；播放控制栏右侧预留放大 icon 空间，避免倍速控件遮挡 |
 | 2026-05-19 | 修复缺陷 | 数据对比播放栏放大 icon 从纯展示改为可点击按钮，增加 hover/active 反馈，并打开放大的播放控制弹窗；弹窗与主播放栏共用同一套播放/进度/时间点状态 |
 | 2026-05-19 | 优化重构 | 数据对比播放栏放大弹窗从单独控制条改为“3 张热力数字图 + 播放进度条”的整体放大视图，A/B/B-A 热力图在弹窗内随当前进度或时间点同步刷新 |
+| 2026-06-10 | 优化重构 | 将 SDK 从请求型 API client 重构为独立 Core SDK，主入口导出可直接复用的底层能力，新增 `sdk/node/serial.js` 直连串口，API client 保留在 `sdk/api-client.js` |
 
 *变更类型：`新增功能` / `优化重构` / `修复缺陷` / `配置变更` / `文档更新` / `依赖升级` / `初始化`*
 
@@ -1473,3 +1485,20 @@ graph TD
 - `visualSettingStorage.saveVisualSettingValue()` persists every adjustment to both the active system key and the `default` fallback key, so refreshes before `/getSystem` returns still show the last adjusted value.
 - Existing persisted values remain authoritative. The default migration version advances to `2026-06-05-visual-defaults-filter-30`, but `filter=10` is not listed as a legacy default to migrate, preserving users who already saved that value.
 | 2026-06-05 | Config | Set visualization defaults to 2/120/30/80 and strengthen local persistence |
+
+## 2026-06-10 Core SDK
+- `sdk/index.js` 改为底层能力聚合入口，默认导出矩阵方向处理、预压力置零、框选统计、回放帧解析/校验、压强计算和 Node 串口 adapter，不需要启动后端服务。
+- 新增 `sdk/core/matrix.js`、`sdk/core/selection.js`、`sdk/core/playback.js` 和 `sdk/core/pressure.js`，从现有前后端逻辑中抽离无 `state`、无数据库、无 HTTP 的通用能力。
+- 新增 `sdk/node/serial.js`，封装 `serialport` 直连能力：列串口、筛选 CH340、探测波特率、打开连接、按协议分隔符监听帧、发送 AT 指令读取 MAC、关闭连接和批量连接设备。
+- 原请求型 SDK 移到 `sdk/api-client.js`，仅在需要调用正在运行的本地服务时使用；主入口以 `createShroomSeatApiClient` / `ShroomSeatApiClient` 暴露该可选能力。
+- 新增 `sdk/package.json`、`sdk/index.d.ts` 和 `sdk/test/`，使 `sdk/` 可以作为 `@shroom-seat/core-sdk` 独立测试、dry-run 打包和复制到外部项目。
+| 2026-06-10 | Refactor | Convert the SDK into a standalone core-function package and keep the HTTP/WebSocket client optional |
+
+## 2026-06-10 SDK 底层能力继续拆分
+- `sdk/` 继续按“无需启动后台服务”的目标拆分底层能力，主入口 `sdk/index.js` 现在除 core 算法外，还暴露 `protocol`、`deviceCache`、`auth`、`config`、`collector`、`historyStore` 和 `exporter` 等 Node 侧适配模块。
+- 新增 `sdk/node/protocol.js`，把串口原始帧解析从运行态后台拆成独立函数：支持 MAC 文本、旋转帧、手套分包帧以及 1024/4096 点矩阵帧，并复用 `sdk/core/line.js` 和 `sdk/core/bytes.js` 做线序和 float 转换。
+- 新增 `sdk/node/device-cache.js`、`sdk/node/auth.js` 和 `sdk/node/config.js`，分别覆盖设备 MAC/type 缓存、本地优先的设备类型解析、加密系统配置与压强配置读写，调用方可以直接传入路径和 fetch/cache，不再依赖 Express 路由。
+- 新增 `sdk/node/collector.js`，以 `EventEmitter` 形式组合串口连接和协议解析，支持 `connectAll/connectPort/readMac/startRecord/stopRecord/disconnectAll`，可在外部项目直接采集矩阵帧。
+- 新增 `sdk/node/history-store.js` 和 `sdk/node/exporter.js`，提供兼容原 `matrix(data,timestamp,date,select)` 表结构的 SQLite 存储，以及 CSV/XLSX 导出函数；原后台下载 API 不再是复用这些能力的唯一入口。
+- `sdk/package.json` 增加子路径 exports 和可选依赖声明，`sdk/index.d.ts`、`sdk/README.md` 和 `sdk/test/*.test.js` 同步覆盖新增模块，保持 SDK 能独立测试和 dry-run 打包。
+| 2026-06-10 | Refactor | Split serial protocol, cache/auth/config, collector, history store and export functions into the standalone SDK |

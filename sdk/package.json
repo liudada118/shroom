@@ -1,0 +1,78 @@
+{
+  "name": "@shroom-seat/core-sdk",
+  "version": "1.0.0",
+  "description": "Standalone JavaScript SDK for SHROOM-SEAT matrix, serial, config, collection, history and export utilities.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./index.js",
+      "default": "./index.js"
+    },
+    "./node/serial": {
+      "require": "./node/serial.js",
+      "default": "./node/serial.js"
+    },
+    "./node/protocol": {
+      "require": "./node/protocol.js",
+      "default": "./node/protocol.js"
+    },
+    "./node/device-cache": {
+      "require": "./node/device-cache.js",
+      "default": "./node/device-cache.js"
+    },
+    "./node/auth": {
+      "require": "./node/auth.js",
+      "default": "./node/auth.js"
+    },
+    "./node/config": {
+      "require": "./node/config.js",
+      "default": "./node/config.js"
+    },
+    "./node/collector": {
+      "require": "./node/collector.js",
+      "default": "./node/collector.js"
+    },
+    "./node/history-store": {
+      "require": "./node/history-store.js",
+      "default": "./node/history-store.js"
+    },
+    "./node/exporter": {
+      "require": "./node/exporter.js",
+      "default": "./node/exporter.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "api-client.js",
+    "core/**/*",
+    "node/**/*",
+    "index.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node test/core.test.js && node test/api-client.test.js && node test/serial.test.js && node test/protocol.test.js && node test/config.test.js && node test/device-cache.test.js && node test/auth.test.js && node test/collector.test.js && node test/exporter.test.js && node test/history-store.test.js",
+    "pack:check": "npm pack --dry-run"
+  },
+  "keywords": [
+    "shroom-seat",
+    "sdk",
+    "pressure",
+    "serialport",
+    "websocket"
+  ],
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@msgpack/msgpack": "^3.0.0-beta.3",
+    "axios": "^1.9.0",
+    "crypto-js": "^4.2.0",
+    "serialport": "^13.0.0",
+    "sqlite3": "^5.1.7",
+    "ws": "^8.18.2",
+    "xlsx": "^0.18.5"
+  }
+}
