@@ -5,7 +5,7 @@ import dayjs from 'dayjs'
 import { shallow } from 'zustand/shallow'
 import { pageContext } from '../../page/test/Test'
 import { useEquipStore } from '../../store/equipStore'
-import { localAddress } from '../../util/constant'
+import { getMatrixPartFromDisplayType, localAddress } from '../../util/constant'
 import { computePressureMetrics } from '../../util/pressureMetrics'
 import { loadPressureRuntimeConfig } from '../../util/pressureConfig'
 import { calcCentroidRatio } from '../../util/util'
@@ -649,7 +649,8 @@ export default function NumThresContrast() {
 
     useEffect(() => {
         if (!keys.length) return
-        const matchedKey = keys.find((key) => displayType.includes('back') ? key.includes('back') : key.includes('sit'))
+        const displayPart = getMatrixPartFromDisplayType(displayType)
+        const matchedKey = displayPart ? keys.find((key) => getMatrixPartFromDisplayType(key) === displayPart) : ''
         setActiveKey((current) => current && keys.includes(current) ? current : (matchedKey || keys[0]))
     }, [keys.join('|'), displayType])
 

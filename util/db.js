@@ -13,6 +13,11 @@ const { loadPressureConfig, loadPressureFormula } = require("../server/services/
 const pointConfig = {
   'endi-back': { pointWidthDistance: 13, pointHeightDistance: 10, width: 50, height: 64 },
   'endi-sit': { pointWidthDistance: 10, pointHeightDistance: 10, width: 46, height: 46 },
+  'endi-jacket': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
+  'endi-leftHand': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
+  'endi-rightHand': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
+  'endi-leftFoot': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
+  'endi-rightFoot': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
   'carY-back': { pointWidthDistance: 10, pointHeightDistance: 19, width: 32, height: 32 },
   'carY-sit': { pointWidthDistance: 15, pointHeightDistance: 15, width: 32, height: 32 },
   'car-back': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
@@ -1644,9 +1649,19 @@ function normalizeCsvMatrixKey(value) {
   const lower = normalized.toLowerCase()
   if (lower === 'back') return 'endi-back'
   if (lower === 'sit') return 'endi-sit'
-  if (lower.endsWith('-back') || lower.endsWith('-sit')) return normalized
+  if (lower === 'jacket') return 'endi-jacket'
+  if (lower === 'lefthand' || lower === 'left-hand') return 'endi-leftHand'
+  if (lower === 'righthand' || lower === 'right-hand') return 'endi-rightHand'
+  if (lower === 'leftfoot' || lower === 'left-foot') return 'endi-leftFoot'
+  if (lower === 'rightfoot' || lower === 'right-foot') return 'endi-rightFoot'
+  if (pointConfig[normalized]) return normalized
   if (normalized.includes('靠背')) return 'endi-back'
   if (normalized.includes('坐垫')) return 'endi-sit'
+  if (normalized.includes('外套') || normalized.includes('背心')) return 'endi-jacket'
+  if (normalized.includes('左手')) return 'endi-leftHand'
+  if (normalized.includes('右手')) return 'endi-rightHand'
+  if (normalized.includes('左脚')) return 'endi-leftFoot'
+  if (normalized.includes('右脚')) return 'endi-rightFoot'
   return normalized
 }
 
@@ -1678,6 +1693,7 @@ function getImportDeviceMac(row = {}, matrixKey = '') {
 
 function inferImportMatrixKey(arr = []) {
   const length = Array.isArray(arr) ? arr.length : 0
+  if (length === 1024) return 'carY-back'
   const exact = Object.entries(pointConfig).find(([, config]) => config.width * config.height === length)
   if (exact) return exact[0]
   if (length === 4096) return 'endi-sit'

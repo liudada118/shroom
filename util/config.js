@@ -95,7 +95,20 @@ const typeConfig = {
   5: 'endi-sit',
   6: 'carY-back',
   7: 'carY-sit',
+  8: 'endi-jacket',
+  9: 'endi-leftHand',
+  10: 'endi-rightHand',
+  11: 'endi-leftFoot',
+  12: 'endi-rightFoot',
 }
+
+const endiWearTypes = [
+  'endi-jacket',
+  'endi-leftHand',
+  'endi-rightHand',
+  'endi-leftFoot',
+  'endi-rightFoot',
+]
 
 // ═══════════════════════════════════════════════════════════
 //  Device授权模式
@@ -132,6 +145,7 @@ const constantObj = {
   order,
   type,
   typeConfig,
+  endiWearTypes,
   handTypeMap,
 
   // 波特率探测

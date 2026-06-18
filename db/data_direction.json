@@ -20,6 +20,41 @@
         "rotate_degree": 270,
         "data_direction": "rotate270"
       },
+      "endi-jacket": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 0,
+        "rotate_degree": 0,
+        "data_direction": "none"
+      },
+      "endi-leftHand": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 0,
+        "rotate_degree": 0,
+        "data_direction": "none"
+      },
+      "endi-rightHand": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 0,
+        "rotate_degree": 0,
+        "data_direction": "none"
+      },
+      "endi-leftFoot": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 0,
+        "rotate_degree": 0,
+        "data_direction": "none"
+      },
+      "endi-rightFoot": {
+        "left": true,
+        "up": true,
+        "rotateDegree": 0,
+        "rotate_degree": 0,
+        "data_direction": "none"
+      },
       "carY-back": {
         "left": false,
         "up": true,

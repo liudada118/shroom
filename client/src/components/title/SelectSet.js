@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { colSelectMatrix } from '../../util/util'
-import { localAddress, systemPointConfig } from '../../util/constant'
+import { getMatrixPartFromDisplayType, localAddress, systemPointConfig } from '../../util/constant'
 import { pageContext } from '../../page/test/Test'
 import { isMoreMatrix } from '../../assets/util/util'
 import { SELECT_COLORS } from '../selectBox/newSelecttBox'
@@ -256,9 +256,7 @@ async function loadSelectionTemplatesFromDb() {
 }
 
 function getDisplayObject(displayType = '') {
-    if (displayType.includes('back')) return 'back'
-    if (displayType.includes('sit')) return 'sit'
-    return displayType || 'single'
+    return getMatrixPartFromDisplayType(displayType) || 'single'
 }
 
 export default function SelectSet(props) {
@@ -345,7 +343,8 @@ export default function SelectSet(props) {
     const getCurrentMatrixType = () => {
         const currentSystem = getSysType()
         if (isMoreMatrix(currentSystem)) {
-            return currentSystem + '-' + (displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : '')
+            const part = getMatrixPartFromDisplayType(displayType)
+            return part ? `${currentSystem}-${part}` : currentSystem
         }
         return currentSystem
     }
@@ -442,7 +441,8 @@ export default function SelectSet(props) {
         const systemType = getSysType()
         let type
         if (isMoreMatrix(systemType)) {
-            type = systemType + '-' + (displayType.includes('back') ? 'back' : displayType.includes('sit') ? 'sit' : '')
+            const part = getMatrixPartFromDisplayType(displayType)
+            type = part ? `${systemType}-${part}` : systemType
         } else {
             type = systemType
         }

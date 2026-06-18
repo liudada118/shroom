@@ -2,7 +2,7 @@ import React from 'react';
 import { message } from 'antd';
 import i18n from 'i18next';
 import { getDisplayType, getSysType } from '../../store/equipStore';
-import { systemPointConfig } from '../../util/constant';
+import { getMatrixPartFromDisplayType, systemPointConfig } from '../../util/constant';
 import { isMoreMatrix } from '../../assets/util/util';
 import { calMatrixToSelect, matrixRectToSelectRect, snapPixelRangeToMatrixRect } from '../../assets/util/selectMatrix';
 import { getDefaultSelectionName } from '../../util/selectionName';
@@ -104,11 +104,7 @@ export class BrushManager {
 
         let configKey = systemType;
         if (isMoreMatrix(systemType)) {
-            const matrixType = displayType.includes('back')
-                ? 'back'
-                : displayType.includes('sit')
-                    ? 'sit'
-                    : '';
+            const matrixType = getMatrixPartFromDisplayType(displayType);
             if (matrixType) configKey = `${systemType}-${matrixType}`;
         }
 

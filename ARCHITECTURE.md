@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-10
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-15
 
 ## 1. 项目概述
 
@@ -505,12 +505,14 @@ graph TD
 | 2026-06-05 | 数据对比导出路径与格式选择 | 数据对比导出新增下载路径选择弹框和 CSV/XLSX 格式选择；渲染进程优先通过 preload 调用 Electron 主进程写入指定目录，IPC 未注册时兜底调用后端 `/exportContrastData`，XLSX 使用 `xlsx` 生成工作簿 |
 | 2026-06-05 | 靠背默认水平翻转 | 靠背矩阵默认方向切换为 `left=false, up=true, rotateDegree=0`，并在前后端方向加载时迁移旧的未翻转靠背默认值 |
 | 2026-06-10 | 独立 Core SDK | 将 SDK 调整为无后端服务依赖的底层能力包，新增矩阵、框选、回放、压强 core 模块和 Node 串口直连 adapter，并把 HTTP/WebSocket client 降为可选能力 |
+| 2026-06-15 | 新 Endi 多设备展示系统 | 新增 `endi-jacket`、`endi-leftHand`、`endi-rightHand`、`endi-leftFoot`、`endi-rightFoot` 五类 32x32 矩阵设备，接入 MAC 缓存、串口校验、2D 展示、框选、量尺、历史/导入导出和对比尺寸识别 |
 
 ## 9. 更新日志
 
 | 日期 | 变更类型 | 描述 |
 | :--- | :--- | :--- |
 | 2026-06-05 | 新增功能 | 数据对比导出支持选择保存路径和 CSV/XLSX 两种格式 |
+| 2026-06-15 | 新增功能 | 接入 Endi 外套、左右手、左右脚五类新矩阵设备，统一按 32x32 处理实时展示、框选、量尺、历史和导入导出链路 |
 | 2026-06-05 | 配置变更 | 靠背默认方向再执行一次左右翻转，并迁移旧默认方向缓存 |
 | 2026-06-05 | 修复缺陷 | 修复播放控件、数据对比、图表轴标题、下载提示和前端端口递增等界面/启动问题 |
 | 2026-03-02 | 初始化 | 按照 update-tech-doc 技能规范创建 ARCHITECTURE.md |
@@ -1502,3 +1504,11 @@ graph TD
 - 新增 `sdk/node/history-store.js` 和 `sdk/node/exporter.js`，提供兼容原 `matrix(data,timestamp,date,select)` 表结构的 SQLite 存储，以及 CSV/XLSX 导出函数；原后台下载 API 不再是复用这些能力的唯一入口。
 - `sdk/package.json` 增加子路径 exports 和可选依赖声明，`sdk/index.d.ts`、`sdk/README.md` 和 `sdk/test/*.test.js` 同步覆盖新增模块，保持 SDK 能独立测试和 dry-run 打包。
 | 2026-06-10 | Refactor | Split serial protocol, cache/auth/config, collector, history store and export functions into the standalone SDK |
+
+## 2026-06-15 Endi 多设备展示系统
+- 新增设备类型与默认 MAC 映射：`554635300D50434523 -> endi-jacket`、`504330390250435F15 -> endi-leftHand`、`504330390250435F1B -> endi-rightHand`、`464134390F50431842 -> endi-leftFoot`、`464134391150431A4E -> endi-rightFoot`。
+- 新设备默认按 32x32 矩阵处理。`util/config.js` 增加 1025/4097 typed-frame 类型码 8-12，`SerialManager` 对这些类型复用标准 1024 点矩阵线序处理，并在 `MATRIX_POINT_COUNTS` 中校验为 1024 点。
+- 前后端矩阵尺寸配置同步覆盖：`client/src/util/constant.js`、`server/services/DataService.js`、`server/api/routes.js`、`util/db.js` 和 `db/data_direction.json` 都加入五个新矩阵 key，保证实时展示、回放、对比、COP/导出和导入尺寸识别一致。
+- `ViewSetting`、`BrushManager`、`SelectSet`、`SecondTitle`、`NumThres` 和 2D 数字渲染组件改为通过矩阵部位 helper 读取当前部位，不再只写死 `back/sit`；新设备可以出现在 2D 数字视图、框选、量尺和左侧统计曲线中。
+- 3D 座椅模型仍只对 `back/sit` 开放。外套、左右手、左右脚当前走 2D 数字矩阵和统计图展示；后续如果提供模型或非标准线序，可在 `systemMatrixParts` 和串口线序转换中扩展。
+| 2026-06-15 | Feature | Add Endi jacket/hand/foot matrix devices as 32x32 sensors across MAC cache, serial parsing, 2D view, selection, ruler, playback and export paths |

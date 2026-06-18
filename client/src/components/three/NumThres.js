@@ -5,7 +5,7 @@ import NumThree2 from '../../components/three/NumThreeColorV4'
 import { useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 import { pageContext } from '../../page/test/Test';
-import { systemPointConfig } from '../../util/constant';
+import { getMatrixPartFromDisplayType, systemPointConfig } from '../../util/constant';
 
 export default function NumThres(props) {
     const pageInfo = useContext(pageContext);
@@ -14,17 +14,16 @@ export default function NumThres(props) {
     const systemType = useEquipStore(s => s.systemType, shallow);
     const displayType = useEquipStore(s => s.displayType, shallow);
     const num2DZoom = useEquipStore(s => s.num2DZoom, shallow);
-    console.log(displayType.includes('sit'))
+    const matrixPart = getMatrixPartFromDisplayType(displayType)
 
     // 根据 systemType 和 displayType 动态获取 width/height
     const getMatrixSize = () => {
         if (!isMoreMatrix(systemType)) return { width: 32, height: 32 }
-        const isBack = displayType.includes('back')
-        const configKey = `${systemType}-${isBack ? 'back' : 'sit'}`
+        const configKey = `${systemType}-${matrixPart}`
         const config = systemPointConfig[configKey]
         if (config) return { width: config.width, height: config.height }
         // fallback to endi defaults
-        return isBack ? { width: 50, height: 64 } : { width: 46, height: 46 }
+        return { width: 32, height: 32 }
     }
 
     const { width, height } = getMatrixSize()
@@ -34,11 +33,11 @@ export default function NumThres(props) {
 
     return (
         <>{isMoreMatrix(systemType) ?
-            displayType.includes('back') ?
+            matrixPart === 'back' ?
                 (isSquareBack ?
                     <NumThree key={`${systemType}-back`} width={width} height={height} sitData={sitData} zoom={num2DZoom} /> :
                     <NumThree2 key={`${systemType}-back`} width={width} height={height} sitData={sitData} zoom={num2DZoom} />) :
-                <NumThree key={`${systemType}-sit`} width={width} height={height} sitData={sitData} zoom={num2DZoom} /> :
+                <NumThree key={`${systemType}-${matrixPart || 'matrix'}`} width={width} height={height} sitData={sitData} zoom={num2DZoom} /> :
             <NumThree width={32} height={32} sitData={sitData} zoom={num2DZoom} />}
 
             {/* <div style={{width : '100vw' , height : '100vh' , 

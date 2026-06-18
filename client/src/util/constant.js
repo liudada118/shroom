@@ -21,6 +21,31 @@ export const pointConfig = {
       pointWidthDistance: 10,
       pointHeightDistance: 10,
     },
+    jacket: {
+      pointLength: 32,
+      pointWidthDistance: 10,
+      pointHeightDistance: 10,
+    },
+    leftHand: {
+      pointLength: 32,
+      pointWidthDistance: 10,
+      pointHeightDistance: 10,
+    },
+    rightHand: {
+      pointLength: 32,
+      pointWidthDistance: 10,
+      pointHeightDistance: 10,
+    },
+    leftFoot: {
+      pointLength: 32,
+      pointWidthDistance: 10,
+      pointHeightDistance: 10,
+    },
+    rightFoot: {
+      pointLength: 32,
+      pointWidthDistance: 10,
+      pointHeightDistance: 10,
+    },
   },
   carY: {
     back: {
@@ -67,13 +92,76 @@ export const systemPointConfig = {
 }
 
 // 32x32 矩阵系统统一配置
-const point32Systems = ['car-sit', 'car-back', 'hand', 'bed', 'carY-sit', 'carY-back']
+const point32Systems = [
+  'car-sit',
+  'car-back',
+  'hand',
+  'bed',
+  'carY-sit',
+  'carY-back',
+  'endi-jacket',
+  'endi-leftHand',
+  'endi-rightHand',
+  'endi-leftFoot',
+  'endi-rightFoot',
+]
 point32Systems.forEach((name) => {
   systemPointConfig[name] = {
     width: 32,
     height: 32
   }
 })
+
+export const systemMatrixParts = {
+  endi: [
+    { key: 'back', labelKey: 'backPad', display2D: 'back2D', display3D: 'back3D', supportsModel3D: true },
+    { key: 'sit', labelKey: 'seatPad', display2D: 'sit2D', display3D: 'sit3D', supportsModel3D: true },
+    { key: 'jacket', labelKey: 'jacketPad', display2D: 'jacket2D' },
+    { key: 'leftHand', labelKey: 'leftHandPad', display2D: 'leftHand2D' },
+    { key: 'rightHand', labelKey: 'rightHandPad', display2D: 'rightHand2D' },
+    { key: 'leftFoot', labelKey: 'leftFootPad', display2D: 'leftFoot2D' },
+    { key: 'rightFoot', labelKey: 'rightFootPad', display2D: 'rightFoot2D' },
+  ],
+  carY: [
+    { key: 'back', labelKey: 'backPad', display2D: 'back2D', display3D: 'back3D', supportsModel3D: true },
+    { key: 'sit', labelKey: 'seatPad', display2D: 'sit2D', display3D: 'sit3D', supportsModel3D: true },
+  ],
+  car: [
+    { key: 'back', labelKey: 'backPad', display2D: 'back2D', display3D: 'back3D', supportsModel3D: true },
+    { key: 'sit', labelKey: 'seatPad', display2D: 'sit2D', display3D: 'sit3D', supportsModel3D: true },
+  ],
+}
+
+export const getMatrixPartFromDisplayType = (displayType = '') => {
+  const normalized = String(displayType || '')
+  return normalized.replace(/(2D|3D)$/i, '')
+}
+
+export const getSystemMatrixParts = (system) => {
+  const configured = systemMatrixParts[system]
+  if (!configured) return []
+  return configured.filter((part) => systemPointConfig[`${system}-${part.key}`])
+}
+
+export const getMatrixKeyForDisplay = (system, displayType) => {
+  const part = getMatrixPartFromDisplayType(displayType)
+  if (!system || !part) return ''
+  const key = `${system}-${part}`
+  return systemPointConfig[key] ? key : ''
+}
+
+export const getMatrixPartLabelKey = (part) => {
+  const labelMap = {
+    back: 'backPad',
+    sit: 'seatPad',
+    jacket: 'jacketPad',
+    leftHand: 'leftHandPad',
+    rightHand: 'rightHandPad',
+    leftFoot: 'leftFootPad',
+    rightFoot: 'rightFootPad',
+  }
+  return labelMap[part] || part
+}
 
 // ─── 系统名称映射 ────────────────────────────────────────
 export const systemConfig = {

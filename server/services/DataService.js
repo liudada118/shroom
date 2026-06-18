@@ -19,6 +19,11 @@ const DEFAULT_DATA_DIRECTION = {
   byKey: {
     'endi-back': { left: false, up: true, rotateDegree: 0 },
     'endi-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'endi-jacket': { left: true, up: true, rotateDegree: 0 },
+    'endi-leftHand': { left: true, up: true, rotateDegree: 0 },
+    'endi-rightHand': { left: true, up: true, rotateDegree: 0 },
+    'endi-leftFoot': { left: true, up: true, rotateDegree: 0 },
+    'endi-rightFoot': { left: true, up: true, rotateDegree: 0 },
     'carY-back': { left: false, up: true, rotateDegree: 0 },
     'carY-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
     'car-back': { left: false, up: true, rotateDegree: 0 },
@@ -28,6 +33,11 @@ const DEFAULT_DATA_DIRECTION = {
 const MATRIX_DIMENSIONS = {
   'endi-back': { width: 50, height: 64 },
   'endi-sit': { width: 46, height: 46 },
+  'endi-jacket': { width: 32, height: 32 },
+  'endi-leftHand': { width: 32, height: 32 },
+  'endi-rightHand': { width: 32, height: 32 },
+  'endi-leftFoot': { width: 32, height: 32 },
+  'endi-rightFoot': { width: 32, height: 32 },
   'carY-back': { width: 32, height: 32 },
   'carY-sit': { width: 32, height: 32 },
   'car-back': { width: 32, height: 32 },

@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { getDisplayType, getSelectArr, getSettingValue, getSysType, useEquipStore } from '../store/equipStore'
-import { systemPointConfig } from '../util/constant'
+import { getSystemMatrixParts, systemPointConfig } from '../util/constant'
 import { calcCentroidRatio, colSelectMatrix, kurtosis, mean, normalPDF, skewness, variance } from '../util/util'
 import { matrixGenBox, removeHistoryBox } from '../assets/util/selectMatrix'
 import { isMoreMatrix } from '../assets/util/util'
@@ -27,6 +27,11 @@ const DEFAULT_DATA_DIRECTION = {
     'carY-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
     'car-back': { left: false, up: true, rotateDegree: 0 },
     'car-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
+    'endi-jacket': { left: true, up: true, rotateDegree: 0 },
+    'endi-leftHand': { left: true, up: true, rotateDegree: 0 },
+    'endi-rightHand': { left: true, up: true, rotateDegree: 0 },
+    'endi-leftFoot': { left: true, up: true, rotateDegree: 0 },
+    'endi-rightFoot': { left: true, up: true, rotateDegree: 0 },
   },
 }
 const DATA_DIRECTION_STORAGE_KEY = 'matrixDataDirection'
@@ -751,11 +756,11 @@ export function useMatrixData() {
   function getDirectionTargetKeys(targetPart) {
     const system = getSysType()
     if (!isMoreMatrix(system)) return []
-    if (targetPart === 'back' || targetPart === 'sit') {
+    if (targetPart) {
       const key = `${system}-${targetPart}`
       return systemPointConfig[key] ? [key] : []
     }
-    return [`${system}-back`, `${system}-sit`].filter((key) => systemPointConfig[key])
+    return getSystemMatrixParts(system).map((part) => `${system}-${part.key}`).filter((key) => systemPointConfig[key])
   }
 
   function setDataDirection(direction) {

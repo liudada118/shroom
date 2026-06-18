@@ -147,10 +147,17 @@ const MATRIX_POINT_COUNTS = {
   bed: 1024,
   'endi-back': 3200,
   'endi-sit': 2116,
+  'endi-jacket': 1024,
+  'endi-leftHand': 1024,
+  'endi-rightHand': 1024,
+  'endi-leftFoot': 1024,
+  'endi-rightFoot': 1024,
   'carY-back': 1024,
   'carY-sit': 1024,
   hand: 1024,
 }
+
+const ENDI_WEAR_TYPES = new Set(constantObj.endiWearTypes || [])
 
 function ensureDataQuality(dataItem) {
   if (!dataItem.dataQuality) {
@@ -745,6 +752,7 @@ function processMatrixData(pointArr, dataItem) {
   if (t === 'hand') return hand(pointArr)
   if (t === 'bed') return jqbed(pointArr)
   if (t === 'car-back') return applyBackMultiplier(jqbed(pointArr), dataItem)
+  if (ENDI_WEAR_TYPES.has(t)) return jqbed(pointArr)
   if (t === 'endi-sit') return endiSit1024(pointArr)
   if (t === 'endi-back') return applyBackMultiplier(endiBack1024(pointArr), dataItem)
   if (t === 'carY-sit') return carYSitLine(pointArr)
@@ -756,6 +764,7 @@ function processTypedMatrixData(pointArr, dataItem) {
   const t = dataItem.type
   if (t === 'car-back') return applyBackMultiplier(jqbed(pointArr), dataItem)
   if (t === 'car-sit' || t === 'bed') return jqbed(pointArr)
+  if (ENDI_WEAR_TYPES.has(t)) return jqbed(pointArr)
   if (t === 'endi-sit') return endiSit1024(pointArr)
   if (t === 'endi-back') return applyBackMultiplier(endiBack1024(pointArr), dataItem)
   if (t === 'carY-sit') return carYSitLine(pointArr)

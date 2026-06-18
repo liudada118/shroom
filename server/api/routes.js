@@ -52,6 +52,11 @@ function ensureHistoryListIndex(db) {
 const CONTRAST_MATRIX_DIMENSIONS = {
   'endi-back': { width: 50, height: 64 },
   'endi-sit': { width: 46, height: 46 },
+  'endi-jacket': { width: 32, height: 32 },
+  'endi-leftHand': { width: 32, height: 32 },
+  'endi-rightHand': { width: 32, height: 32 },
+  'endi-leftFoot': { width: 32, height: 32 },
+  'endi-rightFoot': { width: 32, height: 32 },
   'carY-back': { width: 32, height: 32 },
   'carY-sit': { width: 32, height: 32 },
   'car-back': { width: 32, height: 32 },

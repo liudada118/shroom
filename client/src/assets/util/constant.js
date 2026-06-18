@@ -1,4 +1,4 @@
-const length32Arr = ['hand', 'bed', 'sit', 'back']
+const length32Arr = ['hand', 'bed', 'sit', 'back', 'jacket', 'leftHand', 'rightHand', 'leftFoot', 'rightFoot']
 const length64Arr = []
 
 const lengthObj = {}

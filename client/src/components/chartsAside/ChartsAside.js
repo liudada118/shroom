@@ -4,7 +4,7 @@ import echarts from '../../util/echarts';
 import { Scheduler } from '../../scheduler/scheduler';
 import './index.scss'
 import { useTranslation, withTranslation } from 'react-i18next';
-import { pointConfig } from '../../util/constant';
+import { getMatrixPartFromDisplayType, pointConfig } from '../../util/constant';
 import { getDisplayType, getSelectArr, getSysType, useEquipStore } from '../../store/equipStore';
 import { BrushManager, SELECT_COLORS } from '../selectBox/newSelecttBox';
 import { calMatrixArea } from '../../assets/util/selectMatrix';
@@ -18,8 +18,16 @@ import { formatSelectionName } from '../../util/selectionName';
 function ChartsAside(props) {
 
     // 设备颜色（无框选时使用）
-    const pressColorArr = { back: '#8AC287', sit: '#5D65FF' }
-    const areaColorArr = { back: '#8AC287', sit: '#5D65FF' }
+    const pressColorArr = {
+        back: '#8AC287',
+        sit: '#5D65FF',
+        jacket: '#22C55E',
+        leftHand: '#38BDF8',
+        rightHand: '#A78BFA',
+        leftFoot: '#F59E0B',
+        rightFoot: '#F87171',
+    }
+    const areaColorArr = pressColorArr
 
     const myChart1 = useRef()
     const myChart2 = useRef()
@@ -109,7 +117,7 @@ function ChartsAside(props) {
     }
 
     const getDeviceChartColor = (key, colorMap, index = 0) => {
-        const colorKey = key.includes('back') ? 'back' : key.includes('sit') ? 'sit' : key
+        const colorKey = getMatrixPartFromDisplayType(key)
         return colorMap[colorKey] || Object.values(colorMap)[index]
     }
 

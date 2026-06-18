@@ -48,7 +48,21 @@ const MAC_CONFIG_COPY = {
 }
 
 const getLanguageKey = (language) => String(language || '').toLowerCase().startsWith('en') ? 'en' : 'zh'
-const SUPPORTED_DEVICE_TYPES = ['car-back', 'car-sit', 'bed', 'endi-back', 'endi-sit', 'carY-back', 'carY-sit', 'hand']
+const SUPPORTED_DEVICE_TYPES = [
+  'car-back',
+  'car-sit',
+  'bed',
+  'endi-back',
+  'endi-sit',
+  'endi-jacket',
+  'endi-leftHand',
+  'endi-rightHand',
+  'endi-leftFoot',
+  'endi-rightFoot',
+  'carY-back',
+  'carY-sit',
+  'hand',
+]
 const CONTINUOUS_MAC_RE = /^[0-9A-F]{12,32}$/
 const COLON_MAC_RE = /^([0-9A-F]{2}:){5,15}[0-9A-F]{2}$/
 
@@ -270,10 +284,10 @@ export default function MacConfig({ onBack, showBackButton = Boolean(onBack) }) 
         <div className="mac-hint">
           {copy.format}: <code>{copy.formatValue}</code>
           <br />
-          {copy.example}: <code>AA:BB:CC:DD:EE:FF:endi-back,11:22:33:44:55:66:endi-sit</code>
+          {copy.example}: <code>554635300D50434523:endi-jacket,504330390250435F15:endi-leftHand</code>
           <br />
           <span className="mac-types">
-            {copy.availableTypes}: endi-back, endi-sit, carY-back, carY-sit, hand, bed, car-back, car-sit
+            {copy.availableTypes}: {SUPPORTED_DEVICE_TYPES.join(', ')}
           </span>
         </div>
 

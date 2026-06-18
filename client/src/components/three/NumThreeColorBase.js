@@ -6,6 +6,7 @@ import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
 import { NUMBER_TEXT_COLOR_ALPHA, jetWhite3NoWhite } from '../../assets/util/line';
+import { getMatrixPartFromDisplayType } from '../../util/constant';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -246,12 +247,7 @@ export default function NumThree(props) {
 
       if (isMoreMatrix(systemType)) {
         if (displayType != 'all') {
-          let realType = ''
-          if (displayType == 'back2D') {
-            realType = "back"
-          } else if (displayType == 'sit2D') {
-            realType = "sit"
-          }
+          const realType = getMatrixPartFromDisplayType(displayType)
           data = props.sitData.current[realType]
           if (!data) data = new Array(4096).fill(0)
         }

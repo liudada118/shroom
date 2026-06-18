@@ -6,7 +6,7 @@ import { withTranslation } from 'react-i18next';
 import { getSysType, useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 import { isMoreMatrix } from '../../assets/util/util';
-import { pointConfig } from '../../util/constant';
+import { getMatrixPartFromDisplayType, getMatrixPartLabelKey, getSystemMatrixParts, pointConfig } from '../../util/constant';
 import { APP_VERSION } from '../../util/version';
 
 const normalizeAngleIndex = (value) => {
@@ -103,32 +103,43 @@ const ViewSetting = (props) => {
 
     }
 
-    const [carType, setCarType] = useState('all')
-    const carArr = ['all', 'back', 'sit']
-    const car2DArr = ['back2D', 'sit2D']
-    const car3DArr = ['back3D', 'sit3D']
     const systemType = useEquipStore(s => s.systemType, shallow);
     const displayType = useEquipStore(s => s.displayType, shallow);
+    const matrixParts = useMemo(() => getSystemMatrixParts(systemType), [systemType])
+    const modelParts = useMemo(() => matrixParts.filter((part) => part.supportsModel3D), [matrixParts])
+    const [carType, setCarType] = useState('all')
+    const carArr = useMemo(() => ['all', ...modelParts.map((part) => part.key)], [modelParts])
+    const car2DArr = useMemo(() => matrixParts.map((part) => part.display2D || `${part.key}2D`), [matrixParts])
+    const car3DArr = useMemo(() => modelParts.map((part) => part.display3D || `${part.key}3D`), [modelParts])
+    const getTypePart = (type) => getMatrixPartFromDisplayType(type)
+    const getTypeLabel = (type) => {
+        if (type === 'all') return t('all')
+        return t(getMatrixPartLabelKey(getTypePart(type)))
+    }
 
     const hasDisplayData = (type) => {
         const displayStatus = useEquipStore.getState().displayStatus
         // 1) 优先按实时数据判断
         if (displayStatus && typeof displayStatus === 'object' && !Array.isArray(displayStatus)) {
-            const backHas = Array.isArray(displayStatus.back) && displayStatus.back.length > 0
-            const sitHas = Array.isArray(displayStatus.sit) && displayStatus.sit.length > 0
-            if (backHas || sitHas) {
-                if (type.includes('back')) return backHas
-                if (type.includes('sit')) return sitHas
-                return backHas || sitHas
+            const statusEntries = Object.entries(displayStatus)
+            const hasByPart = (part) => statusEntries.some(([key, arr]) => {
+                if (!Array.isArray(arr) || arr.length <= 0) return false
+                return key === part || key.endsWith(`-${part}`)
+            })
+            const partsWithData = matrixParts.filter((part) => hasByPart(part.key))
+            if (partsWithData.length) {
+                const part = getTypePart(type)
+                if (part && part !== 'all') return hasByPart(part)
+                return true
             }
         }
         // 2) 兜底：实时数据被重置或还没到 → 按设备配置允许
         const systemType = useEquipStore.getState().systemType
         const config = systemType ? pointConfig[systemType] : null
         if (!config) return true
-        if (type.includes('back')) return !!config.back
-        if (type.includes('sit')) return !!config.sit
-        return !!(config.back || config.sit)
+        const part = getTypePart(type)
+        if (part && part !== 'all') return !!config[part]
+        return Object.keys(config).length > 0
     }
 
     const guard3D = () => {
@@ -141,21 +152,21 @@ const ViewSetting = (props) => {
     }
 
     const warnMissingDisplayData = (type) => {
-        const label = type.includes('sit') ? t('seatPad') : t('backPad')
+        const label = getTypeLabel(type)
         message.warning(t('missingDisplayData', { label }))
     }
 
     const getDefault2DDisplayType = () => {
-        if (hasDisplayData('back2D')) return 'back2D'
-        if (hasDisplayData('sit2D')) return 'sit2D'
+        const target = car2DArr.find((type) => hasDisplayData(type))
+        if (target) return target
         message.warning(t('missingSeatOrBackData'))
         return null
     }
 
     const normalizePoint3DType = (type) => {
         if (type && type !== 'current') return type
-        if (String(displayType || '').includes('back')) return 'back'
-        if (String(displayType || '').includes('sit')) return 'sit'
+        const part = getTypePart(displayType)
+        if (modelParts.some((item) => item.key === part)) return part
         return 'all'
     }
 
@@ -200,7 +211,7 @@ const ViewSetting = (props) => {
             carArr.map((type, index) => {
                 return <div key={type} className='cursor' onClick={() => {
                     selectPoint3DView(type)
-                }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: carType == type ? '#0072EF' : 'unset' }}>{t(type)}</div>
+                }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: carType == type ? '#0072EF' : 'unset' }}>{getTypeLabel(type)}</div>
 
             })
         }
@@ -211,7 +222,7 @@ const ViewSetting = (props) => {
             car2DArr.map((type, index) => {
                 return <div key={type} className='cursor' onClick={() => {
                     selectNum2DView(type)
-                }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: carType == type ? '#0072EF' : 'unset' }}>{t(type)}</div>
+                }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: carType == type ? '#0072EF' : 'unset' }}>{getTypeLabel(type)}</div>
 
             })
         }
@@ -229,7 +240,7 @@ const ViewSetting = (props) => {
                     props.three.current?.actionSit(type)
                     useEquipStore.getState().setDisplayType(type);
                      changeAllFun()
-                }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: carType == type ? '#0072EF' : 'unset' }}>{t(type)}</div>
+                }} style={{ padding: '5px 15px', borderRadius: 3, backgroundColor: carType == type ? '#0072EF' : 'unset' }}>{getTypeLabel(type)}</div>
 
             })
         }
@@ -245,7 +256,7 @@ const ViewSetting = (props) => {
                         className={`viewModeOption ${display === 'point3D' && displayType === type ? 'active' : ''}`}
                         onClick={() => selectPoint3DView(type)}
                     >
-                        {t(type)}
+                        {getTypeLabel(type)}
                     </button>
                 ))}
             </div>
@@ -260,7 +271,7 @@ const ViewSetting = (props) => {
                         className={`viewModeOption ${display === 'num' && displayType === type ? 'active' : ''}`}
                         onClick={() => selectNum2DView(type)}
                     >
-                        {t(type)}
+                        {getTypeLabel(type)}
                     </button>
                 ))}
             </div>
@@ -300,7 +311,7 @@ const ViewSetting = (props) => {
 
     // const sysType = getSysType()
 
-    const canSwitchPointAngle = display === 'point3D' && ['back', 'sit'].includes(displayType)
+    const canSwitchPointAngle = display === 'point3D' && modelParts.some((part) => part.key === displayType)
 
     const resetView = () => {
         setShowProp(100)

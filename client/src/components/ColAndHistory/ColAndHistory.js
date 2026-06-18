@@ -13,7 +13,7 @@ import { useDebounce } from '../../hooks/useDebounce'
 import { getDisplayType, getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
-import { localAddress, systemPointConfig } from '../../util/constant'
+import { getMatrixPartFromDisplayType, localAddress, systemPointConfig } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import dayjs from 'dayjs'
 import { pageContext } from '../../page/test/Test'
@@ -925,12 +925,11 @@ const ColAndHistory = memo((props) => {
             useEquipStore.getState().setContrast(data)
             useEquipStore.getState().setDataStatus('contrast')
             const firstKey = data.keys?.[0] || ''
-            if (firstKey.includes('back')) {
-                useEquipStore.getState().setDisplayType('back2D')
-                setDisplayType?.('back2D')
-            } else if (firstKey.includes('sit')) {
-                useEquipStore.getState().setDisplayType('sit2D')
-                setDisplayType?.('sit2D')
+            const firstPart = getMatrixPartFromDisplayType(firstKey)
+            if (firstPart) {
+                const nextDisplayType = `${firstPart}2D`
+                useEquipStore.getState().setDisplayType(nextDisplayType)
+                setDisplayType?.(nextDisplayType)
             }
             setOnRuler?.(false)
             setDisplay('contrast')

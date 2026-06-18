@@ -53,7 +53,37 @@
       "deviceClass": "foot",
       "lastSeen": "2026-06-05T10:57:23.940Z",
       "alias": ""
+    },
+    "554635300D50434523": {
+      "type": "endi-jacket",
+      "deviceClass": "foot",
+      "lastSeen": "2026-06-15T08:22:59.387Z",
+      "alias": ""
+    },
+    "504330390250435F15": {
+      "type": "endi-leftHand",
+      "deviceClass": "foot",
+      "lastSeen": "2026-06-15T00:00:00.000Z",
+      "alias": ""
+    },
+    "504330390250435F1B": {
+      "type": "endi-rightHand",
+      "deviceClass": "foot",
+      "lastSeen": "2026-06-15T08:22:58.882Z",
+      "alias": ""
+    },
+    "464134390F50431842": {
+      "type": "endi-leftFoot",
+      "deviceClass": "foot",
+      "lastSeen": "2026-06-15T08:22:59.896Z",
+      "alias": ""
+    },
+    "464134391150431A4E": {
+      "type": "endi-rightFoot",
+      "deviceClass": "foot",
+      "lastSeen": "2026-06-15T08:23:00.402Z",
+      "alias": ""
     }
   },
-  "updatedAt": "2026-06-05T10:57:24.752Z"
+  "updatedAt": "2026-06-15T08:23:00.402Z"
 }

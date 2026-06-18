@@ -10,7 +10,7 @@ import { withTranslation } from 'react-i18next'
 import { getDisplayType, getSettingValue, getSettingValueOptimal, getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
-import { localAddress, pointConfig, systemPointConfig } from '../../util/constant'
+import { getMatrixPartFromDisplayType, localAddress, pointConfig, systemPointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
 import { normalizeVisualSettingMax, saveVisualSettingValue } from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
@@ -89,7 +89,7 @@ function SecondTitle(props) {
         if (!displayStatus || typeof displayStatus !== 'object') return null
         const values = Object.entries(displayStatus)
         if (!values.length) return null
-        const target = activeDisplayType?.includes('back') ? 'back' : activeDisplayType?.includes('sit') ? 'sit' : ''
+        const target = getMatrixPartFromDisplayType(activeDisplayType)
         const matched = target
             ? values.filter(([key]) => key === target || key.endsWith(`-${target}`))
             : values
@@ -257,10 +257,15 @@ function SecondTitle(props) {
         if (display == 'num') {
 
             if (isMoreMatrix(system)) {
-                const key = displayType.includes('sit') ? 'sit' : 'back'
-                const pointLength = pointConfig[system][key].pointLength
-                const widthDistance = pointConfig[system][key].pointWidthDistance
-                const heightDistance = pointConfig[system][key].pointHeightDistance
+                const key = getMatrixPartFromDisplayType(displayType)
+                const config = pointConfig[system]?.[key]
+                if (!config) {
+                    message.info(t('use2DMode'))
+                    return
+                }
+                const pointLength = config.pointLength
+                const widthDistance = config.pointWidthDistance
+                const heightDistance = config.pointHeightDistance
                 console.log(pointConfig[system][key])
                 pageInfo?.newRuler.startRuler({ num: pointLength, widthDistance, heightDistance });
             }
