@@ -20,6 +20,7 @@ import CanvasShow from '../../components/canvasShow/CanvasShow'
 import { shallow } from 'zustand/shallow'
 import Endi from '../../components/three/ThreeAndCarPoint'
 import Endi1 from '../../components/three/ThreeAndCarPointV2'
+import ThreeHumanPoint from '../../components/three/ThreeHumanPoint'
 import { lengthObj } from '../../assets/util/constant'
 import ChartsAside from '../../components/chartsAside/ChartsAside'
 import { Scheduler } from '../../scheduler/scheduler'
@@ -377,10 +378,7 @@ function Test() {
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 4, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
         />,
-        endi: <Endi1 key="endi" sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
-            backConfig={{ sitnum1: 64, sitnum2: 50, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
-            sitConfig={{ sitnum1: 46, sitnum2: 46, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
-        />,
+        endi: <ThreeHumanPoint key="endi-human" sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef} />,
         carY: <Endi1 key="carY" sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
@@ -409,7 +407,7 @@ function Test() {
     }
 
     const [showProp, setShowProp] = useState(100)
-    const [displayType, setDisplayType] = useState('back2D')
+    const [displayType, setDisplayType] = useState('jacket2D')
     const [onRuler, setOnRuler] = useState(false)
     const [onSelect, setOnSelect] = useState(false)
     const [onMagnifier, setOnMagnifier] = useState(false)

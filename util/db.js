@@ -13,11 +13,11 @@ const { loadPressureConfig, loadPressureFormula } = require("../server/services/
 const pointConfig = {
   'endi-back': { pointWidthDistance: 13, pointHeightDistance: 10, width: 50, height: 64 },
   'endi-sit': { pointWidthDistance: 10, pointHeightDistance: 10, width: 46, height: 46 },
-  'endi-jacket': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
-  'endi-leftHand': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
-  'endi-rightHand': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
-  'endi-leftFoot': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
-  'endi-rightFoot': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
+  'endi-jacket': { pointWidthDistance: 10, pointHeightDistance: 10, width: 12, height: 27 },
+  'endi-leftHand': { pointWidthDistance: 10, pointHeightDistance: 10, width: 18, height: 2 },
+  'endi-rightHand': { pointWidthDistance: 10, pointHeightDistance: 10, width: 18, height: 2 },
+  'endi-leftFoot': { pointWidthDistance: 10, pointHeightDistance: 10, width: 6, height: 32 },
+  'endi-rightFoot': { pointWidthDistance: 10, pointHeightDistance: 10, width: 6, height: 32 },
   'carY-back': { pointWidthDistance: 10, pointHeightDistance: 19, width: 32, height: 32 },
   'carY-sit': { pointWidthDistance: 15, pointHeightDistance: 15, width: 32, height: 32 },
   'car-back': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
@@ -1657,11 +1657,11 @@ function normalizeCsvMatrixKey(value) {
   if (pointConfig[normalized]) return normalized
   if (normalized.includes('靠背')) return 'endi-back'
   if (normalized.includes('坐垫')) return 'endi-sit'
-  if (normalized.includes('外套') || normalized.includes('背心')) return 'endi-jacket'
-  if (normalized.includes('左手')) return 'endi-leftHand'
-  if (normalized.includes('右手')) return 'endi-rightHand'
-  if (normalized.includes('左脚')) return 'endi-leftFoot'
-  if (normalized.includes('右脚')) return 'endi-rightFoot'
+  if (normalized.includes('外套') || normalized.includes('背心') || normalized.includes('上衣')) return 'endi-jacket'
+  if (normalized.includes('左手') || normalized.includes('左袖')) return 'endi-leftHand'
+  if (normalized.includes('右手') || normalized.includes('右袖')) return 'endi-rightHand'
+  if (normalized.includes('左脚') || normalized.includes('左裤腿')) return 'endi-leftFoot'
+  if (normalized.includes('右脚') || normalized.includes('右裤腿')) return 'endi-rightFoot'
   return normalized
 }
 

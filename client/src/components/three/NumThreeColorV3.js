@@ -378,13 +378,15 @@ export default function NumThree(props) {
     material.toneMapped = false;
     // size为1就是64矩阵
     const { width: numWitdh, height: numHeight } = props
-    let gridSize = numWitdh, gridSize1 = numHeight//64 / size;
+    const gridSize1 = Number(numWitdh) || 32
+    const gridSize2 = Number(numHeight) || gridSize1
+    const gridSize = Math.max(gridSize1, gridSize2)
 
 
     console.log(gridSize, 'gridSizegridSize')
     // 总大小  64 * 0.032
 
-    let count = gridSize * gridSize;
+    let count = gridSize1 * gridSize2;
     const geometry = new THREE.PlaneGeometry(2.048 / gridSize, 2.048 / gridSize);
 
     // const geometry = new THREE.PlaneGeometry(0.1, 0.1);
@@ -463,10 +465,10 @@ export default function NumThree(props) {
         gauss, color, filter, height, coherent, autoColor,
       } = settingValue //pageRef.current.settingValue
       setDynamicGammaColorEnabled(Boolean(autoColor));
-      data = prepareDisplayData(data, gridSize, gridSize, settingValue);
-      data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize}x${gridSize}-g${gauss}-f${filter}`);
+      data = prepareDisplayData(data, gridSize1, gridSize2, settingValue);
+      data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}-g${gauss}-f${filter}`);
       dataRef.current = data;
-      gridRef.current = { width: gridSize, height: gridSize };
+      gridRef.current = { width: gridSize1, height: gridSize2 };
       // const { wsLocalData } = pageRef.current
       // if (wsLocalData) {
       //   data = data.map((a, index) => {
@@ -506,9 +508,13 @@ export default function NumThree(props) {
 
       // console.log(count)
       for (let i = 0; i < count; i++) {
-        const x = i % gridSize;
-        const y = Math.floor(i / gridSize);
-        dummy.position.set((x - (gridSize / 2 - 0.5)) / (gridSize / 2), (y - (gridSize / 2 - 0.5)) / (gridSize / 2), 0); // 居中
+        const x = i % gridSize1;
+        const y = Math.floor(i / gridSize1);
+        dummy.position.set(
+          (x - (gridSize1 / 2 - 0.5)) / (gridSize / 2),
+          (y - (gridSize2 / 2 - 0.5)) / (gridSize / 2),
+          0
+        ); // 居中
 
         // dummy.position.set((x ) / 32, (y ) / 32, 0);
         dummy.updateMatrix();

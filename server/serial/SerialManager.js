@@ -24,7 +24,7 @@ const { SerialPort, DelimiterParser } = require('serialport')
 const { getPort } = require('../../util/serialport')
 const { bytes4ToInt10 } = require('../../util/parseData')
 const constantObj = require('../../util/config')
-const { hand, jqbed, endiSit, endiBack, endiSit1024, endiBack1024, carYLine, carYSitLine, carYBackLine } = require('../../util/line')
+const { hand, jqbed, endiSit, endiBack, endiSit1024, endiBack1024, endiWear1024, carYLine, carYSitLine, carYBackLine } = require('../../util/line')
 const { default: axios } = require('axios')
 const { state } = require('../state')
 const { getTypeFromCache, setTypeToCache } = require('../../util/serialCache')
@@ -147,11 +147,11 @@ const MATRIX_POINT_COUNTS = {
   bed: 1024,
   'endi-back': 3200,
   'endi-sit': 2116,
-  'endi-jacket': 1024,
-  'endi-leftHand': 1024,
-  'endi-rightHand': 1024,
-  'endi-leftFoot': 1024,
-  'endi-rightFoot': 1024,
+  'endi-jacket': 324,
+  'endi-leftHand': 36,
+  'endi-rightHand': 36,
+  'endi-leftFoot': 192,
+  'endi-rightFoot': 192,
   'carY-back': 1024,
   'carY-sit': 1024,
   hand: 1024,
@@ -752,7 +752,7 @@ function processMatrixData(pointArr, dataItem) {
   if (t === 'hand') return hand(pointArr)
   if (t === 'bed') return jqbed(pointArr)
   if (t === 'car-back') return applyBackMultiplier(jqbed(pointArr), dataItem)
-  if (ENDI_WEAR_TYPES.has(t)) return jqbed(pointArr)
+  if (ENDI_WEAR_TYPES.has(t)) return endiWear1024(pointArr, t)
   if (t === 'endi-sit') return endiSit1024(pointArr)
   if (t === 'endi-back') return applyBackMultiplier(endiBack1024(pointArr), dataItem)
   if (t === 'carY-sit') return carYSitLine(pointArr)
@@ -764,7 +764,7 @@ function processTypedMatrixData(pointArr, dataItem) {
   const t = dataItem.type
   if (t === 'car-back') return applyBackMultiplier(jqbed(pointArr), dataItem)
   if (t === 'car-sit' || t === 'bed') return jqbed(pointArr)
-  if (ENDI_WEAR_TYPES.has(t)) return jqbed(pointArr)
+  if (ENDI_WEAR_TYPES.has(t)) return endiWear1024(pointArr, t)
   if (t === 'endi-sit') return endiSit1024(pointArr)
   if (t === 'endi-back') return applyBackMultiplier(endiBack1024(pointArr), dataItem)
   if (t === 'carY-sit') return carYSitLine(pointArr)

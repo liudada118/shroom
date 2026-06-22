@@ -22,17 +22,17 @@ export const pointConfig = {
       pointHeightDistance: 10,
     },
     jacket: {
-      pointLength: 32,
+      pointLength: 27,
       pointWidthDistance: 10,
       pointHeightDistance: 10,
     },
     leftHand: {
-      pointLength: 32,
+      pointLength: 18,
       pointWidthDistance: 10,
       pointHeightDistance: 10,
     },
     rightHand: {
-      pointLength: 32,
+      pointLength: 18,
       pointWidthDistance: 10,
       pointHeightDistance: 10,
     },
@@ -91,6 +91,14 @@ export const systemPointConfig = {
   },
 }
 
+Object.assign(systemPointConfig, {
+  'endi-jacket': { width: 12, height: 27 },
+  'endi-leftHand': { width: 18, height: 2 },
+  'endi-rightHand': { width: 18, height: 2 },
+  'endi-leftFoot': { width: 6, height: 32 },
+  'endi-rightFoot': { width: 6, height: 32 },
+})
+
 // 32x32 矩阵系统统一配置
 const point32Systems = [
   'car-sit',
@@ -99,11 +107,6 @@ const point32Systems = [
   'bed',
   'carY-sit',
   'carY-back',
-  'endi-jacket',
-  'endi-leftHand',
-  'endi-rightHand',
-  'endi-leftFoot',
-  'endi-rightFoot',
 ]
 point32Systems.forEach((name) => {
   systemPointConfig[name] = {
@@ -114,8 +117,6 @@ point32Systems.forEach((name) => {
 
 export const systemMatrixParts = {
   endi: [
-    { key: 'back', labelKey: 'backPad', display2D: 'back2D', display3D: 'back3D', supportsModel3D: true },
-    { key: 'sit', labelKey: 'seatPad', display2D: 'sit2D', display3D: 'sit3D', supportsModel3D: true },
     { key: 'jacket', labelKey: 'jacketPad', display2D: 'jacket2D' },
     { key: 'leftHand', labelKey: 'leftHandPad', display2D: 'leftHand2D' },
     { key: 'rightHand', labelKey: 'rightHandPad', display2D: 'rightHand2D' },

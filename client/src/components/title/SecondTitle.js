@@ -10,7 +10,7 @@ import { withTranslation } from 'react-i18next'
 import { getDisplayType, getSettingValue, getSettingValueOptimal, getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
-import { getMatrixPartFromDisplayType, localAddress, pointConfig, systemPointConfig } from '../../util/constant'
+import { getMatrixPartFromDisplayType, getMatrixPartLabelKey, getSystemMatrixParts, localAddress, pointConfig, systemPointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
 import { normalizeVisualSettingMax, saveVisualSettingValue } from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
@@ -263,11 +263,18 @@ function SecondTitle(props) {
                     message.info(t('use2DMode'))
                     return
                 }
+                const matrixConfig = systemPointConfig[`${system}-${key}`]
                 const pointLength = config.pointLength
                 const widthDistance = config.pointWidthDistance
                 const heightDistance = config.pointHeightDistance
                 console.log(pointConfig[system][key])
-                pageInfo?.newRuler.startRuler({ num: pointLength, widthDistance, heightDistance });
+                pageInfo?.newRuler.startRuler({
+                    num: pointLength,
+                    width: matrixConfig?.width,
+                    height: matrixConfig?.height,
+                    widthDistance,
+                    heightDistance
+                });
             }
 
             setOnRuler(!onRuler)
@@ -376,6 +383,25 @@ function SecondTitle(props) {
     </div>
 
      const selectArr = useEquipStore(s => s.selectArr, shallow);
+
+    const flipOptions = system === 'endi'
+        ? getSystemMatrixParts(system).flatMap((part) => {
+            const label = t(getMatrixPartLabelKey(part.key))
+            return [
+                { label: `${label}${t('flipV')}`, value: 'up', target: part.key },
+                { label: `${label}${t('flipH')}`, value: 'left', target: part.key },
+                { label: `${label}${t('rotate90')}`, value: 'rotate', target: part.key },
+            ]
+        })
+        : [{
+            label: `${t('seatPad')}${t('flipV')}`, value: 'up', target: 'sit'
+        }, {
+            label: `${t('seatPad')}${t('flipH')}`, value: 'left', target: 'sit'
+        }, {
+            label: `${t('seatPad')}${t('rotate90')}`, value: 'rotate', target: 'sit'
+        }, {
+            label: `${t('backPad')}${t('flipH')}`, value: 'left', target: 'back'
+        }]
 
     return (
 
@@ -494,16 +520,7 @@ function SecondTitle(props) {
                 // }}
                 >
                     {/* <IconAndText text='画布翻转' /> */}
-                    <IconAndTextAndSelect text={t('flip')} show={show} options={[{
-                        label: `${t('seatPad')}${t('flipV')}`, value: 'up', target: 'sit'
-                    }, {
-                        label: `${t('seatPad')}${t('flipH')}`, value: 'left', target: 'sit'
-                    }, {
-                        label: `${t('seatPad')}${t('rotate90')}`, value: 'rotate', target: 'sit'
-                    }, {
-                        label: `${t('backPad')}${t('flipH')}`, value: 'left', target: 'back'
-                    },
-                    ]}
+                    <IconAndTextAndSelect text={t('flip')} show={show} options={flipOptions}
                         icon={<div className='iconContentBox'><i className='iconfont fs18'>&#xe60c;</i></div>}
                     />
                     <IconAndTextAndSelect

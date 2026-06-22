@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-15
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-22
 
 ## 1. 项目概述
 
@@ -505,14 +505,26 @@ graph TD
 | 2026-06-05 | 数据对比导出路径与格式选择 | 数据对比导出新增下载路径选择弹框和 CSV/XLSX 格式选择；渲染进程优先通过 preload 调用 Electron 主进程写入指定目录，IPC 未注册时兜底调用后端 `/exportContrastData`，XLSX 使用 `xlsx` 生成工作簿 |
 | 2026-06-05 | 靠背默认水平翻转 | 靠背矩阵默认方向切换为 `left=false, up=true, rotateDegree=0`，并在前后端方向加载时迁移旧的未翻转靠背默认值 |
 | 2026-06-10 | 独立 Core SDK | 将 SDK 调整为无后端服务依赖的底层能力包，新增矩阵、框选、回放、压强 core 模块和 Node 串口直连 adapter，并把 HTTP/WebSocket client 降为可选能力 |
-| 2026-06-15 | 新 Endi 多设备展示系统 | 新增 `endi-jacket`、`endi-leftHand`、`endi-rightHand`、`endi-leftFoot`、`endi-rightFoot` 五类 32x32 矩阵设备，接入 MAC 缓存、串口校验、2D 展示、框选、量尺、历史/导入导出和对比尺寸识别 |
+| 2026-06-15 | 新 Endi 多设备展示系统 | 新增 `endi-jacket`、`endi-leftHand`、`endi-rightHand`、`endi-leftFoot`、`endi-rightFoot` 五类穿戴矩阵设备，接入 MAC 缓存、串口校验、2D 展示、框选、量尺、历史/导入导出和对比尺寸识别 |
+| 2026-06-22 | Endi 3D 人体模型简化 | `endi` 3D 视图切换到无贴图人体 GLB，仅展示模型，不再渲染 3D 点图；压力矩阵保留在 2D 数字视图 |
+| 2026-06-22 | Endi 穿戴线序矩阵 | 新穿戴设备从 1024 原始点映射为真实矩阵：上衣 `12x27`、左右袖 `18x2`、左右裤腿 `6x32`，空白硬件位补 0 |
+| 2026-06-22 | 2D 数字非方阵渲染 | 2D 数字渲染按真实 `width x height` 创建实例、平滑和放大镜网格，不再用 `width x width` 方阵兜底 |
+| 2026-06-22 | jqbed 逆线序工具 | `setint.js` 新增 `jqbedReverse(arr)` 和 `jqbedReverseIndex(index)`，用于把 `jqbed` 处理后的 32x32 数组或下标还原为原始顺序 |
+| 2026-06-22 | 假人部位逆索引接入 | `util/line.js` 的假人上衣、袖子、裤腿线序表统一执行 `jqbedReverseIndex(value - 1) + 1` 后再读取原始 1024 点 |
+| 2026-06-22 | 袖子线序修正 | 左右袖线序更新为 `737,769...` 两行 18 列表，并与其它假人部位一致执行 jqbed 逆索引后读取原始点 |
 
 ## 9. 更新日志
 
 | 日期 | 变更类型 | 描述 |
 | :--- | :--- | :--- |
 | 2026-06-05 | 新增功能 | 数据对比导出支持选择保存路径和 CSV/XLSX 两种格式 |
-| 2026-06-15 | 新增功能 | 接入 Endi 外套、左右手、左右脚五类新矩阵设备，统一按 32x32 处理实时展示、框选、量尺、历史和导入导出链路 |
+| 2026-06-15 | 新增功能 | 接入 Endi 上衣、左右袖、左右裤腿五类新矩阵设备，覆盖实时展示、框选、量尺、历史和导入导出链路 |
+| 2026-06-22 | 优化重构 | Endi 3D 场景改为纯人体模型展示，切换到 no_texture GLB 并移除 3D 点图 |
+| 2026-06-22 | 配置变更 | Endi 新穿戴设备改为真实非方阵尺寸：上衣 `12x27`、袖子 `18x2`、裤腿 `6x32` |
+| 2026-06-22 | 修复缺陷 | 修复 2D 数字组件按宽度平方渲染的问题，非方阵矩阵按真实长度展示 |
+| 2026-06-22 | 新增功能 | `setint.js` 增加 `jqbed` 逆向还原函数和转换后下标到原始下标的查询函数 |
+| 2026-06-22 | 配置变更 | 假人穿戴部位线序读取统一接入 jqbed 逆索引转换，避免使用转换后的点位编号直接读取原始帧 |
+| 2026-06-22 | 修复缺陷 | 袖子矩阵改用新的 18x2 点位顺序，并恢复统一逆索引处理，保证假人所有部位线序口径一致 |
 | 2026-06-05 | 配置变更 | 靠背默认方向再执行一次左右翻转，并迁移旧默认方向缓存 |
 | 2026-06-05 | 修复缺陷 | 修复播放控件、数据对比、图表轴标题、下载提示和前端端口递增等界面/启动问题 |
 | 2026-03-02 | 初始化 | 按照 update-tech-doc 技能规范创建 ARCHITECTURE.md |
@@ -1507,8 +1519,16 @@ graph TD
 
 ## 2026-06-15 Endi 多设备展示系统
 - 新增设备类型与默认 MAC 映射：`554635300D50434523 -> endi-jacket`、`504330390250435F15 -> endi-leftHand`、`504330390250435F1B -> endi-rightHand`、`464134390F50431842 -> endi-leftFoot`、`464134391150431A4E -> endi-rightFoot`。
-- 新设备默认按 32x32 矩阵处理。`util/config.js` 增加 1025/4097 typed-frame 类型码 8-12，`SerialManager` 对这些类型复用标准 1024 点矩阵线序处理，并在 `MATRIX_POINT_COUNTS` 中校验为 1024 点。
+- 新设备硬件仍发送 1024 原始点，`util/config.js` 增加 1025/4097 typed-frame 类型码 8-12；`SerialManager` 通过 `util/line.js` 的穿戴线序映射为业务矩阵，并按映射后的点数校验：上衣 324 点、袖子 36 点、裤腿 192 点。
+- 穿戴线序按硬件 1-based 点位表读取并转为 0-based 数组索引；空白点位统一输出 0。`endi-jacket` 将 9x5 头部放入 12 列上衣矩阵左上角并右侧补 0，再拼接 12x22 靠背区域，最终尺寸为 12x27；`endi-leftHand/rightHand` 输出 18x2 袖子矩阵；`endi-leftFoot/rightFoot` 输出 6x32 裤腿矩阵。
 - 前后端矩阵尺寸配置同步覆盖：`client/src/util/constant.js`、`server/services/DataService.js`、`server/api/routes.js`、`util/db.js` 和 `db/data_direction.json` 都加入五个新矩阵 key，保证实时展示、回放、对比、COP/导出和导入尺寸识别一致。
 - `ViewSetting`、`BrushManager`、`SelectSet`、`SecondTitle`、`NumThres` 和 2D 数字渲染组件改为通过矩阵部位 helper 读取当前部位，不再只写死 `back/sit`；新设备可以出现在 2D 数字视图、框选、量尺和左侧统计曲线中。
-- 3D 座椅模型仍只对 `back/sit` 开放。外套、左右手、左右脚当前走 2D 数字矩阵和统计图展示；后续如果提供模型或非标准线序，可在 `systemMatrixParts` 和串口线序转换中扩展。
-| 2026-06-15 | Feature | Add Endi jacket/hand/foot matrix devices as 32x32 sensors across MAC cache, serial parsing, 2D view, selection, ruler, playback and export paths |
+- `endi` 的 3D 场景改为加载 `client/public/model/human.glb` 人体模型，并取消 3D 点图渲染；上衣、左右袖、左右裤腿的压力数据继续通过 2D 数字矩阵、框选、量尺和统计图展示。
+| 2026-06-15 | Feature | Add Endi jacket/sleeve/trouser-leg matrix devices across MAC cache, serial parsing, 2D view, selection, ruler, playback and export paths |
+
+## 2026-06-22 Endi 3D 人体模型简化
+- `ThreeHumanPoint` 保留 TrackballControls、缩放同步和重置视图能力，但移除所有 3D 点阵创建、实时矩阵读取、高斯/颜色/高度映射逻辑。
+- 3D 模型路径切换为 `human.glb`，用于纯人体模型展示。
+- `endi` 系统的 3D/2D 视图不再出现座椅相关部位；2D 层级只保留上衣、左袖、右袖、左裤腿、右裤腿。
+- `NumThreeColorV3` 的实例数量、数据平滑、稳定缓存 key、点位布局和放大镜网格改为使用真实 `width x height`，上衣、袖子、裤腿等非方阵不会再按 `width x width` 补画。
+| 2026-06-22 | Change | Simplify Endi 3D to a no-texture human GLB model and keep pressure data in 2D matrix views only |
