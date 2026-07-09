@@ -3,87 +3,87 @@
     "504330390250435F3F": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.929Z",
+      "lastSeen": "2026-07-02T02:50:11.199Z",
       "alias": ""
     },
     "504330390150432304": {
       "type": "endi-back",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.930Z",
+      "lastSeen": "2026-07-02T02:50:11.199Z",
       "alias": ""
     },
     "344637300F50323802": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.931Z",
+      "lastSeen": "2026-07-02T02:50:11.200Z",
       "alias": ""
     },
     "344637301050320D99": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.933Z",
+      "lastSeen": "2026-07-02T02:50:11.200Z",
       "alias": ""
     },
     "464134391150431AAA": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.934Z",
+      "lastSeen": "2026-07-02T02:50:11.200Z",
       "alias": ""
     },
     "504330390250435F24": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.935Z",
+      "lastSeen": "2026-07-02T02:50:11.201Z",
       "alias": ""
     },
     "504330390250435F1C": {
       "type": "endi-back",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:57:24.752Z",
+      "lastSeen": "2026-07-02T02:50:11.201Z",
       "alias": ""
     },
     "504330390250435306": {
       "type": "endi-back",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.939Z",
+      "lastSeen": "2026-07-02T02:50:11.201Z",
       "alias": ""
     },
     "50433039025043433B": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:57:23.940Z",
+      "lastSeen": "2026-07-02T02:50:11.202Z",
       "alias": ""
     },
     "554635300D50434523": {
       "type": "endi-jacket",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-22T11:19:26.437Z",
+      "lastSeen": "2026-07-02T09:10:44.860Z",
       "alias": ""
     },
     "504330390250435F15": {
-      "type": "endi-leftHand",
+      "type": "endi-rightHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-22T11:19:25.413Z",
+      "lastSeen": "2026-07-02T09:10:43.833Z",
       "alias": ""
     },
     "504330390250435F1B": {
-      "type": "endi-rightHand",
+      "type": "endi-leftHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-22T11:19:25.926Z",
+      "lastSeen": "2026-07-02T09:10:44.347Z",
       "alias": ""
     },
     "464134390F50431842": {
-      "type": "endi-leftFoot",
+      "type": "endi-rightFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-22T10:45:25.762Z",
+      "lastSeen": "2026-07-02T09:10:42.507Z",
       "alias": ""
     },
     "464134391150431A4E": {
-      "type": "endi-rightFoot",
+      "type": "endi-leftFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-22T10:45:22.619Z",
+      "lastSeen": "2026-07-02T09:10:43.017Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-06-22T11:19:26.437Z"
+  "updatedAt": "2026-07-02T09:10:44.860Z"
 }

@@ -32,6 +32,7 @@ const DEFAULT_DATA_DIRECTION = {
     'endi-rightHand': { left: true, up: true, rotateDegree: 0 },
     'endi-leftFoot': { left: true, up: true, rotateDegree: 0 },
     'endi-rightFoot': { left: true, up: true, rotateDegree: 0 },
+    'endi-foot': { left: true, up: true, rotateDegree: 0 },
   },
 }
 const DATA_DIRECTION_STORAGE_KEY = 'matrixDataDirection'
@@ -579,7 +580,7 @@ export function useMatrixData() {
   function getExecutedDirectionForFrame(fullKey, frameItem) {
     const currentDirection = getCurrentDirectionForKey(fullKey)
     const frameDirection = normalizeDataDirection(frameItem?.dataDirection || DEFAULT_DATA_DIRECTION)
-    return isDefaultDataDirection(frameDirection) ? currentDirection : frameDirection
+    return frameDirection || currentDirection
   }
 
   function applyDisplayDirection(resArr, keyArr, sitData) {
@@ -589,16 +590,8 @@ export function useMatrixData() {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       if (!res[key] || !systemPointConfig[fullKey]) continue
 
-      const frameDirection = normalizeDataDirection(sitData[fullKey]?.dataDirection || DEFAULT_DATA_DIRECTION)
       const executedDirection = getExecutedDirectionForFrame(fullKey, sitData[fullKey])
       activeFrameDirectionRef.current[fullKey] = executedDirection
-      const { width, height } = systemPointConfig[fullKey]
-      let nextArr = res[key]
-
-      if (isDefaultDataDirection(frameDirection)) {
-        nextArr = applyDirectionToArray(nextArr, width, height, executedDirection)
-      }
-      res[key] = nextArr
     }
 
     return res
@@ -629,8 +622,66 @@ export function useMatrixData() {
     return resArr
   }
 
+  function buildStatsMatrixFromRaw(rawArr, keyArr, sitData = {}) {
+    const resArr = {}
+    const wsLocalData = wsLocalDataRef.current.data
+    const zeroEnabled = wsLocalDataRef.current.flag
+
+    for (let i = 0; i < keyArr.length; i++) {
+      const fullKey = keyArr[i]
+      const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
+      if (!rawArr[key]) continue
+      const zeroed = rawArr[key].map((value, index) => {
+        if (!zeroEnabled || !wsLocalData[key]) return value
+        return Math.max(0, value - (Number(wsLocalData[key][index]) || 0))
+      })
+      resArr[key] = zeroed
+    }
+
+    return applyDisplayDirection(resArr, keyArr, sitData)
+  }
+
   function buildDisplayMatrixFromRaw(rawArr, keyArr, sitData) {
     return applyDisplayDirection(buildFilteredMatrixFromRaw(rawArr, keyArr), keyArr, sitData)
+  }
+
+  function splitEndiFootDisplayParts(matrixMap, sitData = {}) {
+    const sourceMatrices = sitData?.['endi-foot']?.sourceMatrices || {}
+    const sourceLeft = sourceMatrices['endi-leftFoot']
+    const sourceRight = sourceMatrices['endi-rightFoot']
+    const singleWidth = 12
+    const height = 64
+    const singleLength = singleWidth * height
+
+    if (Array.isArray(sourceLeft) || Array.isArray(sourceRight)) {
+      return {
+        ...matrixMap,
+        leftFoot: Array.isArray(sourceLeft) && sourceLeft.length === singleLength
+          ? sourceLeft
+          : new Array(singleLength).fill(0),
+        rightFoot: Array.isArray(sourceRight) && sourceRight.length === singleLength
+          ? sourceRight
+          : new Array(singleLength).fill(0),
+      }
+    }
+
+    if (!Array.isArray(matrixMap?.foot)) return matrixMap
+    const foot = matrixMap.foot
+    const combinedWidth = 24
+    if (foot.length !== combinedWidth * height) return matrixMap
+
+    const leftFoot = []
+    const rightFoot = []
+    for (let row = 0; row < height; row++) {
+      const start = row * combinedWidth
+      leftFoot.push(...foot.slice(start, start + singleWidth))
+      rightFoot.push(...foot.slice(start + singleWidth, start + combinedWidth))
+    }
+    return {
+      ...matrixMap,
+      leftFoot,
+      rightFoot,
+    }
   }
 
   /**
@@ -660,9 +711,9 @@ export function useMatrixData() {
       arr[key] = clampEndi([...sitData[fullKey].arr], fullKey, key)
     }
 
-    const statsArr = buildFilteredMatrixFromRaw(arr, keyArr)
+    const statsArr = buildStatsMatrixFromRaw(arr, keyArr, sitData)
 
-    // 2. Compute selections, trends, and distribution from the zeroed/filtered matrix.
+    // 2. Compute selections, trends, and distribution from the zeroed matrix.
     for (let i = 0; i < keyArr.length; i++) {
       const fullKey = keyArr[i]
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
@@ -674,7 +725,7 @@ export function useMatrixData() {
 
     chartRef.current = data
     sitDataRef.current = arr
-    disPlayDataRef.current = arr
+    disPlayDataRef.current = splitEndiFootDisplayParts(arr, sitData)
 
     // 3. Update device status.
     let stamp, cop
@@ -687,7 +738,13 @@ export function useMatrixData() {
     const newObj = {}
     const dataQualityObj = {}
     for (const fullKey of keyArr) {
-      newObj[fullKey] = sitData[fullKey]?.status
+      if (fullKey === 'endi-foot') {
+        const sourceStatuses = sitData[fullKey]?.sourceStatuses || {}
+        newObj['endi-leftFoot'] = sourceStatuses['endi-leftFoot'] || sitData[fullKey]?.status
+        newObj['endi-rightFoot'] = sourceStatuses['endi-rightFoot'] || sitData[fullKey]?.status
+      } else {
+        newObj[fullKey] = sitData[fullKey]?.status
+      }
       if (sitData[fullKey]?.dataQuality) {
         dataQualityObj[fullKey] = sitData[fullKey].dataQuality
       }
@@ -739,7 +796,7 @@ export function useMatrixData() {
     useEquipStore.getState().setEquipStamp(stamp)
     if (cop) useEquipStore.getState().setEquipCop(cop)
 
-    const resArr = applyDisplayDirection(statsArr, keyArr, sitData)
+    const resArr = splitEndiFootDisplayParts(buildDisplayMatrixFromRaw(arr, keyArr, sitData), sitData)
     disPlayDataRef.current = resArr
 
     useEquipStore.getState().setDisplayStatus(resArr)
@@ -856,7 +913,7 @@ export function useMatrixData() {
     const keyArr = Object.keys(sitData)
     const sysType = getSysType()
     if (!keyArr.some(a => a.includes(sysType))) return false
-    const statsArr = buildFilteredMatrixFromRaw(rawArr, keyArr)
+    const statsArr = buildStatsMatrixFromRaw(rawArr, keyArr, sitData)
     if (data && typeof data === 'object') {
       const select = getSelectArr()
       const displayType = getDisplayType()
@@ -870,7 +927,7 @@ export function useMatrixData() {
       }
       chartRef.current = data
     }
-    const resArr = applyDisplayDirection(statsArr, keyArr, sitData)
+    const resArr = splitEndiFootDisplayParts(buildDisplayMatrixFromRaw(rawArr, keyArr, sitData), sitData)
     disPlayDataRef.current = resArr
     useEquipStore.getState().setDisplayStatus(resArr)
     return true

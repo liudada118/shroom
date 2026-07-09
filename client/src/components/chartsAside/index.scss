@@ -66,10 +66,12 @@
     }
 
     .chartTypeContent {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.35rem 0.75rem;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        align-items: center;
+        gap: 0.5rem 0.75rem;
         flex: 0 1 auto;
+        width: 100%;
         min-width: 0;
     }
 
@@ -82,23 +84,33 @@
         width: 100%;
     }
 
+    .chartTypeContent--center {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem 1rem;
+        align-items: center;
+    }
+
     .chartData {
         font-size: 0.875rem;
         font-weight: 500;
         color: #E6EBF0;
         display: flex;
+        flex-direction: column;
         justify-content: flex-start;
         align-items: flex-start;
-        gap: 0.75rem;
-        padding: 0.5rem 0.625rem;
-        background: #23262C;
+        gap: 0.55rem;
+        padding: 0.75rem 0.875rem;
+        background: rgba(12, 15, 18, 0.62);
         border-radius: 8px;
         margin-bottom: 0;
     }
 
     .chartDataLabel {
-        flex: 0 0 4.7rem;
+        flex: 0 0 auto;
         white-space: nowrap;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #E6EBF0;
     }
 
     .chartCanvas {
@@ -123,7 +135,7 @@
 
     .chartMetricValueGroup {
         display: flex;
-        justify-content: flex-end;
+        justify-content: flex-start;
         min-width: 0;
         width: auto;
         white-space: nowrap;
@@ -131,16 +143,23 @@
 
     .chartMetricValue {
         font-variant-numeric: tabular-nums;
-        min-width: 2.8rem;
-        text-align: right;
+        min-width: 0;
+        text-align: left;
         display: inline-block;
         white-space: nowrap;
     }
 
     .chartMetricUnit {
-        width: 1.6rem;
+        width: auto;
+        margin-left: 0.15rem;
         text-align: left;
         flex-shrink: 0;
+        white-space: nowrap;
+    }
+
+    .chartCenterValue {
+        display: flex;
+        font-variant-numeric: tabular-nums;
         white-space: nowrap;
     }
 

@@ -375,15 +375,52 @@ function reverseJqbedIndexValue(value) {
     return sourceIndex >= 0 ? sourceIndex + 1 : value
 }
 
+// Endi wearable matrices are stored as final source indices after jqbedReverseIndex.
+// Keep mapIndexMatrix(..., { reverseJqbed: false }) for these matrices to avoid double conversion.
+const ENDI_RIGHT_FOOT_INDEX_MATRIX = [
+    [null, null, 6, 5, 4, 3],
+    [null, null, 38, 37, 36, 35],
+    [null, null, 70, 69, 68, 67],
+    [null, null, 102, 101, 100, 99],
+    [null, null, 134, 133, 132, 131],
+    [null, null, 166, 165, 164, 163],
+    [null, null, 198, 197, 196, 195],
+    [null, null, 230, 229, 228, 227],
+    [262, 261, 260, 259, 258, 257],
+    [294, 293, 292, 291, 290, 289],
+    [326, 325, 324, 323, 322, 321],
+    [358, 357, 356, 355, 354, 353],
+    [390, 389, 388, 387, 386, 385],
+    [422, 421, 420, 419, 418, 417],
+    [454, 453, 452, 451, 450, 449],
+    [null, null, 486, 485, 484, 483],
+    [null, null, 518, 517, 516, 515],
+    [null, null, 550, 549, 548, 547],
+    [null, null, 582, 581, 580, 579],
+    [null, null, 614, 613, 612, 611],
+    [null, null, 646, 645, 644, 643],
+    [null, null, 678, 677, 676, 675],
+    [null, null, 710, 709, 708, 707],
+    [null, null, 742, 741, 740, 739],
+    [null, null, 774, 773, 772, 771],
+    [null, null, 806, 805, 804, 803],
+    [null, null, 838, 837, 836, 835],
+    [null, null, 870, 869, 868, 867],
+    [null, null, 902, 901, 900, 899],
+    [null, null, 934, 933, 932, 931],
+    [null, null, 966, 965, 964, 963],
+    [null, null, 998, 997, 996, 995],
+]
+
 const ENDI_LEFT_FOOT_INDEX_MATRIX = [
-    [998, 997, 996, 995, null, null],
-    [966, 965, 964, 963, null, null],
-    [934, 933, 932, 931, null, null],
-    [902, 901, 900, 899, null, null],
-    [870, 869, 868, 867, null, null],
-    [838, 837, 836, 835, null, null],
-    [806, 805, 804, 803, null, null],
-    [774, 773, 772, 771, null, null],
+    [996, 995, 994, 993, null, null],
+    [964, 963, 962, 961, null, null],
+    [932, 931, 930, 929, null, null],
+    [900, 899, 898, 897, null, null],
+    [868, 867, 866, 865, null, null],
+    [836, 835, 834, 833, null, null],
+    [804, 803, 802, 801, null, null],
+    [772, 771, 770, 769, null, null],
     [742, 741, 740, 739, 738, 737],
     [710, 709, 708, 707, 706, 705],
     [678, 677, 676, 675, 674, 673],
@@ -391,26 +428,6 @@ const ENDI_LEFT_FOOT_INDEX_MATRIX = [
     [614, 613, 612, 611, 610, 609],
     [582, 581, 580, 579, 578, 577],
     [550, 549, 548, 547, 546, 545],
-    [6, 5, 4, 3, null, null],
-    [38, 37, 36, 35, null, null],
-    [70, 69, 68, 67, null, null],
-    [102, 101, 100, 99, null, null],
-    [134, 133, 132, 131, null, null],
-    [166, 165, 164, 163, null, null],
-    [198, 197, 196, 195, null, null],
-    [230, 229, 228, 227, null, null],
-    [262, 261, 260, 259, null, null],
-    [294, 293, 292, 291, null, null],
-    [326, 325, 324, 323, null, null],
-    [358, 357, 356, 355, null, null],
-    [390, 389, 388, 387, null, null],
-    [422, 421, 420, 419, null, null],
-    [454, 453, 452, 451, null, null],
-    [486, 485, 484, 483, null, null],
-    [518, 517, 516, 515, null, null],
-]
-
-const ENDI_RIGHT_FOOT_INDEX_MATRIX = [
     [516, 515, 514, 513, null, null],
     [484, 483, 482, 481, null, null],
     [452, 451, 450, 449, null, null],
@@ -419,68 +436,53 @@ const ENDI_RIGHT_FOOT_INDEX_MATRIX = [
     [356, 355, 354, 353, null, null],
     [324, 323, 322, 321, null, null],
     [292, 291, 290, 289, null, null],
-    [262, 261, 260, 259, 258, 257],
-    [230, 229, 228, 227, 226, 225],
-    [198, 197, 196, 195, 194, 193],
-    [166, 165, 164, 163, 162, 161],
-    [134, 133, 132, 131, 130, 129],
-    [102, 101, 100, 99, 98, 97],
-    [70, 69, 68, 67, 66, 65],
+    [260, 259, 258, 257, null, null],
+    [228, 227, 226, 225, null, null],
+    [196, 195, 194, 193, null, null],
+    [164, 163, 162, 161, null, null],
+    [132, 131, 130, 129, null, null],
+    [100, 99, 98, 97, null, null],
+    [68, 67, 66, 65, null, null],
     [36, 35, 34, 33, null, null],
     [4, 3, 2, 1, null, null],
-    [548, 547, 546, 545, null, null],
-    [580, 579, 578, 577, null, null],
-    [612, 611, 610, 609, null, null],
-    [644, 643, 642, 641, null, null],
-    [676, 675, 674, 673, null, null],
-    [708, 707, 706, 705, null, null],
-    [740, 739, 738, 737, null, null],
-    [772, 771, 770, 769, null, null],
-    [804, 803, 802, 801, null, null],
-    [836, 835, 834, 833, null, null],
-    [868, 867, 866, 865, null, null],
-    [900, 899, 898, 897, null, null],
-    [932, 931, 930, 929, null, null],
-    [964, 963, 962, 961, null, null],
-    [996, 995, 994, 993, null, null],
 ]
 
 const ENDI_SLEEVE_INDEX_MATRIX = [
-    [737, 769, 801, 833, 865, 897, 929, 961, 993, 705, 673, 641, 609, 577, 545, 1, 33, 65],
-    [738, 770, 802, 834, 866, 898, 930, 962, 994, 706, 674, 642, 610, 578, 546, 2, 34, 66],
+    [257, 225, 193, 161, 129, 97, 65, 33, 1, 289, 321, 353, 385, 417, 449, 481, 513, 545],
+    [258, 226, 194, 162, 130, 98, 66, 34, 2, 290, 322, 354, 386, 418, 450, 482, 514, 546],
 ]
 
 const ENDI_JACKET_HEAD_INDEX_MATRIX = [
-    [993, 994, 995, 996, 997, 998, 999, 1000, 1001, null, null, null],
-    [961, 962, 963, 964, 965, 966, 967, 968, 969, null, null, null],
-    [865, 866, 867, 868, 869, 870, 871, 872, 873, null, null, null],
-    [897, 898, 899, 900, 901, 902, 903, 904, 905, null, null, null],
-    [929, 930, 931, 932, 933, 934, 935, 936, 937, null, null, null],
+    [null, null, null, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+    [null, null, null, 41, 40, 39, 38, 37, 36, 35, 34, 33],
+    [null, null, null, 137, 136, 135, 134, 133, 132, 131, 130, 129],
+    [null, null, null, 105, 104, 103, 102, 101, 100, 99, 98, 97],
+    [null, null, null, 73, 72, 71, 70, 69, 68, 67, 66, 65],
 ]
 
 const ENDI_JACKET_BACK_INDEX_MATRIX = [
-    [842, 843, 844, 845, 846, 847, 848, 849, 850, 851, 852, 853],
-    [810, 811, 812, 813, 814, 815, 816, 817, 818, 819, 820, 821],
-    [778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788, 789],
-    [746, 747, 748, 749, 750, 751, 752, 753, 754, 755, 756, 757],
-    [714, 715, 716, 717, 718, 719, 720, 721, 722, 723, 724, 725],
-    [682, 683, 684, 685, 686, 687, 688, 689, 690, 691, 692, 693],
-    [650, 651, 652, 653, 654, 655, 656, 657, 658, 659, 660, 661],
-    [618, 619, 620, 621, 622, 623, 624, 625, 626, 627, 628, 629],
-    [362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373],
-    [330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341],
-    [298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309],
-    [266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277],
-    [234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245],
-    [202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213],
-    [170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181],
-    [138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149],
-    [106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117],
-    [74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85],
-    [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53],
-    [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
-    [554, 555, 556, 557, 558, 559, 560, 561, 562, 563, 564, 565],
-    [586, 587, 588, 589, 590, 591, 592, 593, 594, 595, 596, 597],
+    [181, 180, 179, 178, 177, 176, 175, 174, 173, 172, 171, 170],
+    [213, 212, 211, 210, 209, 208, 207, 206, 205, 204, 203, 202],
+    [245, 244, 243, 242, 241, 240, 239, 238, 237, 236, 235, 234],
+    [277, 276, 275, 274, 273, 272, 271, 270, 269, 268, 267, 266],
+    [309, 308, 307, 306, 305, 304, 303, 302, 301, 300, 299, 298],
+    [341, 340, 339, 338, 337, 336, 335, 334, 333, 332, 331, 330],
+    [373, 372, 371, 370, 369, 368, 367, 366, 365, 364, 363, 362],
+    [405, 404, 403, 402, 401, 400, 399, 398, 397, 396, 395, 394],
+    [853, 852, 851, 850, 849, 848, 847, 846, 845, 844, 843, 842],
+    [821, 820, 819, 818, 817, 816, 815, 814, 813, 812, 811, 810],
+    [789, 788, 787, 786, 785, 784, 783, 782, 781, 780, 779, 778],
+    [757, 756, 755, 754, 753, 752, 751, 750, 749, 748, 747, 746],
+    [725, 724, 723, 722, 721, 720, 719, 718, 717, 716, 715, 714],
+    [693, 692, 691, 690, 689, 688, 687, 686, 685, 684, 683, 682],
+    [661, 660, 659, 658, 657, 656, 655, 654, 653, 652, 651, 650],
+    [629, 628, 627, 626, 625, 624, 623, 622, 621, 620, 619, 618],
+    [597, 596, 595, 594, 593, 592, 591, 590, 589, 588, 587, 586],
+    [565, 564, 563, 562, 561, 560, 559, 558, 557, 556, 555, 554],
+    [533, 532, 531, 530, 529, 528, 527, 526, 525, 524, 523, 522],
+    [501, 500, 499, 498, 497, 496, 495, 494, 493, 492, 491, 490],
+    [469, 468, 467, 466, 465, 464, 463, 462, 461, 460, 459, 458],
+    [437, 436, 435, 434, 433, 432, 431, 430, 429, 428, 427, 426],
 ]
 
 const ENDI_JACKET_INDEX_MATRIX = [
@@ -489,26 +491,91 @@ const ENDI_JACKET_INDEX_MATRIX = [
 ]
 
 function endiLeftFootWear1024(arr) {
-    return mapIndexMatrix(arr, ENDI_LEFT_FOOT_INDEX_MATRIX)
+    return mapIndexMatrix(arr, ENDI_LEFT_FOOT_INDEX_MATRIX, { reverseJqbed: false })
 }
 
 function endiRightFootWear1024(arr) {
-    return mapIndexMatrix(arr, ENDI_RIGHT_FOOT_INDEX_MATRIX)
+    return mapIndexMatrix(arr, ENDI_RIGHT_FOOT_INDEX_MATRIX, { reverseJqbed: false })
 }
 
 function endiSleeveWear1024(arr) {
-    return mapIndexMatrix(arr, ENDI_SLEEVE_INDEX_MATRIX)
+    return mapIndexMatrix(arr, ENDI_SLEEVE_INDEX_MATRIX, { reverseJqbed: false })
 }
 
 function endiJacketWear1024(arr) {
-    return mapIndexMatrix(arr, ENDI_JACKET_INDEX_MATRIX)
+    return mapIndexMatrix(arr, ENDI_JACKET_INDEX_MATRIX, { reverseJqbed: false })
+}
+
+const ENDI_WEAR_MATRIX_DIMENSIONS = {
+    'endi-jacket': { width: 12, height: 27 },
+    'endi-leftHand': { width: 18, height: 2 },
+    'endi-rightHand': { width: 18, height: 2 },
+    'endi-leftFoot': { width: 6, height: 32 },
+    'endi-rightFoot': { width: 6, height: 32 },
+}
+
+function interpolateMatrix2x(matrix, width, height) {
+    const nextWidth = width * 2
+    const nextHeight = height * 2
+    const next = new Array(nextWidth * nextHeight).fill(0)
+
+    for (let row = 0; row < nextHeight; row++) {
+        const sourceY = row / 2
+        const y0 = Math.min(height - 1, Math.floor(sourceY))
+        const y1 = Math.min(height - 1, y0 + 1)
+        const fy = sourceY - y0
+        for (let col = 0; col < nextWidth; col++) {
+            const sourceX = col / 2
+            const x0 = Math.min(width - 1, Math.floor(sourceX))
+            const x1 = Math.min(width - 1, x0 + 1)
+            const fx = sourceX - x0
+            const v00 = Number(matrix[y0 * width + x0]) || 0
+            const v10 = Number(matrix[y0 * width + x1]) || 0
+            const v01 = Number(matrix[y1 * width + x0]) || 0
+            const v11 = Number(matrix[y1 * width + x1]) || 0
+            const top = v00 + (v10 - v00) * fx
+            const bottom = v01 + (v11 - v01) * fx
+            next[row * nextWidth + col] = Math.round(top + (bottom - top) * fy)
+        }
+    }
+
+    return next
+}
+
+function centerEndiJacketHeadAfterInterpolation(matrix) {
+    const width = 24
+    const headHeight = 10
+    const sourceX = 6
+    const targetX = 3
+    const headWidth = 18
+    if (!Array.isArray(matrix) || matrix.length < width * headHeight) return matrix
+
+    const next = [...matrix]
+    for (let row = 0; row < headHeight; row++) {
+        const rowStart = row * width
+        for (let col = 0; col < width; col++) {
+            next[rowStart + col] = 0
+        }
+        for (let col = 0; col < headWidth; col++) {
+            next[rowStart + targetX + col] = matrix[rowStart + sourceX + col] || 0
+        }
+    }
+    return next
+}
+
+function interpolateEndiWearSource(type, matrix) {
+    const dimensions = ENDI_WEAR_MATRIX_DIMENSIONS[type]
+    if (!dimensions || !Array.isArray(matrix)) return matrix
+    const interpolated = interpolateMatrix2x(matrix, dimensions.width, dimensions.height)
+    if (type === 'endi-jacket') return centerEndiJacketHeadAfterInterpolation(interpolated)
+    return interpolated
 }
 
 function endiWear1024(arr, type) {
-    if (type === 'endi-jacket') return endiJacketWear1024(arr)
-    if (type === 'endi-leftFoot') return endiLeftFootWear1024(arr)
-    if (type === 'endi-rightFoot') return endiRightFootWear1024(arr)
-    if (type === 'endi-leftHand' || type === 'endi-rightHand') return endiSleeveWear1024(arr)
+    if (type === 'endi-jacket') return interpolateEndiWearSource(type, endiJacketWear1024(arr))
+    if (type === 'endi-leftFoot') return interpolateEndiWearSource(type, endiLeftFootWear1024(arr))
+    if (type === 'endi-rightFoot') return interpolateEndiWearSource(type, endiRightFootWear1024(arr))
+    if (type === 'endi-leftHand' || type === 'endi-rightHand') return interpolateEndiWearSource(type, endiSleeveWear1024(arr))
     return mapIndexMatrix(arr, [])
 }
 
@@ -650,6 +717,7 @@ module.exports = {
     endiSleeveWear1024,
     endiLeftFootWear1024,
     endiRightFootWear1024,
+    interpolateEndiWearSource,
     jqbedReverseIndex,
     reverseJqbedIndexValue,
     backYToX,

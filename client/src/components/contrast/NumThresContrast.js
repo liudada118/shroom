@@ -5,7 +5,7 @@ import dayjs from 'dayjs'
 import { shallow } from 'zustand/shallow'
 import { pageContext } from '../../page/test/Test'
 import { useEquipStore } from '../../store/equipStore'
-import { getMatrixPartFromDisplayType, localAddress } from '../../util/constant'
+import { getMatrixDisplayLabel, getMatrixPartFromDisplayType, getSystemMatrixParts, localAddress } from '../../util/constant'
 import { computePressureMetrics } from '../../util/pressureMetrics'
 import { loadPressureRuntimeConfig } from '../../util/pressureConfig'
 import { calcCentroidRatio } from '../../util/util'
@@ -359,23 +359,32 @@ function fillTemplate(template, replacements = {}, fallback = '') {
 }
 
 function getContrastObjectLabel(key, copy = CONTRAST_COPY.zh) {
-    const text = String(key || '')
-    const normalized = text.toLowerCase()
-    if (normalized === 'endi-sit' || normalized === 'sit' || normalized.endsWith('-sit')) {
-        return copy.seatSensor || '坐垫传感器'
-    }
-    if (normalized === 'endi-back' || normalized === 'back' || normalized.endsWith('-back')) {
-        return copy.backSensor || '靠背传感器'
-    }
-    return text
+    const language = copy === CONTRAST_COPY.en ? 'en' : 'zh'
+    return getMatrixDisplayLabel(key, language)
 }
 
-function getPublicContrastKey(key = '') {
-    const text = String(key || '')
-    const normalized = text.toLowerCase()
-    if (normalized === 'endi-back') return 'back'
-    if (normalized === 'endi-sit') return 'sit'
-    return text.replace(/endi/ig, 'car')
+function getPublicContrastKey(key = '', copy = CONTRAST_COPY.zh) {
+    return getContrastObjectLabel(key, copy)
+}
+
+function getContrastFileKey(key = '', copy = CONTRAST_COPY.zh) {
+    return getPublicContrastKey(key, copy)
+        .replace(/[\\/:*?"<>|\s]+/g, '_')
+        .replace(/^_+|_+$/g, '') || 'matrix'
+}
+
+function getMatrixPartFromDataKey(key = '') {
+    const value = String(key || '')
+    if (!value) return ''
+    if (value.includes('-')) return value.split('-').pop()
+    return getMatrixPartFromDisplayType(value)
+}
+
+function getDisplayTypeForContrastKey(key = '', systemType = '') {
+    const part = getMatrixPartFromDataKey(key)
+    if (part) return `${part}2D`
+    const firstPart = getSystemMatrixParts(systemType)?.[0]
+    return firstPart?.display2D || ''
 }
 
 function formatRate(a, b) {
@@ -604,6 +613,7 @@ export default function NumThresContrast() {
     const pageInfo = useContext(pageContext)
     const contrast = useEquipStore(s => s.contrast, shallow)
     const displayType = useEquipStore(s => s.displayType, shallow)
+    const systemType = useEquipStore(s => s.systemType, shallow)
     const settingValue = useEquipStore(s => s.settingValue, shallow)
     const [playing, setPlaying] = useState(false)
     const [playbackSpeed, setPlaybackSpeed] = useState(1)
@@ -650,7 +660,7 @@ export default function NumThresContrast() {
     useEffect(() => {
         if (!keys.length) return
         const displayPart = getMatrixPartFromDisplayType(displayType)
-        const matchedKey = displayPart ? keys.find((key) => getMatrixPartFromDisplayType(key) === displayPart) : ''
+        const matchedKey = displayPart ? keys.find((key) => getMatrixPartFromDataKey(key) === displayPart) : ''
         setActiveKey((current) => current && keys.includes(current) ? current : (matchedKey || keys[0]))
     }, [keys.join('|'), displayType])
 
@@ -802,18 +812,21 @@ export default function NumThresContrast() {
         } catch (err) {
             console.warn('[Contrast] cancel history state failed:', err)
         }
+        const nextDisplayType = getDisplayTypeForContrastKey(activeKey, systemType)
+        if (nextDisplayType) {
+            useEquipStore.getState().setDisplayType(nextDisplayType)
+            pageInfo?.setDisplayType?.(nextDisplayType)
+        }
         useEquipStore.getState().setDataStatus('realtime')
         useEquipStore.getState().setContrast({})
     }
 
     const changeActiveKey = (nextKey) => {
         setActiveKey(nextKey)
-        if (nextKey.includes('back')) {
-            useEquipStore.getState().setDisplayType('back2D')
-            pageInfo?.setDisplayType?.('back2D')
-        } else if (nextKey.includes('sit')) {
-            useEquipStore.getState().setDisplayType('sit2D')
-            pageInfo?.setDisplayType?.('sit2D')
+        const nextDisplayType = getDisplayTypeForContrastKey(nextKey, systemType)
+        if (nextDisplayType) {
+            useEquipStore.getState().setDisplayType(nextDisplayType)
+            pageInfo?.setDisplayType?.(nextDisplayType)
         }
     }
 
@@ -867,7 +880,7 @@ export default function NumThresContrast() {
             const rows = [{
                 frame_index: 0,
                 progress: '',
-                object: getPublicContrastKey(activeKey),
+                object: getPublicContrastKey(activeKey, copy),
                 scope: activeSelect ? 'selection' : 'full',
                 selection: activeSelect ? `${activeSelect.xStart}-${activeSelect.xEnd},${activeSelect.yStart}-${activeSelect.yEnd}` : '',
                 left_index: leftIndex,
@@ -889,7 +902,7 @@ export default function NumThresContrast() {
                 max_abs_point_diff: maxAbsDiff,
             }]
             const headers = Object.keys(rows[0])
-            const fileBaseName = `contrast_time_${getPublicContrastKey(activeKey)}_${dayjs().format('YYYYMMDD_HHmmss')}`
+            const fileBaseName = `contrast_time_${getContrastFileKey(activeKey, copy)}_${dayjs().format('YYYYMMDD_HHmmss')}`
             return { rows, headers, fileBaseName }
         }
 
@@ -912,7 +925,7 @@ export default function NumThresContrast() {
             return {
                 frame_index: index,
                 progress: rowProgress.toFixed(2),
-                object: getPublicContrastKey(activeKey),
+                object: getPublicContrastKey(activeKey, copy),
                 scope: activeSelect ? 'selection' : 'full',
                 selection: activeSelect ? `${activeSelect.xStart}-${activeSelect.xEnd},${activeSelect.yStart}-${activeSelect.yEnd}` : '',
                 left_index: leftFrameIndex,
@@ -936,7 +949,7 @@ export default function NumThresContrast() {
         })
 
         const headers = Object.keys(rows[0])
-        const fileBaseName = `contrast_${getPublicContrastKey(activeKey)}_${dayjs().format('YYYYMMDD_HHmmss')}`
+        const fileBaseName = `contrast_${getContrastFileKey(activeKey, copy)}_${dayjs().format('YYYYMMDD_HHmmss')}`
         return { rows, headers, fileBaseName }
     }
 

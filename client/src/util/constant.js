@@ -46,6 +46,11 @@ export const pointConfig = {
       pointWidthDistance: 10,
       pointHeightDistance: 10,
     },
+    foot: {
+      pointLength: 64,
+      pointWidthDistance: 10,
+      pointHeightDistance: 10,
+    },
   },
   carY: {
     back: {
@@ -92,11 +97,12 @@ export const systemPointConfig = {
 }
 
 Object.assign(systemPointConfig, {
-  'endi-jacket': { width: 12, height: 27 },
-  'endi-leftHand': { width: 18, height: 2 },
-  'endi-rightHand': { width: 18, height: 2 },
-  'endi-leftFoot': { width: 6, height: 32 },
-  'endi-rightFoot': { width: 6, height: 32 },
+  'endi-jacket': { width: 24, height: 54 },
+  'endi-leftHand': { width: 36, height: 4 },
+  'endi-rightHand': { width: 36, height: 4 },
+  'endi-leftFoot': { width: 12, height: 64 },
+  'endi-rightFoot': { width: 12, height: 64 },
+  'endi-foot': { width: 24, height: 64 },
 })
 
 // 32x32 矩阵系统统一配置
@@ -120,8 +126,7 @@ export const systemMatrixParts = {
     { key: 'jacket', labelKey: 'jacketPad', display2D: 'jacket2D' },
     { key: 'leftHand', labelKey: 'leftHandPad', display2D: 'leftHand2D' },
     { key: 'rightHand', labelKey: 'rightHandPad', display2D: 'rightHand2D' },
-    { key: 'leftFoot', labelKey: 'leftFootPad', display2D: 'leftFoot2D' },
-    { key: 'rightFoot', labelKey: 'rightFootPad', display2D: 'rightFoot2D' },
+    { key: 'foot', labelKey: 'footPad', display2D: 'foot2D' },
   ],
   carY: [
     { key: 'back', labelKey: 'backPad', display2D: 'back2D', display3D: 'back3D', supportsModel3D: true },
@@ -136,6 +141,60 @@ export const systemMatrixParts = {
 export const getMatrixPartFromDisplayType = (displayType = '') => {
   const normalized = String(displayType || '')
   return normalized.replace(/(2D|3D)$/i, '')
+}
+
+const MATRIX_DISPLAY_LABELS = {
+  zh: {
+    endi: '假人全身',
+    'endi-back': '靠背',
+    'endi-sit': '坐垫',
+    'endi-jacket': '上身',
+    'endi-leftHand': '左臂',
+    'endi-rightHand': '右臂',
+    'endi-leftFoot': '左腿',
+    'endi-rightFoot': '右腿',
+    'endi-foot': '下身',
+    back: '靠背',
+    sit: '坐垫',
+    jacket: '上身',
+    leftHand: '左臂',
+    rightHand: '右臂',
+    leftFoot: '左腿',
+    rightFoot: '右腿',
+    foot: '下身',
+  },
+  en: {
+    endi: 'Full Body',
+    'endi-back': 'Back',
+    'endi-sit': 'Seat',
+    'endi-jacket': 'Upper body',
+    'endi-leftHand': 'Left arm',
+    'endi-rightHand': 'Right arm',
+    'endi-leftFoot': 'Left leg',
+    'endi-rightFoot': 'Right leg',
+    'endi-foot': 'Lower body',
+    back: 'Back',
+    sit: 'Seat',
+    jacket: 'Upper body',
+    leftHand: 'Left arm',
+    rightHand: 'Right arm',
+    leftFoot: 'Left leg',
+    rightFoot: 'Right leg',
+    foot: 'Lower body',
+  },
+}
+
+export const getMatrixDisplayLabel = (key = '', language = 'zh') => {
+  const lang = String(language || '').toLowerCase().startsWith('en') ? 'en' : 'zh'
+  const text = String(key || '')
+  if (!text) return lang === 'en' ? 'Sensor' : '传感器'
+  const labels = MATRIX_DISPLAY_LABELS[lang] || MATRIX_DISPLAY_LABELS.zh
+  if (labels[text]) return labels[text]
+  if (text.includes('-')) {
+    const part = text.split('-').pop()
+    if (labels[part]) return labels[part]
+  }
+  return text.replace(/endi-?/ig, '').replace(/car-?/ig, '') || (lang === 'en' ? 'Sensor' : '传感器')
 }
 
 export const getSystemMatrixParts = (system) => {
@@ -160,6 +219,7 @@ export const getMatrixPartLabelKey = (part) => {
     rightHand: 'rightHandPad',
     leftFoot: 'leftFootPad',
     rightFoot: 'rightFootPad',
+    foot: 'footPad',
   }
   return labelMap[part] || part
 }

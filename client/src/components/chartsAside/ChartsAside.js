@@ -4,7 +4,7 @@ import echarts from '../../util/echarts';
 import { Scheduler } from '../../scheduler/scheduler';
 import './index.scss'
 import { useTranslation, withTranslation } from 'react-i18next';
-import { getMatrixPartFromDisplayType, pointConfig } from '../../util/constant';
+import { getMatrixDisplayLabel, getMatrixPartFromDisplayType, pointConfig } from '../../util/constant';
 import { getDisplayType, getSelectArr, getSysType, useEquipStore } from '../../store/equipStore';
 import { BrushManager, SELECT_COLORS } from '../selectBox/newSelecttBox';
 import { calMatrixArea } from '../../assets/util/selectMatrix';
@@ -26,6 +26,7 @@ function ChartsAside(props) {
         rightHand: '#A78BFA',
         leftFoot: '#F59E0B',
         rightFoot: '#F87171',
+        foot: '#F59E0B',
     }
     const areaColorArr = pressColorArr
 
@@ -87,7 +88,8 @@ function ChartsAside(props) {
                 // 多框选模式：每个框一条线
                 for (let b = 0; b < boxStats.length; b++) {
                     const box = boxStats[b]
-                    const seriesName = `${formatSelectionName(box.name, b + 1, props.t)}${keyArr.length > 1 ? `-${key}` : ''}`
+                    const deviceLabel = getMatrixDisplayLabel(key, props.i18n?.language)
+                    const seriesName = `${formatSelectionName(box.name, b + 1, props.t)}${keyArr.length > 1 ? `-${deviceLabel}` : ''}`
                     series.push({
                         symbol: 'none',
                         data: box[dataField] || [],
@@ -109,7 +111,7 @@ function ChartsAside(props) {
                     smooth: true,
                     color: color,
                     lineStyle: { width: 2 },
-                    name: key,
+                    name: getMatrixDisplayLabel(key, props.i18n?.language),
                 })
             }
         }
@@ -120,6 +122,8 @@ function ChartsAside(props) {
         const colorKey = getMatrixPartFromDisplayType(key)
         return colorMap[colorKey] || Object.values(colorMap)[index]
     }
+
+    const getDeviceChartLabel = (key) => getMatrixDisplayLabel(key, props.i18n?.language)
 
     const initCharts1 = (props) => {
         const xLength = props.xData?.length || 20
@@ -514,10 +518,10 @@ function ChartsAside(props) {
                         dataObj[key].pointTotal = chartData[key].data.areaTotal
                         const preciseAreaTotal = chartData[key].data.areaTotal * widthDistance * heightDistance / 100
                         dataObj[key].areaTotal = Math.round(preciseAreaTotal)
-                        dataObj[key].pressAver = Number(chartData[key].data.pressAver || 0).toFixed(2)
-                        dataObj[key].pressMax = chartData[key].data.pressMax
+                        dataObj[key].pressAver = Number(chartData[key].data.pressAver || 0).toFixed(1)
+                        dataObj[key].pressMax = Number(chartData[key].data.pressMax || 0).toFixed(1)
                         dataObj[key].pressTotal = chartData[key].data.pressTotal
-                        dataObj[key].total = Number(chartData[key].data.pressTotal ?? preciseAreaTotal * dataObj[key].pressAver).toFixed(2)
+                        dataObj[key].total = Number(chartData[key].data.pressTotal ?? preciseAreaTotal * dataObj[key].pressAver).toFixed(1)
 
                         dataObj[key].μ = chartData[key].normalDis.μ
                         dataObj[key].Var = chartData[key].normalDis.Var
@@ -538,10 +542,10 @@ function ChartsAside(props) {
                                     name: formatSelectionName(box.name, idx + 1, props.t),
                                     pointTotal: box.data.areaTotal || 0,
                                     areaTotal: Math.round(bPreciseArea),
-                                    pressAver: Number(box.data.pressAver || 0).toFixed(2),
-                                    pressMax: box.data.pressMax || 0,
+                                    pressAver: Number(box.data.pressAver || 0).toFixed(1),
+                                    pressMax: Number(box.data.pressMax || 0).toFixed(1),
                                     pressTotal: box.data.pressTotal || 0,
-                                    total: Number(box.data.pressTotal ?? bPreciseArea * Number(box.data.pressAver || 0)).toFixed(2),
+                                    total: Number(box.data.pressTotal ?? bPreciseArea * Number(box.data.pressAver || 0)).toFixed(1),
                                     pressureCenter: getCenterValues(box.center) || ['-', '-'],
                                     normalDis: box.normalDis,
                                     μ: box.normalDis?.['\u03bc'],
@@ -582,6 +586,14 @@ function ChartsAside(props) {
     const pressDataArr = ['pressAver', 'pressMax', 'total']
     const areaDataArr = ['pointTotal', 'areaTotal']
     const centerDataArr = ['pressureCenter']
+    const pressureMetricKeys = new Set(['pressAver', 'pressMax', 'total'])
+
+    const formatMetricValue = (item, value) => {
+        if (value === undefined || value === null || value === '') return '-'
+        if (!pressureMetricKeys.has(item)) return value
+        const numeric = Number(value)
+        return Number.isFinite(numeric) ? numeric.toFixed(1) : value
+    }
 
     /**
      * 判断当前是否有多框选数据
@@ -620,7 +632,7 @@ function ChartsAside(props) {
         return Object.keys(data).map((a) => {
             if (a !== 't') {
                 return <div className='chartTypeItem' key={a}>
-                    <div className='cirlce' style={{ backgroundColor: colorArr[a] }}></div> {t(a)}
+                    <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, colorArr) }}></div> {getDeviceChartLabel(a)}
                 </div>
             }
             return null
@@ -638,7 +650,7 @@ function ChartsAside(props) {
                 if (data[key]?.boxStats) {
                     data[key].boxStats.forEach((box, idx) => {
                         const color = box.bgc || SELECT_COLORS[box.colorIndex]
-                        const value = box[item] != null ? box[item] : '-'
+                        const value = formatMetricValue(item, box[item])
                         allBoxRows.push(
                             <div className='chartTypeItem' key={`${key}-box-${box.colorIndex}-${item}`}>
                                 <div className='cirlce' style={{ backgroundColor: color }}></div>
@@ -660,9 +672,9 @@ function ChartsAside(props) {
         return Object.keys(data).map((a) => {
             if (a !== 't') {
                 return <div className='chartTypeItem' key={`${a}-${item}`}>
-                    <div className='cirlce' style={{ backgroundColor: colorArr[a] }}></div>
+                    <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, colorArr) }}></div>
                     <div className='chartMetricValueGroup'>
-                        <span className='chartMetricValue'>{data[a][item]}</span>
+                        <span className='chartMetricValue'>{formatMetricValue(item, data[a][item])}</span>
                         <span className='chartMetricUnit'>
                             {system === 'carY' ? '' : (item === 'total' ? 'N' : item === 'pointTotal' ? '个' : item === 'areaTotal' ? 'cm²' : 'Kpa')}
                         </span>
@@ -683,7 +695,7 @@ function ChartsAside(props) {
                     rows.push(
                         <div className='chartTypeItem' key={`${key}-box-${box.colorIndex}-center-${idx}`}>
                             <div className='cirlce' style={{ backgroundColor: color }}></div>
-                            <div style={{ display: 'flex', fontVariantNumeric: 'tabular-nums' }}>
+                            <div className="chartCenterValue">
                                 {`(${center[0]} , ${center[1]})`}
                             </div>
                         </div>
@@ -696,8 +708,8 @@ function ChartsAside(props) {
         return Object.keys(data).map((a) => {
             if (a !== 't') {
                 return <div className='chartTypeItem' key={a}>
-                    <div className='cirlce' style={{ backgroundColor: areaColorArr[a] }}></div>
-                    <div style={{ display: 'flex', fontVariantNumeric: 'tabular-nums' }}>
+                    <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, areaColorArr) }}></div>
+                    <div className="chartCenterValue">
                         {`(${data[a].pressureCenter[0]} , ${data[a].pressureCenter[1]})`}
                     </div>
                 </div>
@@ -752,7 +764,7 @@ function ChartsAside(props) {
                     <div style={{ marginBottom: '6px', color: '#E6EBF0', fontSize: '0.875rem' }}>{t('pressureCenter')}{`(X,Y)`}</div>
                     {centerDataArr.map((item) => (
                         <div className='chartData' key={item}>
-                            <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`} style={{ height: '1.2rem' }}>
+                            <div className={`chartTypeContent chartTypeContent--center ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>
                                 {renderCenterRows()}
                             </div>
                         </div>

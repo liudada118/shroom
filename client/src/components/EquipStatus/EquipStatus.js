@@ -3,10 +3,11 @@ import './index.scss'
 import { withTranslation } from 'react-i18next';
 import { useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
+import { getMatrixDisplayLabel } from '../../util/constant';
 
 const EquipStatus = React.memo(function EquipStatus(props) {
 
-    const { t } = props;
+    const { t, i18n } = props;
     const { fileName } = props
 
     const equipStatus = useEquipStore(s => s.equipStatus, shallow);
@@ -24,7 +25,7 @@ const EquipStatus = React.memo(function EquipStatus(props) {
     const fallbackItems = Object.entries(equipStatus || {}).map(([key, status]) => ({
         key,
         label: key.includes('car') || key.includes('endi') || key.includes('carY')
-            ? t(key.split('-')[1])
+            ? getMatrixDisplayLabel(key, i18n?.language)
             : key === 'hand'
                 ? t('handEquip')
                 : key === 'bed'

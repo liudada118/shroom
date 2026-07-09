@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-22
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-02
 
 ## 1. 项目概述
 
@@ -57,6 +57,7 @@ shroom/
 │   ├── logger.js               # 统一日志模块
 │   ├── config.js               # 加密配置读写
 │   ├── serialCache.js          # MAC→设备类型本地缓存（serial_cache.json）
+│   ├── deviceMatrixConfig.js   # 后端共享设备矩阵尺寸/点距配置
 │   ├── line.js                 # 数据转换工具
 │   ├── aes_ecb.js              # AES-ECB 加密
 │   ├── parseData.js            # 数据解析
@@ -507,11 +508,17 @@ graph TD
 | 2026-06-10 | 独立 Core SDK | 将 SDK 调整为无后端服务依赖的底层能力包，新增矩阵、框选、回放、压强 core 模块和 Node 串口直连 adapter，并把 HTTP/WebSocket client 降为可选能力 |
 | 2026-06-15 | 新 Endi 多设备展示系统 | 新增 `endi-jacket`、`endi-leftHand`、`endi-rightHand`、`endi-leftFoot`、`endi-rightFoot` 五类穿戴矩阵设备，接入 MAC 缓存、串口校验、2D 展示、框选、量尺、历史/导入导出和对比尺寸识别 |
 | 2026-06-22 | Endi 3D 人体模型简化 | `endi` 3D 视图切换到无贴图人体 GLB，仅展示模型，不再渲染 3D 点图；压力矩阵保留在 2D 数字视图 |
-| 2026-06-22 | Endi 穿戴线序矩阵 | 新穿戴设备从 1024 原始点映射为真实矩阵：上衣 `12x27`、左右袖 `18x2`、左右裤腿 `6x32`，空白硬件位补 0 |
+| 2026-06-22 | Endi 穿戴线序矩阵 | 新穿戴设备从 1024 原始点映射为真实矩阵：上衣原始线序 `12x27`、左右袖原始线序 `18x2`、左右裤腿原始线序 `6x32`，空白硬件位补 0 |
 | 2026-06-22 | 2D 数字非方阵渲染 | 2D 数字渲染按真实 `width x height` 创建实例、平滑和放大镜网格，不再用 `width x width` 方阵兜底 |
 | 2026-06-22 | jqbed 逆线序工具 | `setint.js` 新增 `jqbedReverse(arr)` 和 `jqbedReverseIndex(index)`，用于把 `jqbed` 处理后的 32x32 数组或下标还原为原始顺序 |
 | 2026-06-22 | 假人部位逆索引接入 | `util/line.js` 的假人上衣、袖子、裤腿线序表统一执行 `jqbedReverseIndex(value - 1) + 1` 后再读取原始 1024 点 |
 | 2026-06-22 | 袖子线序修正 | 左右袖线序更新为 `737,769...` 两行 18 列表，并与其它假人部位一致执行 jqbed 逆索引后读取原始点 |
+| 2026-06-23 | 设备矩阵配置收拢 | 新增 `util/deviceMatrixConfig.js`，后端回放、对比和导入导出共享同一份矩阵尺寸/点距配置 |
+| 2026-06-23 | Endi 人体 WebGL 动态贴图 | `ThreeHumanPoint` 调用旧 `WebGLCanvas` 生成上衣、左右袖、左右裤腿五路热力图，再绘制到 CanvasTexture 并绑定到 `human.glb` 模型材质 |
+| 2026-06-26 | Endi 穿戴数据源插值 | `util/line.js` 在线序映射后对上衣、左右袖、左右裤腿统一做 2x 双线性插值，后端校验、矩阵配置和前端假人贴图读取同步使用插值后的尺寸 |
+| 2026-06-29 | 假人全身公共展示名 | 设备号配置、设备列表、添加设备、COP 报告、数据对比和导出表头统一使用“假人全身/上身/下身/左臂/右臂/左腿/右腿”等公共名称，内部 `endi-*` key 保持不变 |
+| 2026-06-29 | Endi 足部展示拆分 | 后端保留合并 `endi-foot` 数据矩阵，前端设备状态和 2D 部位切换重新拆回左腿/右腿五设备展示 |
+| 2026-06-29 | Endi 左右脚源矩阵保留 | 合并 `endi-foot` 时额外携带左右脚源矩阵，前端优先用源矩阵拆 2D 展示，避免左腿展示为空 |
 
 ## 9. 更新日志
 
@@ -520,13 +527,28 @@ graph TD
 | 2026-06-05 | 新增功能 | 数据对比导出支持选择保存路径和 CSV/XLSX 两种格式 |
 | 2026-06-15 | 新增功能 | 接入 Endi 上衣、左右袖、左右裤腿五类新矩阵设备，覆盖实时展示、框选、量尺、历史和导入导出链路 |
 | 2026-06-22 | 优化重构 | Endi 3D 场景改为纯人体模型展示，切换到 no_texture GLB 并移除 3D 点图 |
-| 2026-06-22 | 配置变更 | Endi 新穿戴设备改为真实非方阵尺寸：上衣 `12x27`、袖子 `18x2`、裤腿 `6x32` |
+| 2026-06-22 | 配置变更 | Endi 新穿戴设备先按真实非方阵线序输出：上衣 `12x27`、袖子 `18x2`、裤腿 `6x32`；后续数据源层会统一插值为 2x 尺寸 |
 | 2026-06-22 | 修复缺陷 | 修复 2D 数字组件按宽度平方渲染的问题，非方阵矩阵按真实长度展示 |
 | 2026-06-22 | 新增功能 | `setint.js` 增加 `jqbed` 逆向还原函数和转换后下标到原始下标的查询函数 |
 | 2026-06-22 | 配置变更 | 假人穿戴部位线序读取统一接入 jqbed 逆索引转换，避免使用转换后的点位编号直接读取原始帧 |
 | 2026-06-22 | 修复缺陷 | 袖子矩阵改用新的 18x2 点位顺序，并恢复统一逆索引处理，保证假人所有部位线序口径一致 |
+| 2026-06-23 | 优化重构 | 将后端矩阵尺寸/点距配置从 `DataService`、`routes`、`db` 收拢到 `util/deviceMatrixConfig.js` |
+| 2026-06-23 | 新增功能 | `ThreeHumanPoint` 复用旧 `WebGLCanvas.render()` 热力图流程，把五路 Endi 穿戴矩阵渲染到 WebGL 人体模型 |
+| 2026-06-23 | 调试优化 | 旧 `WebGLCanvas` 的 `tplCanvas` 增加固定定位调试层，展示宽度固定为 `128px`，高度固定为 `8 * 128px` |
+| 2026-06-23 | 可视化调节 | Endi 假人 WebGL 热力图接入可视化调节：`height` 控制热力点大小，`color` 控制颜色映射上限 |
+| 2026-06-23 | 数据兼容 | Endi 假人 `drawHumanHeatmap(frame)` 统一从同一个 frame 中解析五组矩阵，兼容短 key、完整 key 和 `{ arr/data/default }` 数据结构 |
+| 2026-06-23 | 模型与 UV 更新 | Endi 假人模型切换为 `human_matrix_atlas_sensor_dims.glb`，并按新 atlas 坐标映射头、靠背、左右手和左右腿热力区域 |
+| 2026-06-23 | 材质绑定修正 | Endi 假人 WebGL 贴图只绑定到后面材质 `Posterior_Matrix_Atlas`，多材质 mesh 回退使用 `material[1]` |
 | 2026-06-05 | 配置变更 | 靠背默认方向再执行一次左右翻转，并迁移旧默认方向缓存 |
 | 2026-06-05 | 修复缺陷 | 修复播放控件、数据对比、图表轴标题、下载提示和前端端口递增等界面/启动问题 |
+| 2026-06-26 | 优化重构 | 将 Endi 穿戴矩阵的 2x 插值从前端假人贴图层前移到后端线序数据源层 |
+| 2026-06-29 | 文案优化 | 假人全身相关用户可见位置取消 `endi` 字样，设备号配置支持 `jacket/leftHand/rightHand/leftFoot/rightFoot` 别名输入 |
+| 2026-06-29 | 文案优化 | 假人部位中英文显示名调整为上身/下身/左臂/右臂/左腿/右腿和 Upper body/Lower body/Left arm/Right arm/Left leg/Right leg |
+| 2026-06-29 | 文案优化 | 左侧压力总和/面积曲线的 ECharts series 与框选设备后缀同步使用假人公共部位显示名 |
+| 2026-06-29 | 展示调整 | Endi 2D 数字视图将左腿/右腿合并为一个下身入口，读取合并后的 `endi-foot` 24x64 矩阵 |
+| 2026-06-29 | 展示调整 | Endi 下身 2D 数字视图隐藏左右腿第 5-6 原始列在第 9-15 行之外的无效区域，并对右腿半区做左右翻转 |
+| 2026-06-29 | 修复缺陷 | 修复 Endi 左右脚合并后前端只显示四个设备的问题，状态与 2D 展示恢复为五个物理设备 |
+| 2026-06-29 | 修复缺陷 | 修复 Endi 左腿拆分展示无数据，并在假人数据下载字段弹窗中隐藏靠背/座椅 MAC 字段 |
 | 2026-03-02 | 初始化 | 按照 update-tech-doc 技能规范创建 ARCHITECTURE.md |
 | 2026-03-02 | 优化重构 | P0: 修复 14 个 Three.js 组件内存泄漏，创建 disposeThree 工具 |
 | 2026-03-02 | 优化重构 | P1: structuredClone 替换深拷贝、SQLite WAL 模式、WebSocket MessagePack |
@@ -1520,7 +1542,7 @@ graph TD
 ## 2026-06-15 Endi 多设备展示系统
 - 新增设备类型与默认 MAC 映射：`554635300D50434523 -> endi-jacket`、`504330390250435F15 -> endi-leftHand`、`504330390250435F1B -> endi-rightHand`、`464134390F50431842 -> endi-leftFoot`、`464134391150431A4E -> endi-rightFoot`。
 - 新设备硬件仍发送 1024 原始点，`util/config.js` 增加 1025/4097 typed-frame 类型码 8-12；`SerialManager` 通过 `util/line.js` 的穿戴线序映射为业务矩阵，并按映射后的点数校验：上衣 324 点、袖子 36 点、裤腿 192 点。
-- 穿戴线序按硬件 1-based 点位表读取并转为 0-based 数组索引；空白点位统一输出 0。`endi-jacket` 将 9x5 头部放入 12 列上衣矩阵左上角并右侧补 0，再拼接 12x22 靠背区域，最终尺寸为 12x27；`endi-leftHand/rightHand` 输出 18x2 袖子矩阵；`endi-leftFoot/rightFoot` 输出 6x32 裤腿矩阵。
+- 穿戴线序按硬件 1-based 点位表读取并转为 0-based 数组索引；空白点位统一输出 0。`endi-jacket` 先将 9x5 头部放入 12 列上衣矩阵左上角并右侧补 0，再拼接 12x22 靠背区域形成 12x27 原始业务矩阵；`endi-leftHand/rightHand` 先输出 18x2 袖子矩阵；`endi-leftFoot/rightFoot` 先输出 6x32 裤腿矩阵。线序出口随后统一做 2x 双线性插值，进入后端数据源的数据尺寸分别为上衣 24x54、袖子 36x4、裤腿 12x64。
 - 前后端矩阵尺寸配置同步覆盖：`client/src/util/constant.js`、`server/services/DataService.js`、`server/api/routes.js`、`util/db.js` 和 `db/data_direction.json` 都加入五个新矩阵 key，保证实时展示、回放、对比、COP/导出和导入尺寸识别一致。
 - `ViewSetting`、`BrushManager`、`SelectSet`、`SecondTitle`、`NumThres` 和 2D 数字渲染组件改为通过矩阵部位 helper 读取当前部位，不再只写死 `back/sit`；新设备可以出现在 2D 数字视图、框选、量尺和左侧统计曲线中。
 - `endi` 的 3D 场景改为加载 `client/public/model/human.glb` 人体模型，并取消 3D 点图渲染；上衣、左右袖、左右裤腿的压力数据继续通过 2D 数字矩阵、框选、量尺和统计图展示。
@@ -1529,6 +1551,80 @@ graph TD
 ## 2026-06-22 Endi 3D 人体模型简化
 - `ThreeHumanPoint` 保留 TrackballControls、缩放同步和重置视图能力，但移除所有 3D 点阵创建、实时矩阵读取、高斯/颜色/高度映射逻辑。
 - 3D 模型路径切换为 `human.glb`，用于纯人体模型展示。
-- `endi` 系统的 3D/2D 视图不再出现座椅相关部位；2D 层级只保留上衣、左袖、右袖、左裤腿、右裤腿。
+- `endi` 系统的 3D/2D 视图不再出现座椅相关部位；2D 层级只保留上身、左臂、右臂、下身，其中下身读取合并后的 `endi-foot` 24x64 矩阵。
 - `NumThreeColorV3` 的实例数量、数据平滑、稳定缓存 key、点位布局和放大镜网格改为使用真实 `width x height`，上衣、袖子、裤腿等非方阵不会再按 `width x width` 补画。
 | 2026-06-22 | Change | Simplify Endi 3D to a no-texture human GLB model and keep pressure data in 2D matrix views only |
+
+## 2026-06-23 Endi 人体 WebGL 动态贴图
+- `ThreeHumanPoint` 新增旧 WebGL 热力图复用链路：每 100ms 从 `drawHumanHeatmap(frame)` 的同一个 frame 参数中读取 `jacket`、`leftHand`、`rightHand`、`leftFoot`、`rightFoot` 五路矩阵，兼容短 key、`endi-*` 完整 key 以及 `{ arr/data/default }` 包装结构。
+- 五路点集按 128px 分块写入同一个 `WebGLCanvas.render()` source canvas，source 高度固定为 `8 * 128px`，再按旧 `humanBody.jsx` 的 `drawImage` 方式裁剪到人体模型 UV 区域，最终作为 `CanvasTexture` 绑定到 `human.glb` 材质。
+- 假人 GLB 模型切换为 `human_matrix_atlas_sensor_dims.glb`。新 atlas 按 64x64 坐标解释：头部 `0,0,15.57,5.42`，靠背 `17.30,0,20.76,23.86`，左手 `0,24.95,31.14,2.17`，右手 `32.86,24.95,31.14,2.17`，左腿 `0,29.29,6.92,34.71`，右腿 `8.65,29.29,6.92,34.71`。
+- `jacket` 矩阵拆分为头部 `9x5` 和靠背 `12x22` 两个贴图区；数据源插值后，假人贴图读取头部 `18x10`、靠背 `24x44`、袖子 `36x4` 和裤腿前 `8x64` 数据，再映射到原 40x40 atlas 逻辑区域。
+- 模型是多材质 mesh 时，动态 `CanvasTexture` 只绑定到 `Posterior_Matrix_Atlas` 材质；如果材质名不可用，则回退绑定 `mesh.material[1]`，避免覆盖前面材质。
+- 动态色阶仍读取可视化调节里的 `color/autoColor/filter/height`，其中 `height` 映射旧 WebGL 热力点半径，`color` 作为颜色映射上限；`autoColor` 使用独立 `endi-human-webgl` scope 且不会超过当前 `color` 配置。
+- 旧 `WebGLCanvas` 的 `tplCanvas` 作为右上角固定调试层挂到 `document.body`，带高 `z-index`、边框和背景；调试层宽度固定为 `128px`，高度固定为 `8 * 128px`，便于直接观察纵向 WebGL 热力图分块。
+| 2026-06-23 | Feature | Reuse the legacy WebGLCanvas heatmap renderer for Endi jacket, sleeve and trouser-leg texture rendering |
+
+## 2026-06-24 Endi WebGL 40x40 UV atlas texture
+- `ThreeHumanPoint` now maps the five Endi sensor frames directly into the model's 40x40 posterior UV atlas: head `26,0,9,5`, back `12,0,12,22`, left arm `12,24,18,2`, right arm `12,28,18,2`, left leg/hip `0,0,4,32`, and right leg/hip `6,0,4,32`.
+- The heat layer is still rendered by `WebGLCanvas`; the intermediate 128px per-part tile path is replaced by one power-of-two 512x512 atlas render based on the 40x40 logical UV grid, then copied into the `CanvasTexture` bound to `Posterior_Matrix_Atlas`.
+- `WebGLCanvas` accepts an optional fourth point value for per-point radius while preserving the old global-radius behavior for legacy callers. The Endi atlas renderer uses each UV cell size to choose the point radius so sparse head, arm, and leg regions render as continuous heat instead of scattered dots.
+- The WebGL debug canvas now keeps the actual backing canvas size for offscreen rendering but is hidden from the page, so Endi atlas generation no longer shows the bottom-right debug layer.
+- The Endi atlas color range no longer caps automatic color adjustment at the manual slider value; when `autoColor` is enabled it uses at least the current frame maximum, preventing raw wearable ADC values above 120 from saturating the whole atlas to red. The atlas point radius was also reduced slightly to limit additive WebGL overlap saturation.
+- The former height adjustment is now presented as size adjustment, with the maximum raised from 200 to 400 across frontend fallback config, persisted-setting normalization, system settings fallback, and backend visual-setting maximums. The Endi atlas point-size mapping allows the larger range to affect WebGL point radius.
+- The Endi human atlas base texture and WebGL debug background use white for no-data / non-sensor UV regions, leaving only mapped sensor regions colored by pressure.
+- The WebGL heatmap color pass now keeps soft alpha edges with `smoothstep`, uses linear texture sampling, clamps texture wrapping, and switches the final color pass back to normal alpha blending. This avoids the previous fully opaque blue/red hard edges that made the atlas look rough.
+- The Endi atlas softness was tightened after visual review: the default UV-cell point radius scale was reduced from 0.72 to 0.64, the WebGL blur factor from 0.68 to 0.46, and the final alpha transition from `0.01~0.16` to `0.025~0.09`, keeping anti-aliased edges without making the heatmap look blurry.
+- `ThreeHumanPoint` displays a bottom-right collapsible displacement panel after the human GLB is fitted into the scene. The panel shows model `position.x/y/z` values and provides sliders for adjusting the human model position during calibration.
+- The human model default displacement is set to `X=0.00, Y=-54.70, Z=-39.00`, and the displacement calibration panel starts collapsed by default.
+- Endi wearable matrices are now upsampled at the backend data-source layer immediately after `util/line.js` line-order mapping. `endi-jacket` becomes `24x54`, sleeves become `36x4`, and trouser legs become `12x64`; `SerialManager`, `util/deviceMatrixConfig.js`, and `client/src/util/constant.js` use those interpolated dimensions for validation, metadata, and 2D/3D rendering. `DataService` also normalizes legacy stored wearable frames (`12x27` / `18x2` / `6x32`) to the same interpolated size before playback validation and direction processing. `ThreeHumanPoint` no longer performs a second frontend interpolation and reads the already-upsampled source slices for the 40x40 UV atlas.
+- Endi 2D numeric views, chart statistics, COP report heatmaps and 3D human atlas mapping now consume backend matrices directly. The frontend no longer shifts the jacket head region, hides jacket/foot cells, or applies extra display-only row/column inversions; backend line order and `DataService.buildDirectedFrame()` are the single source of matrix orientation.
+- Public-facing labels for the full-body system no longer expose `endi` keys. `client/src/util/constant.js` provides `getMatrixDisplayLabel()` for UI/report/contrast labels and maps jacket/foot/leftHand/rightHand/leftFoot/rightFoot to 上身/下身/左臂/右臂/左腿/右腿 in Chinese and Upper body/Lower body/Left arm/Right arm/Left leg/Right leg in English; MAC configuration accepts short aliases such as `jacket` and stores the original internal `endi-*` type for protocol compatibility. CSV/XLSX export names and headers also use public matrix names instead of replacing `endi` with `car`.
+- `ChartsAside` uses the same `getMatrixDisplayLabel()` mapping for pressure-total and area chart series names. When multiple matrix parts are shown, selection-series suffixes also use public body-part labels instead of raw keys.
+- `DataService` now combines backend `endi-leftFoot` and `endi-rightFoot` matrices row-by-row into one `endi-foot` matrix (`24x64`) after line-order normalization and 2x interpolation. Realtime payloads, collection storage, playback normalization, chart series and the human atlas renderer consume the combined foot matrix, while serial parsing and MAC configuration still keep the two physical device types separate.
+- The frontend keeps the combined `endi-foot` matrix for shared data consumers and preserves `leftFoot/rightFoot` only for physical device status. `sourceStatuses` from the combined backend item preserves independent online/offline state for the two foot devices.
+- The 2D numeric view menu now exposes `foot2D` as one Lower body entry instead of separate left/right leg entries. Physical sensor status still keeps independent left/right leg states.
+- In `foot2D`, `NumThreeColorV3` renders the full backend merged `endi-foot` 24x64 matrix in backend row order. Lower-body cells are no longer hidden by a frontend invalid-region mask, and neither the 2D numeric layer nor the 3D human atlas leg mapping applies an extra Y-axis inversion; empty hardware positions remain visible as zero-value cells.
+- `ThreeHumanPoint` uses the base `human_matrix_atlas_rectangular_less_spike_long_legs_vfixed.glb` model instead of the former hflip/swap variants, keeping UV mapping aligned with backend matrix orientation.
+- The combined `endi-foot` item also carries `sourceMatrices` for `endi-leftFoot` and `endi-rightFoot`. `useMatrixData` prefers these source halves when creating `displayStatus.leftFoot/rightFoot`, so 2D numeric views are not dependent on slicing a direction-adjusted combined matrix. Endi export field discovery hides the legacy `back_device_mac` and `sit_device_mac` options from the download modal.
+| 2026-06-24 | Change | Render Endi human heatmap as one WebGL-generated 40x40 UV atlas texture |
+| 2026-06-26 | Refactor | Move Endi wearable 2x matrix interpolation into the backend data-source pipeline |
+| 2026-06-29 | Fix | Shift the Endi jacket 2D numeric head region right by three interpolated data cells |
+| 2026-06-29 | Fix | Hide the Endi jacket 2D head zero-padding columns from rendering and magnifier output |
+| 2026-06-29 | Change | Hide Endi internal keys from full-body user-facing labels and exports |
+| 2026-06-29 | Change | Rename Endi public body-part labels to upper/lower body, arms and legs in Chinese and English |
+| 2026-06-29 | Change | Use Endi public body-part labels in left-side chart legends and selection series suffixes |
+| 2026-06-29 | Change | Merge left/right leg entries into one Lower body option for Endi 2D numeric view |
+| 2026-06-29 | Change | Hide invalid lower-body leg cells and horizontally flip the right-leg half in Endi 2D numeric view |
+| 2026-06-29 | Refactor | Merge Endi left/right foot data into one backend `endi-foot` matrix |
+| 2026-06-29 | Fix | Restore separate left/right Endi leg display items while keeping backend foot data merged |
+| 2026-06-29 | Fix | Preserve Endi left/right foot source matrices for 2D display and hide seat/back MAC download fields for Endi exports |
+| 2026-06-29 | Fix | Use public Endi body-part labels for all chart color legends and metric color rows |
+| 2026-06-29 | Fix | Remove the history document ID from COP report metadata and render Endi upper/lower body report heatmaps with the same display-only shape transforms as 2D numeric view |
+| 2026-06-29 | Change | Apply the Endi human dynamic atlas texture to all model materials so front and back surfaces share the same heatmap texture source |
+| 2026-06-29 | UI | Rework chart metric rows into card-style metric blocks with multi-column colored values matching the new visualization panel layout |
+| 2026-06-29 | UI | Display pressure and total-pressure chart metrics with one decimal place and arrange center-point coordinates in two rows |
+| 2026-06-29 | Change | Map Endi human heatmap points into the smooth posterior UV percentage regions and render the full texture with one WebGL pass |
+| 2026-06-29 | Fix | Bind the Endi human heatmap only to `Base_Original_Human.004` and assign a white WebGL base texture to the other model materials |
+| 2026-06-29 | Change | Load Endi smooth human UV regions from `human4_smooth_posterior_split_excluded_regions.json` using `canvas_percent_flipY_false` with hardcoded regions as fallback |
+| 2026-06-29 | Fix | Bind the Endi smooth human heatmap to the JSON atlas material `Posterior_Matrix_Atlas` instead of falling back to all model materials, and read left/right leg source matrices before combined lower-body fallback |
+| 2026-06-29 | Fix | Keep the Endi head heatmap on the wider calibrated `back_head` UV region while the rest of the smooth human atlas reads regions from JSON |
+| 2026-06-29 | Change | Revert Endi 3D heatmap placement from smooth JSON bounds to the regular 40x40 matrix atlas model, mapping jacket head/back, arms and legs to fixed integer UV cells |
+| 2026-07-01 | Fix | Align Endi 3D heatmap cells to the active `human_matrix_atlas_rectangular_less_spike_long_legs_vfixed.glb` posterior atlas range (`y=8..40`) so head and torso render in occupied UV space |
+| 2026-07-01 | Fix | Store the Endi human 40x40 UV atlas using the provided texture-matrix coordinates and draw `y` directly, removing the extra y-axis inversion |
+| 2026-07-01 | Fix | Keep Endi contrast view synced to jacket/foot/arm 2D display types on enter, object switch and exit, and normalize left/right leg history frames into `endi-foot` for Lower body comparison |
+| 2026-07-01 | Fix | Align realtime Endi statistics, export metrics, selection metrics and COP report metrics to the same zeroed display-coordinate matrix while keeping visualization-only filtering out of pressure calculations |
+| 2026-07-02 | Fix | Remove the extra Endi lower-body right-half flip from 2D rendering, realtime statistics, export metrics and COP report display so `endi-foot` uses one backend merged matrix direction |
+| 2026-07-02 | Fix | Stop applying matrix direction flips/rotations in the frontend data hook; direction changes are saved through `/setDataDirection` and applied once in backend `DataService.buildDirectedFrame()` / collection storage |
+| 2026-07-02 | Fix | Invert only the Endi lower-body render-space Y coordinate for 2D numeric cells and 3D human UV heatmap leg points, leaving upper-body rendering, backend line-order data, statistics and exports unchanged |
+| 2026-07-02 | Fix | Align the Endi lower-body 2D hidden-cell mask with the render-space Y coordinate so the visible numeric shape matches the trouser-leg line-order table |
+| 2026-07-02 | Change | Store all Endi wearable line-order matrices as precomputed jqbed-reversed source indices and read them with `reverseJqbed: false` to avoid runtime double conversion |
+| 2026-07-02 | Fix | Render all Endi lower-body 2D/report cells instead of hiding extra leg columns with a frontend mask, so selected lower-body regions no longer appear as black gaps |
+| 2026-07-02 | Fix | Remove the extra Endi lower-body 2D numeric Y-axis inversion so the 7x2 leg-region block stays at the top position defined by the backend matrix |
+| 2026-07-02 | Fix | Align Endi human atlas leg mapping with the 2D numeric matrix by removing the remaining leg-only UV row inversion |
+| 2026-07-02 | Refactor | Remove frontend Endi display-shape compensation and switch the human atlas back to the base model so 2D, 3D, charts and reports all follow backend matrix data |
+| 2026-07-02 | Fix | Move `ENDI_RIGHT_FOOT_INDEX_MATRIX` null padding to the left side of four-point rows so the right-leg source matrix shape matches the backend data orientation |
+| 2026-07-02 | Fix | Horizontally flip `ENDI_JACKET_HEAD_INDEX_MATRIX` and `ENDI_JACKET_BACK_INDEX_MATRIX` at the line-order source so upper-body orientation is corrected in backend data |
+| 2026-07-02 | Fix | Update right-leg 3D atlas sampling to read the last eight columns of the 12-column right-foot matrix after null padding moved to the left side |
+| 2026-07-02 | Fix | Center the interpolated Endi jacket head region in the 24-column backend matrix and sample the centered 18-column head slice for the 3D atlas |
+| 2026-07-02 | Fix | Hide Endi jacket head padding cells and lower-body hardware-null cells in the 2D numeric renderer and magnifier with a display-only mask, without changing backend matrices or statistics |

@@ -7,6 +7,7 @@ const fs = require('fs')
 const path = require('path')
 const HttpResult = require('../HttpResult')
 const constantObj = require('../../util/config')
+const { MATRIX_DIMENSIONS } = require('../../util/deviceMatrixConfig')
 const { initDb, dbLoadCsv, getExportFieldOptions, deleteDbData, dbGetData, getCsvData, buildCsvPlaybackData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir, validateImportedCsv, listSelectionTemplates, replaceSelectionTemplates } = require('../../util/db')
 const module2 = require('../../util/aes_ecb')
 const { readEncryptedSystemConfig } = require('../../util/systemConfig')
@@ -17,6 +18,7 @@ const { colAndSendData, sendData, clearPlayTimer, ensureRealtimeTimer, startPlay
 const { loadPressureConfig, savePressureConfig, listPressureFormulaFiles } = require('../services/PressureConfig')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES } = require('../../util/deviceConfigValidation')
+const { interpolateEndiWearSource } = require('../../util/line')
 
 const router = express.Router()
 const historyIndexReady = new WeakSet()
@@ -31,8 +33,25 @@ const VISUAL_SETTING_DEFAULTS = {
 const VISUAL_SETTING_MAXIMUMS = {
   color: VISUAL_COLOR_MAX,
   filter: 200,
-  height: 200,
+  height: 400,
   autoColor: 1,
+}
+
+function getPublicDeviceTypeLabel(type) {
+  const normalized = String(type || '').toLowerCase()
+  const publicLabels = {
+    'endi-back': '靠背',
+    'endi-sit': '坐垫',
+    'endi-jacket': '上身',
+    'endi-lefthand': '左臂',
+    'endi-righthand': '右臂',
+    'endi-leftfoot': '左腿',
+    'endi-rightfoot': '右腿',
+    'endi-foot': '下身',
+  }
+  if (publicLabels[normalized]) return publicLabels[normalized]
+  const labels = {}
+  return labels[normalized] || String(type || '')
 }
 
 function ensureHistoryListIndex(db) {
@@ -49,23 +68,14 @@ function ensureHistoryListIndex(db) {
   })
 }
 
-const CONTRAST_MATRIX_DIMENSIONS = {
-  'endi-back': { width: 50, height: 64 },
-  'endi-sit': { width: 46, height: 46 },
-  'endi-jacket': { width: 12, height: 27 },
-  'endi-leftHand': { width: 18, height: 2 },
-  'endi-rightHand': { width: 18, height: 2 },
-  'endi-leftFoot': { width: 6, height: 32 },
-  'endi-rightFoot': { width: 6, height: 32 },
-  'carY-back': { width: 32, height: 32 },
-  'carY-sit': { width: 32, height: 32 },
-  'car-back': { width: 32, height: 32 },
-  'car-sit': { width: 32, height: 32 },
-  bed: { width: 32, height: 32 },
-  hand: { width: 32, height: 32 },
-  foot: { width: 32, height: 32 },
-  bigHand: { width: 64, height: 64 },
-}
+const CONTRAST_MATRIX_DIMENSIONS = MATRIX_DIMENSIONS
+const ENDI_FOOT_LEFT_KEY = 'endi-leftFoot'
+const ENDI_FOOT_RIGHT_KEY = 'endi-rightFoot'
+const ENDI_FOOT_COMBINED_KEY = 'endi-foot'
+const ENDI_SINGLE_FOOT_WIDTH = 12
+const ENDI_FOOT_HEIGHT = 64
+const ENDI_FOOT_SINGLE_LENGTH = ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT
+const ENDI_FOOT_LEGACY_LENGTH = 6 * 32
 
 function parseMatrixFrame(row) {
   if (!row || !row.data) return {}
@@ -83,6 +93,90 @@ function getComparableKeys(frame) {
     .sort()
 }
 
+function normalizeEndiFootContrastArray(key, arr) {
+  if (!Array.isArray(arr)) return arr
+  if (arr.length === ENDI_FOOT_SINGLE_LENGTH) return arr
+  if ((key === ENDI_FOOT_LEFT_KEY || key === ENDI_FOOT_RIGHT_KEY) && arr.length === ENDI_FOOT_LEGACY_LENGTH) {
+    return interpolateEndiWearSource(key, arr)
+  }
+  return arr
+}
+
+function makeZeroMatrix(length) {
+  return new Array(length).fill(0)
+}
+
+function combineEndiFootRows(leftArr = [], rightArr = []) {
+  const left = Array.isArray(leftArr) && leftArr.length === ENDI_FOOT_SINGLE_LENGTH ? leftArr : makeZeroMatrix(ENDI_FOOT_SINGLE_LENGTH)
+  const right = Array.isArray(rightArr) && rightArr.length === ENDI_FOOT_SINGLE_LENGTH ? rightArr : makeZeroMatrix(ENDI_FOOT_SINGLE_LENGTH)
+  const combined = []
+
+  for (let row = 0; row < ENDI_FOOT_HEIGHT; row++) {
+    const start = row * ENDI_SINGLE_FOOT_WIDTH
+    combined.push(
+      ...left.slice(start, start + ENDI_SINGLE_FOOT_WIDTH),
+      ...right.slice(start, start + ENDI_SINGLE_FOOT_WIDTH)
+    )
+  }
+
+  return combined
+}
+
+function normalizeEndiFootContrastFrame(frame) {
+  if (!frame || typeof frame !== 'object') return frame
+  const next = { ...frame }
+  const combinedItem = next[ENDI_FOOT_COMBINED_KEY]
+  const combinedArr = normalizeEndiFootContrastArray(ENDI_FOOT_COMBINED_KEY, combinedItem?.arr)
+
+  if (Array.isArray(combinedArr) && combinedArr.length === ENDI_FOOT_SINGLE_LENGTH * 2) {
+    next[ENDI_FOOT_COMBINED_KEY] = {
+      ...(combinedItem || {}),
+      arr: combinedArr,
+      width: 24,
+      height: 64,
+      matrixMeta: combinedItem?.matrixMeta || {
+        matrix_key: ENDI_FOOT_COMBINED_KEY,
+        width: 24,
+        height: 64,
+        point_count: combinedArr.length,
+      },
+    }
+    delete next[ENDI_FOOT_LEFT_KEY]
+    delete next[ENDI_FOOT_RIGHT_KEY]
+    return next
+  }
+
+  const leftItem = next[ENDI_FOOT_LEFT_KEY]
+  const rightItem = next[ENDI_FOOT_RIGHT_KEY]
+  const leftArr = normalizeEndiFootContrastArray(ENDI_FOOT_LEFT_KEY, leftItem?.arr)
+  const rightArr = normalizeEndiFootContrastArray(ENDI_FOOT_RIGHT_KEY, rightItem?.arr)
+  const hasLeft = Array.isArray(leftArr) && leftArr.length === ENDI_FOOT_SINGLE_LENGTH
+  const hasRight = Array.isArray(rightArr) && rightArr.length === ENDI_FOOT_SINGLE_LENGTH
+
+  delete next[ENDI_FOOT_LEFT_KEY]
+  delete next[ENDI_FOOT_RIGHT_KEY]
+
+  if (!hasLeft && !hasRight) return next
+
+  const sourceItem = hasLeft ? leftItem : rightItem
+  const arr = combineEndiFootRows(leftArr, rightArr)
+  next[ENDI_FOOT_COMBINED_KEY] = {
+    ...(sourceItem || {}),
+    arr,
+    width: 24,
+    height: 64,
+    matrixMeta: {
+      matrix_key: ENDI_FOOT_COMBINED_KEY,
+      width: 24,
+      height: 64,
+      point_count: arr.length,
+    },
+    sourceMatrixKeys: [ENDI_FOOT_LEFT_KEY, ENDI_FOOT_RIGHT_KEY],
+  }
+
+  return next
+}
+
 function getCanonicalContrastKey(key) {
   const value = String(key || '')
   if (value === 'back' || /-back$/.test(value)) return 'back'
@@ -92,8 +186,9 @@ function getCanonicalContrastKey(key) {
 
 function normalizeContrastKeyAliases(frame) {
   const result = {}
-  Object.keys(frame || {}).sort().forEach((key) => {
-    const item = frame[key]
+  const normalizedFrame = normalizeEndiFootContrastFrame(frame)
+  Object.keys(normalizedFrame || {}).sort().forEach((key) => {
+    const item = normalizedFrame[key]
     if (!item || !Array.isArray(item.arr)) return
     const canonicalKey = getCanonicalContrastKey(key)
     if (!result[canonicalKey] || key === canonicalKey) {
@@ -967,8 +1062,9 @@ router.get('/sendMacConnected', asyncHandler(async (req, res) => {
         if (deviceType) {
           dataItem.type = deviceType
           dataItem.premission = premission
+          const publicDeviceType = getPublicDeviceTypeLabel(deviceType)
           console.log(`[sendMacConnected] ${portPath} type resolved: ${deviceType}, auth: ${premission}`)
-          broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 设备类型已更新为 ${deviceType}`, type: 'success', timestamp: Date.now() } }))
+          broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 设备类型已更新为 ${publicDeviceType}`, type: 'success', timestamp: Date.now() } }))
           broadcast(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission } }))
         } else {
           console.warn(`[sendMacConnected] ${portPath} type not resolved for MAC ${uniqueId}`)

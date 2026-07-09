@@ -3,7 +3,7 @@ import { Button, Input, message, Spin, Tag } from 'antd'
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import { useTranslation } from 'react-i18next'
-import { localAddress } from '../../../util/constant'
+import { getMatrixDisplayLabel, localAddress } from '../../../util/constant'
 import './MacConfig.scss'
 
 const MAC_CONFIG_COPY = {
@@ -63,8 +63,45 @@ const SUPPORTED_DEVICE_TYPES = [
   'carY-sit',
   'hand',
 ]
+const DEVICE_TYPE_ALIASES = {
+  jacket: 'endi-jacket',
+  leftHand: 'endi-leftHand',
+  rightHand: 'endi-rightHand',
+  leftFoot: 'endi-leftFoot',
+  rightFoot: 'endi-rightFoot',
+}
+const PUBLIC_DEVICE_TYPES = [
+  'jacket',
+  'leftHand',
+  'rightHand',
+  'leftFoot',
+  'rightFoot',
+  'car-back',
+  'car-sit',
+  'carY-back',
+  'carY-sit',
+  'bed',
+  'hand',
+]
 const CONTINUOUS_MAC_RE = /^[0-9A-F]{12,32}$/
 const COLON_MAC_RE = /^([0-9A-F]{2}:){5,15}[0-9A-F]{2}$/
+
+function normalizeDeviceType(type) {
+  const raw = String(type || '').trim()
+  return DEVICE_TYPE_ALIASES[raw] || raw
+}
+
+function getPublicDeviceType(type, language = 'zh') {
+  const normalized = normalizeDeviceType(type)
+  const alias = Object.entries(DEVICE_TYPE_ALIASES).find(([, value]) => value === normalized)?.[0]
+  const label = getMatrixDisplayLabel(normalized, language)
+  return alias ? `${label}(${alias})` : normalized
+}
+
+function getInputDeviceType(type) {
+  const normalized = normalizeDeviceType(type)
+  return Object.entries(DEVICE_TYPE_ALIASES).find(([, value]) => value === normalized)?.[0] || normalized
+}
 
 function normalizeMac(mac) {
   return String(mac || '').trim().toUpperCase()
@@ -99,7 +136,8 @@ function validateConfigString(str) {
     }
 
     const mac = normalizeMac(item.substring(0, lastColon))
-    const type = item.substring(lastColon + 1).trim()
+    const inputType = item.substring(lastColon + 1).trim()
+    const type = normalizeDeviceType(inputType)
 
     if (!isValidMac(mac)) {
       errors.push(`第 ${index + 1} 项 MAC/Unique ID 格式错误：${mac}`)
@@ -123,7 +161,7 @@ function validateConfigString(str) {
 
 function configToString(config) {
   if (!config || !Array.isArray(config) || config.length === 0) return ''
-  return config.map(d => `${d.mac}:${d.type}`).join(',')
+  return config.map(d => `${d.mac}:${getInputDeviceType(d.type)}`).join(',')
 }
 
 export async function getMacConfig() {
@@ -178,7 +216,8 @@ async function saveToBackend(devices, retries = 2) {
 
 export default function MacConfig({ onBack, showBackButton = Boolean(onBack) }) {
   const { i18n } = useTranslation()
-  const copy = MAC_CONFIG_COPY[getLanguageKey(i18n.language || localStorage.getItem('language'))]
+  const lang = getLanguageKey(i18n.language || localStorage.getItem('language'))
+  const copy = MAC_CONFIG_COPY[lang]
   const [inputValue, setInputValue] = useState('')
   const [parsed, setParsed] = useState([])
   const [saving, setSaving] = useState(false)
@@ -284,10 +323,10 @@ export default function MacConfig({ onBack, showBackButton = Boolean(onBack) }) 
         <div className="mac-hint">
           {copy.format}: <code>{copy.formatValue}</code>
           <br />
-          {copy.example}: <code>554635300D50434523:endi-jacket,504330390250435F15:endi-leftHand</code>
+          {copy.example}: <code>554635300D50434523:jacket,504330390250435F15:leftHand</code>
           <br />
           <span className="mac-types">
-            {copy.availableTypes}: {SUPPORTED_DEVICE_TYPES.join(', ')}
+            {copy.availableTypes}: {PUBLIC_DEVICE_TYPES.map((type) => getPublicDeviceType(type, lang)).join(', ')}
           </span>
         </div>
 
@@ -312,7 +351,7 @@ export default function MacConfig({ onBack, showBackButton = Boolean(onBack) }) 
             <div className="preview-tags">
               {parsed.map((d, i) => (
                 <Tag key={i} className="preview-tag">
-                  <span className="tag-type">{d.type}</span>
+                  <span className="tag-type">{getPublicDeviceType(d.type, lang)}</span>
                   <span className="tag-mac">{d.mac}</span>
                 </Tag>
               ))}

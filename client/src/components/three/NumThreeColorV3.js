@@ -81,6 +81,47 @@ const DIGIT_TILE_INSET = 8;
 const NUM_2D_GAUSS_KERNEL_FACTOR = 0.5;
 const NUM_2D_TEMPORAL_ALPHA = 0.22;
 const NUM_2D_DISPLAY_DEADBAND = 1.1;
+const ENDI_JACKET_WIDTH = 24;
+const ENDI_JACKET_HEIGHT = 54;
+const ENDI_JACKET_HEAD_HEIGHT = 10;
+const ENDI_JACKET_HEAD_PADDING = 3;
+const ENDI_FOOT_WIDTH = 24;
+const ENDI_FOOT_HEIGHT = 64;
+const ENDI_FOOT_SINGLE_WIDTH = 12;
+const ENDI_FOOT_EXTRA_COL_COUNT = 4;
+const ENDI_FOOT_EXTRA_VALID_ROW_START = 16;
+const ENDI_FOOT_EXTRA_VALID_ROW_END = 29;
+
+function isEndiJacketNullCell(index, width, height) {
+  if (width !== ENDI_JACKET_WIDTH || height !== ENDI_JACKET_HEIGHT) return false;
+  const row = Math.floor(index / width);
+  const col = index % width;
+  return row < ENDI_JACKET_HEAD_HEIGHT
+    && (col < ENDI_JACKET_HEAD_PADDING || col >= width - ENDI_JACKET_HEAD_PADDING);
+}
+
+function isEndiFootNullCell(index, width, height) {
+  if (width !== ENDI_FOOT_WIDTH || height !== ENDI_FOOT_HEIGHT) return false;
+  const row = Math.floor(index / width);
+  const col = index % width;
+  const isRightFoot = col >= ENDI_FOOT_SINGLE_WIDTH;
+  const localCol = isRightFoot ? col - ENDI_FOOT_SINGLE_WIDTH : col;
+  const isValidExtraRow = row >= ENDI_FOOT_EXTRA_VALID_ROW_START && row <= ENDI_FOOT_EXTRA_VALID_ROW_END;
+  const isLeftFootNullCol = !isRightFoot && localCol >= ENDI_FOOT_SINGLE_WIDTH - ENDI_FOOT_EXTRA_COL_COUNT;
+  const isRightFootNullCol = isRightFoot && localCol < ENDI_FOOT_EXTRA_COL_COUNT;
+  return (isLeftFootNullCol || isRightFootNullCol) && !isValidExtraRow;
+}
+
+function createEndiNullMask(systemType, displayType, width, height) {
+  if (systemType !== 'endi') return null;
+  if (displayType === 'jacket2D') {
+    return Array.from({ length: width * height }, (_, index) => isEndiJacketNullCell(index, width, height));
+  }
+  if (displayType === 'foot2D') {
+    return Array.from({ length: width * height }, (_, index) => isEndiFootNullCell(index, width, height));
+  }
+  return null;
+}
 
 function prepareDisplayData(data, width, height, settings) {
   const count = width * height;
@@ -171,8 +212,8 @@ export default function NumThree(props) {
   const magnifierCanvasRef = useRef(null);
   const magnifierCtxRef = useRef(null);
   const dataRef = useRef([]);
+  const nullMaskRef = useRef(null);
   const gridRef = useRef({ width: 0, height: 0 });
-  const invertYRef = useRef(false);
   const textureMaxRef = useRef(22);
   const magnifierPosRef = useRef({ col: -1, row: -1 });
   const drawMagnifierRef = useRef(null);
@@ -413,9 +454,6 @@ export default function NumThree(props) {
 
 
     mesh.rotation.x = Math.PI
-    invertYRef.current = false;
-
-
     function animate() {
 
       // let data = pageRef.current.equipStatus.data
@@ -467,7 +505,9 @@ export default function NumThree(props) {
       setDynamicGammaColorEnabled(Boolean(autoColor));
       data = prepareDisplayData(data, gridSize1, gridSize2, settingValue);
       data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}-g${gauss}-f${filter}`);
+      const nullMask = createEndiNullMask(systemType, displayType, gridSize1, gridSize2);
       dataRef.current = data;
+      nullMaskRef.current = nullMask;
       gridRef.current = { width: gridSize1, height: gridSize2 };
       // const { wsLocalData } = pageRef.current
       // if (wsLocalData) {
@@ -516,6 +556,8 @@ export default function NumThree(props) {
           0
         ); // 居中
 
+        const isNullCell = Boolean(nullMask?.[i]);
+        dummy.scale.set(isNullCell ? 0 : 1, isNullCell ? 0 : 1, 1);
         // dummy.position.set((x ) / 32, (y ) / 32, 0);
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
@@ -644,6 +686,7 @@ export default function NumThree(props) {
       const height = gridRef.current.height;
       if (!width || !height) return;
       const dataArr = dataRef.current || [];
+      const nullMask = nullMaskRef.current;
       const cells = getMagnifierCells(magnifierZoomRef.current);
       const center = Math.floor(cells / 2);
       const cellSize = canvas.width / cells;
@@ -658,7 +701,11 @@ export default function NumThree(props) {
           const gy = row + y - center;
           let value = 0;
           if (gx >= 0 && gx < width && gy >= 0 && gy < height) {
-            value = dataArr[gy * width + gx] ?? 0;
+            const dataIndex = gy * width + gx;
+            if (nullMask?.[dataIndex]) {
+              continue;
+            }
+            value = dataArr[dataIndex] ?? 0;
           }
           value = normalizeDisplayValue(value);
           const [r, g, b] = applyMatrixColor(value, colorMax);
@@ -698,9 +745,6 @@ export default function NumThree(props) {
       let row = Math.floor(((ny - padY) / (1 - 2 * padY)) * height);
       col = Math.max(0, Math.min(width - 1, col));
       row = Math.max(0, Math.min(height - 1, row));
-      if (invertYRef.current) {
-        row = height - 1 - row;
-      }
       magnifierPosRef.current = { col, row };
       drawMagnifier(col, row);
     };

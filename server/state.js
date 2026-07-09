@@ -40,6 +40,7 @@ const state = {
       'endi-rightHand': { left: true, up: true, rotateDegree: 0 },
       'endi-leftFoot': { left: true, up: true, rotateDegree: 0 },
       'endi-rightFoot': { left: true, up: true, rotateDegree: 0 },
+      'endi-foot': { left: true, up: true, rotateDegree: 0 },
       'carY-back': { left: false, up: true, rotateDegree: 0 },
       'carY-sit': { left: true, up: true, rotateDegree: 270 },
       'car-back': { left: false, up: true, rotateDegree: 0 },

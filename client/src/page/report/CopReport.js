@@ -4,7 +4,7 @@ import { ArrowLeftOutlined, DownloadOutlined, FilePdfOutlined } from '@ant-desig
 import axios from 'axios'
 import * as echarts from 'echarts'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { localAddress } from '../../util/constant'
+import { getMatrixDisplayLabel, localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import { computePressureMetrics } from '../../util/pressureMetrics'
 import { useEquipStore } from '../../store/equipStore'
@@ -52,6 +52,11 @@ const inferSize = (matrix) => {
   return { width: arr.length || 1, height: 1 }
 }
 
+const getReportDisplayMatrix = (matrix, matrixKey) => {
+  const { width, height } = inferSize(matrix)
+  return { arr: safeArray(matrix?.arr), width, height }
+}
+
 const getMatrixKeys = (frames = []) => {
   const first = frames.find((frame) => Object.keys(frame?.data || {}).length)
   return Object.keys(first?.data || {}).filter((key) => Array.isArray(first.data[key]?.arr))
@@ -78,15 +83,11 @@ const getReportMatrixKeys = (payload) => {
 }
 
 const getMatrixLabel = (key) => {
-  if (String(key).includes('back')) return '靠背'
-  if (String(key).includes('sit')) return '坐垫'
-  return key || '传感面'
+  return getMatrixDisplayLabel(key, 'zh') || '传感面'
 }
 
 const getSensorTypeName = (key) => {
-  if (String(key).includes('back')) return '靠背'
-  if (String(key).includes('sit')) return '坐垫'
-  return String(key || '').replace(/endi-?/ig, '') || '传感器'
+  return getMatrixDisplayLabel(key, 'zh') || '传感器'
 }
 
 const formatReportDateTime = (value) => {
@@ -95,7 +96,7 @@ const formatReportDateTime = (value) => {
   const date = Number.isFinite(numeric)
     ? new Date(numeric < 1e12 ? numeric * 1000 : numeric)
     : new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value).replace(/endi/ig, 'car')
+  if (Number.isNaN(date.getTime())) return getMatrixDisplayLabel(value, 'zh')
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
@@ -164,8 +165,9 @@ const normalizeSelections = (selectValue, matrixKey, matrixSize) => {
 }
 
 const calcFrameMetrics = (matrix, rect = null, matrixKey = '') => {
-  const arr = safeArray(matrix?.arr)
-  const { width, height } = inferSize(matrix)
+  const displayMatrix = getReportDisplayMatrix(matrix, matrixKey)
+  const arr = safeArray(displayMatrix.arr)
+  const { width, height } = displayMatrix
   const scope = rect || { xStart: 0, yStart: 0, xEnd: width, yEnd: height }
   let pMax = 0
   let pSum = 0
@@ -219,11 +221,13 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '') => {
 
 const buildAverageMap = (frames, matrixKey) => {
   const firstMatrix = frames[0]?.data?.[matrixKey]
-  const { width, height } = inferSize(firstMatrix)
+  const firstDisplayMatrix = getReportDisplayMatrix(firstMatrix, matrixKey)
+  const { width, height } = firstDisplayMatrix
   const sum = Array(width * height).fill(0)
   let count = 0
   frames.forEach((frame) => {
-    const arr = safeArray(frame?.data?.[matrixKey]?.arr)
+    const displayMatrix = getReportDisplayMatrix(frame?.data?.[matrixKey], matrixKey)
+    const arr = safeArray(displayMatrix.arr)
     if (arr.length !== sum.length) return
     count++
     arr.forEach((value, index) => { sum[index] += Number(value) || 0 })
@@ -335,9 +339,8 @@ const heatColor = (value, max) => {
   return '#e11919'
 }
 
-function Heatmap({ matrix, selections = [], activeSelection = null, title }) {
-  const arr = safeArray(matrix?.arr)
-  const { width, height } = inferSize(matrix)
+function Heatmap({ matrix, matrixKey = '', selections = [], activeSelection = null, title }) {
+  const { arr, width, height } = getReportDisplayMatrix(matrix, matrixKey)
   const max = Math.max(...arr, 1)
   return (
     <div className="report-chart">
@@ -634,7 +637,6 @@ function CopReport() {
         <h1>压力中心（COP）分析报告</h1>
         <section className="report-meta">
           <div><span>历史文档名称：</span>{payload.name || payload.date}</div>
-          <div><span>历史文档ID：</span>{payload.id}</div>
           <div><span>矩阵尺寸：</span>{size.width} x {size.height}</div>
           <div><span>报告包含：</span>{allAnalyses.map((item) => getMatrixLabel(item.matrixKey)).join(' / ')}</div>
           <div><span>采集时间：</span>{collectionTime}</div>
@@ -656,9 +658,9 @@ function CopReport() {
 
         <ReportSection index="2" title={`${primaryLabel}压力分布与COP轨迹`}>
           <div className="chart-grid four">
-            <Heatmap matrix={averageMatrix} selections={selections} title={`${primaryLabel}平均压力热力图 (kPa)`} />
+            <Heatmap matrix={averageMatrix} matrixKey={analysis.matrixKey} selections={selections} title={`${primaryLabel}平均压力热力图 (kPa)`} />
             <CopChart series={metrics} title={`${primaryLabel}COP轨迹图 (mm)`} />
-            <Heatmap matrix={averageMatrix} selections={selections} title={`${primaryLabel}框选区域叠加图`} />
+            <Heatmap matrix={averageMatrix} matrixKey={analysis.matrixKey} selections={selections} title={`${primaryLabel}框选区域叠加图`} />
             <LineChart series={metrics.map((item) => item.pSum)} title={`${primaryLabel}压力总和趋势图 (N)`} color="#1d4ed8" yLabel="压力" />
           </div>
         </ReportSection>
@@ -724,7 +726,7 @@ function CopReport() {
               <div className="selection-detail" key={selection.id}>
                 <h3><span style={{ background: selection.color }}>{index + 1}</span>{selection.name}</h3>
                 <div className="selection-detail-grid">
-                  <Heatmap matrix={averageMatrix} selections={[selection]} activeSelection={selection} title="区域叠加图" />
+                  <Heatmap matrix={averageMatrix} matrixKey={analysis.matrixKey} selections={[selection]} activeSelection={selection} title="区域叠加图" />
                   <LineChart series={selection.series.map((item) => item.pSum)} title="区域压力总和趋势 (N)" color={selection.color} yLabel="压力" />
                   <CopChart series={selection.series} title={`${primaryLabel}区域局部COP轨迹 (mm)`} />
                   <DataTable
@@ -800,9 +802,9 @@ function SurfaceAnalysisReport({ analysis, indexLabel }) {
         <div><span>框选数量：</span>{selections.length}</div>
       </div>
       <div className="chart-grid four">
-        <Heatmap matrix={averageMatrix} selections={selections} title={`${label}平均压力热力图 (kPa)`} />
+        <Heatmap matrix={averageMatrix} matrixKey={matrixKey} selections={selections} title={`${label}平均压力热力图 (kPa)`} />
         <CopChart series={metrics} title={`${label} COP轨迹图 (mm)`} />
-        <Heatmap matrix={averageMatrix} selections={selections} title={`${label}框选叠加图`} />
+        <Heatmap matrix={averageMatrix} matrixKey={matrixKey} selections={selections} title={`${label}框选叠加图`} />
         <LineChart series={metrics.map((item) => item.pSum)} title={`${label}压力总和趋势 (N)`} color="#1d4ed8" yLabel="压力" />
       </div>
       <DataTable
@@ -835,7 +837,7 @@ function SurfaceAnalysisReport({ analysis, indexLabel }) {
             <div className="selection-detail compact" key={selection.id}>
               <h3><span style={{ background: selection.color }}>{index + 1}</span>{selection.name}</h3>
               <div className="selection-detail-grid">
-                <Heatmap matrix={averageMatrix} selections={[selection]} activeSelection={selection} title="区域叠加图" />
+                <Heatmap matrix={averageMatrix} matrixKey={matrixKey} selections={[selection]} activeSelection={selection} title="区域叠加图" />
                 <LineChart series={selection.series.map((item) => item.pSum)} title="区域压力总和趋势 (N)" color={selection.color} yLabel="压力" />
                 <CopChart series={selection.series} title={`${label}区域局部COP轨迹 (mm)`} />
                 <DataTable

@@ -5,13 +5,13 @@ import { useTranslation } from 'react-i18next'
 import { decode as msgpackDecode } from '@msgpack/msgpack'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 import dayjs from 'dayjs'
-import { serverAddress, localAddress, wsAddress } from '../../../util/constant'
+import { getMatrixDisplayLabel, serverAddress, localAddress, wsAddress } from '../../../util/constant'
 import './index.scss'
 
 dayjs.extend(customParseFormat)
 const dateFormat = 'YYYY-MM-DD'
 const CheckboxGroup = Checkbox.Group
-const plainOptions = [
+const plainOptionValues = [
   'hand',
   'bed',
   'car-back',
@@ -26,6 +26,10 @@ const plainOptions = [
   'carY-back',
   'carY-sit',
 ]
+const plainOptions = plainOptionValues.map((value) => ({
+  label: getMatrixDisplayLabel(value, 'zh'),
+  value,
+}))
 
 // ─── Device class colors & labels ────────────────────────
 const DEVICE_COLORS = {

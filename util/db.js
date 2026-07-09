@@ -8,21 +8,18 @@ const path = require('path');
 const { timeStampTo_Date } = require("./time");
 const constantObj = require("./config");
 const { loadPressureConfig, loadPressureFormula } = require("../server/services/PressureConfig");
+const { DEVICE_MATRIX_CONFIG } = require("./deviceMatrixConfig");
+const { interpolateEndiWearSource } = require("./line");
 
 // ─── 传感器点位配置 ──────────────────────────────────────
-const pointConfig = {
-  'endi-back': { pointWidthDistance: 13, pointHeightDistance: 10, width: 50, height: 64 },
-  'endi-sit': { pointWidthDistance: 10, pointHeightDistance: 10, width: 46, height: 46 },
-  'endi-jacket': { pointWidthDistance: 10, pointHeightDistance: 10, width: 12, height: 27 },
-  'endi-leftHand': { pointWidthDistance: 10, pointHeightDistance: 10, width: 18, height: 2 },
-  'endi-rightHand': { pointWidthDistance: 10, pointHeightDistance: 10, width: 18, height: 2 },
-  'endi-leftFoot': { pointWidthDistance: 10, pointHeightDistance: 10, width: 6, height: 32 },
-  'endi-rightFoot': { pointWidthDistance: 10, pointHeightDistance: 10, width: 6, height: 32 },
-  'carY-back': { pointWidthDistance: 10, pointHeightDistance: 19, width: 32, height: 32 },
-  'carY-sit': { pointWidthDistance: 15, pointHeightDistance: 15, width: 32, height: 32 },
-  'car-back': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
-  'car-sit': { pointWidthDistance: 10, pointHeightDistance: 10, width: 32, height: 32 },
-};
+const pointConfig = DEVICE_MATRIX_CONFIG
+const ENDI_FOOT_LEFT_KEY = 'endi-leftFoot'
+const ENDI_FOOT_RIGHT_KEY = 'endi-rightFoot'
+const ENDI_FOOT_COMBINED_KEY = 'endi-foot'
+const ENDI_SINGLE_FOOT_WIDTH = 12
+const ENDI_FOOT_HEIGHT = 64
+const ENDI_FOOT_SINGLE_LENGTH = ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT
+const ENDI_FOOT_LEGACY_LENGTH = 6 * 32
 
 const CSV_IMPORT_INVALID_MESSAGE = '数据有误'
 const CSV_FORMAT_VERSION = '2.0'
@@ -32,6 +29,77 @@ const validImportMatrixLengths = new Set([
   ...Object.values(pointConfig).map((config) => config.width * config.height),
   4096,
 ])
+
+function normalizeEndiFootArray(key, arr) {
+  if (!Array.isArray(arr)) return arr
+  if (arr.length === ENDI_FOOT_SINGLE_LENGTH) return arr
+  if ((key === ENDI_FOOT_LEFT_KEY || key === ENDI_FOOT_RIGHT_KEY) && arr.length === ENDI_FOOT_LEGACY_LENGTH) {
+    return interpolateEndiWearSource(key, arr)
+  }
+  return arr
+}
+
+function combineEndiFootRows(leftArr = [], rightArr = []) {
+  const left = Array.isArray(leftArr) && leftArr.length === ENDI_FOOT_SINGLE_LENGTH
+    ? leftArr
+    : new Array(ENDI_FOOT_SINGLE_LENGTH).fill(0)
+  const right = Array.isArray(rightArr) && rightArr.length === ENDI_FOOT_SINGLE_LENGTH
+    ? rightArr
+    : new Array(ENDI_FOOT_SINGLE_LENGTH).fill(0)
+  const combined = []
+
+  for (let row = 0; row < ENDI_FOOT_HEIGHT; row++) {
+    const start = row * ENDI_SINGLE_FOOT_WIDTH
+    combined.push(
+      ...left.slice(start, start + ENDI_SINGLE_FOOT_WIDTH),
+      ...right.slice(start, start + ENDI_SINGLE_FOOT_WIDTH)
+    )
+  }
+
+  return combined
+}
+
+function normalizeEndiFootFrame(frame) {
+  if (!frame || typeof frame !== 'object') return frame
+  const next = { ...frame }
+  const leftItem = next[ENDI_FOOT_LEFT_KEY]
+  const rightItem = next[ENDI_FOOT_RIGHT_KEY]
+  const leftArr = normalizeEndiFootArray(ENDI_FOOT_LEFT_KEY, leftItem?.arr)
+  const rightArr = normalizeEndiFootArray(ENDI_FOOT_RIGHT_KEY, rightItem?.arr)
+  const hasLeft = Array.isArray(leftArr) && leftArr.length === ENDI_FOOT_SINGLE_LENGTH
+  const hasRight = Array.isArray(rightArr) && rightArr.length === ENDI_FOOT_SINGLE_LENGTH
+
+  delete next[ENDI_FOOT_LEFT_KEY]
+  delete next[ENDI_FOOT_RIGHT_KEY]
+
+  if (!hasLeft && !hasRight) return next
+
+  const sourceItem = hasLeft ? leftItem : rightItem
+  const arr = combineEndiFootRows(leftArr, rightArr)
+  next[ENDI_FOOT_COMBINED_KEY] = {
+    ...(sourceItem || {}),
+    arr,
+    matrixMeta: {
+      matrix_key: ENDI_FOOT_COMBINED_KEY,
+      width: 24,
+      height: 64,
+      point_count: arr.length,
+    },
+    sourceMatrixKeys: [ENDI_FOOT_LEFT_KEY, ENDI_FOOT_RIGHT_KEY],
+  }
+
+  return next
+}
+
+function parseMatrixFrameData(value) {
+  if (!value) return {}
+  try {
+    const frame = typeof value === 'string' ? JSON.parse(value) : value
+    return normalizeEndiFootFrame(frame)
+  } catch {
+    return {}
+  }
+}
 
 /**
  * 将一维数组索引转换为矩阵中的二维点位置坐标
@@ -219,8 +287,38 @@ function sanitizeFileNameSegment(value) {
   return sanitized || 'export'
 }
 
+function getPublicMatrixName(value) {
+  const key = String(value ?? '').trim()
+  const normalized = key.toLowerCase()
+  const labels = {
+    endi: '假人全身',
+    'endi-back': '靠背',
+    'endi-sit': '坐垫',
+    'endi-jacket': '上身',
+    'endi-lefthand': '左臂',
+    'endi-righthand': '右臂',
+    'endi-leftfoot': '左腿',
+    'endi-rightfoot': '右腿',
+    'endi-foot': '下身',
+    back: '靠背',
+    sit: '坐垫',
+    jacket: '上身',
+    lefthand: '左臂',
+    righthand: '右臂',
+    leftfoot: '左腿',
+    rightfoot: '右腿',
+    foot: '下身',
+  }
+  if (labels[normalized]) return labels[normalized]
+  if (normalized.includes('-')) {
+    const part = normalized.split('-').pop()
+    if (labels[part]) return labels[part]
+  }
+  return key.replace(/endi-?/ig, '').replace(/car-?/ig, '') || '数据'
+}
+
 function toPublicExportName(value) {
-  return sanitizeFileNameSegment(String(value ?? '').replace(/endi/ig, 'car'))
+  return sanitizeFileNameSegment(getPublicMatrixName(value))
 }
 
 function buildExportRecordName(param) {
@@ -287,6 +385,35 @@ function inferExportMatrixSize(key, data, item = {}) {
   }
 
   return { width: length, height: 1 }
+}
+
+function shiftEndiJacketHeadRightForExport(data, width, height) {
+  if (!Array.isArray(data) || width !== 24 || height !== 54) return data
+  const next = [...data]
+  const headRows = Math.min(10, height)
+  const offsetX = 3
+
+  for (let row = 0; row < headRows; row++) {
+    for (let col = width - 1; col >= 0; col--) {
+      const fromCol = col - offsetX
+      next[row * width + col] = fromCol >= 0 ? data[row * width + fromCol] : 0
+    }
+  }
+
+  return next
+}
+
+function getExportDisplayMatrixData(data, key, matrixSize) {
+  if (!Array.isArray(data)) return []
+  const width = Number(matrixSize?.width) || 0
+  const height = Number(matrixSize?.height) || 0
+  const keyText = String(key || '')
+
+  if ((keyText === 'endi-jacket' || keyText === 'jacket') && width === 24 && height === 54) {
+    return shiftEndiJacketHeadRightForExport(data, width, height)
+  }
+
+  return data
 }
 
 function normalizeExportDirection(direction) {
@@ -568,7 +695,7 @@ async function dbGetData({ db, params }) {
 
   const length = rows.length
   // 只解析第一行获取 key 列表
-  const firstData = JSON.parse(rows[0].data)
+  const firstData = parseMatrixFrameData(rows[0].data)
   const keyArr = Object.keys(firstData).filter(k => k && k !== 'null' && k !== 'undefined')
 
   // [PERF-PLAYBACK-OPT] bucket 大小：当帧数 ≤ 500 时不降采样（bucket=1）；否则按比例聚合
@@ -590,7 +717,7 @@ async function dbGetData({ db, params }) {
 
   for (let i = 0; i < rows.length; i++) {
     // 每行只解析一次 JSON
-    const dataObj = JSON.parse(rows[i].data)
+    const dataObj = parseMatrixFrameData(rows[i].data)
 
     for (const key of keyArr) {
       const item = dataObj[key]
@@ -632,9 +759,9 @@ async function dbGetData({ db, params }) {
 
 function getExportKeyLabel(key) {
   const text = String(key || '').toLowerCase()
-  if (text === 'back' || text.endsWith('-back')) return '靠背'
-  if (text === 'sit' || text.endsWith('-sit')) return '坐垫'
-  return String(key || '数据')
+  if (text === 'back' || text.endsWith('-back')) return getPublicMatrixName(key || 'back')
+  if (text === 'sit' || text.endsWith('-sit')) return getPublicMatrixName(key || 'sit')
+  return getPublicMatrixName(key || '数据')
 }
 
 function getExportKeyFieldId(key, field) {
@@ -660,6 +787,21 @@ const EXPORT_FIXED_FIELDS = [
 const EXPORT_TRAILING_FIELDS = [
   { id: 'remark', title: '备注' },
 ]
+
+function isEndiMatrixKey(key) {
+  return String(key || '').toLowerCase().startsWith('endi-')
+}
+
+async function isEndiExportRequest(db, params = []) {
+  const fileArr = Array.isArray(params) ? params : [params]
+  for (const param of fileArr) {
+    if (param === undefined || param === null || param === '') continue
+    const rows = await dbAll(db, 'SELECT data FROM matrix WHERE date=? LIMIT 1', [param])
+    const firstData = parseMatrixFrameData(rows?.[0]?.data)
+    if (Object.keys(firstData || {}).some(isEndiMatrixKey)) return true
+  }
+  return false
+}
 
 function formatExportDecimal(value, digits = 1) {
   const num = Number(value)
@@ -738,8 +880,12 @@ async function writeXlsxFile(filePath, headers, records) {
 }
 
 async function getExportFieldOptions({ db, params }) {
+  const isEndiExport = await isEndiExportRequest(db, params)
+  const fixedFields = isEndiExport
+    ? EXPORT_FIXED_FIELDS.filter((field) => !['back_device_mac', 'sit_device_mac'].includes(field.id))
+    : EXPORT_FIXED_FIELDS
   const headers = [
-    ...EXPORT_FIXED_FIELDS,
+    ...fixedFields,
     ...EXPORT_BASE_FIELDS,
     ...EXPORT_TRAILING_FIELDS,
   ]
@@ -851,7 +997,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         return
       }
 
-      const firstData = JSON.parse(rows[0].data)
+      const firstData = parseMatrixFrameData(rows[0].data)
       // 过滤掉无效 key（如 "null"、"undefined"）
       const keyArr = Object.keys(firstData).filter(k => k && k !== 'null' && k !== 'undefined' && Array.isArray(firstData[k]?.arr))
 
@@ -892,7 +1038,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       const remarkText = remarkRow?.remark ?? ''
 
       for (let i = 0; i < rows.length; i++) {
-        const rowData = JSON.parse(rows[i].data)
+        const rowData = parseMatrixFrameData(rows[i].data)
         const frameEntry = {
           timestamp: rows[i].timestamp,
           back_device_mac: '',
@@ -912,23 +1058,25 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.time = timeStampTo_Date(rows[i].timestamp)
           rowEntry.sec = (i / detectedHz).toFixed(2)
 
-          // 框选区域计算：导出保留整体靠背/坐垫列，同时按同一字段模板展开最多 4 个框选列。
-          const selectionRegions = getExportSelectionRegions(selectOverride, key, data, item)
-          const obj = selectionRegions[0] || null
-          const selectArr = obj ? sliceSelectionData(data, obj) : []
+          const matrixSize = inferExportMatrixSize(key, data, item)
+          const statsData = getExportDisplayMatrixData(data, key, matrixSize)
 
-          const { press, area, max, min, aver, maxIndex } = colArrData(data)
+          // 框选区域计算：导出保留整体靠背/坐垫列，同时按同一字段模板展开最多 4 个框选列。
+          const selectionRegions = getExportSelectionRegions(selectOverride, key, statsData, item)
+          const obj = selectionRegions[0] || null
+          const selectArr = obj ? sliceSelectionData(statsData, obj) : []
+
+          const { press, area, max, min, aver, maxIndex } = colArrData(statsData)
           const { area: selectArea, min: selectMin, maxIndex: selectMaxIndex } = colArrData(selectArr)
 
           const pointInfo = pointConfig[key]
-          const matrixSize = inferExportMatrixSize(key, data, item)
           const dataDirection = normalizeExportDirection(item.dataDirection)
           const zeroState = normalizeExportZeroState(item.zeroState)
           const pressureConversion = getPressureConversion(key)
           const pointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : null
           const pointAreaCm2 = pointInfo ? pointArea / 100 : 1
           const pressureAreaValue = pointInfo ? (area * pointArea / 100) : area
-          const pressureStats = calcPressureFormulaStats(data, key, pointAreaCm2)
+          const pressureStats = calcPressureFormulaStats(statsData, key, pointAreaCm2)
 
           // 计算框选区域受力面积
           const selectAreaValue = pointInfo ? (selectArea * pointArea / 100) : selectArea
@@ -974,12 +1122,12 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.pressure_sum = pressureStats.total
           rowEntry.contact_area = pressureAreaValue
           rowEntry.active_sensor_count = area
-          rowEntry.real_data = JSON.stringify(data)
+          rowEntry.real_data = JSON.stringify(statsData)
           rowEntry[`${key}max`] = pressureStats.max
           rowEntry[`${key}maxCoord`] = indexToCoord(maxIndex, key)
           rowEntry[`${key}aver`] = pressureStats.aver
           rowEntry[`${key}pressureArea`] = pressureAreaValue
-          rowEntry[`${key}realData`] = JSON.stringify(data)
+          rowEntry[`${key}realData`] = JSON.stringify(statsData)
           rowEntry[`${key}selectMax`] = selectPressureStats.max
           const selectWidth = (obj && obj.xEnd && obj.xStart !== undefined) ? (obj.xEnd - obj.xStart) : 0
           const selectCoordInfo = (obj && selectWidth > 0) ? { xStart: obj.xStart, yStart: obj.yStart, selectWidth } : null
@@ -1027,7 +1175,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           frameEntry[getExportKeyFieldId(key, 'point_count')] = activePointCount
           frameEntry[getExportKeyFieldId(key, 'total_pressure_n')] = formatExportDecimal(rowEntry.total_pressure_n)
           selectionRegions.forEach((region, regionIndex) => {
-            const regionArr = sliceSelectionData(data, region)
+            const regionArr = sliceSelectionData(statsData, region)
             const regionStats = colArrData(regionArr)
             const regionPressureStats = calcPressureFormulaStats(regionArr, key, pointAreaCm2)
             const regionMax = regionPressureStats.max
@@ -1136,7 +1284,7 @@ function buildCsvHeaders(keyArr, file) {
       handArr.push({ id: "time", title: "time" })
     }
 
-    const res = key.replace(/endi/g, "car")
+    const res = getPublicMatrixName(key)
     handArr.push(
       { id: `${key}max`, title: `${res} ` + '\u539f\u59cb\u6700\u5927\u538b\u5f3a(Kpa)' },
       { id: `${key}maxCoord`, title: `${res} ` + '\u539f\u59cb\u6700\u5927\u538b\u5f3a\u5750\u6807' },
@@ -1654,14 +1802,16 @@ function normalizeCsvMatrixKey(value) {
   if (lower === 'righthand' || lower === 'right-hand') return 'endi-rightHand'
   if (lower === 'leftfoot' || lower === 'left-foot') return 'endi-leftFoot'
   if (lower === 'rightfoot' || lower === 'right-foot') return 'endi-rightFoot'
+  if (lower === 'foot' || lower === 'feet') return 'endi-foot'
   if (pointConfig[normalized]) return normalized
   if (normalized.includes('靠背')) return 'endi-back'
   if (normalized.includes('坐垫')) return 'endi-sit'
-  if (normalized.includes('外套') || normalized.includes('背心') || normalized.includes('上衣')) return 'endi-jacket'
-  if (normalized.includes('左手') || normalized.includes('左袖')) return 'endi-leftHand'
-  if (normalized.includes('右手') || normalized.includes('右袖')) return 'endi-rightHand'
-  if (normalized.includes('左脚') || normalized.includes('左裤腿')) return 'endi-leftFoot'
-  if (normalized.includes('右脚') || normalized.includes('右裤腿')) return 'endi-rightFoot'
+  if (normalized.includes('外套') || normalized.includes('背心') || normalized.includes('上衣') || normalized.includes('上身')) return 'endi-jacket'
+  if (normalized.includes('左手') || normalized.includes('左袖') || normalized.includes('左臂')) return 'endi-leftHand'
+  if (normalized.includes('右手') || normalized.includes('右袖') || normalized.includes('右臂')) return 'endi-rightHand'
+  if (normalized.includes('左脚') || normalized.includes('左裤腿') || normalized.includes('左腿')) return 'endi-leftFoot'
+  if (normalized.includes('右脚') || normalized.includes('右裤腿') || normalized.includes('右腿')) return 'endi-rightFoot'
+  if (normalized.includes('脚') || normalized.includes('裤腿') || normalized.includes('下身')) return 'endi-foot'
   return normalized
 }
 
@@ -1820,7 +1970,7 @@ function buildCsvPlaybackData(csvRows) {
     return { length: 0, pressArr: {}, areaArr: {}, rows: [] }
   }
 
-  const firstData = JSON.parse(rows[0].data)
+  const firstData = parseMatrixFrameData(rows[0].data)
   const keyArr = Object.keys(firstData).filter(Boolean)
   const bucketSize = Math.max(1, Math.ceil(rows.length / PLAYBACK_CHART_TARGET_POINTS))
   const pressArr = {}
@@ -1838,7 +1988,7 @@ function buildCsvPlaybackData(csvRows) {
   })
 
   rows.forEach((row) => {
-    const dataObj = JSON.parse(row.data)
+    const dataObj = parseMatrixFrameData(row.data)
     keyArr.forEach((key) => {
       const arr = dataObj[key]?.arr || []
       const press = arr.reduce((sum, value) => sum + Number(value || 0), 0)

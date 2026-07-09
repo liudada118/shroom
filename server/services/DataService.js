@@ -6,6 +6,8 @@ const WebSocket = require('ws')
 const fs = require('fs')
 const path = require('path')
 const constantObj = require('../../util/config')
+const { MATRIX_DIMENSIONS } = require('../../util/deviceMatrixConfig')
+const { interpolateEndiWearSource } = require('../../util/line')
 const { state, resetPlaybackState } = require('../state')
 const { broadcast } = require('../websocket')
 
@@ -24,30 +26,13 @@ const DEFAULT_DATA_DIRECTION = {
     'endi-rightHand': { left: true, up: true, rotateDegree: 0 },
     'endi-leftFoot': { left: true, up: true, rotateDegree: 0 },
     'endi-rightFoot': { left: true, up: true, rotateDegree: 0 },
+    'endi-foot': { left: true, up: true, rotateDegree: 0 },
     'carY-back': { left: false, up: true, rotateDegree: 0 },
     'carY-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
     'car-back': { left: false, up: true, rotateDegree: 0 },
     'car-sit': { left: true, up: true, rotateDegree: DEFAULT_SIT_ROTATE_DEGREE },
   },
 }
-const MATRIX_DIMENSIONS = {
-  'endi-back': { width: 50, height: 64 },
-  'endi-sit': { width: 46, height: 46 },
-  'endi-jacket': { width: 12, height: 27 },
-  'endi-leftHand': { width: 18, height: 2 },
-  'endi-rightHand': { width: 18, height: 2 },
-  'endi-leftFoot': { width: 6, height: 32 },
-  'endi-rightFoot': { width: 6, height: 32 },
-  'carY-back': { width: 32, height: 32 },
-  'carY-sit': { width: 32, height: 32 },
-  'car-back': { width: 32, height: 32 },
-  'car-sit': { width: 32, height: 32 },
-  bed: { width: 32, height: 32 },
-  hand: { width: 32, height: 32 },
-  foot: { width: 32, height: 32 },
-  bigHand: { width: 64, height: 64 },
-}
-
 function normalizeRotateDegree(value) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return 0
@@ -215,6 +200,107 @@ function isValidMatrix(type, arr) {
   return Boolean(dimensions && dimensions.width * dimensions.height === arr.length)
 }
 
+const ENDI_WEAR_LEGACY_DIMENSIONS = {
+  'endi-jacket': { width: 12, height: 27 },
+  'endi-leftHand': { width: 18, height: 2 },
+  'endi-rightHand': { width: 18, height: 2 },
+  'endi-leftFoot': { width: 6, height: 32 },
+  'endi-rightFoot': { width: 6, height: 32 },
+}
+const ENDI_FOOT_LEFT_KEY = 'endi-leftFoot'
+const ENDI_FOOT_RIGHT_KEY = 'endi-rightFoot'
+const ENDI_FOOT_COMBINED_KEY = 'endi-foot'
+const ENDI_SINGLE_FOOT_WIDTH = 12
+const ENDI_FOOT_HEIGHT = 64
+
+function normalizeEndiWearMatrixSource(type, arr) {
+  if (!Array.isArray(arr)) return arr
+  if (isValidMatrix(type, arr)) return arr
+
+  const legacyDimensions = ENDI_WEAR_LEGACY_DIMENSIONS[type]
+  if (!legacyDimensions || arr.length !== legacyDimensions.width * legacyDimensions.height) {
+    return arr
+  }
+
+  return interpolateEndiWearSource(type, arr)
+}
+
+function normalizeFrameMatrixSources(frame) {
+  if (!frame || typeof frame !== 'object') return frame
+  const normalizedFrame = { ...frame }
+
+  Object.keys(normalizedFrame).forEach((key) => {
+    const item = normalizedFrame[key]
+    if (!item || typeof item !== 'object' || !Array.isArray(item.arr)) return
+    const arr = normalizeEndiWearMatrixSource(key, item.arr)
+    if (arr === item.arr) return
+    normalizedFrame[key] = {
+      ...item,
+      arr,
+      matrixMeta: buildMatrixMeta(key, arr),
+    }
+  })
+
+  return combineEndiFootMatrices(normalizedFrame)
+}
+
+function makeZeroMatrix(length) {
+  return new Array(length).fill(0)
+}
+
+function combineFootRows(leftArr = [], rightArr = []) {
+  const singleLength = ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT
+  const left = Array.isArray(leftArr) && leftArr.length === singleLength ? leftArr : makeZeroMatrix(singleLength)
+  const right = Array.isArray(rightArr) && rightArr.length === singleLength ? rightArr : makeZeroMatrix(singleLength)
+  const combined = []
+
+  for (let row = 0; row < ENDI_FOOT_HEIGHT; row++) {
+    const leftStart = row * ENDI_SINGLE_FOOT_WIDTH
+    const rightStart = row * ENDI_SINGLE_FOOT_WIDTH
+    combined.push(
+      ...left.slice(leftStart, leftStart + ENDI_SINGLE_FOOT_WIDTH),
+      ...right.slice(rightStart, rightStart + ENDI_SINGLE_FOOT_WIDTH)
+    )
+  }
+
+  return combined
+}
+
+function combineEndiFootMatrices(frame) {
+  if (!frame || typeof frame !== 'object') return frame
+  const leftItem = frame[ENDI_FOOT_LEFT_KEY]
+  const rightItem = frame[ENDI_FOOT_RIGHT_KEY]
+  const leftArr = normalizeEndiWearMatrixSource(ENDI_FOOT_LEFT_KEY, leftItem?.arr)
+  const rightArr = normalizeEndiWearMatrixSource(ENDI_FOOT_RIGHT_KEY, rightItem?.arr)
+  const hasLeft = Array.isArray(leftArr) && leftArr.length === ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT
+  const hasRight = Array.isArray(rightArr) && rightArr.length === ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT
+
+  delete frame[ENDI_FOOT_LEFT_KEY]
+  delete frame[ENDI_FOOT_RIGHT_KEY]
+
+  if (!hasLeft && !hasRight) return frame
+
+  const sourceItem = hasLeft ? leftItem : rightItem
+  const arr = combineFootRows(leftArr, rightArr)
+  frame[ENDI_FOOT_COMBINED_KEY] = {
+    ...(sourceItem || {}),
+    arr,
+    status: leftItem?.status === 'online' || rightItem?.status === 'online' ? 'online' : sourceItem?.status,
+    sourceStatuses: {
+      [ENDI_FOOT_LEFT_KEY]: leftItem?.status,
+      [ENDI_FOOT_RIGHT_KEY]: rightItem?.status,
+    },
+    sourceMatrices: {
+      [ENDI_FOOT_LEFT_KEY]: hasLeft ? leftArr : makeZeroMatrix(ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT),
+      [ENDI_FOOT_RIGHT_KEY]: hasRight ? rightArr : makeZeroMatrix(ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT),
+    },
+    matrixMeta: buildMatrixMeta(ENDI_FOOT_COMBINED_KEY, arr),
+    sourceMatrixKeys: [ENDI_FOOT_LEFT_KEY, ENDI_FOOT_RIGHT_KEY],
+  }
+
+  return frame
+}
+
 function flipHorizontal(arr, width, height) {
   const result = []
   for (let y = 0; y < height; y++) {
@@ -282,20 +368,24 @@ function applyCollectionDirection(key, arr, direction) {
 function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAULT_DATA_DIRECTION) {
   const normalizedState = normalizeDataDirectionState(directionState)
   const directedFrame = {}
+  const sourceFrame = combineEndiFootMatrices({ ...(frame || {}) })
 
-  Object.keys(frame || {}).forEach((key) => {
-    const item = frame[key]
+  Object.keys(sourceFrame || {}).forEach((key) => {
+    const item = sourceFrame[key]
     if (!item || typeof item !== 'object') {
       directedFrame[key] = item
       return
     }
 
     const nextItem = { ...item }
+    if (Array.isArray(nextItem.arr)) {
+      nextItem.arr = normalizeEndiWearMatrixSource(key, nextItem.arr)
+    }
     if (Array.isArray(nextItem.arr) && isValidMatrix(key, nextItem.arr)) {
       const direction = getDirectionForKey(normalizedState, key)
       nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
       nextItem.dataDirection = direction
-      const directedDimensions = getDirectedDimensions(key, item.arr, direction)
+      const directedDimensions = getDirectedDimensions(key, nextItem.arr, direction)
       if (directedDimensions) {
         nextItem.matrixMeta = {
           matrix_key: key,
@@ -403,7 +493,7 @@ function parseData(parserArr, objs, type) {
     }
   })
 
-  return json
+  return combineEndiFootMatrices(json)
 }
 
 /**
@@ -437,9 +527,10 @@ function storageData(data) {
   const timestamp = Date.now()
   const directionState = normalizeDataDirectionState(state.dataDirection || DEFAULT_DATA_DIRECTION)
   const newData = {}
+  const sourceData = combineEndiFootMatrices({ ...(data || {}) })
 
-  Object.keys(data || {}).forEach((key) => {
-    const item = data[key]
+  Object.keys(sourceData || {}).forEach((key) => {
+    const item = sourceData[key]
     if (!item || typeof item !== 'object') return
     if (item.status && item.status !== 'online') return
     if (item.dataQuality?.status === 'device_error') return
@@ -447,11 +538,12 @@ function storageData(data) {
     const nextItem = { ...item }
     if (nextItem.status) delete nextItem.status
     if (Array.isArray(nextItem.arr)) {
+      nextItem.arr = normalizeEndiWearMatrixSource(key, nextItem.arr)
       const direction = getDirectionForKey(directionState, key)
       nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
       nextItem.arr = applyZeroBaseline(key, nextItem.arr, state.zeroState)
       nextItem.dataDirection = direction
-      const directedDimensions = getDirectedDimensions(key, item.arr, direction)
+      const directedDimensions = getDirectedDimensions(key, nextItem.arr, direction)
       if (directedDimensions) {
         nextItem.matrixMeta = {
           matrix_key: key,
@@ -609,7 +701,7 @@ function getPlaybackSnapshot(index = state.playIndex, options = {}) {
   const maxSkips = options.skipBadFrames === false ? 0 : rows.length
   let skippedInThisLookup = 0
   let row = rows[normalizedIndex]
-  let sitDataPlay = removePlaybackSelect(parsePlaybackData(row?.data))
+  let sitDataPlay = normalizeFrameMatrixSources(removePlaybackSelect(parsePlaybackData(row?.data)))
   let validation = validatePlaybackFrameData(sitDataPlay)
 
   while (!validation.valid && skippedInThisLookup < maxSkips) {
@@ -643,7 +735,7 @@ function getPlaybackSnapshot(index = state.playIndex, options = {}) {
     normalizedIndex += 1
     state.playIndex = normalizedIndex
     row = rows[normalizedIndex]
-    sitDataPlay = removePlaybackSelect(parsePlaybackData(row?.data))
+    sitDataPlay = normalizeFrameMatrixSources(removePlaybackSelect(parsePlaybackData(row?.data)))
     validation = validatePlaybackFrameData(sitDataPlay)
   }
 

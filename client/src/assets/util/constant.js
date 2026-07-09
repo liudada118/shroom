@@ -1,4 +1,4 @@
-const length32Arr = ['hand', 'bed', 'sit', 'back', 'jacket', 'leftHand', 'rightHand', 'leftFoot', 'rightFoot']
+const length32Arr = ['hand', 'bed', 'sit', 'back', 'jacket', 'leftHand', 'rightHand', 'leftFoot', 'rightFoot', 'foot']
 const length64Arr = []
 
 const lengthObj = {}
@@ -16,7 +16,7 @@ const baseMax = {
     gauss: 4,
     color: 255,
     filter: 200,
-    height: 200,
+    height: 400,
     coherent: 10,
     autoColor: 1
 }
@@ -31,12 +31,12 @@ export const optimalObj = {
 };
 
 export const maxObj = {
-  bed: { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-  car: { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-  endi: { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-  carY: { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-  bigHand: { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-  hand: { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 }
+  bed: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 },
+  car: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 },
+  endi: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 },
+  carY: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 },
+  bigHand: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 },
+  hand: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 }
 };
 
 export { lengthObj }

@@ -29,6 +29,13 @@ const HISTORY_PREFETCH_DELAY = 800
 const HISTORY_CACHE_MAX_AGE = 30000
 const CSV_IMPORT_INVALID_MESSAGE = '数据有误'
 
+const getMatrixPartFromDataKey = (key = '') => {
+    const value = String(key || '')
+    if (!value) return ''
+    if (value.includes('-')) return value.split('-').pop()
+    return getMatrixPartFromDisplayType(value)
+}
+
 const normalizeCsvItem = (item) => {
     if (item === undefined || item === null) {
         return ''
@@ -925,7 +932,7 @@ const ColAndHistory = memo((props) => {
             useEquipStore.getState().setContrast(data)
             useEquipStore.getState().setDataStatus('contrast')
             const firstKey = data.keys?.[0] || ''
-            const firstPart = getMatrixPartFromDisplayType(firstKey)
+            const firstPart = getMatrixPartFromDataKey(firstKey)
             if (firstPart) {
                 const nextDisplayType = `${firstPart}2D`
                 useEquipStore.getState().setDisplayType(nextDisplayType)

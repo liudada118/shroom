@@ -4,10 +4,21 @@ import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
-import { serverAddress } from '../../../util/constant';
+import { getMatrixDisplayLabel, serverAddress } from '../../../util/constant';
 
 dayjs.extend(customParseFormat);
 const dateFormat = 'YYYY-MM-DD';
+
+function formatDeviceType(value) {
+    if (!value) return ''
+    try {
+        const parsed = typeof value === 'string' ? JSON.parse(value) : value
+        if (Array.isArray(parsed)) return parsed.map((item) => getMatrixDisplayLabel(item, 'zh')).join(' / ')
+    } catch {
+        // fall through
+    }
+    return getMatrixDisplayLabel(value, 'zh')
+}
 
 const getColumns = (t) => [
     {
@@ -29,6 +40,7 @@ const getColumns = (t) => [
         title: t('deviceType'),
         dataIndex: 'typeInfo',
         key: 'typeInfo',
+        render: (value) => formatDeviceType(value),
     },
     //   {
     //     title: 'Tags',
