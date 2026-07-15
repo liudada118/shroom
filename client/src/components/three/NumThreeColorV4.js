@@ -7,6 +7,7 @@ import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore }
 import { isMoreMatrix } from '../../assets/util/util';
 import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, gaussBlur_return, jetWhite3NoWhite, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
 import { isEndiBackVisibleCell, isEndiBackVisibleIndex } from '../../util/endiBackVisibleMask';
+import { getPressureMetricPointValues } from '../../util/pressureMetrics';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -45,10 +46,21 @@ function jet(min, max, x) {
   return rgb;
 }
 
-function normalizeDisplayValue(value) {
+function normalizeDisplayValue(value, mode = useEquipStore.getState().pressureMetricMode) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
-  return Math.max(0, Math.min(255, Math.round(numeric)));
+  const atlasValue = numeric * 10;
+  return Math.max(0, Math.min(DIGIT_DISPLAY_MAX, Math.round(atlasValue)));
+}
+
+function displayIndexToMetricValue(index, mode = useEquipStore.getState().pressureMetricMode) {
+  const numeric = Number(index);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return numeric / 10;
+}
+
+function getMetricVisibleThreshold(mode = useEquipStore.getState().pressureMetricMode) {
+  return 0.05;
 }
 
 function getTextureColorMax(color) {
@@ -74,10 +86,12 @@ function getMagnifierCells(zoom) {
   return 5;
 }
 
-const DIGIT_ATLAS_GRID = 16;
-const DIGIT_ATLAS_CELL = 128;
+const DIGIT_ATLAS_GRID = 64;
+const DIGIT_ATLAS_CELL = 32;
 const DIGIT_ATLAS_SIZE = DIGIT_ATLAS_GRID * DIGIT_ATLAS_CELL;
-const DIGIT_TILE_INSET = 8;
+const DIGIT_ATLAS_COUNT = DIGIT_ATLAS_GRID * DIGIT_ATLAS_GRID;
+const DIGIT_DISPLAY_MAX = DIGIT_ATLAS_COUNT - 1;
+const DIGIT_TILE_INSET = 2;
 const NUM_2D_GAUSS_KERNEL_FACTOR = 0.5;
 const NUM_2D_TEMPORAL_ALPHA = 0.22;
 const NUM_2D_DISPLAY_DEADBAND = 1.1;
@@ -100,14 +114,15 @@ function prepareDisplayData(data, width, height, settings) {
   return next;
 }
 
-function stabilizeDisplayData(data, stableRef, key) {
+function stabilizeDisplayData(data, stableRef, key, mode = useEquipStore.getState().pressureMetricMode) {
   const count = data.length;
   const source = Array.from({ length: count }, (_, index) => {
     const value = Number(data[index]);
     return Number.isFinite(value) ? Math.max(0, value) : 0;
   });
+  const visibleThreshold = getMetricVisibleThreshold(mode);
 
-  if (source.every(value => value < 0.5)) {
+  if (source.every(value => value < visibleThreshold)) {
     const zero = new Array(count).fill(0);
     stableRef.current = { key, values: zero, display: zero };
     return zero;
@@ -116,37 +131,38 @@ function stabilizeDisplayData(data, stableRef, key) {
   const previous = stableRef.current;
   const shouldReset = !previous || previous.key !== key || previous.values?.length !== count;
   if (shouldReset) {
-    const display = source.map(normalizeDisplayValue);
+    const display = source.map(value => normalizeDisplayValue(value, mode));
     stableRef.current = { key, values: source, display };
-    return display;
+    return display.map(value => displayIndexToMetricValue(value, mode));
   }
 
   const values = new Array(count);
   const display = new Array(count);
   for (let i = 0; i < count; i++) {
     const prevValue = previous.values[i] ?? source[i];
-    const prevDisplay = previous.display[i] ?? normalizeDisplayValue(prevValue);
-    const smoothed = source[i] < 0.5
+    const prevDisplay = previous.display[i] ?? normalizeDisplayValue(prevValue, mode);
+    const smoothed = source[i] < visibleThreshold
       ? 0
       : prevValue + (source[i] - prevValue) * NUM_2D_TEMPORAL_ALPHA;
-    let nextDisplay = normalizeDisplayValue(smoothed);
-    if (nextDisplay !== prevDisplay && source[i] >= 0.5 && Math.abs(source[i] - prevDisplay) < NUM_2D_DISPLAY_DEADBAND) {
+    let nextDisplay = normalizeDisplayValue(smoothed, mode);
+    const sourceDisplay = normalizeDisplayValue(source[i], mode);
+    if (nextDisplay !== prevDisplay && source[i] >= visibleThreshold && Math.abs(sourceDisplay - prevDisplay) < NUM_2D_DISPLAY_DEADBAND) {
       nextDisplay = prevDisplay;
     }
     values[i] = smoothed;
     display[i] = nextDisplay;
   }
   stableRef.current = { key, values, display };
-  return display;
+  return display.map(value => displayIndexToMetricValue(value, mode));
 }
 
 function drawCellValue(ctx, value, cx, cy, cellSize) {
   const text = String(value);
-  const fontSize = cellSize * 0.5;
+  const fontSize = value >= 100 ? cellSize * 0.42 : cellSize * 0.5;
   ctx.font = `700 ${fontSize}px "Arial Narrow", Arial, sans-serif`;
   ctx.globalAlpha = 1;
   ctx.fillStyle = "white";
-  const maxTextWidth = cellSize * 0.9;
+  const maxTextWidth = cellSize * 0.92;
   const textWidth = ctx.measureText(text).width || maxTextWidth;
   const horizontalScale = Math.min(1, maxTextWidth / textWidth);
   ctx.save();
@@ -174,6 +190,7 @@ export default function NumThree(props) {
   const gridRef = useRef({ width: 0, height: 0 });
   const invertYRef = useRef(false);
   const textureMaxRef = useRef(22);
+  const textureModeRef = useRef(useEquipStore.getState().pressureMetricMode);
   const magnifierPosRef = useRef({ col: -1, row: -1 });
   const drawMagnifierRef = useRef(null);
   const magnifierZoomRef = useRef(1);
@@ -206,7 +223,7 @@ export default function NumThree(props) {
   // }
 
 
-  function createDigitSpriteSheetWithJet(value = 22) {
+  function createDigitSpriteSheetWithJet(value = 22, mode = useEquipStore.getState().pressureMetricMode) {
     syncDynamicColorRange(value);
     const canvas = document.createElement("canvas");
     // document.body.appendChild(canvas)
@@ -219,14 +236,15 @@ export default function NumThree(props) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    for (let i = 0; i < 256; i++) {
+    for (let i = 0; i < DIGIT_ATLAS_COUNT; i++) {
       const x = i % gridSize;
       const y = Math.floor(i / gridSize);
       const cx = x * cellSize;
       const cy = y * cellSize;
 
       // ✅ 计算背景颜色（与坐垫统一使用 jet 颜色映射）
-      const [r, g, b] = jetWhite3NoWhite(0, value, i);
+      const metricValue = i / 10;
+      const [r, g, b] = jetWhite3NoWhite(0, value, Math.min(metricValue, value));
       ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
@@ -234,7 +252,7 @@ export default function NumThree(props) {
       ctx.lineWidth = 3;
       ctx.strokeRect(cx + 1.5, cy + 1.5, cellSize - 3, cellSize - 3);
 
-      drawCellValue(ctx, i, cx, cy, cellSize);
+      drawCellValue(ctx, metricValue.toFixed(1), cx, cy, cellSize);
     }
 
     const tex = new THREE.CanvasTexture(canvas);
@@ -332,15 +350,17 @@ export default function NumThree(props) {
     };
 
     let currentTextureMax = getTextureColorMax(getSettingValue()?.color)
-    const texture = createDigitSpriteSheetWithJet(currentTextureMax);
+    let currentTextureMode = useEquipStore.getState().pressureMetricMode
+    const texture = createDigitSpriteSheetWithJet(currentTextureMax, currentTextureMode);
     textureMaxRef.current = currentTextureMax;
+    textureModeRef.current = currentTextureMode;
     // texture.flipY = false;
 
 
     const material = new THREE.ShaderMaterial({
       uniforms: {
         map: { value: texture },
-        tileSize: { value: 1.0 / 16.0 },
+        tileSize: { value: 1.0 / DIGIT_ATLAS_GRID },
         tileInset: { value: DIGIT_TILE_INSET / DIGIT_ATLAS_SIZE }
       },
       vertexShader: `
@@ -421,6 +441,7 @@ export default function NumThree(props) {
 
       const systemType = getSysType()
       const displayType = getDisplayType()
+      let matrixKey = systemType
 
       // if (props.sitData.current && Object.keys(props.sitData.current).length > 1) {
       //   const key = Object.keys(props.sitData.current)[0]
@@ -443,6 +464,7 @@ export default function NumThree(props) {
             //   uvOffsets = new Float32Array(count * 2);
             // }
           }
+          matrixKey = `${systemType}-${realType}`
           data = props.sitData.current[realType]
           if (!data) data = new Array(4096).fill(0)
         }
@@ -475,17 +497,23 @@ export default function NumThree(props) {
       if (systemType === 'endi' && displayType === 'back2D') {
         data = data.map((value, index) => isEndiBackVisibleIndex(index, gridSize1, gridSize2) ? value : 0);
       }
-      data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}-g${gauss}-f${filter}`);
+      const metricMode = useEquipStore.getState().pressureMetricMode
+      data = getPressureMetricPointValues(data, matrixKey, metricMode);
+      data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}-g${gauss}-f${filter}-m${metricMode}`, metricMode);
       dataRef.current = data;
       gridRef.current = { width: gridSize1, height: gridSize2 };
 
-      const nextMax = Math.round(beginDynamicColorFrame(data, color) || getTextureColorMax(color));
-      if (Math.abs(currentTextureMax - nextMax) >= 1) {
+      const nextMax = Math.max(1, Math.round(beginDynamicColorFrame(data, color) || getTextureColorMax(color)));
+      if (Math.abs(currentTextureMax - nextMax) >= 1 || currentTextureMode !== metricMode) {
         console.log('colorChange')
-        const texture = createDigitSpriteSheetWithJet(nextMax)
+        const oldTexture = material.uniforms.map.value
+        const texture = createDigitSpriteSheetWithJet(nextMax, metricMode)
         material.uniforms.map.value = texture
+        if (oldTexture && oldTexture !== texture) oldTexture.dispose()
         textureMaxRef.current = nextMax
+        textureModeRef.current = metricMode
         currentTextureMax = nextMax
+        currentTextureMode = metricMode
       }
       // const { wsLocalData } = pageRef.current
       // if (wsLocalData) {
@@ -529,9 +557,9 @@ export default function NumThree(props) {
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
 
-        const d = normalizeDisplayValue(data[i])//Math.floor(Math.random() * 256);
-        uvOffsets[i * 2] = (d % 16) / 16;
-        uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
+        const d = normalizeDisplayValue(data[i], metricMode)//Math.floor(Math.random() * 256);
+        uvOffsets[i * 2] = (d % DIGIT_ATLAS_GRID) / DIGIT_ATLAS_GRID;
+        uvOffsets[i * 2 + 1] = Math.floor(d / DIGIT_ATLAS_GRID) / DIGIT_ATLAS_GRID;
 
         // 与坐垫统一的颜色映射
         colorArray[i * 3 + 0] = 1;
@@ -673,15 +701,16 @@ export default function NumThree(props) {
           if (gx >= 0 && gx < width && gy >= 0 && gy < height) {
             value = dataArr[gy * width + gx] ?? 0;
           }
-          value = normalizeDisplayValue(value);
-          const [r, g, b] = applyMatrixColor(value, colorMax);
+          const rawValue = Number(value) || 0;
+          value = normalizeDisplayValue(rawValue, textureModeRef.current);
+          const [r, g, b] = applyMatrixColor(rawValue, colorMax);
           ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
           ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
           ctx.strokeStyle = 'rgba(0,0,0,0.4)';
           ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
           ctx.globalAlpha = 1;
           ctx.fillStyle = '#fff';
-          ctx.fillText(Math.round(value), x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
+          ctx.fillText(rawValue.toFixed(1), x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
         }
       }
       ctx.strokeStyle = '#fff';

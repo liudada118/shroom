@@ -20,6 +20,7 @@ import { getSettingValue, getStatus } from "../../store/equipStore";
 import { Scheduler } from "../../scheduler/scheduler";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
 import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
+import { disableRightMouseControl } from "../../util/threeInteraction";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -222,6 +223,7 @@ const Canvas =
 
             //FlyControls
             controls = new TrackballControls(camera, renderer.domElement);
+            disableRightMouseControl(controls, renderer.domElement);
             baseCameraDistance = camera.position.distanceTo(controls.target);
             applyZoomBounds(controls, baseCameraDistance);
             controls.update();

@@ -111,14 +111,57 @@ function getCalibrationAverage(positiveValues, sensor) {
   return topValues.reduce((sum, value) => sum + value, 0) / topValues.length
 }
 
+function calcPointFormulaPressureValues(values, key, formula) {
+  const sensor = getPressureSensor(key) || 'seat'
+  const minAdc = Number.isFinite(Number(formula.MIN_ADC)) ? Number(formula.MIN_ADC) : 30
+  const adcMax = values.length ? Math.max(...values) : 0
+  const scale = typeof formula.computeScale === 'function'
+    ? formula.computeScale(adcMax)
+    : 1
+  const safeScale = Number.isFinite(Number(scale)) ? Number(scale) : 1
+  return values.map((value) => {
+    if (value <= minAdc) return 0
+    const base = formula.master(value, sensor)
+    return base == null ? 0 : safeScale * base
+  })
+}
+
 function calcPressureFormulaStats(arr, key, pointAreaCm2) {
   const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
-  const positiveValues = values.filter((value) => Number.isFinite(value) && value > 0)
-  const activeCount = positiveValues.length
+  const formula = loadPressureFormula()
   const rawPress = values.reduce((sum, value) => sum + value, 0)
   const rawMax = values.length ? Math.max(...values) : 0
+  const pointArea = Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1
+
+  if (typeof formula.master === 'function') {
+    const pressureValues = calcPointFormulaPressureValues(values, key, formula)
+    const activePressureValues = pressureValues.filter((value) => Number.isFinite(value) && value > 0)
+    const activeCount = activePressureValues.length
+    const effectiveArea = activeCount * pointArea
+    const rawActiveValues = values.filter((value) => Number.isFinite(value) && value > (Number(formula.MIN_ADC) || 30))
+    const rawAvg = rawActiveValues.length ? rawActiveValues.reduce((sum, value) => sum + value, 0) / rawActiveValues.length : 0
+    const pressureTotal = pressureValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
+    const forceValues = pressureValues.map((value) => value * pointArea * 0.1)
+    const total = forceValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
+    return {
+      max: activePressureValues.length ? Math.max(...activePressureValues) : 0,
+      aver: activeCount ? pressureTotal / activeCount : 0,
+      total,
+      pressureTotal,
+      pressureValues,
+      forceValues,
+      effectiveArea,
+      activeCount,
+      rawAvg,
+      adcAvg: rawAvg,
+      rawMax,
+    }
+  }
+
+  const positiveValues = values.filter((value) => Number.isFinite(value) && value > 0)
+  const activeCount = positiveValues.length
   const rawAvg = activeCount ? rawPress / activeCount : 0
-  const effectiveArea = activeCount * (Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1)
+  const effectiveArea = activeCount * pointArea
   const sensor = getPressureSensor(key)
   const toNewton = (kpa) => kpa * 1000 * effectiveArea / 10000
 
@@ -129,11 +172,13 @@ function calcPressureFormulaStats(arr, key, pointAreaCm2) {
       total: toNewton(rawAvg),
       effectiveArea,
       activeCount,
+      rawAvg,
+      adcAvg: rawAvg,
     }
   }
 
   const adcAvg = getCalibrationAverage(positiveValues, sensor)
-  const { estimatePressure, estimateMaxPressure } = loadPressureFormula()
+  const { estimatePressure, estimateMaxPressure } = formula
   const aver = estimatePressure(adcAvg, activeCount, sensor) || 0
   const max = estimateMaxPressure(rawMax, activeCount, sensor, adcAvg) || 0
   return {
@@ -142,7 +187,51 @@ function calcPressureFormulaStats(arr, key, pointAreaCm2) {
     total: toNewton(aver),
     effectiveArea,
     activeCount,
+    rawAvg,
+    adcAvg,
   }
+}
+
+function normalizePressureMetricMode(mode) {
+  return mode === 'pressure' ? 'pressure' : 'force'
+}
+
+function getExportMetricStats(stats, metricMode, pointAreaCm2) {
+  const mode = normalizePressureMetricMode(metricMode)
+  const area = Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1
+  if (mode === 'pressure') {
+    return {
+      max: Number(stats.max) || 0,
+      aver: Number(stats.aver) || 0,
+      total: Number(stats.total) || 0,
+    }
+  }
+  return {
+    max: (Number(stats.max) || 0) * area * 0.1,
+    aver: (Number(stats.aver) || 0) * area * 0.1,
+    total: Number(stats.total) || 0,
+  }
+}
+
+function getExportMetricPointValues(arr, stats, metricMode, pointAreaCm2) {
+  if (Array.isArray(stats?.pressureValues)) {
+    const forceScale = (Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1) * 0.1
+    const sourceValues = normalizePressureMetricMode(metricMode) === 'pressure'
+      ? stats.pressureValues
+      : stats.pressureValues.map((value) => (Number(value) || 0) * forceScale)
+    return sourceValues.map((value) => Number((Number(value) || 0).toFixed(2)))
+  }
+  const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
+  const calibrationAverage = Number(stats.adcAvg || stats.rawAvg) || 0
+  const pressureScale = calibrationAverage > 0 ? (Number(stats.aver) || 0) / calibrationAverage : 0
+  const forceScale = (Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1) * 0.1
+  return values.map((value) => {
+    const pressureValue = value > 0 ? value * pressureScale : 0
+    const metricValue = normalizePressureMetricMode(metricMode) === 'pressure'
+      ? pressureValue
+      : pressureValue * forceScale
+    return Number(metricValue.toFixed(2))
+  })
 }
 
 function isAllDigits(str) {
@@ -643,18 +732,30 @@ const EXPORT_BASE_FIELDS = [
   { id: 'contact_area', title: '受力面积(cm²)' },
   { id: 'real_data', title: '数据' },
   { id: 'point_count', title: '点数' },
-  { id: 'total_pressure_n', title: '总压力(N)' },
+  { id: 'total_pressure_n', title: '压力总和(N)' },
 ]
 
 const EXPORT_FIXED_FIELDS = [
   { id: 'timestamp', title: '时间戳' },
-  { id: 'back_device_mac', title: '靠背MAC' },
-  { id: 'sit_device_mac', title: '座椅MAC' },
+  { id: 'elapsed_seconds', title: '秒数(s)' },
 ]
 
-const EXPORT_TRAILING_FIELDS = [
-  { id: 'remark', title: '备注' },
-]
+function getExportBaseFields(metricMode) {
+  if (normalizePressureMetricMode(metricMode) === 'pressure') {
+    return EXPORT_BASE_FIELDS.map((field) => {
+      if (field.id === 'real_data') return { ...field, title: '压强数据(kPa)' }
+      return field
+    })
+  }
+  return EXPORT_BASE_FIELDS.map((field) => {
+    if (field.id === 'max_pressure') return { ...field, title: '最大压力(N)' }
+    if (field.id === 'max_pressure_coord') return { ...field, title: '最大压力坐标' }
+    if (field.id === 'avg_pressure') return { ...field, title: '平均压力(N)' }
+    if (field.id === 'total_pressure_n') return { ...field, title: '压力总和(N)' }
+    if (field.id === 'real_data') return { ...field, title: '压力数据(N)' }
+    return field
+  })
+}
 
 function formatExportDecimal(value, digits = 1) {
   const num = Number(value)
@@ -662,28 +763,28 @@ function formatExportDecimal(value, digits = 1) {
 }
 
 function buildSingleKeyExportHeaders(key, options = {}) {
-  const { suffix = '', labelSuffix = '' } = options
+  const { suffix = '', labelSuffix = '', metricMode = 'force' } = options
   const label = `${getExportKeyLabel(key)}${labelSuffix}`
   const idPrefix = suffix ? `${key}_${suffix}` : key
-  return EXPORT_BASE_FIELDS.map((field) => ({
+  return getExportBaseFields(metricMode).map((field) => ({
     id: getExportKeyFieldId(idPrefix, field.id),
     title: `${label}${field.title}`,
   }))
 }
 
-function buildExportHeadersForKeys(keys, selectionMap = {}) {
+function buildExportHeadersForKeys(keys, selectionMap = {}, metricMode = 'force') {
   const headers = [...EXPORT_FIXED_FIELDS]
   sortExportKeys(keys).forEach((key) => {
-    headers.push(...buildSingleKeyExportHeaders(key))
+    headers.push(...buildSingleKeyExportHeaders(key, { metricMode }))
     const selectionCount = Math.min(4, Math.max(0, Number(selectionMap[key] || 0)))
     for (let index = 1; index <= selectionCount; index++) {
       headers.push(...buildSingleKeyExportHeaders(key, {
         suffix: `selection_${index}`,
         labelSuffix: `框选${index}`,
+        metricMode,
       }))
     }
   })
-  headers.push(...EXPORT_TRAILING_FIELDS)
   return headers
 }
 
@@ -692,7 +793,7 @@ function normalizeExportOptions(options = {}) {
   const fields = Array.isArray(options.fields)
     ? options.fields.map((field) => String(field || '').trim()).filter(Boolean)
     : []
-  return { format, fields }
+  return { format, fields, metricMode: normalizePressureMetricMode(options.metricMode) }
 }
 
 function filterExportHeaders(headers, fields) {
@@ -732,11 +833,11 @@ async function writeXlsxFile(filePath, headers, records) {
   XLSX.writeFile(workbook, filePath, { bookType: 'xlsx' })
 }
 
-async function getExportFieldOptions({ db, params }) {
+async function getExportFieldOptions({ db, params, exportOptions = {} }) {
+  const { metricMode } = normalizeExportOptions(exportOptions)
   const headers = [
     ...EXPORT_FIXED_FIELDS,
-    ...EXPORT_BASE_FIELDS,
-    ...EXPORT_TRAILING_FIELDS,
+    ...getExportBaseFields(metricMode),
   ]
   return {
     fields: headers.map((header) => ({ value: header.id, label: header.title })),
@@ -868,6 +969,8 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         }
       }
       const selectionCountMap = getSelectionCountMap(selectOverride, keyArr, firstData)
+      const normalizedExportOptions = normalizeExportOptions(exportOptions)
+      const metricMode = normalizedExportOptions.metricMode
 
       // 根据前几帧 timestamp 自动推算帧率
       let detectedHz = 12 // 默认帧率
@@ -888,8 +991,12 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
 
       for (let i = 0; i < rows.length; i++) {
         const rowData = JSON.parse(rows[i].data)
+        const elapsedMs = Number(rows[i].timestamp) - Number(rows[0].timestamp)
         const frameEntry = {
           timestamp: rows[i].timestamp,
+          elapsed_seconds: Number.isFinite(elapsedMs)
+            ? Math.max(0, elapsedMs / 1000).toFixed(2)
+            : (i / detectedHz).toFixed(2),
           back_device_mac: '',
           sit_device_mac: '',
           remark: remarkText,
@@ -924,6 +1031,8 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const pointAreaCm2 = pointInfo ? pointArea / 100 : 1
           const pressureAreaValue = pointInfo ? (area * pointArea / 100) : area
           const pressureStats = calcPressureFormulaStats(data, key, pointAreaCm2)
+          const exportMetricStats = getExportMetricStats(pressureStats, metricMode, pointAreaCm2)
+          const exportMetricData = getExportMetricPointValues(data, pressureStats, metricMode, pointAreaCm2)
 
           // 计算框选区域受力面积
           const selectAreaValue = pointInfo ? (selectArea * pointArea / 100) : selectArea
@@ -1014,19 +1123,21 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.total_pressure_n = pointInfo ? rowEntry[`${key}pressTotal`] : press
           rowEntry.remark = remarkText
 
-          frameEntry[getExportKeyFieldId(key, 'max_pressure')] = formatExportDecimal(rowEntry[`${key}max`])
+          frameEntry[getExportKeyFieldId(key, 'max_pressure')] = formatExportDecimal(exportMetricStats.max)
           frameEntry[getExportKeyFieldId(key, 'max_pressure_coord')] = rowEntry[`${key}maxCoord`]
-          frameEntry[getExportKeyFieldId(key, 'avg_pressure')] = formatExportDecimal(rowEntry[`${key}aver`])
+          frameEntry[getExportKeyFieldId(key, 'avg_pressure')] = formatExportDecimal(exportMetricStats.aver)
           frameEntry[getExportKeyFieldId(key, 'contact_area')] = rowEntry[`${key}pressureArea`]
-          frameEntry[getExportKeyFieldId(key, 'real_data')] = rowEntry[`${key}realData`]
+          frameEntry[getExportKeyFieldId(key, 'real_data')] = JSON.stringify(exportMetricData)
           frameEntry[getExportKeyFieldId(key, 'point_count')] = activePointCount
-          frameEntry[getExportKeyFieldId(key, 'total_pressure_n')] = formatExportDecimal(rowEntry.total_pressure_n)
+          frameEntry[getExportKeyFieldId(key, 'total_pressure_n')] = formatExportDecimal(exportMetricStats.total)
           selectionRegions.forEach((region, regionIndex) => {
             const regionArr = sliceSelectionData(data, region)
             const regionStats = colArrData(regionArr)
             const regionPressureStats = calcPressureFormulaStats(regionArr, key, pointAreaCm2)
-            const regionMax = regionPressureStats.max
-            const regionAver = regionPressureStats.aver
+            const regionMetricStats = getExportMetricStats(regionPressureStats, metricMode, pointAreaCm2)
+            const regionMetricData = getExportMetricPointValues(regionArr, regionPressureStats, metricMode, pointAreaCm2)
+            const regionMax = regionMetricStats.max
+            const regionAver = regionMetricStats.aver
             const regionAreaValue = pointInfo ? (regionStats.area * pointArea / 100) : regionStats.area
             const regionWidth = region.xEnd - region.xStart
             const regionCoord = indexToCoord(regionStats.maxIndex, key, {
@@ -1034,13 +1145,13 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
               yStart: region.yStart,
               selectWidth: regionWidth,
             })
-            const regionTotalPressure = regionPressureStats.total
+            const regionTotalPressure = regionMetricStats.total
             const regionPrefix = `${key}_selection_${regionIndex + 1}`
             frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure')] = formatExportDecimal(regionMax)
             frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure_coord')] = regionCoord
             frameEntry[getExportKeyFieldId(regionPrefix, 'avg_pressure')] = formatExportDecimal(regionAver)
             frameEntry[getExportKeyFieldId(regionPrefix, 'contact_area')] = regionAreaValue
-            frameEntry[getExportKeyFieldId(regionPrefix, 'real_data')] = JSON.stringify(regionArr)
+            frameEntry[getExportKeyFieldId(regionPrefix, 'real_data')] = JSON.stringify(regionMetricData)
             frameEntry[getExportKeyFieldId(regionPrefix, 'point_count')] = regionStats.area
             frameEntry[getExportKeyFieldId(regionPrefix, 'total_pressure_n')] = formatExportDecimal(regionTotalPressure)
           })
@@ -1090,10 +1201,9 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
 
       try {
         const csvBaseName = buildCsvBaseName(file)
-        const normalizedExportOptions = normalizeExportOptions(exportOptions)
         const fileExt = normalizedExportOptions.format === 'xlsx' ? 'xlsx' : 'csv'
         const exportFilePath = path.join(csvPath, `${csvBaseName}_${safeName}.${fileExt}`)
-        const headers = filterExportHeaders(buildCombinedHeaders(keyArr, selectionCountMap), normalizedExportOptions.fields)
+        const headers = filterExportHeaders(buildExportHeadersForKeys(keyArr, selectionCountMap, metricMode), normalizedExportOptions.fields)
         const records = [...csvDataRows]
         if (normalizedExportOptions.format === 'xlsx') {
           await writeXlsxFile(exportFilePath, headers, records)

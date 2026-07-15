@@ -3,9 +3,9 @@ const path = require('path')
 const { state } = require('../state')
 
 const DEFAULT_PRESSURE_CONFIG = {
-  backValueMultiplier: 3,
-  pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
-  pressureFormulaProfile: 'V2.7.38中英文logo',
+  backValueMultiplier: 1,
+  pressureFormulaFile: 'pressureFormula_V2.8.1.js',
+  pressureFormulaProfile: 'V2.8.1',
 }
 
 let configCache = null
@@ -104,8 +104,10 @@ function requirePressureFormula(formulaPath, formulaFile) {
   const resolvedPath = require.resolve(formulaPath)
   delete require.cache[resolvedPath]
   const moduleValue = require(resolvedPath)
-  if (typeof moduleValue.estimatePressure !== 'function' || typeof moduleValue.estimateMaxPressure !== 'function') {
-    throw new Error(`Pressure formula file must export estimatePressure and estimateMaxPressure: ${formulaFile}`)
+  const hasLegacyAverageFormula = typeof moduleValue.estimatePressure === 'function' && typeof moduleValue.estimateMaxPressure === 'function'
+  const hasPointFormula = typeof moduleValue.master === 'function'
+  if (!hasLegacyAverageFormula && !hasPointFormula) {
+    throw new Error(`Pressure formula file must export master or estimatePressure/estimateMaxPressure: ${formulaFile}`)
   }
   return moduleValue
 }

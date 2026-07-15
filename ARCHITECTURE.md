@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-06-10
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-15
 
 ## 1. 项目概述
 
@@ -91,6 +91,7 @@ shroom/
 │   │   │   └── EquipStatus/    # 设备状态组件
 │   │   ├── util/
 │   │   │   ├── echarts.js      # ECharts 按需引入入口
+│   │   │   ├── pressureMetrics.js # 压强公式、单点面积及压强/压力统一计量口径
 │   │   │   ├── portConfig.js   # 端口配置
 │   │   │   ├── constant.js     # 常量定义
 │   │   │   ├── util.js         # 工具函数
@@ -110,6 +111,7 @@ shroom/
 │   └── index.js
 ├── test/
 │   └── portFinder.test.js      # 端口分配单元测试
+│   └── pressureMetric.test.mjs # 压强/压力换算与默认模式单元测试
 ├── sdk/                        # 独立 Core SDK（无后端服务依赖）
 │   ├── package.json            # SDK 独立包配置
 │   ├── index.js                # 底层函数聚合入口
@@ -333,6 +335,19 @@ graph TD
     - `ViewSetting` 的 3D 视角切换统一维护 `0/1/2` 三档序号，切换整体/靠背/座椅显示对象时重置到 0° 初始位置。
     - `ThreeAndCarPointV2.changePointRotation()` 将每档步进固定为 45°，因此靠背或座椅单独选中后点击视角切换时按 0°、向里 45°、向里 90°循环。
 
+28. **压强/压力统一计量模式**
+    - `equipStore.pressureMetricMode` 是全局显示口径，值为 `pressure`（压强，kPa）或 `force`（压力，N），默认沿用原压力总和曲线的 `force` 口径，并持久化到 `localStorage.pressureMetricMode`。
+    - `pressureMetrics.js` 统一输出平均值、最大值、总和值和格点值。单点压力按 `压力(N) = 压强(kPa) × 单点面积(cm²) × 0.1` 换算；总压力等于平均压强乘有效受力面积后完成同一单位换算。
+    - 压强基础值统一按 V2.8.1 单点公式计算：先对每个 ADC 点调用 `master(adc, sensor)` 并乘当前帧 `computeScale(adcMax)` 得到单点 kPa，再从换算后的点值数组统计平均压强、最大压强、压强总和和压力总和；不再用平均 ADC 推导平均/最大压强。
+    - 点数和面积按 V2.8.1 单点公式转换后的点矩阵统计：先得到 `pressureValues` / `forceValues`，再按转换后点值 `> 0` 计算有效点，避免 raw ADC 非零但公式换算后无效的点进入点数和面积；左侧统计中的“压力总和”始终显示真实压力 `N`，不随压强/压力显示模式改成 kPa。
+    - `pressureMetrics.js` 进一步集中维护 `getPressureMetricDisplay()` 展示定义，统一返回当前口径的单位、曲线名、坐标轴标题、统计项文案、趋势数组字段和数据前缀；左侧图表、数据对比页和 COP 报告不再各自硬编码 `N/kPa` 与“压力/压强”文案。
+    - 左侧曲线旁的交换按钮只修改全局模式；`ChartsAside`、`useMatrixData`、3D 点图、2D 数字图、框选统计、数据对比和 COP 报告均从公共模式和公共公式读取数值与单位。COP 重心仍使用原始矩阵权重，不因显示单位切换而改变轨迹。
+    - 3D 点图在原始 ADC 阶段先应用可视化噪点过滤，再将矩阵逐点换算为当前显示模式的 kPa/N；进入插值和高度/颜色渲染前统一保留 1 位小数。
+    - 2D 数字矩阵的贴图图集统一按 `显示值 × 10` 选择格子，压强 kPa 与压力 N 都以 1 位小数展示；V3/V4 使用 64x64 图集，避免高压强小数索引被 16x16 图集截断。
+    - 可视化调节面板里的“当前最大值”使用同一套压强/压力点矩阵计算，并随当前模式显示 `kPa` 或 `N`，不再显示原始 ADC 最大值。
+    - 历史导出请求通过 `exportOptions.metricMode` 把当前口径传给后端；`/downloadFields` 动态返回最大值、平均值和矩阵数据的压强/压力字段标题，`/download` 按同一口径导出整体矩阵和最多四个框选区域的最大值、平均值及格点数据；`total_pressure_n` 固定为压力总和 `N`，不提供“压强总和”概念。
+    - 固定导出字段新增 `elapsed_seconds`（表头“秒数(s)”），优先按当前帧时间戳减首帧时间戳计算，首帧为 `0.00`；时间戳不可用时才回退为帧号除以检测采样率。
+
 ## 5. API 端点 (Endpoints)
 
 | 方法 | 路径 | 描述 |
@@ -362,7 +377,9 @@ graph TD
 | `POST` | `/cancalDbPlay` | 取消回放 |
 | `POST` | `/changeDbplaySpeed` | 修改回放速度 |
 | `POST` | `/getDbHistoryIndex` | 获取历史数据指定帧 |
-| `POST` | `/downlaod` | 导出 CSV 数据 |
+| `POST` | `/downloadFields` | 按 `exportOptions.metricMode` 返回压强或压力口径的可选导出字段 |
+| `POST` | `/download` | 按选定格式、字段和压强/压力口径导出历史数据；支持 CSV/XLSX |
+| `POST` | `/downlaod` | `/download` 的旧拼写兼容入口 |
 | `POST` | `/delete` | 删除历史记录 |
 | `POST` | `/changeDbName` | 修改数据库记录名称 |
 | `POST` | `/changeDbDataName` | 修改数据记录名称 |
@@ -505,11 +522,49 @@ graph TD
 | 2026-06-05 | 数据对比导出路径与格式选择 | 数据对比导出新增下载路径选择弹框和 CSV/XLSX 格式选择；渲染进程优先通过 preload 调用 Electron 主进程写入指定目录，IPC 未注册时兜底调用后端 `/exportContrastData`，XLSX 使用 `xlsx` 生成工作簿 |
 | 2026-06-05 | 靠背默认水平翻转 | 靠背矩阵默认方向切换为 `left=false, up=true, rotateDegree=0`，并在前后端方向加载时迁移旧的未翻转靠背默认值 |
 | 2026-06-10 | 独立 Core SDK | 将 SDK 调整为无后端服务依赖的底层能力包，新增矩阵、框选、回放、压强 core 模块和 Node 串口直连 adapter，并把 HTTP/WebSocket client 降为可选能力 |
+| 2026-07-13 | 已应用框选模板退出保存分支 | 已应用模板被移动、缩放等修改后退出框选时，支持按模板 ID 覆盖旧模板、按新名称另存模板或不保存退出 |
+| 2026-07-13 | 框选组合移动与 COP 图轴完善 | 按住鼠标左键拖动框选时可用方向键按传感器网格移动；COP 报告全部热力图、轨迹图和趋势图补齐 X/Y 轴名称与单位 |
+| 2026-07-13 | COP 轨迹图绘图区恢复 | 修复坐标轴长标题与自动留白共同挤压绘图区的问题，恢复报告内 COP 轨迹的正常显示比例 |
+| 2026-07-13 | COP 坐标轴文案防溢出 | 将 COP 轨迹轴名称收紧为 `X：Dx（mm）`、`Y：Dy（mm）`，保证小尺寸报告卡片内完整显示 |
+| 2026-07-13 | COP Y 轴标题内置 | 将 COP 的 Y 轴名称从图外旋转布局改为绘图区左上角横向布局，消除不同刻度宽度下的边界溢出 |
+| 2026-07-13 | COP 坐标刻度整数化 | COP 轴边界按数据最大偏移向上取整到 10 mm，并以整数显示刻度，避免 `211.157` 在小字号下被误读为 `211157` |
+| 2026-07-13 | 历史导出字段精简 | 从 `exportFields` 及最终 CSV/XLSX 表头中移除靠背 MAC、坐垫 MAC 和备注，保留旧文件导入兼容 |
+| 2026-07-13 | 导出弹窗中英文文案 | 为历史下载弹窗补齐 `exportFormat`、`exportFields` 及字段校验提示的中英文资源，避免界面直接显示 i18n 键名 |
+| 2026-07-13 | 软件退出服务进程树清理 | Electron 退出时同步终止 API 与 Vite 的完整子进程树，并关闭静态 HTTP 服务连接，避免 Web 服务继续占用端口 |
+| 2026-07-14 | 压强/压力全局切换与导出秒数 | 左侧曲线新增压强/压力交换按钮，统一驱动 2D 数字、框选、数据对比、COP 报告和历史导出；导出新增从 0 开始的秒数字段 |
+| 2026-07-14 | V2.8.1 压强公式传感器分段派发 | `master(adc, sensor)` 按传感器类型选择标定分段：靠背使用 `BACK_SEGS`，座椅使用 `SEAT_SEGS` |
+| 2026-07-14 | 压强/压力展示定义集中化 | `pressureMetrics.js` 新增统一展示定义，左侧图表、对比页和 COP 报告共用单位与文案 |
+| 2026-07-14 | V2.8.1 单点公式统一口径 | 实时统计、2D 数字和历史导出改为逐点调用 V2.8.1 `master()` 后再统计平均/最大/总和 |
+| 2026-07-14 | 有效点与压力总和口径修正 | 点数/面积改为按 V2.8.1 有效压强点统计，左侧压力总和固定显示真实压力 N |
+| 2026-07-15 | COP 报告图表业务语义补充 | COP 报告图表增加概念描述；COP 轨迹轴定义为左右/上下偏移距离，压力总和趋势固定为时间(s)与压力总和(N) |
+| 2026-07-15 | COP 报告描述排版对齐 | 图表描述区固定为两行高度，保证同一行图表从一致的水平位置开始渲染 |
 
 ## 9. 更新日志
 
 | 日期 | 变更类型 | 描述 |
 | :--- | :--- | :--- |
+| 2026-07-13 | 新增功能 | 已应用框选模板修改后退出时提供覆盖旧模板、另存为新模板和不保存三种操作 |
+| 2026-07-13 | 优化重构 | 框选拖拽支持方向键组合移动，并为 COP 报告全部图示补齐坐标轴名称和单位 |
+| 2026-07-13 | 修复缺陷 | 修复 COP 轨迹图增加坐标轴名称后绘图区被压缩、轨迹近似无法显示的问题 |
+| 2026-07-13 | 修复缺陷 | 缩短 COP 轨迹图 X/Y 轴描述并调整字号，避免轴名称超出图表边界 |
+| 2026-07-13 | 修复缺陷 | 将 COP Y 轴标题移入绘图区顶部，修复旋转标题在紧凑图表中仍然越界的问题 |
+| 2026-07-13 | 修复缺陷 | COP 坐标轴不再直接显示原始浮点边界值，改用整 10 mm 对称范围和整数刻度 |
+| 2026-07-13 | 配置变更 | 历史数据导出字段不再提供或输出靠背 MAC、坐垫 MAC、备注 |
+| 2026-07-13 | 修复缺陷 | 补齐历史导出格式与导出字段相关中英文翻译 |
+| 2026-07-13 | 修复缺陷 | 修复退出软件后 Vite/API 子进程残留、Web 服务端口仍处于监听状态的问题 |
+| 2026-07-14 | 新增功能 | 新增全局压强/压力计量模式并贯通实时显示、框选、对比、COP 报告和 CSV/XLSX 导出，同时增加从 0 开始的秒数导出选项 |
+| 2026-07-14 | 优化重构 | `pressureFormula_V2.8.1.js` 新增传感器类型参数，靠背与座椅分别使用独立标定分段 |
+| 2026-07-14 | 优化重构 | 将压强/压力单位、曲线标题、统计项文案和趋势字段集中到 `getPressureMetricDisplay()`，减少前端页面分散判断 |
+| 2026-07-14 | 优化重构 | 统一压强换算为 V2.8.1 单点公式口径，平均值、最大值和总和值全部基于逐点换算后的结果计算 |
+| 2026-07-14 | 修复缺陷 | 修复左侧点数把未参与 V2.8.1 单点公式的低值点计入有效点、以及压力总和在压强模式下显示为 kPa 的问题 |
+| 2026-07-14 | 修复缺陷 | 左侧统计和数据对比页的点数统一按压强/压力转换后的点矩阵统计，不再读取原始 ADC 非零点 |
+| 2026-07-14 | 修复缺陷 | 修复 2D 数字切换为 N 后小数单点压力被稳定器阈值清零、导致画面无数据的问题 |
+| 2026-07-14 | 优化重构 | 3D 点图矩阵改为跟随全局压强/压力模式，kPa/N 点值和压力/压强总和曲线统一保留 1 位小数 |
+| 2026-07-14 | 修复缺陷 | 2D 数字压强模式不再四舍五入为整数，kPa 与 N 矩阵统一显示 1 位小数 |
+| 2026-07-14 | 修复缺陷 | 可视化调节面板“当前最大值”改为显示当前压强/压力矩阵最大值和对应单位 |
+| 2026-07-14 | 修复缺陷 | CSV/XLSX 导出的总和字段固定为压力总和(N)，压强模式下不再输出压强总和(kPa) |
+| 2026-07-15 | 优化重构 | COP 报告补充各图表概念描述，COP 轨迹使用偏移距离轴，压力总和趋势图 X 轴改为秒、Y 轴固定压力总和(N) |
+| 2026-07-15 | 修复缺陷 | COP 报告图表描述区固定两行高度并裁剪溢出文案，修复四列图表起始位置不对齐 |
 | 2026-06-05 | 新增功能 | 数据对比导出支持选择保存路径和 CSV/XLSX 两种格式 |
 | 2026-06-05 | 配置变更 | 靠背默认方向再执行一次左右翻转，并迁移旧默认方向缓存 |
 | 2026-06-05 | 修复缺陷 | 修复播放控件、数据对比、图表轴标题、下载提示和前端端口递增等界面/启动问题 |
@@ -1502,3 +1557,106 @@ graph TD
 - 新增 `sdk/node/history-store.js` 和 `sdk/node/exporter.js`，提供兼容原 `matrix(data,timestamp,date,select)` 表结构的 SQLite 存储，以及 CSV/XLSX 导出函数；原后台下载 API 不再是复用这些能力的唯一入口。
 - `sdk/package.json` 增加子路径 exports 和可选依赖声明，`sdk/index.d.ts`、`sdk/README.md` 和 `sdk/test/*.test.js` 同步覆盖新增模块，保持 SDK 能独立测试和 dry-run 打包。
 | 2026-06-10 | Refactor | Split serial protocol, cache/auth/config, collector, history store and export functions into the standalone SDK |
+
+## 2026-07-10 Offline icons, 3D right-click, history remarks, selection template dirty state, and COP heatmap palette
+- `client/src/App.css` removes the remote Alibaba iconfont fallback URLs and binds `.iconfont` to the embedded `@font-face`, so software icons render from bundled CSS in offline or intranet environments.
+- `client/src/util/threeInteraction.js` centralizes right-mouse disabling for Three.js TrackballControls. All 3D entry components call `disableRightMouseControl()` after creating controls, preventing right-button panning and the browser context menu on the canvas.
+- `ColAndHistory` now renders saved `remark` text in each historical record card between the record name and time. The remark uses a two-line clamped style so long notes remain visible without breaking the history drawer grid.
+- `BrushManager` tracks `selectionTemplateDirty` and per-range `templateDirty`. Applying or saving a selection template marks the current template ranges clean; moving, resizing, renaming, keyboard-nudging, or deleting a template range marks the template dirty. `SecondTitle` only exits directly for clean applied templates and prompts to save when modified template ranges exist.
+- `CopReport` heatmap cells now use `jetWhite3NoWhite()` from the shared pressure color palette instead of a local red/orange/yellow-heavy stepped palette, aligning report heatmaps with the 2D/3D pressure visualization colors.
+| 2026-07-10 | Fix | Support offline icon rendering, disable 3D right-click control, show history remarks, prompt on modified selection templates, and align COP heatmap colors |
+
+## 2026-07-10 Selection grid snapping interaction
+- `BrushManager` now applies matrix-grid snapping during selection drawing, not only after mouse release. Draft selection rectangles are converted through `snapPixelRangeToMatrixRect()`, so the visible selection box is drawn with sensor-grid cells as the minimum unit.
+- Selection dragging now calls the existing moved-range grid snapper during mouse movement, preserving the selected matrix width/height while moving one grid step at a time.
+- Selection resizing now snaps each resize frame back to a valid matrix rectangle, keeping all selection edges aligned to grid boundaries and preserving the existing template dirty-state tracking.
+| 2026-07-10 | Interaction | Make selection drawing, dragging, and resizing snap to sensor-grid cells in real time |
+
+## 2026-07-10 Selection mode view-switch cleanup and template-save confirmation
+- `SecondTitle` no longer force-closes selection mode when a close confirmation modal is already open. This prevents display-mode changes from clearing `BrushManager.rangeArr` before the user confirms saving a selection template.
+- Selection-template saving from the exit modal now passes an `onComplete` callback through the `save-selection-template` event. `SelectSet` calls the callback after `saveTemplateByName()` resolves, and `SecondTitle` waits for success before closing selection mode.
+- While selection mode is active, switching between `back2D` and `sit2D` clears the current selection ranges and selection store state. Switching from 2D to 3D still goes through the save/discard confirmation path instead of silently deleting ranges.
+| 2026-07-10 | Fix | Clear selections when changing 2D sensor surfaces and wait for template save before exiting selection mode |
+
+## 2026-07-10 Selection exit template snapshot save
+- `SecondTitle` now clones the current `BrushManager.rangeArr` before opening the exit-selection confirmation modal and passes that immutable snapshot through the `save-selection-template` event.
+- `SelectSet.saveTemplateByName()` can build template regions from the supplied snapshot instead of reading only the live `brushInstance.rangeArr`, so switching from 2D selection mode into 3D does not lose the regions before the user confirms saving.
+- Duplicate-name overwrite confirmation preserves the same snapshot when retrying the save, keeping the exit-save path consistent with manual template saves.
+| 2026-07-10 | Fix | Save selection templates from an exit-modal snapshot so 2D-to-3D view switching no longer triggers a false "create selection first" warning |
+
+## 2026-07-13 Modified applied-template exit actions
+- `SecondTitle` detects whether all current dirty selection ranges originate from the same applied template. The exit modal then exposes three explicit actions: discard changes, save the snapshot as a new template, or overwrite the original template.
+- The `save-selection-template` event now carries `mode` and `templateId` in addition to the immutable range snapshot. Selection mode closes only after the selected save operation succeeds; failed saves keep the modal available for retry.
+- `SelectSet.saveTemplateByName()` overwrites by stable template ID and preserves the original template's name, device type, display type, matrix size, and creation time. Save-as-new continues to validate names and uses the snapshot matrix context during view changes.
+| 2026-07-13 | Feature | Allow modified applied selections to overwrite the original template or save as a new template when exiting selection mode |
+
+## 2026-07-13 Selection drag keyboard movement and COP chart axes
+- `BrushManager` now keeps an active drag context for the selection currently held by the left mouse button. Arrow keys target that range, move it by exactly one sensor-grid cell, and rebase the pointer drag origin so subsequent mouse movement does not undo or jump over the keyboard adjustment.
+- Standalone arrow-key selection movement uses the same matrix-step helper, keeping boundary checks, irregular backrest validity checks, template dirty-state tracking, and range metadata consistent with mouse dragging.
+- COP report heatmaps label X/Y as horizontal and vertical sensor points. COP path charts label `Dx/Dy (mm)`, while pressure and offset trend charts label frame number on X and the corresponding `N` or `mm` measurement on Y.
+| 2026-07-13 | Improvement | Support grid-step arrow movement while holding a selection with the mouse and add named, unit-bearing axes to every COP report chart |
+
+## 2026-07-13 COP trajectory plot-area regression fix
+- `CopChart` no longer combines large fixed grid margins with ECharts `containLabel`, which previously reserved label space twice and compressed the trajectory plot into a narrow strip inside compact report cards.
+- The COP grid now uses fixed margins sized for `Dx/Dy (mm)` titles, four-way axis splitting, smaller overlap-aware tick labels, and the original symmetric data range.
+| 2026-07-13 | Fix | Restore usable COP trajectory plot dimensions after adding named axes and units |
+
+## 2026-07-13 COP axis-label overflow fix
+- COP trajectory axis names now use compact labels `X: Dx (mm)` and `Y: Dy (mm)` with a smaller title font, preserving direction, metric, and unit while fitting compact report cards and detailed charts.
+| 2026-07-13 | Fix | Keep COP X/Y descriptions inside chart boundaries without removing units |
+
+## 2026-07-13 COP Y-axis title in-chart placement
+- `CopChart` places `Y: Dy (mm)` horizontally at the upper-left edge of the plot instead of rotating it outside the Y axis. A fixed top margin keeps the title separate from trajectory data and independent of tick-label width.
+| 2026-07-13 | Fix | Move the COP Y-axis description inside the chart to eliminate remaining overflow |
+
+## 2026-07-13 COP integer axis bounds
+- `CopChart` separates the raw maximum COP offset from the displayed axis boundary. The symmetric X/Y limit rounds upward to the next 10 mm and uses two equal intervals per side.
+- Axis labels render as integers, so floating boundaries such as `211.157` appear as a clear `±220 mm` range without changing trajectory coordinates or summary calculations.
+| 2026-07-13 | Fix | Round COP display bounds to readable integer millimeter ticks while preserving raw trajectory data |
+
+## 2026-07-13 History export field reduction
+- `util/db.js` keeps only `timestamp` as a fixed export field. Backrest MAC, seat MAC, and remark are removed from `/downloadFields` options and from generated CSV/XLSX headers.
+- Existing row parsing and legacy import aliases remain unchanged, so previously exported files containing these fields can still be imported.
+| 2026-07-13 | Config | Remove backrest MAC, seat MAC, and remark from exportFields and generated history exports |
+
+## 2026-07-13 History export dialog localization
+- `client/src/App.js` now defines Chinese and English translations for `exportFormat`, `exportFields`, `exportFieldsLoadFailed`, and `selectExportFields` used by `ColAndHistory`.
+- The history download modal now renders localized labels instead of exposing raw i18n keys when switching languages.
+| 2026-07-13 | Fix | Add Chinese and English copy for export format, export fields, and field validation messages |
+
+## 2026-07-13 Electron child-process tree cleanup
+- `index.js` now terminates the API fork and Vite shell process as complete Windows process trees using synchronous `taskkill /T /F`, with `child.kill('SIGTERM')` as the cross-platform fallback.
+- Cleanup detaches stored child/server references before termination, making repeated lifecycle calls idempotent across `window-all-closed`, `before-quit`, `will-quit`, uncaught exceptions, and the process exit fallback.
+- The in-process static HTTP server closes its listener and all active connections during shutdown, preventing the production frontend port from remaining open while Electron exits.
+| 2026-07-13 | Fix | Stop API, Vite, and static web services completely when the desktop application exits |
+
+## 2026-07-14 Unified pressure/force display mode and elapsed-seconds export
+- `client/src/util/pressureMetrics.js` now owns the shared `pressure`/`force` mode contract. It exposes pressure intensity in `kPa`, force in `N`, per-point conversions, summary conversions, and history force-to-pressure conversion using each sensor matrix's configured point area.
+- `equipStore` persists the active mode. `ChartsAside` adds a swap icon beside the primary curve title and keeps separate pressure/force trend buffers so switching does not discard the current realtime or selection trend window.
+- `NumThreeColorV2` converts 2D numeric cells through the same pressure formula. Pressure intensity is rendered as integer `kPa`; force uses a one-decimal atlas so sub-newton values do not collapse to zero.
+- `NumThresContrast` recalculates A/B summaries, comparison heatmaps, differences, conclusions, and export values from the current mode. `CopReport` converts report heatmaps, full-surface statistics, selection statistics, and trend charts while preserving raw-weight COP coordinates and pressure-based risk thresholds.
+- `ColAndHistory` passes `exportOptions.metricMode` to both `/downloadFields` and `/download`. `util/db.js` keeps stable field IDs for compatibility but changes labels and values to the selected unit, including converted full-matrix and selection data.
+- History exports add `elapsed_seconds` / `秒数(s)`. The value is `(frameTimestamp - firstFrameTimestamp) / 1000`, formatted to two decimals with the first row fixed at `0.00`; detected frame rate is only a fallback.
+- Verification covers `node --test test/pressureMetric.test.mjs`, client production build, server syntax checks, and a read-only export against the current SQLite history database. The existing integration suite still has four Windows-environment failures unrelated to this change: occupied-port assertions, temporary database path construction, and a Unix `grep` command.
+| 2026-07-14 | Feature | Add a persisted pressure/force mode across realtime, selection, comparison, reports, and exports, plus elapsed seconds from zero |
+
+## 2026-07-14 V2.8.1 pressure formula sensor dispatch
+- `server/kpa/pressureFormula_V2.8.1.js` exposes `master(adc, sensor)`. The `backrest` sensor type selects `BACK_SEGS`; `seat` and omitted sensor types select `SEAT_SEGS` for backward compatibility.
+- `calcPressure(matrix, scaleOverride, sensor)` forwards the frame sensor type to every `master` call, so a backrest frame does not reuse seat calibration segments.
+- The formula module exports both `BACK_SEGS` and `SEAT_SEGS`; the obsolete undefined `SEGMENTS` export is removed.
+| 2026-07-14 | Refactor | Dispatch V2.8.1 point and frame pressure calculations to sensor-specific calibration segments |
+
+## 2026-07-14 Converted-matrix active point count
+- `pressureMetrics.countActiveMetricPoints()` centralizes active-point counting on converted point values, so callers count `pressureValues` or `forceValues` instead of raw ADC entries.
+- `useMatrixData` derives realtime and selection point totals from converted force/pressure arrays. The left area chart and point row now match the same V2.8.1 single-point formula used by 2D numeric cells and total force.
+- `NumThresContrast` uses the converted metric arrays for valid-point counts in comparison metrics, keeping comparison reports aligned with realtime statistics and history export semantics.
+| 2026-07-14 | Fix | Count valid points from converted pressure/force matrices instead of raw ADC values |
+
+## 2026-07-15 COP report chart business semantics
+- `client/src/page/report/CopReport.js` adds chart-level concept descriptions for COP report heatmaps, COP trajectory charts, and trend charts so the PDF explains what each X/Y axis represents instead of only showing units.
+- COP trajectory charts now label axes as `X轴距离（mm）` and `Y轴距离（mm）`; the description clarifies that X is left/right pressure-center offset and Y is up/down pressure-center offset.
+- Pressure total trend charts use per-frame `forceSum` from `computePressureMetrics()` and keep the chart title/Y axis fixed to `压力总和 (N)`, while the X axis is generated from `sampleRate` as elapsed time in seconds.
+- Selection and multi-surface report trend charts use the same pressure-total semantics, so switching the global pressure/force display mode does not create a `压强总和` trend concept in COP reports.
+- Report chart descriptions are constrained to a two-line fixed-height block, keeping heatmaps, COP plots, and trend charts vertically aligned within four-column rows.
+| 2026-07-15 | Improvement | Add COP report chart concept descriptions and fix pressure total trends to elapsed seconds and Newton totals |
+| 2026-07-15 | Fix | Keep COP report chart descriptions at a fixed two-line height so chart canvases align across columns |

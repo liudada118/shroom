@@ -6,7 +6,7 @@ import { matrixGenBox, removeHistoryBox } from '../assets/util/selectMatrix'
 import { isMoreMatrix } from '../assets/util/util'
 import { message } from 'antd'
 import { formatSelectionName, getDefaultSelectionName } from '../util/selectionName'
-import { computePressureMetrics } from '../util/pressureMetrics'
+import { computePressureMetrics, countActiveMetricPoints } from '../util/pressureMetrics'
 
 /**
  * 矩阵数据处理 Hook
@@ -31,6 +31,15 @@ const DEFAULT_DATA_DIRECTION = {
 }
 const DATA_DIRECTION_STORAGE_KEY = 'matrixDataDirection'
 const DATA_QUALITY_MESSAGE_INTERVAL = 3000
+
+function roundMetricValue(value, digits = 1) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? Number(numeric.toFixed(digits)) : 0
+}
+
+function formatMetricValue(value, digits = 1) {
+  return roundMetricValue(value, digits).toFixed(digits)
+}
 
 function normalizeRotateDegree(value) {
   const numeric = Number(value)
@@ -306,25 +315,32 @@ export function useMatrixData() {
       stats.pressMax = 0
       stats.total = 0
       stats.pressMin = 0
-      stats.pressAver = '0.00'
+      stats.pressAver = '0.0'
+      stats.pressureTotal = 0
+      stats.forceMax = 0
+      stats.forceAver = 0
       return { area: 0, press: 0, stats }
     }
-    const area = selectedArr.filter(a => a > 0).length
-    const press = selectedArr.reduce((a, b) => a + b, 0)
     const pressureMetrics = computePressureMetrics(selectedArr, fullKey)
+    const convertedMetricValues = pressureMetrics.forceValues?.length ? pressureMetrics.forceValues : pressureMetrics.pressureValues
+    const area = countActiveMetricPoints(convertedMetricValues)
+    const press = pressureMetrics.total
 
-    stats.pressTotal = pressureMetrics.total.toFixed(2)
+    stats.pressTotal = formatMetricValue(pressureMetrics.total)
     stats.areaTotal = area
     const positiveSelected = selectedArr.filter(a => a > 0)
     const min = positiveSelected.length ? Math.min(...positiveSelected).toFixed(1) : 0
-    stats.pressMax = pressureMetrics.pressMax.toFixed(2)
-    stats.total = pressureMetrics.total
+    stats.pressMax = formatMetricValue(pressureMetrics.pressMax)
+    stats.total = roundMetricValue(pressureMetrics.total)
     stats.pressMin = min || 0
-    stats.pressAver = pressureMetrics.pressAver.toFixed(2)
+    stats.pressAver = formatMetricValue(pressureMetrics.pressAver)
+    stats.pressureTotal = roundMetricValue(pressureMetrics.pressureTotal)
+    stats.forceMax = roundMetricValue(pressureMetrics.forceMax)
+    stats.forceAver = roundMetricValue(pressureMetrics.forceAver)
 
     // carY 类型压力转换
     if (fullKey === 'carY-back' || fullKey === 'carY-sit') {
-      stats.pressTotal = pressureMetrics.total.toFixed(2)
+      stats.pressTotal = formatMetricValue(pressureMetrics.total)
     }
 
     return { area, press, stats }
@@ -376,6 +392,8 @@ export function useMatrixData() {
     if (!data[key]) data[key] = {}
     if (!data[key].areaArr) data[key].areaArr = []
     if (!data[key].pressArr) data[key].pressArr = []
+    if (!data[key].pressureArr) data[key].pressureArr = []
+    if (!data[key].forceArr) data[key].forceArr = []
     if (!data[key].data) data[key].data = {}
     if (!data[key].boxStats) data[key].boxStats = []
 
@@ -394,9 +412,10 @@ export function useMatrixData() {
     const xData = Array.from({ length: 256 }, (_, i) => i)
     const yData = xData.map(x => normalPDF(x, mu, sigma))
 
-    const area = selectedArr.filter(a => a > 0).length
-    const press = selectedArr.reduce((a, b) => a + b, 0)
     const pressureMetrics = computePressureMetrics(selectedArr, matrixKey)
+    const convertedMetricValues = pressureMetrics.forceValues?.length ? pressureMetrics.forceValues : pressureMetrics.pressureValues
+    const area = countActiveMetricPoints(convertedMetricValues)
+    const press = pressureMetrics.total
 
     data[key].center = selectedCenter
     data[key].normalDis = {
@@ -409,21 +428,26 @@ export function useMatrixData() {
 
     // 默认统计（全部数据或第一个框）
     setTrendValue(data[key].areaArr, area, options)
-    const pressForChart = pressureMetrics.total
+    const pressForChart = roundMetricValue(pressureMetrics.total)
     setTrendValue(data[key].pressArr, pressForChart, options)
+    setTrendValue(data[key].pressureArr, roundMetricValue(pressureMetrics.pressureTotal), options)
+    setTrendValue(data[key].forceArr, roundMetricValue(pressureMetrics.total), options)
 
-    data[key].data.pressTotal = pressureMetrics.total.toFixed(2)
+    data[key].data.pressTotal = formatMetricValue(pressureMetrics.total)
     data[key].data.areaTotal = area
     const positiveSelected = selectedArr.filter(a => a > 0)
     const min = positiveSelected.length ? Math.min(...positiveSelected).toFixed(1) : 0
-    data[key].data.pressMax = pressureMetrics.pressMax.toFixed(2)
-    data[key].data.total = pressureMetrics.total
+    data[key].data.pressMax = formatMetricValue(pressureMetrics.pressMax)
+    data[key].data.total = roundMetricValue(pressureMetrics.total)
     data[key].data.pressMin = min || 0
-    data[key].data.pressAver = pressureMetrics.pressAver.toFixed(2)
+    data[key].data.pressAver = formatMetricValue(pressureMetrics.pressAver)
+    data[key].data.pressureTotal = roundMetricValue(pressureMetrics.pressureTotal)
+    data[key].data.forceMax = roundMetricValue(pressureMetrics.forceMax)
+    data[key].data.forceAver = roundMetricValue(pressureMetrics.forceAver)
 
     // carY 类型压力转换
     if (matrixKey === 'carY-back' || matrixKey === 'carY-sit') {
-      data[key].data.pressTotal = pressureMetrics.total.toFixed(2)
+      data[key].data.pressTotal = formatMetricValue(pressureMetrics.total)
     }
 
     // ─── 多框选独立统计 ───────────────────────────────────
@@ -436,6 +460,8 @@ export function useMatrixData() {
           bgc: '#FF6B6B',
           name: getDefaultSelectionName(data[key].boxStats.length + 1),
           pressArr: [],
+          pressureArr: [],
+          forceArr: [],
           areaArr: [],
           data: {},
         })
@@ -470,8 +496,10 @@ export function useMatrixData() {
           yData: xData.map(x => normalPDF(x, boxMu, boxSigma)),
         }
 
-        const bPressForChart = Number(stats.pressTotal) || bPress
+        const bPressForChart = roundMetricValue(Number(stats.pressTotal) || bPress)
         setTrendValue(boxStat.pressArr, bPressForChart, options)
+        setTrendValue(boxStat.pressureArr, roundMetricValue(Number(stats.pressureTotal) || 0), options)
+        setTrendValue(boxStat.forceArr, roundMetricValue(Number(stats.pressTotal) || 0), options)
         setTrendValue(boxStat.areaArr, bArea, options)
       }
     } else {

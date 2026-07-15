@@ -40,6 +40,26 @@
         color: #FFFFFF;
     }
 
+    .chartNameWithAction {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        min-width: 0;
+    }
+
+    .pressureMetricSwap.ant-btn {
+        width: 1.75rem;
+        height: 1.75rem;
+        min-width: 1.75rem;
+        padding: 0;
+        color: #8fc5ff;
+    }
+
+    .pressureMetricSwap.ant-btn:hover {
+        color: #ffffff;
+        background: #1677ff;
+    }
+
     .chartType {
         font-size: 0.75rem;
         font-weight: normal;

@@ -142,6 +142,7 @@ const ColAndHistory = memo((props) => {
     const pageInfo = useContext(pageContext);
     const { setDisplay, display, setDisplayType, setOnRuler } = pageInfo
     const dataStatus = useEquipStore(s => s.dataStatus, shallow)
+    const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
 
     const [messageApi, contextHolder] = message.useMessage();
     const { t, i18n } = props;
@@ -571,7 +572,7 @@ const ColAndHistory = memo((props) => {
         const selectedFiles = Array.isArray(selectArr)
             ? selectArr.map((item) => item == null ? '' : String(item).trim()).filter(Boolean)
             : []
-        const payload = { fileArr: selectedFiles }
+        const payload = { fileArr: selectedFiles, exportOptions: { metricMode: pressureMetricMode } }
         axios({
             method: 'post',
             url: `${localAddress}/downloadFields`,
@@ -701,6 +702,7 @@ const ColAndHistory = memo((props) => {
             exportOptions: {
                 format: exportFormat,
                 fields: exportFields,
+                metricMode: pressureMetricMode,
             },
         }
 
@@ -1623,6 +1625,11 @@ const ColAndHistory = memo((props) => {
                                             <div className='playbackItemNameInfo'>
                                                 {dbInfo.name}
                                             </div>
+                                            {dbInfo.remark ? (
+                                                <div className='playbackItemRemarkInfo' title={dbInfo.remark}>
+                                                    {dbInfo.remark}
+                                                </div>
+                                            ) : null}
                                             <div className='playbackItemTimeInfo'>
                                                 {dayjs(dbInfo.time).format('YYYY/MM/DD HH:mm')}
                                             </div>

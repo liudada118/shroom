@@ -20,6 +20,7 @@ import { getDisplayType, getSettingValue, getStatus } from "../../store/equipSto
 import { useWhyReRender } from "../../hooks/useWindowsize";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
 import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
+import { disableRightMouseControl } from "../../util/threeInteraction";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -239,6 +240,7 @@ const Canvas =
 
             //FlyControls
             controls = new TrackballControls(camera, renderer.domElement);
+            disableRightMouseControl(controls, renderer.domElement);
             // 缩放优化配置
             controls.zoomSpeed = 0.8;
             controls.rotateSpeed = 2.0;

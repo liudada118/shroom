@@ -1655,7 +1655,7 @@ router.post('/downlaod', handleDownload)
 router.post('/download', handleDownload)
 
 router.post('/downloadFields', asyncHandler(async (req, res) => {
-  const { fileArr } = resolveDownloadRequest(req)
+  const { fileArr, exportOptions } = resolveDownloadRequest(req)
   const db = await ensureCurrentDb()
   if (!fileArr || !fileArr.length) {
     res.json(new HttpResult(1, {}, 'Please select data first'))
@@ -1665,7 +1665,7 @@ router.post('/downloadFields', asyncHandler(async (req, res) => {
     res.json(new HttpResult(1, {}, 'Database not initialized'))
     return
   }
-  const data = await getExportFieldOptions({ db, params: fileArr })
+  const data = await getExportFieldOptions({ db, params: fileArr, exportOptions })
   res.json(new HttpResult(0, data, 'success'))
 }))
 

@@ -578,12 +578,16 @@ export default function SelectSet(props) {
         }
     }
 
-    const getCurrentRegions = () => {
+    const getCurrentRegions = (sourceRanges = null) => {
+        const usingSnapshot = Array.isArray(sourceRanges)
+        const rangeSource = usingSnapshot ? sourceRanges : pageInfo.brushInstance.rangeArr
         const currentType = sysType || getCurrentMatrixType()
+        const firstMatrix = rangeSource.find(range => range?.matrixRect)?.matrixRect
         const matrixConfig = getCurrentMatrixConfig()
+            || (firstMatrix ? { width: firstMatrix.width, height: firstMatrix.height } : null)
         if (!matrixConfig) return []
-        return pageInfo.brushInstance.rangeArr
-            .filter(range => !range.matrixKey || range.matrixKey === currentType)
+        return rangeSource
+            .filter(range => usingSnapshot || !range.matrixKey || range.matrixKey === currentType)
             .map((range, index) => {
                 const matrix = range.matrixRect || colSelectMatrix('canvasThree', range, matrixConfig)
                 if (!matrix) return null
@@ -610,14 +614,23 @@ export default function SelectSet(props) {
         rangeArr.forEach((range) => {
             if (range.matrixKey && range.matrixKey !== currentType) return
             range.templateId = templateId
+            range.templateDirty = false
             range.updatedAt = Date.now()
         })
+        pageInfo.brushInstance.markSelectionTemplateClean?.()
         pageInfo.brushInstance.notify?.(rangeArr)
     }
 
     const saveTemplateByName = async (rawName, options = {}) => {
-        const name = String(rawName || '').trim()
-        const regions = getCurrentRegions()
+        const targetTemplate = options.mode === 'overwrite'
+            ? templates.find(item => item.templateId === options.templateId)
+            : null
+        if (options.mode === 'overwrite' && !targetTemplate) {
+            message.warning(t('selectTemplate'))
+            return false
+        }
+        const name = String(targetTemplate?.templateName || rawName || '').trim()
+        const regions = getCurrentRegions(options.ranges)
         if (!regions.length) {
             message.warning(t('createSelectionFirst'))
             return false
@@ -627,24 +640,46 @@ export default function SelectSet(props) {
             return false
         }
         const now = Date.now()
-        const existingTemplate = templates.find(item => item.templateName === name)
-        if (existingTemplate && !options.overwriteConfirmed) {
-            Modal.confirm({
-                title: t('templateNameExists') || '模板名称已存在',
-                content: t('overwriteTemplateConfirm', { name }) || `已存在同名模板「${name}」，是否覆盖原有模板？`,
-                okText: t('overwrite') || '覆盖',
-                cancelText: t('cancel') || '取消',
-                onOk: () => saveTemplateByName(name, { overwriteConfirmed: true }),
+        const existingTemplate = targetTemplate || templates.find(item => item.templateName === name)
+        if (existingTemplate && options.mode !== 'overwrite' && !options.overwriteConfirmed) {
+            return new Promise((resolve) => {
+                let settled = false
+                const finish = (saved) => {
+                    if (settled) return
+                    settled = true
+                    resolve(Boolean(saved))
+                }
+                Modal.confirm({
+                    title: t('templateNameExists') || '模板名称已存在',
+                    content: t('overwriteTemplateConfirm', { name }) || `已存在同名模板「${name}」，是否覆盖原有模板？`,
+                    okText: t('overwrite') || '覆盖',
+                    cancelText: t('cancel') || '取消',
+                    onOk: async () => {
+                        const saved = await saveTemplateByName(name, { ...options, overwriteConfirmed: true })
+                        finish(saved)
+                        if (!saved) {
+                            return Promise.reject(new Error('save selection template failed'))
+                        }
+                    },
+                    onCancel: () => finish(false),
+                    afterClose: () => finish(false),
+                })
             })
-            return false
         }
-        const currentType = sysType || getCurrentMatrixType()
-        const matrixConfig = getCurrentMatrixConfig() || matrixInfo
+        const snapshotRange = Array.isArray(options.ranges) ? options.ranges.find(range => range?.matrixRect) : null
+        const snapshotMatrix = snapshotRange?.matrixRect
+        const snapshotType = Array.isArray(options.ranges)
+            ? options.ranges.find(range => range?.matrixKey)?.matrixKey
+            : ''
+        const currentType = targetTemplate?.deviceType || snapshotType || sysType || getCurrentMatrixType()
+        const matrixConfig = targetTemplate
+            ? { width: targetTemplate.matrixWidth, height: targetTemplate.matrixHeight }
+            : (snapshotMatrix || getCurrentMatrixConfig() || matrixInfo)
         const nextTemplate = {
             templateId: existingTemplate?.templateId || `selection-template-${now}`,
             templateName: name,
             deviceType: currentType,
-            displayType: getDisplayObject(displayType),
+            displayType: targetTemplate?.displayType || getDisplayObject(snapshotType || displayType),
             matrixWidth: matrixConfig.width,
             matrixHeight: matrixConfig.height,
             coordinateMode: 'display',
@@ -655,7 +690,12 @@ export default function SelectSet(props) {
             updatedAt: now,
         }
         try {
-            const nextTemplates = await saveSelectionTemplatesToDb([nextTemplate, ...templates.filter(item => item.templateName !== name)])
+            const nextTemplates = await saveSelectionTemplatesToDb([
+                nextTemplate,
+                ...templates.filter(item => existingTemplate
+                    ? item.templateId !== existingTemplate.templateId
+                    : item.templateName !== name)
+            ])
             markCurrentRangesAsTemplate(nextTemplate.templateId)
             setTemplates(nextTemplates)
             setSelectedTemplateId(nextTemplate.templateId)
@@ -673,8 +713,17 @@ export default function SelectSet(props) {
     }
 
     useEffect(() => {
-        const handleSaveFromExit = (event) => {
-            saveTemplateByName(event?.detail?.name)
+        const handleSaveFromExit = async (event) => {
+            let saved = false
+            try {
+                saved = await saveTemplateByName(event?.detail?.name, {
+                    ranges: event?.detail?.ranges,
+                    mode: event?.detail?.mode,
+                    templateId: event?.detail?.templateId,
+                })
+            } finally {
+                event?.detail?.onComplete?.(Boolean(saved))
+            }
         }
         window.addEventListener('save-selection-template', handleSaveFromExit)
         return () => window.removeEventListener('save-selection-template', handleSaveFromExit)
@@ -704,6 +753,7 @@ export default function SelectSet(props) {
                     templateId: template.templateId,
                 })
             })
+            pageInfo.brushInstance.markSelectionTemplateClean?.()
             message.success(t('templateApplied'))
         }
         if (boxes.length) {

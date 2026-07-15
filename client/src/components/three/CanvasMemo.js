@@ -19,6 +19,7 @@ import { jetWhite3, lineInterp } from "../../assets/util/line";
 import { getSettingValue, getStatus } from "../../store/equipStore";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
 import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
+import { disableRightMouseControl } from "../../util/threeInteraction";
 
 let camera
 let baseCameraDistance = null
@@ -174,6 +175,7 @@ const Canvas = memo(React.forwardRef((props, refs) => {
 
     //FlyControls
     controls = new TrackballControls(camera, renderer.domElement);
+    disableRightMouseControl(controls, renderer.domElement);
     baseCameraDistance = camera.position.distanceTo(controls.target);
     applyZoomBounds(controls, baseCameraDistance);
     controls.update();

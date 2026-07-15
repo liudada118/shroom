@@ -77,9 +77,9 @@ const fallbackConfig = {
 };
 
 const fallbackPressureConfig = {
-    backValueMultiplier: 1.8,
-    pressureFormulaFile: 'pressureFormula_V2.7.38.js',
-    pressureFormulaProfile: 'V2.7.38',
+    backValueMultiplier: 1,
+    pressureFormulaFile: 'pressureFormula_V2.8.1.js',
+    pressureFormulaProfile: 'V2.8.1',
 };
 
 function getPressureFormulaProfileFromFile(fileName) {

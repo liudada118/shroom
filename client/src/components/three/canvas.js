@@ -17,6 +17,7 @@ import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
 import { lineInterp } from "../../assets/util/line";
 import { getSettingValue, getStatus } from "../../store/equipStore";
+import { disableRightMouseControl } from "../../util/threeInteraction";
 
 
 const Canvas = React.forwardRef((props, refs) => {
@@ -169,6 +170,7 @@ const Canvas = React.forwardRef((props, refs) => {
 
     //FlyControls
     controls = new TrackballControls(camera, renderer.domElement);
+    disableRightMouseControl(controls, renderer.domElement);
     controls.update();
     window.addEventListener("resize", onWindowResize);
 

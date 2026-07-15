@@ -535,6 +535,19 @@
             font-size: 0.75rem;
         }
 
+        .playbackItemRemarkInfo {
+            width: 100%;
+            margin-top: 2px;
+            color: #9AA8B7;
+            font-size: 0.625rem;
+            line-height: 1rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            word-break: break-all;
+        }
+
         .playbackItemTimeInfo {
             width: 100%;
             overflow: hidden; //超出的文本隐藏

@@ -3,7 +3,7 @@ import axios from 'axios'
 import IconAndText from '../iconAndText/IconAndText'
 import IconAndTextAndSelect from '../iconAndTextAndSelect/IconAndTextAndSelect'
 import Drawer from '../Drawer/Drawer'
-import { Col, ConfigProvider, Input, InputNumber, message, Modal, Popover, Row, Slider, Switch } from 'antd'
+import { Button, Col, ConfigProvider, Input, InputNumber, message, Modal, Popover, Row, Slider, Switch } from 'antd'
 import { pageContext } from '../../page/test/Test'
 import { SelectionHelper } from '../selectBox/SelectBox'
 import { withTranslation } from 'react-i18next'
@@ -16,6 +16,7 @@ import { normalizeVisualSettingMax, saveVisualSettingValue } from '../../util/vi
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import { gaussBlur_return } from '../../assets/util/line'
 import { isEndiBackVisibleIndex } from '../../util/endiBackVisibleMask'
+import { getPressureMetricDisplay, getPressureMetricPointValues } from '../../util/pressureMetrics'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
@@ -34,6 +35,7 @@ function SecondTitle(props) {
     const settingValueMax = normalizeVisualSettingMax(rawSettingValueMax);
     const systemType = useEquipStore(s => s.systemType, shallow);
     const currentDisplayType = useEquipStore(s => s.displayType, shallow);
+    const pressureMetricMode = useEquipStore(s => s.pressureMetricMode);
     const activeDisplayType = pageInfo.displayType || currentDisplayType;
     const displayStatus = useEquipStore(s => s.displayStatus, shallow);
 
@@ -85,11 +87,14 @@ function SecondTitle(props) {
         const getMax = (arr) => Array.isArray(arr)
             ? arr.reduce((max, value) => Math.max(max, Number(value) || 0), 0)
             : null
-        if (Array.isArray(displayStatus)) return getMax(displayStatus)
+        const target = activeDisplayType?.includes('back') ? 'back' : activeDisplayType?.includes('sit') ? 'sit' : ''
+        if (Array.isArray(displayStatus)) {
+            const fullKey = target && systemType ? `${systemType}-${target}` : systemType
+            return getMax(getPressureMetricPointValues(displayStatus, fullKey, pressureMetricMode))
+        }
         if (!displayStatus || typeof displayStatus !== 'object') return null
         const values = Object.entries(displayStatus)
         if (!values.length) return null
-        const target = activeDisplayType?.includes('back') ? 'back' : activeDisplayType?.includes('sit') ? 'sit' : ''
         const matched = target
             ? values.filter(([key]) => key === target || key.endsWith(`-${target}`))
             : values
@@ -116,11 +121,12 @@ function SecondTitle(props) {
                 if (fullKey === 'endi-back') {
                     next = next.map((value, index) => isEndiBackVisibleIndex(index, matrixConfig.width, matrixConfig.height) ? value : 0)
                 }
-                return getMax(next.map(value => Math.max(0, Math.min(255, Math.round(Number(value) || 0)))))
+                return getMax(getPressureMetricPointValues(next, fullKey, pressureMetricMode))
             })
             .filter((value) => value !== null)
         return maxList.length ? Math.max(...maxList) : null
-    }, [displayStatus, activeDisplayType, systemType, settingValue.gauss, settingValue.filter])
+    }, [displayStatus, activeDisplayType, systemType, settingValue.gauss, settingValue.filter, pressureMetricMode])
+    const currentDataMaxDisplay = getPressureMetricDisplay(pressureMetricMode, t, i18n.language)
 
 
 
@@ -194,6 +200,47 @@ function SecondTitle(props) {
         requestCloseSelection()
     }
 
+    const cloneSelectionRange = (range) => {
+        if (!range) return null
+        const matrixRect = range.matrixRect ? { ...range.matrixRect } : null
+        return {
+            id: range.id,
+            name: range.name,
+            bgc: range.bgc,
+            colorIndex: range.colorIndex,
+            matrixKey: range.matrixKey,
+            templateId: range.templateId,
+            templateDirty: range.templateDirty,
+            x1: range.x1,
+            y1: range.y1,
+            x2: range.x2,
+            y2: range.y2,
+            x: range.x,
+            y: range.y,
+            width: range.width,
+            height: range.height,
+            matrixRect,
+        }
+    }
+
+    const saveSelectionTemplateFromExit = ({ name, ranges, mode = 'saveAs', templateId = '' }) => new Promise((resolve, reject) => {
+        let completed = false
+        const finish = (saved) => {
+            completed = true
+            if (saved) {
+                resolve(true)
+            } else {
+                reject(new Error('save selection template failed'))
+            }
+        }
+        window.dispatchEvent(new CustomEvent('save-selection-template', {
+            detail: { name, ranges, mode, templateId, onComplete: finish }
+        }))
+        window.setTimeout(() => {
+            if (!completed) reject(new Error('save selection template timeout'))
+        }, 300000)
+    })
+
     const forceCloseSelection = () => {
         pageInfo?.brushInstance.stopBrush();
         removeHistoryBox()
@@ -203,23 +250,77 @@ function SecondTitle(props) {
 
     const requestCloseSelection = () => {
         const ranges = pageInfo?.brushInstance?.rangeArr || []
-        if (!ranges.length || selectionCloseConfirmingRef.current) {
+        if (selectionCloseConfirmingRef.current) {
+            return
+        }
+        if (!ranges.length) {
             forceCloseSelection()
             return
         }
-        const onlyAppliedTemplateRanges = ranges.every((range) => range?.templateId)
-        if (onlyAppliedTemplateRanges) {
+        const templateDirty = Boolean(pageInfo?.brushInstance?.selectionTemplateDirty)
+            || ranges.some((range) => range?.templateDirty)
+        const onlyCleanAppliedTemplateRanges = ranges.every((range) => range?.templateId) && !templateDirty
+        if (onlyCleanAppliedTemplateRanges) {
             forceCloseSelection()
             return
         }
 
+        const selectionSnapshot = ranges.map(cloneSelectionRange).filter(Boolean)
+        const appliedTemplateIds = [...new Set(selectionSnapshot.map(range => range.templateId).filter(Boolean))]
+        const appliedTemplateId = appliedTemplateIds.length === 1
+            && selectionSnapshot.every(range => range.templateId === appliedTemplateIds[0])
+            ? appliedTemplateIds[0]
+            : ''
+        const canOverwriteAppliedTemplate = Boolean(appliedTemplateId && templateDirty)
         selectionCloseConfirmingRef.current = true
         let templateName = `${t('selectionTemplate')}${new Date().toLocaleString()}`
-        Modal.confirm({
-            title: '退出框选',
+        let saving = false
+        let closeModal
+        let modal
+
+        const closeWithoutSaving = () => {
+            if (saving) return
+            forceCloseSelection()
+            closeModal?.()
+        }
+        const saveAndClose = (mode) => {
+            if (saving) return
+            saving = true
+            modal?.update({ footer: renderFooter(true) })
+            saveSelectionTemplateFromExit({
+                name: templateName,
+                ranges: selectionSnapshot,
+                mode,
+                templateId: mode === 'overwrite' ? appliedTemplateId : '',
+            }).then(() => {
+                forceCloseSelection()
+                closeModal?.()
+            }).catch(() => {
+                saving = false
+                modal?.update({ footer: renderFooter(false) })
+            })
+        }
+        const renderFooter = (loading) => [
+            <Button key="discard" disabled={loading} onClick={closeWithoutSaving}>
+                {t('dontSave')}
+            </Button>,
+            <Button key="save-as" disabled={loading} onClick={() => saveAndClose('saveAs')}>
+                {t('saveAsNewTemplate')}
+            </Button>,
+            ...(canOverwriteAppliedTemplate ? [
+                <Button key="overwrite" type="primary" loading={loading} onClick={() => saveAndClose('overwrite')}>
+                    {t('overwriteOriginalTemplate')}
+                </Button>
+            ] : []),
+        ]
+
+        modal = Modal.confirm({
+            title: t('exitSelectionTitle'),
             content: (
                 <div>
-                    <div style={{ marginBottom: 8 }}>是否需要将当前框选保存为模板？</div>
+                    <div style={{ marginBottom: 8 }}>
+                        {canOverwriteAppliedTemplate ? t('modifiedAppliedTemplatePrompt') : t('saveSelectionPrompt')}
+                    </div>
                     <Input
                         defaultValue={templateName}
                         placeholder={t('templateName')}
@@ -229,23 +330,14 @@ function SecondTitle(props) {
                     />
                 </div>
             ),
-            okText: t('saveTemplate'),
-            cancelText: '不保存',
-            onOk: () => {
-                window.dispatchEvent(new CustomEvent('save-selection-template', {
-                    detail: { name: templateName }
-                }))
-                forceCloseSelection()
-                selectionCloseConfirmingRef.current = false
-            },
-            onCancel: () => {
-                forceCloseSelection()
-                selectionCloseConfirmingRef.current = false
-            },
+            footer: renderFooter(false),
+            closable: false,
+            keyboard: false,
             afterClose: () => {
                 selectionCloseConfirmingRef.current = false
             }
         })
+        closeModal = modal.destroy
     }
 
     const system = useEquipStore(s => s.systemType, shallow);
@@ -316,8 +408,27 @@ function SecondTitle(props) {
         useEquipStore.getState().setSelectArr([])
     }, [systemType])
 
+    const selectionDisplayTypeRef = useRef(currentDisplayType)
+    const getSelection2DPart = (value = '') => {
+        const type = String(value || '')
+        if (type.includes('back2D')) return 'back'
+        if (type.includes('sit2D')) return 'sit'
+        return ''
+    }
+
     useEffect(() => {
+        const prevDisplayType = selectionDisplayTypeRef.current
+        selectionDisplayTypeRef.current = currentDisplayType
         if (!onSelect) return
+
+        const prevPart = getSelection2DPart(prevDisplayType)
+        const nextPart = getSelection2DPart(currentDisplayType)
+        if (prevPart && nextPart && prevPart !== nextPart) {
+            pageInfo?.brushInstance.deleteAll()
+            useEquipStore.getState().setSelectArr([])
+            return
+        }
+
         pageInfo?.brushInstance.refreshCurrentMatrix?.()
     }, [currentDisplayType, onSelect])
     // const brush = useContext(BrushContext);
@@ -411,7 +522,7 @@ function SecondTitle(props) {
                                         <div className="setItemLabel">
                                             <span>{a.title}</span>
                                             {a.type === 'color' ? (
-                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : Number(currentDataMax).toFixed(0)}</em>
+                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : `${Number(currentDataMax).toFixed(1)} ${currentDataMaxDisplay.unit}`}</em>
                                             ) : null}
                                         </div>
                                     </Popover>

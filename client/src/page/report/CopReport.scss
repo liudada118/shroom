@@ -141,6 +141,8 @@
 }
 
 .report-chart {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 
@@ -150,6 +152,20 @@
   color: #1e3a8a;
   font-size: 13px;
   font-weight: 700;
+}
+
+.chart-description {
+  display: -webkit-box;
+  height: 26px;
+  margin: -2px 4px 6px;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 13px;
+  text-align: left;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .heatmap-svg,
@@ -176,7 +192,7 @@
 }
 
 .cop-echart {
-  width: min(100%, 178px);
+  width: min(100%, 220px);
   height: 178px;
   margin: 0 auto;
 }

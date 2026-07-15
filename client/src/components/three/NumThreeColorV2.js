@@ -6,6 +6,7 @@ import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
 import { NUMBER_TEXT_COLOR_ALPHA, jetWhite3NoWhite } from '../../assets/util/line';
+import { FORCE_METRIC_MODE, getPressureMetricPointValues, getPressurePointAreaCm2 } from '../../util/pressureMetrics';
 
 const DIGIT_ATLAS_GRID = 64;
 const DIGIT_ATLAS_CELL = 32;
@@ -50,10 +51,11 @@ function jet(min, max, x) {
   return rgb;
 }
 
-function normalizeDisplayValue(value) {
+function normalizeDisplayValue(value, mode) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
-  return Math.max(0, Math.min(DIGIT_DISPLAY_MAX, Math.round(numeric)));
+  const atlasValue = numeric * 10;
+  return Math.max(0, Math.min(DIGIT_DISPLAY_MAX, Math.round(atlasValue)));
 }
 
 function getTextureColorMax(color) {
@@ -101,7 +103,7 @@ export default function NumThree(props) {
   // }
 
 
-  function createDigitSpriteSheetWithJet(colorMax = 22) {
+  function createDigitSpriteSheetWithJet(colorMax = 22, mode = FORCE_METRIC_MODE) {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = DIGIT_ATLAS_SIZE;
     const ctx = canvas.getContext("2d");
@@ -120,7 +122,8 @@ export default function NumThree(props) {
       const cy = y * cellSize;
 
       // ✅ 计算背景颜色
-      const [r, g, b] = jetWhite3NoWhite(0, safeColorMax, Math.min(i, safeColorMax));
+      const metricValue = i / 10;
+      const [r, g, b] = jetWhite3NoWhite(0, safeColorMax, Math.min(metricValue, safeColorMax));
       ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
@@ -129,7 +132,7 @@ export default function NumThree(props) {
       ctx.lineWidth = 1;
       ctx.strokeRect(cx, cy, cellSize, cellSize);
 
-      drawCellValue(ctx, i, cx, cy, cellSize);
+      drawCellValue(ctx, metricValue.toFixed(1), cx, cy, cellSize);
     }
 
     const tex = new THREE.CanvasTexture(canvas);
@@ -173,8 +176,9 @@ export default function NumThree(props) {
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
     camera.position.z = 1000;
 
-    let currentTextureMax = getTextureColorMax(getSettingValue()?.color);
-    const texture = createDigitSpriteSheetWithJet(currentTextureMax);
+    let currentTextureMode = useEquipStore.getState().pressureMetricMode;
+    let currentTextureMax = currentTextureMode === FORCE_METRIC_MODE ? 2.5 : 25;
+    const texture = createDigitSpriteSheetWithJet(currentTextureMax, currentTextureMode);
     // texture.flipY = false;
 
 
@@ -244,6 +248,11 @@ export default function NumThree(props) {
     //   uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
     // }
     let oldTime = new Date().getTime()
+    let lastMetricSource = null
+    let lastMetricMode = ''
+    let lastMetricKey = ''
+    let lastMetricFilter = null
+    let metricDisplayData = []
 
 
     mesh.rotation.x = Math.PI
@@ -258,6 +267,7 @@ export default function NumThree(props) {
 
       const systemType = getSysType()
       const displayType = getDisplayType()
+      let matrixKey = systemType
 
       // if (props.sitData.current && Object.keys(props.sitData.current).length > 1) {
       //   const key = Object.keys(props.sitData.current)[0]
@@ -281,6 +291,7 @@ export default function NumThree(props) {
             }
           }
           data = props.sitData.current[realType]
+          matrixKey = `${systemType}-${realType}`
           if (!data) data = new Array(4096).fill(0)
         }
       } else {
@@ -293,16 +304,29 @@ export default function NumThree(props) {
       const {
         gauss, color, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
-      if (Number.isFinite(Number(filter)) && Number(filter) > 0) {
-        data = data.map(value => (Number(value) < Number(filter) ? 0 : value))
+      const metricMode = useEquipStore.getState().pressureMetricMode
+      const numericFilter = Number.isFinite(Number(filter)) && Number(filter) > 0 ? Number(filter) : 0
+      if (lastMetricSource !== data || lastMetricMode !== metricMode || lastMetricKey !== matrixKey || lastMetricFilter !== numericFilter) {
+        const filteredData = numericFilter > 0
+          ? data.map(value => (Number(value) < numericFilter ? 0 : value))
+          : data
+        metricDisplayData = getPressureMetricPointValues(filteredData, matrixKey, metricMode)
+        lastMetricSource = data
+        lastMetricMode = metricMode
+        lastMetricKey = matrixKey
+        lastMetricFilter = numericFilter
       }
-      const nextTextureMax = getTextureColorMax(color)
-      if (currentTextureMax !== nextTextureMax) {
+      data = metricDisplayData
+      const nextTextureMax = metricMode === FORCE_METRIC_MODE
+        ? getPressurePointAreaCm2(matrixKey) * 2.5
+        : 25
+      if (currentTextureMax !== nextTextureMax || currentTextureMode !== metricMode) {
         const oldTexture = material.uniforms.map.value
-        const nextTexture = createDigitSpriteSheetWithJet(nextTextureMax)
+        const nextTexture = createDigitSpriteSheetWithJet(nextTextureMax, metricMode)
         material.uniforms.map.value = nextTexture
         if (oldTexture && oldTexture !== nextTexture) oldTexture.dispose()
         currentTextureMax = nextTextureMax
+        currentTextureMode = metricMode
       }
       // const { wsLocalData } = pageRef.current
       // if (wsLocalData) {
@@ -342,7 +366,7 @@ export default function NumThree(props) {
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
 
-        const d = normalizeDisplayValue(data[i])//Math.floor(Math.random() * 256);
+        const d = normalizeDisplayValue(data[i], metricMode)//Math.floor(Math.random() * 256);
         uvOffsets[i * 2] = (d % DIGIT_ATLAS_GRID) / DIGIT_ATLAS_GRID;
         uvOffsets[i * 2 + 1] = Math.floor(d / DIGIT_ATLAS_GRID) / DIGIT_ATLAS_GRID;
 

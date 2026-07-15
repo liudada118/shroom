@@ -3,57 +3,69 @@
     "504330390250435F3F": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.929Z",
+      "lastSeen": "2026-07-13T10:39:12.733Z",
       "alias": ""
     },
     "504330390150432304": {
       "type": "endi-back",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.930Z",
+      "lastSeen": "2026-07-13T10:39:12.733Z",
       "alias": ""
     },
     "344637300F50323802": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.931Z",
+      "lastSeen": "2026-07-13T10:39:12.734Z",
       "alias": ""
     },
     "344637301050320D99": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.933Z",
+      "lastSeen": "2026-07-13T10:39:12.735Z",
       "alias": ""
     },
     "464134391150431AAA": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.934Z",
+      "lastSeen": "2026-07-13T10:39:12.736Z",
       "alias": ""
     },
     "504330390250435F24": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.935Z",
+      "lastSeen": "2026-07-13T10:39:12.737Z",
       "alias": ""
     },
     "504330390250435F1C": {
       "type": "endi-back",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:57:24.752Z",
+      "lastSeen": "2026-07-13T10:39:12.738Z",
       "alias": ""
     },
     "504330390250435306": {
       "type": "endi-back",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:53:17.939Z",
+      "lastSeen": "2026-07-13T10:39:12.738Z",
       "alias": ""
     },
     "50433039025043433B": {
       "type": "endi-sit",
       "deviceClass": "foot",
-      "lastSeen": "2026-06-05T10:57:23.940Z",
+      "lastSeen": "2026-07-13T10:39:12.738Z",
+      "alias": ""
+    },
+    "554635300D50434522": {
+      "type": "endi-back",
+      "deviceClass": "foot",
+      "lastSeen": "2026-07-14T11:09:55.467Z",
+      "alias": ""
+    },
+    "344637301550321293": {
+      "type": "endi-sit",
+      "deviceClass": "foot",
+      "lastSeen": "2026-07-14T09:23:50.567Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-06-05T10:57:24.752Z"
+  "updatedAt": "2026-07-14T11:09:55.467Z"
 }

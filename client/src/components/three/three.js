@@ -14,6 +14,7 @@ import {
   jetgGrey,
 } from "../../util/util";
 import gsap from "gsap";
+import { disableRightMouseControl } from "../../util/threeInteraction";
 
 let group = new THREE.Group();
 const sitInit = 0;
@@ -140,6 +141,7 @@ const Canvas = React.forwardRef((props, refs) => {
 
     //FlyControls
     controls = new TrackballControls(camera, renderer.domElement);
+    disableRightMouseControl(controls, renderer.domElement);
     controls.update();
     window.addEventListener("resize", onWindowResize);
 

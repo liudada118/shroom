@@ -17,11 +17,13 @@ import {
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
 import { beginDynamicColorFrame, jetWhite3, lineInterp, setDynamicGammaColorEnabled } from "../../assets/util/line";
-import { getDisplayType, getSettingValue, getStatus } from "../../store/equipStore";
+import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
-import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
+import { getColorLimit } from "../../util/displayMapping";
 import { isEndiBackPointVisible } from "../../util/endiBackVisibleMask";
+import { disableRightMouseControl } from "../../util/threeInteraction";
+import { getPressureMetricPointValues } from "../../util/pressureMetrics";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -74,16 +76,24 @@ const sitObj = {
 const CHAIR_BRIGHTEN_COLOR = new THREE.Color(0xffffff)
 const CHAIR_EMISSIVE_COLOR = new THREE.Color(0x2f3338)
 const POINT_TEMPORAL_ALPHA = 0.24
-const POINT_VALUE_DEADBAND = 1.2
+const POINT_VALUE_DEADBAND = 0.1
+const POINT_METRIC_VISIBLE_THRESHOLD = 0.05
 
-function stabilizePointValues(values, stableStore, key) {
+function normalizePointMetricMatrix(values, matrixKey, mode) {
+    return getPressureMetricPointValues(values, matrixKey, mode).map((value) => {
+        const numeric = Number(value)
+        return Number.isFinite(numeric) ? Number(numeric.toFixed(1)) : 0
+    })
+}
+
+function stabilizePointValues(values, stableStore, key, visibleThreshold = POINT_METRIC_VISIBLE_THRESHOLD) {
     const count = values.length
     const source = Array.from({ length: count }, (_, index) => {
         const value = Number(values[index])
         return Number.isFinite(value) ? Math.max(0, value) : 0
     })
 
-    if (source.every(value => value < 0.5)) {
+    if (source.every(value => value < visibleThreshold)) {
         const zero = new Array(count).fill(0)
         stableStore[key] = { values: zero, output: zero }
         return zero
@@ -100,11 +110,11 @@ function stabilizePointValues(values, stableStore, key) {
     for (let i = 0; i < count; i++) {
         const prevValue = previous.values[i] ?? source[i]
         const prevOutput = previous.output[i] ?? prevValue
-        const smoothed = source[i] < 0.5
+        const smoothed = source[i] < visibleThreshold
             ? 0
             : prevValue + (source[i] - prevValue) * POINT_TEMPORAL_ALPHA
         let nextOutput = smoothed
-        if (source[i] >= 0.5 && Math.abs(source[i] - prevOutput) < POINT_VALUE_DEADBAND) {
+        if (source[i] >= visibleThreshold && Math.abs(source[i] - prevOutput) < POINT_VALUE_DEADBAND) {
             nextOutput = prevOutput
         }
         nextValues[i] = smoothed
@@ -436,6 +446,7 @@ const Canvas =
 
             //FlyControls
             controls.current = new TrackballControls(camera.current, renderer.domElement);
+            disableRightMouseControl(controls.current, renderer.domElement);
             // 缩放优化配置
             controls.current.zoomSpeed = 0.8;        // 缩放灵敏度（默认1.2，降低使滚轮更平滑）
             controls.current.rotateSpeed = 2.0;      // 旋转灵敏度
@@ -1177,7 +1188,7 @@ const Canvas =
 
             // const gauss = 1, color  =1, filter=1, height = 1, coherent = 1
             const {
-                gauss = 1, color, filter, height = 1, coherent = 1, autoColor
+                gauss = 1, color, height = 1, coherent = 1, autoColor
             } = getSettingValue() //pageRef.current.settingValue
             setDynamicGammaColorEnabled(Boolean(autoColor), name)
             const colorLimit = getColorLimit(color)
@@ -1202,7 +1213,8 @@ const Canvas =
             bigArrg = stabilizePointValues(
                 bigArrg,
                 pointStableRef.current,
-                `${name}-${AMOUNTX}x${AMOUNTY}`
+                `${name}-${AMOUNTX}x${AMOUNTY}`,
+                POINT_METRIC_VISIBLE_THRESHOLD
             )
             beginDynamicColorFrame(bigArrg, colorLimit, name)
 
@@ -1211,9 +1223,9 @@ const Canvas =
             for (let ix = 0; ix < AMOUNTX; ix++) {
                 for (let iy = 0; iy < AMOUNTY; iy++) {
                     const rawValue = bigArrg[l];
-                    const value = shouldHideDisplayPoint(rawValue, filter) ? 0 : rawValue;
+                    const value = rawValue < POINT_METRIC_VISIBLE_THRESHOLD ? 0 : rawValue;
                     //柔化处理smooth
-                    smoothBig[l] = value < 0.5 ? 0 : smoothBig[l] + (value - smoothBig[l]) / coherent;
+                    smoothBig[l] = value < POINT_METRIC_VISIBLE_THRESHOLD ? 0 : smoothBig[l] + (value - smoothBig[l]) / coherent;
 
                     position[k] = iy * SEPARATION - (AMOUNTX * SEPARATION) / 2; // x
 
@@ -1376,6 +1388,16 @@ const Canvas =
                 data.back = newArr
             }
 
+            const { filter } = getSettingValue()
+            const filterValue = Number(filter)
+            const hasRawFilter = Number.isFinite(filterValue) && filterValue > 0
+            const metricMode = useEquipStore.getState().pressureMetricMode
+            const systemType = getSysType()
+            const toFilteredRaw = (values) => hasRawFilter
+                ? values.map((value) => (Number(value) < filterValue ? 0 : value))
+                : values
+            data.back = normalizePointMetricMatrix(toFilteredRaw(data.back), `${systemType}-back`, metricMode)
+            data.sit = normalizePointMetricMatrix(toFilteredRaw(data.sit), `${systemType}-sit`, metricMode)
 
             Object.keys(allConfig).forEach((key) => {
                 const obj = allConfig[key]

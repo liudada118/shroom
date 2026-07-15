@@ -56,8 +56,10 @@ export class BrushManager {
         this.pointTopLeft = [];
         this.pointBottomRight = [];
         this.rangeArr = []       // 最多 4 个框选 [{x1,y1,x2,y2,bgc,colorIndex,_element}]
+        this.selectionTemplateDirty = false
         this._resizing = false   // 是否正在拖拽调整大小
         this._dragging = false   // 是否正在拖动框
+        this._activeDrag = null  // 鼠标按住框选时的键盘移动上下文
         this._isDrawing = false  // 是否正在绘制新框
     }
 
@@ -71,6 +73,20 @@ export class BrushManager {
 
     notify(range) {
         this.listeners.forEach(cb => cb(range));
+    }
+
+    markSelectionTemplateClean() {
+        this.selectionTemplateDirty = false;
+        this.rangeArr.forEach((range) => {
+            if (!range?.templateId) return;
+            range.templateDirty = false;
+        });
+    }
+
+    _markSelectionTemplateDirty(range) {
+        if (!range?.templateId) return;
+        range.templateDirty = true;
+        this.selectionTemplateDirty = true;
     }
 
     /**
@@ -293,6 +309,47 @@ export class BrushManager {
         return true;
     }
 
+    _moveRangeByMatrixStep(range, stepX, stepY, context = this._getMatrixContext()) {
+        const matrixRect = range?.matrixRect || this._rangeToMatrixRect(range, context);
+        if (!range || !matrixRect || !context?.matrixConfig) return false;
+
+        const selectWidth = matrixRect.xEnd - matrixRect.xStart;
+        const selectHeight = matrixRect.yEnd - matrixRect.yStart;
+        const maxXStart = Math.max(0, context.matrixConfig.width - selectWidth);
+        const maxYStart = Math.max(0, context.matrixConfig.height - selectHeight);
+        const xStart = this._clampValue(matrixRect.xStart + stepX, 0, maxXStart);
+        const yStart = this._clampValue(matrixRect.yStart + stepY, 0, maxYStart);
+        if (xStart === matrixRect.xStart && yStart === matrixRect.yStart) return false;
+
+        const nextMatrixRect = {
+            xStart,
+            yStart,
+            xEnd: xStart + selectWidth,
+            yEnd: yStart + selectHeight,
+            width: context.matrixConfig.width,
+            height: context.matrixConfig.height,
+        };
+        if (!this._isValidMatrixSelection(nextMatrixRect, context)) return false;
+
+        const selectRect = matrixRectToSelectRect(context.canvasRect, {
+            xStart,
+            yStart,
+            sWidth: selectWidth,
+            sHeight: selectHeight,
+        }, context.matrixConfig);
+        range.x1 = selectRect.selectX;
+        range.y1 = selectRect.selectY;
+        range.x2 = selectRect.selectX + selectRect.selectWidth;
+        range.y2 = selectRect.selectY + selectRect.selectHeight;
+        range.matrixRect = nextMatrixRect;
+        range.matrixKey = context.matrixKey;
+        range.displayType = context.displayType;
+        range.systemType = context.systemType;
+        range.updatedAt = Date.now();
+        this._applyRangeToElement(range);
+        return true;
+    }
+
     _getRangeMatrixRect(range) {
         return this._rangeToMatrixRect(range) || range?.matrixRect || null;
     }
@@ -488,58 +545,40 @@ export class BrushManager {
 
     onKeyDown = (e) => {
         if (this._shouldIgnoreKeyboardTarget(e.target || document.activeElement)) return;
-        // 方向键移动最后一个框
-        const obj = [...this.rangeArr].reverse().find(range => range?._element);
+        // 鼠标按住拖拽时移动当前框，否则移动最后一个可见框。
+        const obj = this._activeDrag?.rangeObj || [...this.rangeArr].reverse().find(range => range?._element);
         if (!obj) return;
         const el = obj._element;
         if (!el) return;
         const moveBy = (dx, dy) => {
-            const w = obj.x2 - obj.x1;
-            const h = obj.y2 - obj.y1;
-            const rect = this._getEffectiveCanvasRect();
-            const prev = { x1: obj.x1, y1: obj.y1, x2: obj.x2, y2: obj.y2 };
-            const prevMatrixRect = obj.matrixRect ? { ...obj.matrixRect } : null;
-            let nextX = obj.x1 + dx;
-            let nextY = obj.y1 + dy;
-            if (rect) {
-                nextX = this._clampValue(nextX, rect.left, rect.right - w);
-                nextY = this._clampValue(nextY, rect.top, rect.bottom - h);
-            }
-            obj.x1 = nextX;
-            obj.y1 = nextY;
-            obj.x2 = nextX + w;
-            obj.y2 = nextY + h;
-            el.style.left = obj.x1 + 'px';
-            el.style.top = obj.y1 + 'px';
-            if (!this._rangeToMatrixRect(obj) || !this._snapMovedRangeToMatrixGrid(obj, prevMatrixRect)) {
-                obj.x1 = prev.x1;
-                obj.y1 = prev.y1;
-                obj.x2 = prev.x2;
-                obj.y2 = prev.y2;
-                el.style.left = obj.x1 + 'px';
-                el.style.top = obj.y1 + 'px';
-                this._syncRangeMetadata(obj);
-                message.warning(tr('selectionOutOfValidRange'));
-            }
+            const moved = this._moveRangeByMatrixStep(obj, dx, dy);
+            if (!moved) return;
             this._updateMeasureBadge(el, obj);
+            this._markSelectionTemplateDirty(obj);
+            this._activeDrag?.rebase?.();
             this.notify(this.rangeArr);
         };
 
         switch (e.key) {
             case 'ArrowUp':
+                e.preventDefault();
                 moveBy(0, -1);
                 break;
             case 'ArrowDown':
+                e.preventDefault();
                 moveBy(0, 1);
                 break;
             case 'ArrowLeft':
+                e.preventDefault();
                 moveBy(-1, 0);
                 break;
             case 'ArrowRight':
+                e.preventDefault();
                 moveBy(1, 0);
                 break;
             case 'Delete':
             case 'Backspace':
+                e.preventDefault();
                 // 删除最后一个框
                 if (obj) {
                     const idx = this.rangeArr.indexOf(obj);
@@ -557,6 +596,7 @@ export class BrushManager {
         window.removeEventListener('mousemove', this.onMouseMove);
         window.removeEventListener('mouseup', this.onMouseUp);
         window.removeEventListener('keydown', this.onKeyDown);
+        this._activeDrag = null;
         this.removeChild();
     }
 
@@ -747,6 +787,7 @@ export class BrushManager {
             displayType: context.displayType,
             name: options.name || defaultSelectName(this.rangeArr.length + 1),
             templateId: options.templateId,
+            templateDirty: Boolean(options.templateDirty),
             createdAt: options.createdAt || now,
             updatedAt: now,
             _element: element,
@@ -764,6 +805,7 @@ export class BrushManager {
         if (!rangeItem) return;
         rangeItem.name = name || defaultSelectName(index + 1);
         rangeItem.updatedAt = Date.now();
+        this._markSelectionTemplateDirty(rangeItem);
         this.notify(this.rangeArr);
     }
 
@@ -790,19 +832,27 @@ export class BrushManager {
             if (dir.includes('w')) newX1 = origX1 + dx;
             if (dir.includes('e')) newX2 = origX2 + dx;
 
-            if (newX2 - newX1 < 10) { newX1 = origX1; newX2 = origX2; }
-            if (newY2 - newY1 < 10) { newY1 = origY1; newY2 = origY2; }
-
+            const prev = {
+                x1: rangeObj.x1,
+                y1: rangeObj.y1,
+                x2: rangeObj.x2,
+                y2: rangeObj.y2,
+                matrixRect: rangeObj.matrixRect ? { ...rangeObj.matrixRect } : null,
+            };
             const clamped = this._clampPixelRect(newX1, newY1, newX2, newY2);
             rangeObj.x1 = clamped.x1;
             rangeObj.y1 = clamped.y1;
             rangeObj.x2 = clamped.x2;
             rangeObj.y2 = clamped.y2;
 
-            el.style.left = rangeObj.x1 + 'px';
-            el.style.top = rangeObj.y1 + 'px';
-            el.style.width = (rangeObj.x2 - rangeObj.x1) + 'px';
-            el.style.height = (rangeObj.y2 - rangeObj.y1) + 'px';
+            if (!this._snapRangeToMatrixGrid(rangeObj)) {
+                rangeObj.x1 = prev.x1;
+                rangeObj.y1 = prev.y1;
+                rangeObj.x2 = prev.x2;
+                rangeObj.y2 = prev.y2;
+                rangeObj.matrixRect = prev.matrixRect;
+                this._applyRangeToElement(rangeObj, el);
+            }
             this._updateMeasureBadge(el, rangeObj);
         };
 
@@ -827,6 +877,8 @@ export class BrushManager {
                 this._snapRangeToMatrixGrid(rangeObj);
             }
             this._updateMeasureBadge(el, rangeObj);
+            const resized = rangeObj.x1 !== origX1 || rangeObj.y1 !== origY1 || rangeObj.x2 !== origX2 || rangeObj.y2 !== origY2;
+            if (resized) this._markSelectionTemplateDirty(rangeObj);
             this.notify(this.rangeArr);
         };
 
@@ -837,40 +889,73 @@ export class BrushManager {
     // ─── 拖动整个框 ────────────────────────────────────────
     _startDrag(e, el, rangeObj) {
         this._dragging = true;
-        const startX = e.clientX;
-        const startY = e.clientY;
+        let startX = e.clientX;
+        let startY = e.clientY;
+        let dragX1 = rangeObj.x1;
+        let dragY1 = rangeObj.y1;
         const origX1 = rangeObj.x1;
         const origY1 = rangeObj.y1;
         const w = rangeObj.x2 - rangeObj.x1;
         const h = rangeObj.y2 - rangeObj.y1;
-        const origMatrixRect = rangeObj.matrixRect ? { ...rangeObj.matrixRect } : null;
+        let dragMatrixRect = rangeObj.matrixRect ? { ...rangeObj.matrixRect } : null;
+        const origMatrixRect = dragMatrixRect ? { ...dragMatrixRect } : null;
+        this._activeDrag = {
+            rangeObj,
+            el,
+            pointerX: startX,
+            pointerY: startY,
+            rebase: () => {
+                dragX1 = rangeObj.x1;
+                dragY1 = rangeObj.y1;
+                dragMatrixRect = rangeObj.matrixRect ? { ...rangeObj.matrixRect } : dragMatrixRect;
+                startX = this._activeDrag?.pointerX ?? startX;
+                startY = this._activeDrag?.pointerY ?? startY;
+            },
+        };
 
         const onMove = (ev) => {
             if (!this._dragging) return;
             ev.preventDefault();
+            if (this._activeDrag) {
+                this._activeDrag.pointerX = ev.clientX;
+                this._activeDrag.pointerY = ev.clientY;
+            }
             const dx = ev.clientX - startX;
             const dy = ev.clientY - startY;
 
-            let nextX1 = origX1 + dx;
-            let nextY1 = origY1 + dy;
+            let nextX1 = dragX1 + dx;
+            let nextY1 = dragY1 + dy;
             const rect = this._getEffectiveCanvasRect();
             if (rect) {
                 nextX1 = this._clampValue(nextX1, rect.left, rect.right - w);
                 nextY1 = this._clampValue(nextY1, rect.top, rect.bottom - h);
             }
+            const prev = {
+                x1: rangeObj.x1,
+                y1: rangeObj.y1,
+                x2: rangeObj.x2,
+                y2: rangeObj.y2,
+                matrixRect: rangeObj.matrixRect ? { ...rangeObj.matrixRect } : null,
+            };
             rangeObj.x1 = nextX1;
             rangeObj.y1 = nextY1;
             rangeObj.x2 = rangeObj.x1 + w;
             rangeObj.y2 = rangeObj.y1 + h;
-
-            el.style.left = rangeObj.x1 + 'px';
-            el.style.top = rangeObj.y1 + 'px';
+            if (!this._snapMovedRangeToMatrixGrid(rangeObj, dragMatrixRect)) {
+                rangeObj.x1 = prev.x1;
+                rangeObj.y1 = prev.y1;
+                rangeObj.x2 = prev.x2;
+                rangeObj.y2 = prev.y2;
+                rangeObj.matrixRect = prev.matrixRect;
+                this._applyRangeToElement(rangeObj, el);
+            }
             this._updateMeasureBadge(el, rangeObj);
         };
 
         const onUp = (ev) => {
             ev.stopPropagation();
             this._dragging = false;
+            this._activeDrag = null;
             el.classList.remove('selectBox-active');
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp, true);
@@ -885,6 +970,8 @@ export class BrushManager {
                 this._syncRangeMetadata(rangeObj);
             }
             this._updateMeasureBadge(el, rangeObj);
+            const moved = rangeObj.x1 !== origX1 || rangeObj.y1 !== origY1;
+            if (moved) this._markSelectionTemplateDirty(rangeObj);
             this.notify(this.rangeArr);
         };
 
@@ -943,38 +1030,34 @@ export class BrushManager {
 
     onMouseMove = (e) => {
         if (this._isDrawing && this.start) {
-            if (Math.abs(this.start.x - e.clientX) > 5 && Math.abs(this.start.y - e.clientY) > 5) {
-                const colorIndex = this._currentColorIndex;
-                const bgc = SELECT_COLORS[colorIndex];
-                const displayColor = getSelectBoxDisplayColor(bgc);
+            const colorIndex = this._currentColorIndex;
+            const bgc = SELECT_COLORS[colorIndex];
+            const displayColor = getSelectBoxDisplayColor(bgc);
+            const draftRange = {
+                x1: this.start.x,
+                y1: this.start.y,
+                x2: e.clientX,
+                y2: e.clientY,
+                bgc,
+                colorIndex,
+                _element: this.element,
+            };
 
-                this.element.classList.add(`selectBox-color-${colorIndex}`);
-                this.element.style.border = `2px solid ${displayColor}`;
-                this.element.style.backgroundColor = getSelectBoxFillColor(bgc);
-                this.element.style.boxShadow = `0 0 0 1px ${displayColor}`;
-                this.element.style.opacity = 1;
-                this.element.style.display = 'block';
+            if (!this._snapRangeToMatrixGrid(draftRange)) return;
 
-                this.pointBottomRight.x = Math.max(this.start.x, e.clientX);
-                this.pointBottomRight.y = Math.max(this.start.y, e.clientY);
-                this.pointTopLeft.x = Math.min(this.start.x, e.clientX);
-                this.pointTopLeft.y = Math.min(this.start.y, e.clientY);
+            this.element.classList.add(`selectBox-color-${colorIndex}`);
+            this.element.style.border = `2px solid ${displayColor}`;
+            this.element.style.backgroundColor = getSelectBoxFillColor(bgc);
+            this.element.style.boxShadow = `0 0 0 1px ${displayColor}`;
+            this.element.style.opacity = 1;
+            this.element.style.display = 'block';
 
-                this.element.style.left = this.pointTopLeft.x + 'px';
-                this.element.style.top = this.pointTopLeft.y + 'px';
-                this.element.style.width = (this.pointBottomRight.x - this.pointTopLeft.x) + 'px';
-                this.element.style.height = (this.pointBottomRight.y - this.pointTopLeft.y) + 'px';
-
-                this.range = {
-                    x1: this.pointTopLeft.x,
-                    y1: this.pointTopLeft.y,
-                    x2: this.pointBottomRight.x,
-                    y2: this.pointBottomRight.y,
-                    bgc: bgc,
-                    colorIndex: colorIndex,
-                };
-                this._updateMeasureBadge(this.element, this.range);
-            }
+            this.pointTopLeft.x = draftRange.x1;
+            this.pointTopLeft.y = draftRange.y1;
+            this.pointBottomRight.x = draftRange.x2;
+            this.pointBottomRight.y = draftRange.y2;
+            this.range = draftRange;
+            this._updateMeasureBadge(this.element, this.range);
         }
     };
 
@@ -988,7 +1071,7 @@ export class BrushManager {
         const w = this.pointBottomRight.x - this.pointTopLeft.x;
         const h = this.pointBottomRight.y - this.pointTopLeft.y;
 
-        if (w > 5 && h > 5) {
+        if (this.range && w > 0 && h > 0) {
             // 检查框选区域是否完整落在真实矩阵区域内
             if (!this._isSelectionInCanvasRange(this.range.x1, this.range.y1, this.range.x2, this.range.y2)) {
                 message.warning(tr('selectInValidArea'));
@@ -1037,6 +1120,7 @@ export class BrushManager {
         const rangeItem = this.rangeArr[index];
         if (!rangeItem) return;
         const element = rangeItem._element;
+        this._markSelectionTemplateDirty(rangeItem);
         this.rangeArr.splice(index, 1);
         if (element && element.parentNode) {
             element.parentNode.removeChild(element);
@@ -1053,6 +1137,7 @@ export class BrushManager {
         for (let i = this.rangeArr.length - 1; i >= 0; i--) {
             const range = this.rangeArr[i];
             if (range.matrixKey && range.matrixKey !== matrixKey) continue;
+            this._markSelectionTemplateDirty(range);
             this._removeRangeElement(range);
             this.rangeArr.splice(i, 1);
         }
@@ -1062,6 +1147,7 @@ export class BrushManager {
 
     deleteAll = () => {
         for (let i = this.rangeArr.length - 1; i >= 0; i--) {
+            this._markSelectionTemplateDirty(this.rangeArr[i]);
             const element = this.rangeArr[i]._element;
             if (element && element.parentNode) {
                 element.parentNode.removeChild(element);

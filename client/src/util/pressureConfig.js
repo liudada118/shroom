@@ -3,9 +3,9 @@ import { localAddress } from './constant'
 import { setPressureFormulaProfile } from './pressureMetrics'
 
 const DEFAULT_PRESSURE_CONFIG = {
-  backValueMultiplier: 1.8,
-  pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
-  pressureFormulaProfile: 'V2.7.38中英文logo',
+  backValueMultiplier: 1,
+  pressureFormulaFile: 'pressureFormula_V2.8.1.js',
+  pressureFormulaProfile: 'V2.8.1',
 }
 
 let pressureConfigCache = DEFAULT_PRESSURE_CONFIG

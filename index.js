@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron')
 const path = require('path')
-const { fork, spawn } = require('child_process')
+const { fork, spawn, spawnSync } = require('child_process')
 const { getHardwareFingerprint } = require('./util/getWinConfig')
 const { getKeyfromWinuuid } = require('./util/getServer')
 const { allocatePorts, DEFAULT_PORTS, listenWithRetry } = require('./util/portFinder')
@@ -321,21 +321,46 @@ async function createWindow(port) {
 //  优雅关闭
 // ═══════════════════════════════════════════════════════════
 
+function terminateChildTree(child, label) {
+  const pid = Number(child?.pid)
+  if (!Number.isInteger(pid) || pid <= 0) return
+
+  console.log(`[Main] Closing ${label}, PID: ${pid}`)
+  if (process.platform === 'win32') {
+    const result = spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    })
+    if (!result.error && result.status === 0) return
+    console.warn(`[Main] Failed to terminate ${label} process tree with taskkill; falling back to child.kill()`)
+  }
+
+  try {
+    child.kill('SIGTERM')
+  } catch (err) {
+    console.warn(`[Main] Failed to terminate ${label}:`, err.message)
+  }
+}
+
 function cleanupProcesses() {
-  if (apiChild) {
-    console.log('[Main] Closing API child process...')
-    apiChild.kill()
-    apiChild = null
-  }
-  if (reactChild) {
-    console.log('[Main] Closing Vite dev server...')
-    reactChild.kill()
-    reactChild = null
-  }
-  if (staticServer) {
+  const currentApiChild = apiChild
+  const currentReactChild = reactChild
+  const currentStaticServer = staticServer
+  apiChild = null
+  reactChild = null
+  staticServer = null
+
+  terminateChildTree(currentApiChild, 'API child process')
+  terminateChildTree(currentReactChild, 'Vite dev server')
+
+  if (currentStaticServer) {
     console.log('[Main] Closing static file server...')
-    staticServer.close()
-    staticServer = null
+    try {
+      currentStaticServer.close()
+      currentStaticServer.closeAllConnections?.()
+    } catch (err) {
+      console.warn('[Main] Failed to close static file server:', err.message)
+    }
   }
 }
 
@@ -508,6 +533,14 @@ app.on('activate', async () => {
 })
 
 app.on('before-quit', () => {
+  cleanupProcesses()
+})
+
+app.on('will-quit', () => {
+  cleanupProcesses()
+})
+
+process.on('exit', () => {
   cleanupProcesses()
 })
 
