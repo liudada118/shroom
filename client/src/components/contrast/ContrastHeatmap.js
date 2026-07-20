@@ -4,10 +4,12 @@ import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setD
 import { useEquipStore } from '../../store/equipStore'
 import { isEndiBackVisibleCell } from '../../util/endiBackVisibleMask'
 
+const COLOR_VALUE_STEP = 0.01
+
 function normalizeDisplayValue(value) {
     const numeric = Number(value)
     if (!Number.isFinite(numeric)) return 0
-    return Math.max(0, Math.min(255, Math.round(numeric)))
+    return Math.max(0, Math.min(255, Math.round(numeric / COLOR_VALUE_STEP) * COLOR_VALUE_STEP))
 }
 
 function getTextureColorMax(colorMax) {

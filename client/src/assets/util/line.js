@@ -33,6 +33,14 @@ function updateScopedFrameMax(frameMax, scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
   return nextMax;
 }
 
+function quantizeValue(value, step = 1) {
+  const numeric = Number(value);
+  const numericStep = Number(step);
+  if (!Number.isFinite(numeric)) return 0;
+  if (!Number.isFinite(numericStep) || numericStep <= 0) return numeric;
+  return Math.round(numeric / numericStep) * numericStep;
+}
+
 export function lineInterp(smallMat, width, height, interp1, interp2) {
 
   const bigMat = new Array((width * interp1) * (height * interp2)).fill(0)
@@ -123,7 +131,7 @@ export function addSide(arr, width, height, wnum, hnum, sideNum = 0) {
  * @param {*} h 
  * @param {*} r 
  */
-export function gaussBlur_return(scl, w, h, r) {
+export function gaussBlur_return(scl, w, h, r, step = 1) {
   const res = new Array(scl.length).fill(1)
   var rs = Math.ceil(r * 2.57); // significant radius
   for (var i = 0; i < h; i++) {
@@ -139,7 +147,7 @@ export function gaussBlur_return(scl, w, h, r) {
           val += scl[y * w + x] * wght;
           wsum += wght;
         }
-      res[i * w + j] = Math.round(val / wsum);
+      res[i * w + j] = quantizeValue(val / wsum, step);
     }
   }
   return res
@@ -199,7 +207,7 @@ export function getPressureColorLegendTicks() {
   const tickCount = 6;
   return Array.from({ length: tickCount + 1 }, (_, index) => {
     const ratio = index / tickCount;
-    const value = Math.round(RANGE_MIN + ratio * (rangeMax - RANGE_MIN));
+    const value = quantizeValue(RANGE_MIN + ratio * (rangeMax - RANGE_MIN), 0.01);
     return {
       adc: value,
       t: ratio,

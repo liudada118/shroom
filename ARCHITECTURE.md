@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-02
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-20
 
 ## 1. 项目概述
 
@@ -519,11 +519,15 @@ graph TD
 | 2026-06-29 | 假人全身公共展示名 | 设备号配置、设备列表、添加设备、COP 报告、数据对比和导出表头统一使用“假人全身/上身/下身/左臂/右臂/左腿/右腿”等公共名称，内部 `endi-*` key 保持不变 |
 | 2026-06-29 | Endi 足部展示拆分 | 后端保留合并 `endi-foot` 数据矩阵，前端设备状态和 2D 部位切换重新拆回左腿/右腿五设备展示 |
 | 2026-06-29 | Endi 左右脚源矩阵保留 | 合并 `endi-foot` 时额外携带左右脚源矩阵，前端优先用源矩阵拆 2D 展示，避免左腿展示为空 |
+| 2026-07-16 | 压强颜色步进调整 | ADC 转压强后的可视化颜色步进改为 0.1，覆盖实时调节面板、2D 数字、3D 点图和对比热力图 |
+| 2026-07-20 | 压强颜色步进精细化 | 压强可视化颜色步进从 0.1 进一步改为 0.01，颜色调节、动态色域和热力图保持两位小数粒度 |
 
 ## 9. 更新日志
 
 | 日期 | 变更类型 | 描述 |
 | :--- | :--- | :--- |
+| 2026-07-20 | 优化重构 | 压强矩阵颜色链路步进从 0.1 收细到 0.01，颜色调节输入、动态颜色范围和对比热力图同步支持 2 位小数 |
+| 2026-07-16 | 优化重构 | 压强矩阵颜色链路从整数步进调整为 0.1，颜色调节输入和动态颜色范围同步支持 1 位小数 |
 | 2026-06-05 | 新增功能 | 数据对比导出支持选择保存路径和 CSV/XLSX 两种格式 |
 | 2026-06-15 | 新增功能 | 接入 Endi 上衣、左右袖、左右裤腿五类新矩阵设备，覆盖实时展示、框选、量尺、历史和导入导出链路 |
 | 2026-06-22 | 优化重构 | Endi 3D 场景改为纯人体模型展示，切换到 no_texture GLB 并移除 3D 点图 |
@@ -1628,3 +1632,10 @@ graph TD
 | 2026-07-02 | Fix | Update right-leg 3D atlas sampling to read the last eight columns of the 12-column right-foot matrix after null padding moved to the left side |
 | 2026-07-02 | Fix | Center the interpolated Endi jacket head region in the 24-column backend matrix and sample the centered 18-column head slice for the 3D atlas |
 | 2026-07-02 | Fix | Hide Endi jacket head padding cells and lower-body hardware-null cells in the 2D numeric renderer and magnifier with a display-only mask, without changing backend matrices or statistics |
+
+## 2026-07-16 Pressure color step precision
+- `client/src/assets/util/line.js` and `client/src/util/util.js` add a `step` parameter to `gaussBlur_return()`. The default remains `1` for legacy callers, while pressure visualization callers pass `0.01` so converted kPa/N matrices keep two-decimal color granularity after smoothing.
+- `SecondTitle` changes the realtime color adjustment step to `0.01`, applies the same step to both Slider and InputNumber, and shows the current matrix maximum with two decimal places.
+- `NumThreeColorV3`, `NumThreeColorV4`, `ThreeAndCarPointV2`, legacy 3D point entries, and `ContrastHeatmap` quantize pressure color values at `0.01` instead of integer steps.
+| 2026-07-16 | Refactor | Use 0.1 color granularity for pressure-based visualization after ADC-to-pressure conversion |
+| 2026-07-20 | Refactor | Tighten pressure visualization color granularity from 0.1 to 0.01 |

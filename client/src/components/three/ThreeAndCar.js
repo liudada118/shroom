@@ -20,6 +20,8 @@ import { getSettingValue, getStatus } from "../../store/equipStore";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
 import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
 
+const COLOR_VALUE_STEP = 0.01;
+
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
 //     //列 = 行
@@ -693,7 +695,8 @@ const Canvas =
                 bigArrs,
                 sitnum2 * sitInterp2 + sitOrder * 2,
                 sitnum1 * sitInterp + sitOrder * 2,
-                gauss
+                gauss,
+                COLOR_VALUE_STEP
             );
 
             let k = 0,

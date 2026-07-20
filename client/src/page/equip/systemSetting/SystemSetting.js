@@ -295,6 +295,12 @@ export default function SystemSetting() {
             optimal: inputValue.optimalObj[systemKey][param.key],
         }));
 
+    const getParamStep = (paramKey) => {
+        if (paramKey === 'gauss' || paramKey === 'height') return 0.01;
+        if (paramKey === 'color') return 0.01;
+        return 1;
+    };
+
     const getColumns = (systemKey) => [
         {
             title: t('parameter'),
@@ -320,7 +326,7 @@ export default function SystemSetting() {
                     value={value}
                     size="small"
                     style={{ width: '100%' }}
-                    step={record.paramKey === 'gauss' || record.paramKey === 'height' ? 0.01 : 1}
+                    step={getParamStep(record.paramKey)}
                     onChange={(val) => handleInputChange(systemKey, record.paramKey, val)}
                 />
             )

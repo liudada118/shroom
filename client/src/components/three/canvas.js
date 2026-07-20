@@ -18,6 +18,8 @@ import { pageContext } from "../../page/test/Test";
 import { lineInterp } from "../../assets/util/line";
 import { getSettingValue, getStatus } from "../../store/equipStore";
 
+const COLOR_VALUE_STEP = 0.01;
+
 
 const Canvas = React.forwardRef((props, refs) => {
 
@@ -682,7 +684,8 @@ const Canvas = React.forwardRef((props, refs) => {
       bigArrs,
       sitnum2 * sitInterp + sitOrder * 2,
       sitnum1 * sitInterp + sitOrder * 2,
-      gauss
+      gauss,
+      COLOR_VALUE_STEP
     );
 
     let k = 0,

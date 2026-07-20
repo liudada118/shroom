@@ -81,6 +81,7 @@ const DIGIT_TILE_INSET = 8;
 const NUM_2D_GAUSS_KERNEL_FACTOR = 0.5;
 const NUM_2D_TEMPORAL_ALPHA = 0.22;
 const NUM_2D_DISPLAY_DEADBAND = 1.1;
+const COLOR_VALUE_STEP = 0.01;
 const ENDI_JACKET_WIDTH = 24;
 const ENDI_JACKET_HEIGHT = 54;
 const ENDI_JACKET_HEAD_HEIGHT = 10;
@@ -133,7 +134,7 @@ function prepareDisplayData(data, width, height, settings) {
   const gauss = Number(settings?.gauss);
   const effectiveGauss = Number.isFinite(gauss) ? gauss * NUM_2D_GAUSS_KERNEL_FACTOR : NUM_2D_GAUSS_KERNEL_FACTOR;
   if (effectiveGauss > 0.01) {
-    next = gaussBlur_return(next, width, height, effectiveGauss);
+    next = gaussBlur_return(next, width, height, effectiveGauss, COLOR_VALUE_STEP);
   }
   if (Number.isFinite(filter) && filter > 0) {
     next = next.map(value => (value < filter ? 0 : value));
@@ -530,8 +531,8 @@ export default function NumThree(props) {
       //   })
       // }
 
-      const nextMax = Math.round(beginDynamicColorFrame(data, color) || getTextureColorMax(color));
-      if (Math.abs(currentTextureMax - nextMax) >= 1) {
+      const nextMax = Math.round((beginDynamicColorFrame(data, color) || getTextureColorMax(color)) / COLOR_VALUE_STEP) * COLOR_VALUE_STEP;
+      if (Math.abs(currentTextureMax - nextMax) >= COLOR_VALUE_STEP) {
         console.log('colorChange')
         const texture = createDigitSpriteSheetWithJet(nextMax)
         material.uniforms.map.value = texture

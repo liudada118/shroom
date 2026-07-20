@@ -108,7 +108,7 @@ function SecondTitle(props) {
                 const gauss = Number(settingValue.gauss)
                 const effectiveGauss = Number.isFinite(gauss) ? gauss * 0.5 : 0.5
                 if (effectiveGauss > 0.01) {
-                    next = gaussBlur_return(next, matrixConfig.width, matrixConfig.height, effectiveGauss)
+                    next = gaussBlur_return(next, matrixConfig.width, matrixConfig.height, effectiveGauss, 0.01)
                 }
                 if (Number.isFinite(filter) && filter > 0) {
                     next = next.map(value => (value < filter ? 0 : value))
@@ -116,7 +116,7 @@ function SecondTitle(props) {
                 if (fullKey === 'endi-back') {
                     next = next.map((value, index) => isEndiBackVisibleIndex(index, matrixConfig.width, matrixConfig.height) ? value : 0)
                 }
-                return getMax(next.map(value => Math.max(0, Math.min(255, Math.round(Number(value) || 0)))))
+                return getMax(next.map(value => Math.max(0, Math.min(255, Math.round((Number(value) || 0) * 100) / 100))))
             })
             .filter((value) => value !== null)
         return maxList.length ? Math.max(...maxList) : null
@@ -141,7 +141,7 @@ function SecondTitle(props) {
             type: 'color',
             max: settingValueMax.color,
             min: 1,
-            step: 1,
+            step: 0.01,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoRedBlue')}</div>
         },
         {
@@ -442,7 +442,7 @@ function SecondTitle(props) {
                                         <div className="setItemLabel">
                                             <span>{a.title}</span>
                                             {a.type === 'color' ? (
-                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : Number(currentDataMax).toFixed(0)}</em>
+                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : Number(currentDataMax).toFixed(2)}</em>
                                             ) : null}
                                         </div>
                                     </Popover>
@@ -474,6 +474,7 @@ function SecondTitle(props) {
                                         <InputNumber
                                             min={a.min}
                                             max={a.max}
+                                            step={a.step}
                                             style={{ margin: '0 16px' }}
                                             className='setItemInput'
                                             value={getRowValue(a)}

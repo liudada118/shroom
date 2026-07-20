@@ -20,6 +20,8 @@ import { getSettingValue, getStatus } from "../../store/equipStore";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
 import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
 
+const COLOR_VALUE_STEP = 0.01;
+
 let camera
 let baseCameraDistance = null
 
@@ -712,7 +714,8 @@ const Canvas = memo(React.forwardRef((props, refs) => {
       bigArrs,
       sitnum2 + sitOrder * 2,
       sitnum1 + sitOrder * 2,
-      gauss
+      gauss,
+      COLOR_VALUE_STEP
     );
 
     let bigArr = lineInterp(bigArrg, sitnum2 + sitOrder * 2, sitnum1 + sitOrder * 2, sitInterp, sitInterp)

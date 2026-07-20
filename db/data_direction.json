@@ -56,11 +56,11 @@
         "data_direction": "none"
       },
       "endi-foot": {
-        "left": true,
+        "left": false,
         "up": true,
-        "rotateDegree": 0,
-        "rotate_degree": 0,
-        "data_direction": "none"
+        "rotateDegree": 270,
+        "rotate_degree": 270,
+        "data_direction": "rotate270"
       },
       "carY-back": {
         "left": false,
@@ -92,5 +92,5 @@
       }
     }
   },
-  "updatedAt": "2026-07-02T03:50:56.365Z"
+  "updatedAt": "2026-07-15T06:23:56.584Z"
 }

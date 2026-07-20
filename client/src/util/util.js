@@ -1,6 +1,14 @@
 import { calMatrixArea } from "../assets/util/selectMatrix";
 import { garyColors } from "./constant";
 
+function quantizeValue(value, step = 1) {
+    const numeric = Number(value);
+    const numericStep = Number(step);
+    if (!Number.isFinite(numeric)) return 0;
+    if (!Number.isFinite(numericStep) || numericStep <= 0) return numeric;
+    return Math.round(numeric / numericStep) * numericStep;
+}
+
 /**
  * 
  * @param {Array} arr 添加边框前的数组
@@ -52,7 +60,7 @@ export function addSide(arr, width, height, wnum, hnum, sideNum = 0) {
  * @param {number} r 高斯的卷积核
  * @returns 
  */
-export function gaussBlur_return(scl, w, h, r) {
+export function gaussBlur_return(scl, w, h, r, step = 1) {
     const res = new Array(scl.length).fill(1)
     var rs = Math.ceil(r * 2.57); // significant radius
     for (var i = 0; i < h; i++) {
@@ -68,7 +76,7 @@ export function gaussBlur_return(scl, w, h, r) {
                     val += scl[y * w + x] * wght;
                     wsum += wght;
                 }
-            res[i * w + j] = Math.round(val / wsum);
+            res[i * w + j] = quantizeValue(val / wsum, step);
         }
     }
     return res

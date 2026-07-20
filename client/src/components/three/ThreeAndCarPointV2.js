@@ -23,6 +23,8 @@ import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFrom
 import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
 import { isEndiBackPointVisible } from "../../util/endiBackVisibleMask";
 
+const COLOR_VALUE_STEP = 0.01;
+
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
 //     //列 = 行
@@ -1197,7 +1199,8 @@ const Canvas =
                 bigArrs,
                 sitnum2 * sitInterp1 + sitOrder * 2,
                 sitnum1 * sitInterp + sitOrder * 2,
-                gauss
+                gauss,
+                COLOR_VALUE_STEP
             );
             bigArrg = stabilizePointValues(
                 bigArrg,
