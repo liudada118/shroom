@@ -1190,7 +1190,9 @@ const Canvas =
             const {
                 gauss = 1, color, height = 1, coherent = 1, autoColor
             } = getSettingValue() //pageRef.current.settingValue
-            setDynamicGammaColorEnabled(Boolean(autoColor), name)
+            const metricMode = useEquipStore.getState().pressureMetricMode
+            const colorScope = `point-${name}-${metricMode}`
+            setDynamicGammaColorEnabled(Boolean(autoColor), colorScope)
             const colorLimit = getColorLimit(color)
 
             // height , width , heightInterp , widthInterp
@@ -1216,7 +1218,7 @@ const Canvas =
                 `${name}-${AMOUNTX}x${AMOUNTY}`,
                 POINT_METRIC_VISIBLE_THRESHOLD
             )
-            beginDynamicColorFrame(bigArrg, colorLimit, name)
+            beginDynamicColorFrame(bigArrg, colorLimit, colorScope)
 
             let k = 0, l = 0, j = 0;
             let dataArr = []

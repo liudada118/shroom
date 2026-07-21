@@ -14,6 +14,12 @@ import { localAddress } from '../../../util/constant';
 import { useTranslation } from 'react-i18next';
 import { buildFallbackParams } from '../../../util/request';
 import { loadPressureRuntimeConfig } from '../../../util/pressureConfig';
+import {
+    VISUAL_COLOR_SETTING_DEFAULT,
+    VISUAL_COLOR_SETTING_MAX,
+    VISUAL_COLOR_SETTING_MIN,
+    VISUAL_COLOR_SETTING_STEP,
+} from '../../../util/visualSettingStorage';
 
 const { Title, Text } = Typography;
 
@@ -50,7 +56,16 @@ const systemTagColor = {
 /* ────── 可调节参数定义 ────── */
 const paramConfig = [
     { titleKey: 'paramGauss', key: 'gauss', unit: '', descKey: 'paramGaussDesc' },
-    { titleKey: 'paramColor', key: 'color', unit: '', descKey: 'paramColorDesc' },
+    {
+        titleKey: 'paramColor',
+        key: 'color',
+        unit: 'kPa',
+        descKey: 'paramColorDesc',
+        min: VISUAL_COLOR_SETTING_MIN,
+        max: VISUAL_COLOR_SETTING_MAX,
+        step: VISUAL_COLOR_SETTING_STEP,
+        precision: 2,
+    },
     { titleKey: 'paramFilter', key: 'filter', unit: '', descKey: 'paramFilterDesc' },
     { titleKey: 'paramHeight', key: 'height', unit: '', descKey: 'paramHeightDesc' },
     { titleKey: 'paramCoherent', key: 'coherent', unit: '', descKey: 'paramCoherentDesc' }
@@ -59,26 +74,26 @@ const paramConfig = [
 /* ────── 前端硬编码的默认值（后端不可用时的兜底） ────── */
 const fallbackConfig = {
     optimalObj: {
-        bed:     { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 },
-        car:     { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 },
-        endi:    { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 },
-        carY:    { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 },
-        bigHand: { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 },
-        hand:    { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 }
+        bed:     { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 30, height: 80, coherent: 1, autoColor: 1 },
+        car:     { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 30, height: 80, coherent: 1, autoColor: 1 },
+        endi:    { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 30, height: 80, coherent: 1, autoColor: 1 },
+        carY:    { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 30, height: 80, coherent: 1, autoColor: 1 },
+        bigHand: { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 30, height: 80, coherent: 1, autoColor: 1 },
+        hand:    { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 30, height: 80, coherent: 1, autoColor: 1 }
     },
     maxObj: {
-        bed:     { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-        car:     { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-        endi:    { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-        carY:    { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-        bigHand: { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-        hand:    { gauss: 4, color: 255, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        bed:     { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        car:     { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        endi:    { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        carY:    { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        bigHand: { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        hand:    { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
     }
 };
 
 const fallbackPressureConfig = {
     backValueMultiplier: 1,
-    pressureFormulaFile: 'pressureFormula_V2.8.1.js',
+    pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
     pressureFormulaProfile: 'V2.8.1',
 };
 
@@ -288,6 +303,7 @@ export default function SystemSetting() {
     /* ────── 表格数据 & 列定义 ────── */
     const getTableData = (systemKey) =>
         paramConfig.map((param, index) => ({
+            ...param,
             key: index,
             param: t(param.titleKey),
             paramKey: param.key,
@@ -320,7 +336,10 @@ export default function SystemSetting() {
                     value={value}
                     size="small"
                     style={{ width: '100%' }}
-                    step={record.paramKey === 'gauss' || record.paramKey === 'height' ? 0.01 : 1}
+                    min={record.min}
+                    max={record.max}
+                    step={record.step ?? (record.paramKey === 'gauss' || record.paramKey === 'height' ? 0.01 : 1)}
+                    precision={record.precision}
                     onChange={(val) => handleInputChange(systemKey, record.paramKey, val)}
                 />
             )

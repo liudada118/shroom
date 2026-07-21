@@ -3,16 +3,18 @@ import { useTranslation } from 'react-i18next'
 import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicGammaColorEnabled } from '../../assets/util/line'
 import { useEquipStore } from '../../store/equipStore'
 import { isEndiBackVisibleCell } from '../../util/endiBackVisibleMask'
+import { normalizeVisualColorSetting } from '../../util/visualSettingStorage'
+
+let contrastColorScopeId = 0
 
 function normalizeDisplayValue(value) {
     const numeric = Number(value)
     if (!Number.isFinite(numeric)) return 0
-    return Math.max(0, Math.min(255, Math.round(numeric)))
+    return Math.max(0, Number(numeric.toFixed(1)))
 }
 
 function getTextureColorMax(colorMax) {
-    const value = Number(colorMax)
-    return Number.isFinite(value) && value > 0 ? value : 1
+    return normalizeVisualColorSetting(colorMax)
 }
 
 function diffColor(value, maxAbs) {
@@ -30,12 +32,13 @@ function shouldHideCell(matrixKey, row, col, width, height) {
 }
 
 function getCellDisplay(rawValue, mode, maxAbs, colorMax) {
+    const colorValue = Number(rawValue) || 0
     const displayValue = mode === 'diff'
-        ? Math.round(Number(rawValue) || 0)
+        ? Math.round(colorValue)
         : normalizeDisplayValue(rawValue)
     const color = mode === 'diff'
-        ? diffColor(Number(rawValue) || 0, maxAbs)
-        : jetWhite3NoWhite(0, getTextureColorMax(colorMax), displayValue)
+        ? diffColor(colorValue, maxAbs)
+        : jetWhite3NoWhite(0, getTextureColorMax(colorMax), colorValue)
     const background = mode === 'diff'
         ? `rgb(${color[0]}, ${color[1]}, ${color[2]})`
         : `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${NUMBER_TEXT_COLOR_ALPHA})`
@@ -72,6 +75,11 @@ export default function ContrastHeatmap(props) {
     const canvasRef = useRef(null)
     const wrapRef = useRef(null)
     const gridRef = useRef({ offsetX: 0, offsetY: 0, cell: 1, width: 1, height: 1 })
+    const colorScopeRef = useRef(null)
+    if (!colorScopeRef.current) {
+        contrastColorScopeId += 1
+        colorScopeRef.current = `contrast-${contrastColorScopeId}`
+    }
     const [magnifier, setMagnifier] = useState({ visible: false, col: 0, row: 0, left: 0, top: 0 })
     const [expanded, setExpanded] = useState(false)
     const maxAbs = Math.max(1, ...arr.map((value) => Math.abs(Number(value) || 0)))
@@ -84,9 +92,11 @@ export default function ContrastHeatmap(props) {
         const ctx = canvas.getContext('2d')
         const draw = () => {
             const autoColor = Boolean(useEquipStore.getState().settingValue?.autoColor)
-            setDynamicGammaColorEnabled(autoColor)
+            const metricMode = useEquipStore.getState().pressureMetricMode
+            const colorScope = `${colorScopeRef.current}-${matrixKey}-${metricMode}`
+            setDynamicGammaColorEnabled(autoColor, colorScope)
             if (mode !== 'diff') {
-                beginDynamicColorFrame(arr, colorMax)
+                beginDynamicColorFrame(arr, colorMax, colorScope)
             }
             const drawWidth = Math.max(1, Number(width) || 1)
             const drawHeight = Math.max(1, Number(height) || 1)

@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-15
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-20
 
 ## 1. 项目概述
 
@@ -538,6 +538,8 @@ graph TD
 | 2026-07-14 | 有效点与压力总和口径修正 | 点数/面积改为按 V2.8.1 有效压强点统计，左侧压力总和固定显示真实压力 N |
 | 2026-07-15 | COP 报告图表业务语义补充 | COP 报告图表增加概念描述；COP 轨迹轴定义为左右/上下偏移距离，压力总和趋势固定为时间(s)与压力总和(N) |
 | 2026-07-15 | COP 报告描述排版对齐 | 图表描述区固定为两行高度，保证同一行图表从一致的水平位置开始渲染 |
+| 2026-07-20 | 压强颜色调节范围统一 | ADC 转压强后的颜色调节统一使用 `0.01-60 kPa` 范围和 `0.01 kPa` 步进，旧 ADC 色阶缓存自动收敛到新范围 |
+| 2026-07-20 | 自动颜色改用渲染值 | 自动调节按完成压强/压力换算、过滤和平滑后的当前渲染矩阵最大值确定色阶；手动颜色默认值调整为 `5.00` |
 
 ## 9. 更新日志
 
@@ -553,7 +555,7 @@ graph TD
 | 2026-07-13 | 修复缺陷 | 补齐历史导出格式与导出字段相关中英文翻译 |
 | 2026-07-13 | 修复缺陷 | 修复退出软件后 Vite/API 子进程残留、Web 服务端口仍处于监听状态的问题 |
 | 2026-07-14 | 新增功能 | 新增全局压强/压力计量模式并贯通实时显示、框选、对比、COP 报告和 CSV/XLSX 导出，同时增加从 0 开始的秒数导出选项 |
-| 2026-07-14 | 优化重构 | `pressureFormula_V2.8.1.js` 新增传感器类型参数，靠背与座椅分别使用独立标定分段 |
+| 2026-07-14 | 优化重构 | `pressureFormula_V2.7.38中英文logo.js` 新增传感器类型参数，靠背与座椅分别使用独立标定分段 |
 | 2026-07-14 | 优化重构 | 将压强/压力单位、曲线标题、统计项文案和趋势字段集中到 `getPressureMetricDisplay()`，减少前端页面分散判断 |
 | 2026-07-14 | 优化重构 | 统一压强换算为 V2.8.1 单点公式口径，平均值、最大值和总和值全部基于逐点换算后的结果计算 |
 | 2026-07-14 | 修复缺陷 | 修复左侧点数把未参与 V2.8.1 单点公式的低值点计入有效点、以及压力总和在压强模式下显示为 kPa 的问题 |
@@ -565,6 +567,8 @@ graph TD
 | 2026-07-14 | 修复缺陷 | CSV/XLSX 导出的总和字段固定为压力总和(N)，压强模式下不再输出压强总和(kPa) |
 | 2026-07-15 | 优化重构 | COP 报告补充各图表概念描述，COP 轨迹使用偏移距离轴，压力总和趋势图 X 轴改为秒、Y 轴固定压力总和(N) |
 | 2026-07-15 | 修复缺陷 | COP 报告图表描述区固定两行高度并裁剪溢出文案，修复四列图表起始位置不对齐 |
+| 2026-07-20 | 配置变更 | 颜色调节最小值改为 `0.01 kPa`、最大值改为 `60 kPa`、步进改为 `0.01 kPa`，并同步前后端默认配置与本地缓存迁移 |
+| 2026-07-20 | 修复缺陷 | 移除自动色阶的 ADC 下限 `15/80`，改为基于当前渲染 kPa/N 矩阵动态归一；手动默认值改为 `5.00`，旧 ADC 参数按 V2.8.1 公式迁移 |
 | 2026-06-05 | 新增功能 | 数据对比导出支持选择保存路径和 CSV/XLSX 两种格式 |
 | 2026-06-05 | 配置变更 | 靠背默认方向再执行一次左右翻转，并迁移旧默认方向缓存 |
 | 2026-06-05 | 修复缺陷 | 修复播放控件、数据对比、图表轴标题、下载提示和前端端口递增等界面/启动问题 |
@@ -1641,7 +1645,7 @@ graph TD
 | 2026-07-14 | Feature | Add a persisted pressure/force mode across realtime, selection, comparison, reports, and exports, plus elapsed seconds from zero |
 
 ## 2026-07-14 V2.8.1 pressure formula sensor dispatch
-- `server/kpa/pressureFormula_V2.8.1.js` exposes `master(adc, sensor)`. The `backrest` sensor type selects `BACK_SEGS`; `seat` and omitted sensor types select `SEAT_SEGS` for backward compatibility.
+- `server/kpa/pressureFormula_V2.7.38中英文logo.js` exposes `master(adc, sensor)`. The `backrest` sensor type selects `BACK_SEGS`; `seat` and omitted sensor types select `SEAT_SEGS` for backward compatibility.
 - `calcPressure(matrix, scaleOverride, sensor)` forwards the frame sensor type to every `master` call, so a backrest frame does not reuse seat calibration segments.
 - The formula module exports both `BACK_SEGS` and `SEAT_SEGS`; the obsolete undefined `SEGMENTS` export is removed.
 | 2026-07-14 | Refactor | Dispatch V2.8.1 point and frame pressure calculations to sensor-specific calibration segments |
@@ -1660,3 +1664,18 @@ graph TD
 - Report chart descriptions are constrained to a two-line fixed-height block, keeping heatmaps, COP plots, and trend charts vertically aligned within four-column rows.
 | 2026-07-15 | Improvement | Add COP report chart concept descriptions and fix pressure total trends to elapsed seconds and Newton totals |
 | 2026-07-15 | Fix | Keep COP report chart descriptions at a fixed two-line height so chart canvases align across columns |
+
+## 2026-07-20 Pressure color adjustment range
+- `visualSettingStorage.js` centralizes the pressure color setting contract as minimum `0.01 kPa`, maximum/default `60 kPa`, and step `0.01 kPa`.
+- The realtime visualization drawer and system settings page share the same range constants; numeric inputs use two-decimal precision and the current matrix maximum is shown with two decimals.
+- 2D numeric textures and shared 3D display mapping preserve the `0.01 kPa` color-limit precision instead of rounding the configured limit to an integer before rendering.
+- Persisted legacy ADC color values are clamped and quantized during loading and saving. Frontend fallback configuration and backend `/getSystem` normalization now return `60` instead of the former `120/255` ADC-scale defaults.
+| 2026-07-20 | Config | Align pressure color controls, persisted settings, and backend defaults to the `0.01-60 kPa` range with `0.01 kPa` steps |
+
+## 2026-07-20 Rendered-metric automatic color range
+- Automatic color adjustment consumes the final matrix passed to the renderer. The matrix has already completed raw filtering, ADC-to-kPa/N conversion, surface masking, and display stabilization before `beginDynamicColorFrame()` calculates its maximum.
+- Dynamic color normalization now starts at `0`, has a `0.01` minimum range, and initializes a new surface directly from its first rendered frame. Later frames retain exponential smoothing to avoid color flicker.
+- Automatic ranges are isolated by rendered surface and metric mode, so switching between backrest/seat or kPa/N does not reuse an incompatible previous range. Comparison heatmaps use an independent range per rendered chart.
+- Manual color adjustment defaults to `5.00` while retaining the `0.01-60.00` range. This approximates the former `ADC=120` default after V2.8.1 conversion without making normal pressure values visually disappear.
+- Local settings from the ADC era are migrated through the V2.8.1 seat calibration for an equivalent pressure threshold. Settings written by the immediately preceding pressure-range version remain unchanged except its temporary `60` default, which migrates to `5`.
+| 2026-07-20 | Fix | Drive automatic colors from rendered kPa/N values, set the manual default to 5, and migrate legacy ADC color thresholds into the pressure range |

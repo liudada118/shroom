@@ -4,7 +4,7 @@ const { state } = require('../state')
 
 const DEFAULT_PRESSURE_CONFIG = {
   backValueMultiplier: 1,
-  pressureFormulaFile: 'pressureFormula_V2.8.1.js',
+  pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
   pressureFormulaProfile: 'V2.8.1',
 }
 

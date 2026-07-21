@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 import { maxObj } from '../assets/util/constant'
-import { loadVisualSettingValue, normalizeVisualSettingMax } from '../util/visualSettingStorage'
+import { loadVisualSettingValue, normalizeVisualSettingMax, VISUAL_COLOR_SETTING_DEFAULT } from '../util/visualSettingStorage'
 import { FORCE_METRIC_MODE, normalizePressureMetricMode } from '../util/pressureMetrics'
 
 // ─── 持久化设置值 ────────────────────────────────────────
-const DEFAULT_SETTINGS = { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 }
+const DEFAULT_SETTINGS = { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 30, height: 80, coherent: 1, autoColor: 1 }
 
 function loadSettingValue() {
   return loadVisualSettingValue('default', DEFAULT_SETTINGS, maxObj.bed)

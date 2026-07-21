@@ -65,7 +65,19 @@
       "deviceClass": "foot",
       "lastSeen": "2026-07-14T09:23:50.567Z",
       "alias": ""
+    },
+    "464134391150431B32": {
+      "type": "endi-sit",
+      "deviceClass": "foot",
+      "lastSeen": "2026-07-20T11:35:51.437Z",
+      "alias": ""
+    },
+    "504330390250435F84": {
+      "type": "endi-sit",
+      "deviceClass": "foot",
+      "lastSeen": "2026-07-20T11:35:51.952Z",
+      "alias": ""
     }
   },
-  "updatedAt": "2026-07-14T11:09:55.467Z"
+  "updatedAt": "2026-07-20T11:35:51.952Z"
 }

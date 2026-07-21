@@ -4,8 +4,8 @@
  * V3.0 | 2026-06-02
  *
  * 核心逻辑：
- *   1. RANGE_MAX 跟随当前帧最大值（指数平滑，防闪烁）
- *   2. RANGE_MAX 有最低保护值 MIN_RANGE_MAX = 80（防止轻触变红）
+ *   1. RANGE_MAX 跟随当前帧已经换算后的实际渲染最大值（指数平滑，防闪烁）
+ *   2. RANGE_MAX 最低为 0.01，适配 kPa/N 小数值
  *   3. 归一化后做 Gamma 校正（gamma=2），让高压区颜色层次更丰富
  *   4. Jet 色谱（蓝→青→黄→红）
  *
@@ -14,11 +14,14 @@
 
 // ── 配置参数 ──────────────────────────────────────────────────────────────
 
-/** 量程下限（低于此值显示背景色） */
-export const RANGE_MIN = 15;
+/** 渲染量程从 0 开始，无接触点仍由值为 0 单独判定 */
+export const RANGE_MIN = 0;
 
-/** RANGE_MAX 的最低保护值（防止轻触变红） */
-export const MIN_RANGE_MAX = 80;
+/** 动态上限的最低有效值，与颜色调节最小值一致 */
+export const MIN_RANGE_MAX = 0.01;
+
+/** 动态颜色上限精度 */
+export const COLOR_RANGE_STEP = 0.01;
 
 /** 指数平滑系数（0~1，越小越平滑、越不闪） */
 export const SMOOTH_ALPHA = 0.08;
@@ -45,19 +48,28 @@ const JET = [
 
 // ── 内部状态 ──────────────────────────────────────────────────────────────
 let smoothedMax = MIN_RANGE_MAX;
+let hasRenderedFrame = false;
+
+function normalizeRangeMax(value) {
+  const numeric = Number(value);
+  const safeValue = Number.isFinite(numeric) ? numeric : MIN_RANGE_MAX;
+  const clamped = Math.max(safeValue, MIN_RANGE_MAX);
+  return Number((Math.round(clamped / COLOR_RANGE_STEP) * COLOR_RANGE_STEP).toFixed(2));
+}
 
 // ── 核心函数 ──────────────────────────────────────────────────────────────
 
 /**
  * 每帧调用一次：更新动态 RANGE_MAX
- * @param {number} frameMax - 当前帧有效点的最大 ADC 值
+ * @param {number} frameMax - 当前帧实际渲染值的最大值（kPa 或 N）
  * @returns {number} 当前使用的 RANGE_MAX
  */
 export function updateFrameMax(frameMax) {
-  // 指数平滑
-  smoothedMax = SMOOTH_ALPHA * frameMax + (1 - SMOOTH_ALPHA) * smoothedMax;
-  // 最低保护
-  smoothedMax = Math.max(smoothedMax, MIN_RANGE_MAX);
+  const targetMax = normalizeRangeMax(frameMax);
+  smoothedMax = hasRenderedFrame
+    ? normalizeRangeMax(SMOOTH_ALPHA * targetMax + (1 - SMOOTH_ALPHA) * smoothedMax)
+    : targetMax;
+  hasRenderedFrame = true;
   return smoothedMax;
 }
 
@@ -69,10 +81,10 @@ export function getCurrentRangeMax() {
 }
 
 /**
- * 将 ADC 值映射为 [R, G, B] 颜色（动态归一化 + Gamma 校正）
+ * 将当前渲染值映射为 [R, G, B] 颜色（动态归一化 + Gamma 校正）
  * 注意：必须先调用 updateFrameMax() 更新当前帧的 RANGE_MAX
  *
- * @param {number} adcValue - ADC 原始值
+ * @param {number} adcValue - 保留旧 API 名称，实际应传入已经换算后的 kPa/N 值
  * @returns {[number, number, number]} RGB 数组
  */
 export function adcToColor(adcValue) {
@@ -108,6 +120,7 @@ export function adcToColor(adcValue) {
  */
 export function reset() {
   smoothedMax = MIN_RANGE_MAX;
+  hasRenderedFrame = false;
 }
 
 /**
@@ -130,8 +143,7 @@ export function getLegendTicks() {
   const ticks = [];
   for (let i = 0; i <= tickCount; i++) {
     const t_linear = i / tickCount;
-    // 反 gamma：ADC = RANGE_MIN + t_linear * (rangeMax - RANGE_MIN)
-    const adc = Math.round(RANGE_MIN + t_linear * (rangeMax - RANGE_MIN));
+    const adc = Number((RANGE_MIN + t_linear * (rangeMax - RANGE_MIN)).toFixed(2));
     // gamma 校正后的 t
     const t_gamma = Math.pow(t_linear, GAMMA);
     const color = adcToColor(adc);

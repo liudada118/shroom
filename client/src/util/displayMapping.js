@@ -1,6 +1,7 @@
+import { normalizeVisualColorSetting } from './visualSettingStorage'
+
 export function getColorLimit(color) {
-  const value = Number(color);
-  return Number.isFinite(value) && value > 0 ? value : 1;
+  return normalizeVisualColorSetting(color);
 }
 
 export function getDisplayColorValue(value, colorLimit) {

@@ -12,7 +12,13 @@ import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
 import { localAddress, pointConfig, systemPointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
-import { normalizeVisualSettingMax, saveVisualSettingValue } from '../../util/visualSettingStorage'
+import {
+    normalizeVisualSettingMax,
+    saveVisualSettingValue,
+    VISUAL_COLOR_SETTING_MAX,
+    VISUAL_COLOR_SETTING_MIN,
+    VISUAL_COLOR_SETTING_STEP,
+} from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import { gaussBlur_return } from '../../assets/util/line'
 import { isEndiBackVisibleIndex } from '../../util/endiBackVisibleMask'
@@ -145,9 +151,9 @@ function SecondTitle(props) {
         {
             title: t('colorAdj'),
             type: 'color',
-            max: settingValueMax.color,
-            min: 1,
-            step: 1,
+            max: VISUAL_COLOR_SETTING_MAX,
+            min: VISUAL_COLOR_SETTING_MIN,
+            step: VISUAL_COLOR_SETTING_STEP,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoRedBlue')}</div>
         },
         {
@@ -522,7 +528,7 @@ function SecondTitle(props) {
                                         <div className="setItemLabel">
                                             <span>{a.title}</span>
                                             {a.type === 'color' ? (
-                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : `${Number(currentDataMax).toFixed(1)} ${currentDataMaxDisplay.unit}`}</em>
+                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : `${Number(currentDataMax).toFixed(2)} ${currentDataMaxDisplay.unit}`}</em>
                                             ) : null}
                                         </div>
                                     </Popover>
@@ -554,6 +560,8 @@ function SecondTitle(props) {
                                         <InputNumber
                                             min={a.min}
                                             max={a.max}
+                                            step={a.step}
+                                            precision={a.type === 'color' ? 2 : undefined}
                                             style={{ margin: '0 16px' }}
                                             className='setItemInput'
                                             value={getRowValue(a)}

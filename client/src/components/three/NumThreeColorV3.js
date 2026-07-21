@@ -5,8 +5,9 @@ import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
-import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, gaussBlur_return, jetWhite3NoWhite, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
+import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, gaussBlur_return, jetWhite3NoWhite, setDynamicGammaColorEnabled } from '../../assets/util/line';
 import { getPressureMetricPointValues } from '../../util/pressureMetrics';
+import { normalizeVisualColorSetting } from '../../util/visualSettingStorage';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -63,8 +64,7 @@ function getMetricVisibleThreshold(mode = useEquipStore.getState().pressureMetri
 }
 
 function getTextureColorMax(color) {
-  const value = Number(color);
-  return Number.isFinite(value) && value > 0 ? value : 1;
+  return normalizeVisualColorSetting(color);
 }
 
 function normalizeZoomScale(value) {
@@ -223,7 +223,6 @@ export default function NumThree(props) {
 
 
   function createDigitSpriteSheetWithJet(value = 22, mode = useEquipStore.getState().pressureMetricMode) {
-    syncDynamicColorRange(value);
     const canvas = document.createElement("canvas");
     // document.body.appendChild(canvas)
     canvas.width = canvas.height = DIGIT_ATLAS_SIZE;
@@ -351,6 +350,7 @@ export default function NumThree(props) {
 
     let currentTextureMax = getTextureColorMax(getSettingValue()?.color)
     let currentTextureMode = useEquipStore.getState().pressureMetricMode
+    let currentTextureScope = ''
     const texture = createDigitSpriteSheetWithJet(currentTextureMax, currentTextureMode);
     textureMaxRef.current = currentTextureMax;
     textureModeRef.current = currentTextureMode;
@@ -493,9 +493,10 @@ export default function NumThree(props) {
       const {
         gauss, color, filter, height, coherent, autoColor,
       } = settingValue //pageRef.current.settingValue
-      setDynamicGammaColorEnabled(Boolean(autoColor));
       data = prepareDisplayData(data, gridSize, gridSize, settingValue);
       const metricMode = useEquipStore.getState().pressureMetricMode
+      const colorScope = `num-${matrixKey}-${metricMode}`
+      setDynamicGammaColorEnabled(Boolean(autoColor), colorScope);
       data = getPressureMetricPointValues(data, matrixKey, metricMode);
       data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize}x${gridSize}-g${gauss}-f${filter}-m${metricMode}`, metricMode);
       dataRef.current = data;
@@ -521,8 +522,8 @@ export default function NumThree(props) {
       //   })
       // }
 
-      const nextMax = Math.max(1, Math.round(beginDynamicColorFrame(data, color) || getTextureColorMax(color)));
-      if (Math.abs(currentTextureMax - nextMax) >= 1 || currentTextureMode !== metricMode) {
+      const nextMax = getTextureColorMax(beginDynamicColorFrame(data, color, colorScope) ?? color);
+      if (currentTextureMax !== nextMax || currentTextureMode !== metricMode || currentTextureScope !== colorScope) {
         console.log('colorChange')
         const oldTexture = material.uniforms.map.value
         const texture = createDigitSpriteSheetWithJet(nextMax, metricMode)
@@ -532,6 +533,7 @@ export default function NumThree(props) {
         textureModeRef.current = metricMode
         currentTextureMax = nextMax
         currentTextureMode = metricMode
+        currentTextureScope = colorScope
       }
 
 

@@ -1,9 +1,10 @@
 import {
+  COLOR_RANGE_STEP,
   GAMMA,
   MIN_RANGE_MAX,
   RANGE_MIN,
   SMOOTH_ALPHA,
-} from './colorMap_dynamic_gamma';
+} from './colorMap_dynamic_gamma.js';
 
 const DEFAULT_DYNAMIC_COLOR_SCOPE = 'default';
 
@@ -17,18 +18,24 @@ function getDynamicColorScope(scope) {
 
 function getScopedDynamicRangeMax(scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
   const key = getDynamicColorScope(scope);
-  return dynamicColorRangeMap.get(key) || MIN_RANGE_MAX;
+  return dynamicColorRangeMap.get(key) ?? MIN_RANGE_MAX;
+}
+
+function normalizeDynamicColorMax(value) {
+  const numeric = Number(value);
+  const safeValue = Number.isFinite(numeric) ? numeric : MIN_RANGE_MAX;
+  const clamped = Math.max(safeValue, MIN_RANGE_MAX);
+  return Number((Math.round(clamped / COLOR_RANGE_STEP) * COLOR_RANGE_STEP).toFixed(2));
 }
 
 function updateScopedFrameMax(frameMax, scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
   const key = getDynamicColorScope(scope);
   const value = Number(frameMax);
-  const safeFrameMax = Number.isFinite(value) ? value : 0;
-  const currentMax = getScopedDynamicRangeMax(key);
-  const nextMax = Math.max(
-    SMOOTH_ALPHA * safeFrameMax + (1 - SMOOTH_ALPHA) * currentMax,
-    MIN_RANGE_MAX
-  );
+  const targetMax = normalizeDynamicColorMax(Number.isFinite(value) ? value : MIN_RANGE_MAX);
+  const currentMax = dynamicColorRangeMap.get(key);
+  const nextMax = currentMax == null
+    ? targetMax
+    : normalizeDynamicColorMax(SMOOTH_ALPHA * targetMax + (1 - SMOOTH_ALPHA) * currentMax);
   dynamicColorRangeMap.set(key, nextMax);
   return nextMax;
 }
@@ -154,6 +161,10 @@ export function beginDynamicColorFrame(values = [], fallbackMax = 0, scope = DEF
     const value = Number(arr[i]);
     if (Number.isFinite(value) && value > frameMax) frameMax = value;
   }
+  const key = getDynamicColorScope(scope);
+  if (frameMax <= 0 && dynamicColorRangeMap.has(key)) {
+    return getScopedDynamicRangeMax(key);
+  }
   const fallback = Number(fallbackMax);
   return updateScopedFrameMax(frameMax > 0 ? frameMax : (Number.isFinite(fallback) ? fallback : 0), scope);
 }
@@ -182,7 +193,7 @@ export function resetPressureColorRange(scope) {
     dynamicColorRangeMap.clear();
     return;
   }
-  dynamicColorRangeMap.set(getDynamicColorScope(scope), MIN_RANGE_MAX);
+  dynamicColorRangeMap.delete(getDynamicColorScope(scope));
 }
 
 export function getPressureColorGradient() {
@@ -199,7 +210,7 @@ export function getPressureColorLegendTicks() {
   const tickCount = 6;
   return Array.from({ length: tickCount + 1 }, (_, index) => {
     const ratio = index / tickCount;
-    const value = Math.round(RANGE_MIN + ratio * (rangeMax - RANGE_MIN));
+    const value = Number((RANGE_MIN + ratio * (rangeMax - RANGE_MIN)).toFixed(2));
     return {
       adc: value,
       t: ratio,
@@ -219,7 +230,7 @@ function jetFromPalette(palette, min, max, x) {
   }
 
   if (dynamicGammaEnabled) {
-    const rangeMax = Math.max(Number(getScopedDynamicRangeMax(dynamicGammaScope)) || 0, RANGE_MIN + 1);
+    const rangeMax = Math.max(Number(getScopedDynamicRangeMax(dynamicGammaScope)) || 0, MIN_RANGE_MAX);
     let ratio = (value - RANGE_MIN) / (rangeMax - RANGE_MIN);
     ratio = Math.max(0, Math.min(1, ratio));
     ratio = Math.pow(ratio, GAMMA);

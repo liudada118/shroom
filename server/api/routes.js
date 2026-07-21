@@ -20,10 +20,11 @@ const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES }
 
 const router = express.Router()
 const historyIndexReady = new WeakSet()
-const VISUAL_COLOR_MAX = 255
+const VISUAL_COLOR_MAX = 60
+const VISUAL_COLOR_DEFAULT = 5
 const VISUAL_SETTING_DEFAULTS = {
   gauss: 2,
-  color: 120,
+  color: VISUAL_COLOR_DEFAULT,
   filter: 30,
   height: 80,
   autoColor: 1,
