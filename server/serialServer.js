@@ -37,9 +37,42 @@ const resourcesRoot = isPackaged
   ? (process.env.RESOURCES_PATH || (appPath ? path.resolve(appPath, '..') : path.resolve('resources')))
   : path.join(__dirname, '..')
 const serialCachePath = process.env.SERIAL_CACHE_PATH || path.join(resourcesRoot, 'serial_cache.json')
+const userDataRoot = process.env.USER_DATA_PATH || (isPackaged ? path.join(os.homedir(), 'Library', 'Application Support', 'SHROOM-SEAT') : path.join(__dirname, '..'))
 
 setCachePath(serialCachePath)
 console.log('[Server] Serial cache path:', serialCachePath)
+
+function shouldSkipSeedEntry(name, sourcePath) {
+  if (name === 'corrupt-backups') return true
+  if (name.endsWith('-wal') || name.endsWith('-shm')) return true
+  try {
+    return fs.lstatSync(sourcePath).isSymbolicLink()
+  } catch {
+    return true
+  }
+}
+
+function seedWritableDirectory(sourceDir, targetDir) {
+  if (!isPackaged || !fs.existsSync(sourceDir)) return
+  fs.mkdirSync(targetDir, { recursive: true })
+
+  for (const name of fs.readdirSync(sourceDir)) {
+    const sourcePath = path.join(sourceDir, name)
+    if (shouldSkipSeedEntry(name, sourcePath)) continue
+
+    const targetPath = path.join(targetDir, name)
+    const stat = fs.statSync(sourcePath)
+
+    if (stat.isDirectory()) {
+      seedWritableDirectory(sourcePath, targetPath)
+      continue
+    }
+
+    if (!fs.existsSync(targetPath)) {
+      fs.copyFileSync(sourcePath, targetPath)
+    }
+  }
+}
 
 // ─── 路径配置 ────────────────────────────────────────────
 let dbPath = path.join(__dirname, '..', 'db')
@@ -47,13 +80,12 @@ let csvPath = path.join(__dirname, '..', 'data')
 const configPath = path.join(__dirname, '..', 'config.txt')
 
 if (isPackaged) {
-  if (os.platform() === 'darwin') {
-    dbPath = path.join(__dirname, '../../db')
-    csvPath = path.join(__dirname, '../../data')
-  } else {
-    dbPath = path.join(resourcesRoot, 'db')
-    csvPath = path.join(resourcesRoot, 'data')
-  }
+  const seedDbPath = path.join(resourcesRoot, 'db')
+  const seedDataPath = path.join(resourcesRoot, 'data')
+  dbPath = path.join(userDataRoot, 'db')
+  csvPath = path.join(userDataRoot, 'data')
+  seedWritableDirectory(seedDbPath, dbPath)
+  seedWritableDirectory(seedDataPath, csvPath)
 }
 
 // ─── 配置文件读取 ─────────────────────────────────────────
