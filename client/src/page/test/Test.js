@@ -27,7 +27,6 @@ import { newRuler } from '../../components/ruler/newRuler'
 import { backYToX, calcCentroidRatio, colSelectMatrix, endiBackPressFn, endiSitPressFn, graCenter, kurtosis, mean, normalPDF, sitYToX, skewness, variance } from '../../util/util'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import NumThresContrast from '../../components/contrast/NumThresContrast'
-import { gaussianBlur1D, pressFN } from './util'
 import { isMoreMatrix } from '../../assets/util/util'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useMatrixData } from '../../hooks/useMatrixData'
@@ -95,12 +94,12 @@ function Test() {
     const {
         sitDataRef,
         disPlayDataRef,
+        renderedMetricDataRef,
         chartRef,
         dataDirection,
         setDataDirection,
         processSensorFrame,
         reprocessLastSensorFrame,
-        refreshDisplayWithCurrentSettings,
         clearMatrixData,
         changeDataDirection,
         changeWsLocalData,
@@ -279,12 +278,23 @@ function Test() {
                 data: { selectJson }
             }).then((res) => {
                 const data = res.data?.data || {}
-                const { areaArr, pressArr } = data
+                const {
+                    areaArr,
+                    pressArr,
+                    pressureArr,
+                    forceArr,
+                    pressureAreaArr,
+                    forceAreaArr,
+                } = data
                 if (areaArr || pressArr) {
                     const selectedKeys = new Set(Object.keys(selectJson))
                     useEquipStore.getState().setHistoryChart({
                         areaArr: filterSelectedHistoryChartKeys(areaArr || {}, selectedKeys),
                         pressArr: filterSelectedHistoryChartKeys(pressArr || {}, selectedKeys),
+                        pressureArr: filterSelectedHistoryChartKeys(pressureArr || {}, selectedKeys),
+                        forceArr: filterSelectedHistoryChartKeys(forceArr || pressArr || {}, selectedKeys),
+                        pressureAreaArr: filterSelectedHistoryChartKeys(pressureAreaArr || {}, selectedKeys),
+                        forceAreaArr: filterSelectedHistoryChartKeys(forceAreaArr || areaArr || {}, selectedKeys),
                         selection: {
                             active: true,
                             ranges: safeArr,
@@ -332,10 +342,18 @@ function Test() {
 
     const systemType = useEquipStore(s => s.systemType, shallow)
     const visualSettingValue = useEquipStore(s => s.settingValue, shallow)
-
     useEffect(() => {
-        refreshDisplayWithCurrentSettings(persistentDataRef.current)
-    }, [visualSettingValue.gauss, visualSettingValue.filter])
+        const processingConfig = {
+            filter: visualSettingValue.filter,
+            gauss: visualSettingValue.gauss,
+            coherent: visualSettingValue.coherent,
+        }
+        axios.post(`${localAddress}/setFrameProcessingConfig`, { processingConfig }).catch((err) => {
+            if (!useEquipStore.getState().collecting) {
+                console.warn('[FrameProcessing] Config sync failed:', err?.message || err)
+            }
+        })
+    }, [systemType, visualSettingValue.gauss, visualSettingValue.filter, visualSettingValue.coherent])
 
     useLayoutEffect(() => {
         const { setSystemType, setSystemTypeArr } = useEquipStore.getState()
@@ -374,22 +392,23 @@ function Test() {
 
     // ─── 3D 组件映射 ─────────────────────────────────────
     const threeComponentObj = {
-        bigHand: <Canvas ref={threeRef} sitnum1={64} sitnum2={64} />,
-        bed: <Bed sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} type={'bed'} ref={threeRef} sitnum1={32} sitnum2={32} />,
-        hand: <Canvas changeViewProp={handleChangeViewProp} ref={threeRef} sitnum1={32} sitnum2={32} positionInfo={[-40, 0, -60]} />,
-        foot: <Canvas ref={threeRef} sitnum1={32} sitnum2={32} positionInfo={[-40, 0, -60]} />,
+        bigHand: <Canvas metricData={renderedMetricDataRef} ref={threeRef} sitnum1={64} sitnum2={64} />,
+        bed: <Bed sitData={disPlayDataRef} metricData={renderedMetricDataRef} changeViewProp={handleChangeViewProp} type={'bed'} ref={threeRef} sitnum1={32} sitnum2={32} />,
+        hand: <Canvas metricData={renderedMetricDataRef} changeViewProp={handleChangeViewProp} ref={threeRef} sitnum1={32} sitnum2={32} positionInfo={[-40, 0, -60]} />,
+        foot: <Canvas metricData={renderedMetricDataRef} ref={threeRef} sitnum1={32} sitnum2={32} positionInfo={[-40, 0, -60]} />,
         car: <Endi
             sitData={disPlayDataRef}
+            metricData={renderedMetricDataRef}
             changeViewProp={handleChangeViewProp}
             ref={threeRef}
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 4, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
         />,
-        endi: <Endi1 key="endi" sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
+        endi: <Endi1 key="endi" sitData={disPlayDataRef} metricData={renderedMetricDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
             backConfig={{ sitnum1: 64, sitnum2: 50, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 46, sitnum2: 46, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
         />,
-        carY: <Endi1 key="carY" sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
+        carY: <Endi1 key="carY" sitData={disPlayDataRef} metricData={renderedMetricDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             backPointConfig={{ position: [2.5000, -11.0000, -1.0000], rotation: [-1.8326, 0.0000, 0.0000], scale: [0.0015, 0.0030, 0.0026], pointSize: 1.00 }}
@@ -453,7 +472,7 @@ function Test() {
                 {display === 'contrast' ?
                     <NumThresContrast sitData={disPlayDataRef} displayType={displayType} />
                     : display === 'num' ?
-                        <NumThres sitData={disPlayDataRef} displayType={displayType} />
+                        <NumThres sitData={disPlayDataRef} metricData={renderedMetricDataRef} displayType={displayType} />
                         : display === 'point3D' ? threeComponentObj[systemType] : num3DComponentObj[systemType]}
             </pageContext.Provider>
         </div>

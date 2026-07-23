@@ -1,6 +1,6 @@
 // Browser-safe mirror of server/kpa pressure formula files.
 // Keep estimatePressure/estimateMaxPressure constants synchronized with that file.
-const DEFAULT_PRESSURE_FORMULA_PROFILE = 'V2.8.1'
+const DEFAULT_PRESSURE_FORMULA_PROFILE = 'V2.7.38中英文logo'
 
 const SEAT_SEGS = [
   { lo: 92.78, hi: 129.75, a: 0.001170994, b: -0.1905968, c: 10.059837 },
@@ -36,7 +36,8 @@ const PRESSURE_FORMULA_PROFILES = {
   'V2.7.38中英文logo': {
     seat: {
       topCount: 70,
-      humanThreshold: 301,
+      humanThreshold: 300,
+      humanThresholdMode: 'gt',
       humanAlpha: 6.33442500e-04,
       segs: SEAT_SEGS,
       leftSlope: 2.6474807109609803e-02,
@@ -45,7 +46,8 @@ const PRESSURE_FORMULA_PROFILES = {
     },
     backrest: {
       topCount: 46,
-      humanThreshold: 301,
+      humanThreshold: 300,
+      humanThresholdMode: 'gt',
       humanAlpha: 6.33442500e-04,
       segs: BACK_SEGS,
       leftSlope: 1.9509221590333563e-02,
@@ -57,6 +59,7 @@ const PRESSURE_FORMULA_PROFILES = {
     seat: {
       topCount: 70,
       humanThreshold: 1128,
+      humanThresholdMode: 'gte',
       humanAlpha: 6.33355500e-04,
       segs: SEAT_SEGS,
       leftSlope: 2.64748071e-02,
@@ -66,6 +69,7 @@ const PRESSURE_FORMULA_PROFILES = {
     backrest: {
       topCount: 46,
       humanThreshold: 1000,
+      humanThresholdMode: 'gte',
       humanAlpha: 4.15552300e-04,
       segs: BACK_SEGS,
       leftSlope: 1.95092216e-02,
@@ -77,6 +81,8 @@ const PRESSURE_FORMULA_PROFILES = {
 
 PRESSURE_FORMULA_PROFILES['V2.7.37'] = PRESSURE_FORMULA_PROFILES['V2.7.38']
 PRESSURE_FORMULA_PROFILES['V2.8.1'] = PRESSURE_FORMULA_PROFILES['V2.7.38']
+
+const POINT_PRESSURE_FORMULA_PROFILES = new Set(['V2.8.1'])
 
 let activePressureFormulaProfile = DEFAULT_PRESSURE_FORMULA_PROFILE
 
@@ -133,13 +139,29 @@ export function computeScale(adcMax) {
   return SCALE_K * (Number.isFinite(numeric) ? numeric : 0) + SCALE_B
 }
 
+function usesHumanCalibrationAverage(meta, validCount) {
+  if (!meta) return false
+  return meta.humanThresholdMode === 'gt'
+    ? validCount > meta.humanThreshold
+    : validCount >= meta.humanThreshold
+}
+
 export function getPressurePointValuesKpa(arr, key, options = {}) {
   const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
+  const sensor = getPressureSensor(key) || 'seat'
+
+  if (!POINT_PRESSURE_FORMULA_PROFILES.has(activePressureFormulaProfile)) {
+    const validValues = values.filter((value) => value > MIN_ADC)
+    const adcAvg = getCalibrationAverage(validValues, sensor)
+    const averagePressure = estimatePressure(adcAvg, validValues.length, sensor) || 0
+    const pressureScale = adcAvg > 0 ? averagePressure / adcAvg : 0
+    return values.map((value) => (value > MIN_ADC ? value * pressureScale : 0))
+  }
+
   const adcMax = values.length ? Math.max(...values) : 0
   const scaleOverride = options.scaleOverride
   const scale = scaleOverride != null ? Number(scaleOverride) : computeScale(adcMax)
   const safeScale = Number.isFinite(scale) ? scale : computeScale(adcMax)
-  const sensor = getPressureSensor(key) || 'seat'
   return values.map((value) => {
     if (value <= MIN_ADC) return 0
     const base = master(value, sensor)
@@ -160,7 +182,7 @@ function calcFiveSegment(adc, meta) {
 export function estimatePressure(adcAvg, nValid, sensor) {
   const meta = getActiveSensorMeta(sensor)
   if (!meta || adcAvg <= 0) return null
-  if (nValid !== undefined && nValid >= meta.humanThreshold) {
+  if (nValid !== undefined && usesHumanCalibrationAverage(meta, nValid)) {
     return Number(Math.max(0, meta.humanAlpha * adcAvg * adcAvg).toFixed(2))
   }
   return Number((calcFiveSegment(adcAvg, meta) || 0).toFixed(2))
@@ -299,7 +321,7 @@ export function getPressureMetricDisplay(mode, t, language) {
 function getCalibrationAverage(positiveValues, sensor) {
   const meta = getActiveSensorMeta(sensor)
   if (!meta || !positiveValues.length) return 0
-  if (positiveValues.length >= meta.humanThreshold) {
+  if (usesHumanCalibrationAverage(meta, positiveValues.length)) {
     return positiveValues.reduce((sum, value) => sum + value, 0) / positiveValues.length
   }
   const topValues = [...positiveValues]

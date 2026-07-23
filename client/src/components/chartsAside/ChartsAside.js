@@ -16,7 +16,7 @@ import DraggablePanel from '../draggablePanel/DraggablePanel';
 import { formatSelectionName } from '../../util/selectionName';
 import { Button, Tooltip } from 'antd';
 import { SwapOutlined } from '@ant-design/icons';
-import { convertForceTotalToMetric, getPressureMetricDisplay } from '../../util/pressureMetrics';
+import { getPressureMetricDisplay } from '../../util/pressureMetrics';
 
 function ChartsAside(props) {
 
@@ -38,12 +38,19 @@ function ChartsAside(props) {
     const historyChartRef = useRef(historyChart)
     const pressureMetricModeRef = useRef(pressureMetricMode)
 
-    const resolveMatrixKey = (key) => {
-        const systemType = getSysType()
-        return String(key).includes('-') ? key : `${systemType}-${key}`
-    }
-
     const getMetricTrendField = () => getPressureMetricDisplay(pressureMetricModeRef.current).trendField
+    const getMetricAreaTrendField = () => `${getPressureMetricDisplay(pressureMetricModeRef.current).valuePrefix}AreaArr`
+    const getHistoryMetricMap = (historyData) => {
+        const field = `${getPressureMetricDisplay(pressureMetricModeRef.current).valuePrefix}Arr`
+        return historyData?.[field] || historyData?.pressArr || {}
+    }
+    const getHistoryAreaMap = (historyData) => {
+        const field = getMetricAreaTrendField()
+        return historyData?.[field] || historyData?.areaArr || {}
+    }
+    const getNormalDistributionForMode = (normalDis) => (
+        normalDis?.byMode?.[pressureMetricModeRef.current] || normalDis
+    )
     const roundMetricValue = (value, digits = 1) => {
         const numeric = Number(value)
         return Number.isFinite(numeric) ? Number(numeric.toFixed(digits)) : 0
@@ -69,6 +76,8 @@ function ChartsAside(props) {
     useEffect(() => {
         pressureMetricModeRef.current = pressureMetricMode
         renderCharts1()
+        renderCharts2()
+        renderNormal()
         setData((current) => ({ ...current, t: Date.now() }))
     }, [pressureMetricMode])
 
@@ -89,7 +98,7 @@ function ChartsAside(props) {
         const series = []
         const keyArr = Object.keys(dataMap)
         const colorMap = type === 'press' ? pressColorArr : areaColorArr
-        const dataField = type === 'press' ? getMetricTrendField() : 'areaArr'
+        const dataField = type === 'press' ? getMetricTrendField() : getMetricAreaTrendField()
         const onlyBoxStats = !isHistory && useBoxStats && getBoxStats(props.chartData.current).length > 0
 
         for (let i = 0; i < keyArr.length; i++) {
@@ -97,9 +106,7 @@ function ChartsAside(props) {
             const chartData = props.chartData.current
             const deviceData = chartData[key]
             const rawHistoryLine = isHistory && Array.isArray(dataMap[key]) ? dataMap[key] : null
-            const historyLine = rawHistoryLine && type === 'press'
-                ? rawHistoryLine.map((value) => convertForceTotalToMetric(value, resolveMatrixKey(key), pressureMetricModeRef.current))
-                : rawHistoryLine
+            const historyLine = rawHistoryLine
             if (!deviceData && !historyLine) continue
 
             // 检查是否有多框选统计
@@ -287,7 +294,7 @@ function ChartsAside(props) {
 
     function renderCharts1() {
         const historyData = historyChartRef.current
-        const pressArrRaw = historyData && historyData.pressArr
+        const pressArrRaw = getHistoryMetricMap(historyData)
         const pressArr = Array.isArray(pressArrRaw) ? { back: pressArrRaw } : pressArrRaw
         const hasCurrentBoxStats = getBoxStats(props.chartData.current).length > 0
         const useHistory = pressArr && Object.keys(pressArr).length && !hasCurrentBoxStats
@@ -306,9 +313,7 @@ function ChartsAside(props) {
                 const key = keyArr[i]
                 if (useHistory) {
                     areaObj[key] = chartData[key]
-                    allArr = allArr.concat(chartData[key].map((value) => (
-                        convertForceTotalToMetric(value, resolveMatrixKey(key), pressureMetricModeRef.current)
-                    )))
+                    allArr = allArr.concat(chartData[key])
                 } else {
                     const metricField = getMetricTrendField()
                     areaObj[key] = chartData[key][metricField] || chartData[key].pressArr
@@ -327,7 +332,7 @@ function ChartsAside(props) {
 
     function renderCharts2() {
         const historyData = historyChartRef.current
-        const areaArrRaw = historyData && historyData.areaArr
+        const areaArrRaw = getHistoryAreaMap(historyData)
         const areaArr = Array.isArray(areaArrRaw) ? { back: areaArrRaw } : areaArrRaw
         const hasCurrentBoxStats = getBoxStats(props.chartData.current).length > 0
         const useHistory = areaArr && Object.keys(areaArr).length && !hasCurrentBoxStats
@@ -348,12 +353,13 @@ function ChartsAside(props) {
                     areaObj[key] = chartData[key]
                     allArr = allArr.concat(chartData[key])
                 } else {
-                    areaObj[key] = chartData[key].areaArr
-                    const boxValues = getBoxChartValues({ [key]: chartData[key] }, 'areaArr')
+                    const areaField = getMetricAreaTrendField()
+                    areaObj[key] = chartData[key][areaField] || chartData[key].areaArr
+                    const boxValues = getBoxChartValues({ [key]: chartData[key] }, areaField)
                     if (boxValues.length) {
                         allArr = allArr.concat(boxValues)
                     } else if (!onlyBoxStats) {
-                        allArr = allArr.concat(chartData[key].areaArr)
+                        allArr = allArr.concat(chartData[key][areaField] || chartData[key].areaArr)
                     }
                 }
             }
@@ -402,22 +408,30 @@ function ChartsAside(props) {
             chart.current.clear()
             return
         }
-        const xData = Array.from({ length: 256 }, (_, i) => i);
-
-        let series = [], Xmax = 0
-        const boxStats = getBoxStats(chartData).filter((box) => Array.isArray(box.normalDis?.yData))
+        const legacyXData = Array.from({ length: 256 }, (_, index) => index)
+        let series = []
+        let axisMax = 0
+        const boxStats = getBoxStats(chartData)
+            .map((box) => ({ ...box, normalDis: getNormalDistributionForMode(box.normalDis) }))
+            .filter((box) => Array.isArray(box.normalDis?.yData))
         const seriesSource = boxStats.length
             ? boxStats
             : keys.map((key, idx) => ({
                 key,
-                normalDis: chartData[key].normalDis,
+                normalDis: getNormalDistributionForMode(chartData[key].normalDis),
                 bgc: getDeviceChartColor(key, pressColorArr, idx),
             }))
 
         for (let i = 0; i < seriesSource.length; i++) {
             const item = seriesSource[i]
             const color = item.bgc || SELECT_COLORS[item.colorIndex] || Object.values(pressColorArr)[i]
-            const xDataRes = xData.map((x, idx) => [x, item.normalDis?.yData?.[idx] || 0])
+            const distributionXData = Array.isArray(item.normalDis?.xData)
+                ? item.normalDis.xData
+                : legacyXData
+            const distributionYData = Array.isArray(item.normalDis?.yData)
+                ? item.normalDis.yData
+                : []
+            const xDataRes = distributionXData.map((x, idx) => [x, distributionYData[idx] || 0])
             series.push({
                 symbol: 'none',
                 data: xDataRes,
@@ -427,12 +441,19 @@ function ChartsAside(props) {
                 color: color,
                 lineStyle: { width: 2 },
             })
-            Xmax = Math.max(Xmax, ...xDataRes.map((a) => a[1]))
+            axisMax = Math.max(axisMax, Number(item.normalDis?.max) || 0, ...distributionXData)
         }
 
-        const pressureValueLabel = props.t('pressureValue') || '压力值'
+        const metricDisplay = getPressureMetricDisplay(
+            pressureMetricModeRef.current,
+            props.t,
+            props.i18n?.language,
+        )
+        const metricValueLabel = metricDisplay.name || props.t('pressureValue') || 'Pressure'
+        const metricAxisLabel = `${metricValueLabel}(${metricDisplay.unit})`
         const probabilityDensityLabel = props.t('probabilityDensity') || '概率密度'
         chart.current.setOption({
+            animation: false,
             grid: { left: 42, right: 36, top: 30, bottom: 34, containLabel: false },
             title: { left: 'center' },
             graphic: [
@@ -455,7 +476,7 @@ function ChartsAside(props) {
                     bottom: 0,
                     silent: true,
                     style: {
-                        text: `${pressureValueLabel}(ADC)`,
+                        text: metricAxisLabel,
                         fill: '#AEB8C4',
                         fontSize: 10,
                         fontWeight: 500,
@@ -467,14 +488,19 @@ function ChartsAside(props) {
                 trigger: 'axis',
                 formatter: p => {
                     const { value } = p[0];
-                    return `${pressureValueLabel}(ADC)：${value[0]}<br/>${probabilityDensityLabel}(%)：${(value[1] * 100).toFixed(2)}`;
+                    return `${metricAxisLabel}：${Number(value[0]).toFixed(1)}<br/>${probabilityDensityLabel}(%)：${(value[1] * 100).toFixed(2)}`;
                 }
             },
             xAxis: {
-                type: 'value', min: 0, max: 255,
+                type: 'value', min: 0, max: axisMax > 0 ? axisMax : 1,
                 name: '', splitNumber: 5,
                 axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
-                axisLabel: { color: '#AEB8C4', fontSize: 9, margin: 6 },
+                axisLabel: {
+                    color: '#AEB8C4',
+                    fontSize: 9,
+                    margin: 6,
+                    formatter: (value) => Number(value).toFixed(axisMax <= 20 ? 1 : 0),
+                },
                 axisTick: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
                 splitLine: { show: false }
             },
@@ -517,6 +543,8 @@ function ChartsAside(props) {
         const offUI = Scheduler.onUI(() => setData(() => {
             const system = getSysType()
             const chartData = props.chartData.current
+            const currentMetricPrefix = getPressureMetricDisplay(pressureMetricModeRef.current).valuePrefix
+            const currentPointField = `${currentMetricPrefix}PointTotal`
 
             const select = getSelectArr()
             const displayType = getDisplayType()
@@ -535,8 +563,8 @@ function ChartsAside(props) {
                         if (!sysConfig || !sysConfig[key]) continue
                         const widthDistance = sysConfig[key].pointWidthDistance || 1
                         const heightDistance = sysConfig[key].pointHeightDistance || 1
-                        dataObj[key].pointTotal = chartData[key].data.areaTotal
-                        const preciseAreaTotal = chartData[key].data.areaTotal * widthDistance * heightDistance / 100
+                        dataObj[key].pointTotal = chartData[key].data[currentPointField] ?? chartData[key].data.areaTotal
+                        const preciseAreaTotal = dataObj[key].pointTotal * widthDistance * heightDistance / 100
                         dataObj[key].areaTotal = Math.round(preciseAreaTotal)
                         dataObj[key].pressAver = formatMetricValue(chartData[key].data.pressAver)
                         dataObj[key].pressMax = chartData[key].data.pressMax
@@ -549,10 +577,11 @@ function ChartsAside(props) {
                         dataObj[key].forceMax = formatMetricValue(chartData[key].data.forceMax)
                         dataObj[key].forceTotal = formatMetricValue(chartData[key].data.pressTotal)
 
-                        dataObj[key].μ = chartData[key].normalDis.μ
-                        dataObj[key].Var = chartData[key].normalDis.Var
-                        dataObj[key].Skew = chartData[key].normalDis.Skew
-                        dataObj[key].Kurt = chartData[key].normalDis.Kurt
+                        const activeNormalDis = getNormalDistributionForMode(chartData[key].normalDis)
+                        dataObj[key].μ = activeNormalDis?.μ
+                        dataObj[key].Var = activeNormalDis?.Var
+                        dataObj[key].Skew = activeNormalDis?.Skew
+                        dataObj[key].Kurt = activeNormalDis?.Kurt
 
                         dataObj[key].pressureCenter = Object.values(chartData[key].center)
 
@@ -561,12 +590,14 @@ function ChartsAside(props) {
                             dataObj[key].boxStats = chartData[key].boxStats.map((box, idx) => {
                                 const bWidthDistance = widthDistance
                                 const bHeightDistance = heightDistance
-                                const bPreciseArea = (box.data.areaTotal || 0) * bWidthDistance * bHeightDistance / 100
+                                const boxPointTotal = box.data[currentPointField] ?? box.data.areaTotal ?? 0
+                                const bPreciseArea = boxPointTotal * bWidthDistance * bHeightDistance / 100
+                                const activeBoxNormalDis = getNormalDistributionForMode(box.normalDis)
                                 return {
                                     colorIndex: box.colorIndex,
                                     bgc: box.bgc,
                                     name: formatSelectionName(box.name, idx + 1, props.t),
-                                    pointTotal: box.data.areaTotal || 0,
+                                    pointTotal: boxPointTotal,
                                     areaTotal: Math.round(bPreciseArea),
                                     pressAver: formatMetricValue(box.data.pressAver),
                                     pressMax: box.data.pressMax || 0,
@@ -579,11 +610,11 @@ function ChartsAside(props) {
                                     forceMax: formatMetricValue(box.data.forceMax),
                                     forceTotal: formatMetricValue(box.data.pressTotal),
                                     pressureCenter: getCenterValues(box.center) || ['-', '-'],
-                                    normalDis: box.normalDis,
-                                    μ: box.normalDis?.['\u03bc'],
-                                    Var: box.normalDis?.Var,
-                                    Skew: box.normalDis?.Skew,
-                                    Kurt: box.normalDis?.Kurt,
+                                    normalDis: activeBoxNormalDis,
+                                    μ: activeBoxNormalDis?.['\u03bc'],
+                                    Var: activeBoxNormalDis?.Var,
+                                    Skew: activeBoxNormalDis?.Skew,
+                                    Kurt: activeBoxNormalDis?.Kurt,
                                 }
                             })
                         } else {
@@ -630,6 +661,9 @@ function ChartsAside(props) {
     const hasSelectionStats = hasBoxStats()
     const metricDisplay = getPressureMetricDisplay(pressureMetricMode, t, i18n.language)
     const metricPrefix = metricDisplay.valuePrefix
+    const normalDistTitle = String(i18n.language || '').toLowerCase().startsWith('en')
+        ? `${metricDisplay.name} Normal Distribution`
+        : `${metricDisplay.name}正态分布图`
 
     const getMetricValue = (source, item) => {
         if (item === 'total') return source?.forceTotal
@@ -808,7 +842,7 @@ function ChartsAside(props) {
                 </div>
             </DraggablePanel>
 
-            <DraggablePanel title={t('pressureCenterCurve') + ' / ' + t('pressureNormalDist')} defaultPosition={{ right: 20, y: 80 }}>
+            <DraggablePanel title={t('pressureCenterCurve') + ' / ' + normalDistTitle} defaultPosition={{ right: 20, y: 80 }}>
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{t('pressureCenterCurve')}</div>
@@ -827,7 +861,7 @@ function ChartsAside(props) {
 
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
-                        <div className="chartName">{t('pressureNormalDist')}</div>
+                        <div className="chartName">{normalDistTitle}</div>
                         <div className="chartType">{renderLegend(areaColorArr)}</div>
                     </div>
                     <div className="normalChartWrap">

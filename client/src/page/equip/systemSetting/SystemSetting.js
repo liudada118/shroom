@@ -13,7 +13,7 @@ import axios from 'axios';
 import { localAddress } from '../../../util/constant';
 import { useTranslation } from 'react-i18next';
 import { buildFallbackParams } from '../../../util/request';
-import { loadPressureRuntimeConfig } from '../../../util/pressureConfig';
+import { getPressureFormulaProfileFromFile, loadPressureRuntimeConfig } from '../../../util/pressureConfig';
 import {
     VISUAL_COLOR_SETTING_DEFAULT,
     VISUAL_COLOR_SETTING_MAX,
@@ -94,18 +94,8 @@ const fallbackConfig = {
 const fallbackPressureConfig = {
     backValueMultiplier: 1,
     pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
-    pressureFormulaProfile: 'V2.8.1',
+    pressureFormulaProfile: 'V2.7.38中英文logo',
 };
-
-function getPressureFormulaProfileFromFile(fileName) {
-    const profile = String(fileName || '')
-        .split(/[\\/]/)
-        .pop()
-        .replace(/^pressureFormula_?/i, '')
-        .replace(/\.js$/i, '')
-        .trim();
-    return profile || fallbackPressureConfig.pressureFormulaProfile;
-}
 
 const CheckboxGroup = Checkbox.Group;
 
@@ -186,6 +176,7 @@ export default function SystemSetting() {
                     ...fallbackPressureConfig,
                     ...(data.config || {}),
                 };
+                nextPressureConfig.pressureFormulaProfile = getPressureFormulaProfileFromFile(nextPressureConfig.pressureFormulaFile);
                 setPressureConfig(nextPressureConfig);
                 setPressureFormulaFiles(
                     Array.from(new Set([
@@ -226,7 +217,7 @@ export default function SystemSetting() {
         const payload = {
             ...pressureConfig,
             backValueMultiplier: Number(pressureConfig.backValueMultiplier),
-            pressureFormulaProfile: String(pressureConfig.pressureFormulaProfile || '').trim() || getPressureFormulaProfileFromFile(pressureConfig.pressureFormulaFile),
+            pressureFormulaProfile: getPressureFormulaProfileFromFile(pressureConfig.pressureFormulaFile),
         };
         try {
             const res = await axios({
@@ -243,6 +234,7 @@ export default function SystemSetting() {
                 ...fallbackPressureConfig,
                 ...(data.config || payload),
             };
+            nextPressureConfig.pressureFormulaProfile = getPressureFormulaProfileFromFile(nextPressureConfig.pressureFormulaFile);
             setPressureConfig(nextPressureConfig);
             setPressureFormulaFiles(
                 Array.from(new Set([
@@ -502,7 +494,7 @@ export default function SystemSetting() {
                             <Input
                                 value={pressureConfig.pressureFormulaProfile}
                                 style={{ width: 220 }}
-                                onChange={(event) => handlePressureConfigChange('pressureFormulaProfile', event.target.value)}
+                                readOnly
                             />
                         </div>
                         <div className="setting-row">

@@ -7,7 +7,10 @@ const os = require('os');
 const path = require('path');
 const { timeStampTo_Date } = require("./time");
 const constantObj = require("./config");
-const { loadPressureConfig, loadPressureFormula } = require("../server/services/PressureConfig");
+const {
+  PROCESSING_VERSION,
+  ensureProcessedMatrixItem,
+} = require('./pressureFrameProcessor');
 
 // ─── 传感器点位配置 ──────────────────────────────────────
 const pointConfig = {
@@ -72,124 +75,75 @@ function colArrData(arr) {
   return { press, area, max, min, aver, maxIndex }
 }
 
-function getPressureSensor(key) {
-  const value = String(key || '').toLowerCase()
-  if (value.includes('back')) return 'backrest'
-  if (value.includes('sit') || value.includes('seat')) return 'seat'
-  return ''
-}
-
-function getPressureCalibrationMeta(sensor) {
-  const config = loadPressureConfig()
-  const profileText = `${config.pressureFormulaProfile || ''} ${config.pressureFormulaFile || ''}`.toLowerCase()
-  const isLogoProfile = profileText.includes('logo')
-  if (sensor === 'backrest') {
-    return isLogoProfile
-      ? { topCount: 46, humanThreshold: 300, humanThresholdMode: 'gt' }
-      : { topCount: 46, humanThreshold: 1000, humanThresholdMode: 'gte' }
-  }
-  if (sensor === 'seat') {
-    return isLogoProfile
-      ? { topCount: 70, humanThreshold: 300, humanThresholdMode: 'gt' }
-      : { topCount: 70, humanThreshold: 1128, humanThresholdMode: 'gte' }
-  }
-  return null
-}
-
-function getCalibrationAverage(positiveValues, sensor) {
-  const meta = getPressureCalibrationMeta(sensor)
-  if (!meta || !positiveValues.length) return 0
-  const useHumanAverage = meta.humanThresholdMode === 'gt'
-    ? positiveValues.length > meta.humanThreshold
-    : positiveValues.length >= meta.humanThreshold
-  if (useHumanAverage) {
-    return positiveValues.reduce((sum, value) => sum + value, 0) / positiveValues.length
-  }
-  const topValues = [...positiveValues]
-    .sort((left, right) => right - left)
-    .slice(0, Math.min(meta.topCount, positiveValues.length))
-  return topValues.reduce((sum, value) => sum + value, 0) / topValues.length
-}
-
-function calcPointFormulaPressureValues(values, key, formula) {
-  const sensor = getPressureSensor(key) || 'seat'
-  const minAdc = Number.isFinite(Number(formula.MIN_ADC)) ? Number(formula.MIN_ADC) : 30
-  const adcMax = values.length ? Math.max(...values) : 0
-  const scale = typeof formula.computeScale === 'function'
-    ? formula.computeScale(adcMax)
-    : 1
-  const safeScale = Number.isFinite(Number(scale)) ? Number(scale) : 1
-  return values.map((value) => {
-    if (value <= minAdc) return 0
-    const base = formula.master(value, sensor)
-    return base == null ? 0 : safeScale * base
+function normalizeMetricValues(values, length) {
+  return Array.from({ length }, (_, index) => {
+    const value = Number(values?.[index])
+    return Number.isFinite(value) && value > 0 ? value : 0
   })
 }
 
-function calcPressureFormulaStats(arr, key, pointAreaCm2) {
-  const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
-  const formula = loadPressureFormula()
-  const rawPress = values.reduce((sum, value) => sum + value, 0)
-  const rawMax = values.length ? Math.max(...values) : 0
-  const pointArea = Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1
+function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1) {
+  const processedItem = ensureProcessedMatrixItem(key, item)
+  const length = Array.isArray(processedItem.arr) ? processedItem.arr.length : 0
+  const pressureValues = normalizeMetricValues(processedItem.pressureArr, length)
+  const forceValues = normalizeMetricValues(processedItem.forceArr, length)
+  let pressureActiveCount = 0
+  let forceActiveCount = 0
+  let pressureTotal = 0
+  let forceTotal = 0
+  let pressureMax = 0
+  let forceMax = 0
+  let pressureMaxIndex = ''
+  let forceMaxIndex = ''
+  let pressureMin = 0
 
-  if (typeof formula.master === 'function') {
-    const pressureValues = calcPointFormulaPressureValues(values, key, formula)
-    const activePressureValues = pressureValues.filter((value) => Number.isFinite(value) && value > 0)
-    const activeCount = activePressureValues.length
-    const effectiveArea = activeCount * pointArea
-    const rawActiveValues = values.filter((value) => Number.isFinite(value) && value > (Number(formula.MIN_ADC) || 30))
-    const rawAvg = rawActiveValues.length ? rawActiveValues.reduce((sum, value) => sum + value, 0) / rawActiveValues.length : 0
-    const pressureTotal = pressureValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
-    const forceValues = pressureValues.map((value) => value * pointArea * 0.1)
-    const total = forceValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
-    return {
-      max: activePressureValues.length ? Math.max(...activePressureValues) : 0,
-      aver: activeCount ? pressureTotal / activeCount : 0,
-      total,
-      pressureTotal,
-      pressureValues,
-      forceValues,
-      effectiveArea,
-      activeCount,
-      rawAvg,
-      adcAvg: rawAvg,
-      rawMax,
+  for (let index = 0; index < length; index++) {
+    const pressure = pressureValues[index]
+    const force = forceValues[index]
+    pressureTotal += pressure
+    forceTotal += force
+    if (pressure > 0) pressureActiveCount++
+    if (force > 0) forceActiveCount++
+    if (pressure > pressureMax) {
+      pressureMax = pressure
+      pressureMaxIndex = index
     }
+    if (force > forceMax) {
+      forceMax = force
+      forceMaxIndex = index
+    }
+    if (pressure > 0 && (pressureMin === 0 || pressure < pressureMin)) pressureMin = pressure
   }
 
-  const positiveValues = values.filter((value) => Number.isFinite(value) && value > 0)
-  const activeCount = positiveValues.length
-  const rawAvg = activeCount ? rawPress / activeCount : 0
-  const effectiveArea = activeCount * pointArea
-  const sensor = getPressureSensor(key)
-  const toNewton = (kpa) => kpa * 1000 * effectiveArea / 10000
-
-  if (!sensor || !activeCount) {
-    return {
-      max: rawMax,
-      aver: rawAvg,
-      total: toNewton(rawAvg),
-      effectiveArea,
-      activeCount,
-      rawAvg,
-      adcAvg: rawAvg,
-    }
-  }
-
-  const adcAvg = getCalibrationAverage(positiveValues, sensor)
-  const { estimatePressure, estimateMaxPressure } = formula
-  const aver = estimatePressure(adcAvg, activeCount, sensor) || 0
-  const max = estimateMaxPressure(rawMax, activeCount, sensor, adcAvg) || 0
   return {
-    max,
-    aver,
-    total: toNewton(aver),
-    effectiveArea,
-    activeCount,
-    rawAvg,
-    adcAvg,
+    processedItem,
+    pressureValues,
+    forceValues,
+    pressureTotal,
+    forceTotal,
+    pressureMax,
+    forceMax,
+    pressureMaxIndex,
+    forceMaxIndex,
+    pressureMin,
+    pressureAverage: pressureActiveCount ? pressureTotal / pressureActiveCount : 0,
+    forceAverage: forceActiveCount ? forceTotal / forceActiveCount : 0,
+    pressureActiveCount,
+    forceActiveCount,
+    activeCount: forceActiveCount,
+    pressureEffectiveArea: pressureActiveCount * (Number(pointAreaCm2) || 1),
+    forceEffectiveArea: forceActiveCount * (Number(pointAreaCm2) || 1),
+    effectiveArea: forceActiveCount * (Number(pointAreaCm2) || 1),
   }
+}
+
+function getMetricStatsFromValues(pressureValues, forceValues, pointAreaCm2 = 1) {
+  return getCanonicalMetricStats('__selection__', {
+    arr: new Array(Math.max(pressureValues.length, forceValues.length)).fill(0),
+    pressureArr: pressureValues,
+    forceArr: forceValues,
+    processing: { version: PROCESSING_VERSION },
+  }, pointAreaCm2)
 }
 
 function normalizePressureMetricMode(mode) {
@@ -198,40 +152,40 @@ function normalizePressureMetricMode(mode) {
 
 function getExportMetricStats(stats, metricMode, pointAreaCm2) {
   const mode = normalizePressureMetricMode(metricMode)
-  const area = Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1
   if (mode === 'pressure') {
     return {
-      max: Number(stats.max) || 0,
-      aver: Number(stats.aver) || 0,
-      total: Number(stats.total) || 0,
+      max: Number(stats.pressureMax) || 0,
+      aver: Number(stats.pressureAverage) || 0,
+      total: Number(stats.forceTotal) || 0,
     }
   }
   return {
-    max: (Number(stats.max) || 0) * area * 0.1,
-    aver: (Number(stats.aver) || 0) * area * 0.1,
-    total: Number(stats.total) || 0,
+    max: Number(stats.forceMax) || 0,
+    aver: Number(stats.forceAverage) || 0,
+    total: Number(stats.forceTotal) || 0,
   }
 }
 
-function getExportMetricPointValues(arr, stats, metricMode, pointAreaCm2) {
-  if (Array.isArray(stats?.pressureValues)) {
-    const forceScale = (Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1) * 0.1
-    const sourceValues = normalizePressureMetricMode(metricMode) === 'pressure'
-      ? stats.pressureValues
-      : stats.pressureValues.map((value) => (Number(value) || 0) * forceScale)
-    return sourceValues.map((value) => Number((Number(value) || 0).toFixed(2)))
+function getExportMetricActiveStats(stats, metricMode) {
+  if (normalizePressureMetricMode(metricMode) === 'pressure') {
+    return {
+      count: Number(stats.pressureActiveCount) || 0,
+      area: Number(stats.pressureEffectiveArea) || 0,
+      maxIndex: stats.pressureMaxIndex,
+    }
   }
-  const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
-  const calibrationAverage = Number(stats.adcAvg || stats.rawAvg) || 0
-  const pressureScale = calibrationAverage > 0 ? (Number(stats.aver) || 0) / calibrationAverage : 0
-  const forceScale = (Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1) * 0.1
-  return values.map((value) => {
-    const pressureValue = value > 0 ? value * pressureScale : 0
-    const metricValue = normalizePressureMetricMode(metricMode) === 'pressure'
-      ? pressureValue
-      : pressureValue * forceScale
-    return Number(metricValue.toFixed(2))
-  })
+  return {
+    count: Number(stats.forceActiveCount) || 0,
+    area: Number(stats.forceEffectiveArea) || 0,
+    maxIndex: stats.forceMaxIndex,
+  }
+}
+
+function getExportMetricPointValues(stats, metricMode) {
+  const sourceValues = normalizePressureMetricMode(metricMode) === 'pressure'
+    ? stats.pressureValues
+    : stats.forceValues
+  return sourceValues.map((value) => Number((Number(value) || 0).toFixed(1)))
 }
 
 function isAllDigits(str) {
@@ -647,7 +601,16 @@ async function dbGetData({ db, params }) {
   const rows = await dbAll(db, "SELECT * FROM matrix WHERE date=?", params)
 
   if (!rows.length) {
-    return { length: 0, pressArr: {}, areaArr: {}, rows: [] }
+    return {
+      length: 0,
+      pressArr: {},
+      areaArr: {},
+      pressureArr: {},
+      forceArr: {},
+      pressureAreaArr: {},
+      forceAreaArr: {},
+      rows: [],
+    }
   }
 
   const length = rows.length
@@ -658,17 +621,24 @@ async function dbGetData({ db, params }) {
   // [PERF-PLAYBACK-OPT] bucket 大小：当帧数 ≤ 500 时不降采样（bucket=1）；否则按比例聚合
   const bucketSize = Math.max(1, Math.ceil(length / PLAYBACK_CHART_TARGET_POINTS))
 
-  const pressValue = {}
-  const areaValue = {}
-  // bucket 累加器
-  const pressBucket = {}
-  const areaBucket = {}
+  const pressureValue = {}
+  const forceValue = {}
+  const pressureAreaValue = {}
+  const forceAreaValue = {}
+  const pressureBucket = {}
+  const forceBucket = {}
+  const pressureAreaBucket = {}
+  const forceAreaBucket = {}
   const bucketCount = {}
   keyArr.forEach((key) => {
-    pressValue[key] = []
-    areaValue[key] = []
-    pressBucket[key] = 0
-    areaBucket[key] = 0
+    pressureValue[key] = []
+    forceValue[key] = []
+    pressureAreaValue[key] = []
+    forceAreaValue[key] = []
+    pressureBucket[key] = 0
+    forceBucket[key] = 0
+    pressureAreaBucket[key] = 0
+    forceAreaBucket[key] = 0
     bucketCount[key] = 0
   })
 
@@ -679,24 +649,29 @@ async function dbGetData({ db, params }) {
     for (const key of keyArr) {
       const item = dataObj[key]
       if (!item || !item.arr) continue
-      const arr = item.arr
-      const press = arr.reduce((a, b) => a + b, 0)
-      const normalizedPress = (key === 'carY-back' || key === 'carY-sit')
-        ? press / (100 / 3)
-        : press
-      const area = arr.filter((a) => a > 0).length
+      const pointInfo = pointConfig[key]
+      const pointAreaCm2 = pointInfo
+        ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance / 100
+        : 1
+      const metricStats = getCanonicalMetricStats(key, item, pointAreaCm2)
 
       // [PERF-PLAYBACK-OPT] 累加到当前 bucket
-      pressBucket[key] += normalizedPress
-      areaBucket[key] += area
+      pressureBucket[key] += metricStats.pressureTotal
+      forceBucket[key] += metricStats.forceTotal
+      pressureAreaBucket[key] += metricStats.pressureActiveCount
+      forceAreaBucket[key] += metricStats.forceActiveCount
       bucketCount[key]++
 
       // bucket 满了，写出平均值
       if (bucketCount[key] >= bucketSize) {
-        pressValue[key].push(pressBucket[key] / bucketCount[key])
-        areaValue[key].push(areaBucket[key] / bucketCount[key])
-        pressBucket[key] = 0
-        areaBucket[key] = 0
+        pressureValue[key].push(pressureBucket[key] / bucketCount[key])
+        forceValue[key].push(forceBucket[key] / bucketCount[key])
+        pressureAreaValue[key].push(pressureAreaBucket[key] / bucketCount[key])
+        forceAreaValue[key].push(forceAreaBucket[key] / bucketCount[key])
+        pressureBucket[key] = 0
+        forceBucket[key] = 0
+        pressureAreaBucket[key] = 0
+        forceAreaBucket[key] = 0
         bucketCount[key] = 0
       }
     }
@@ -705,12 +680,23 @@ async function dbGetData({ db, params }) {
   // [PERF-PLAYBACK-OPT] flush 剩余不满一个 bucket 的尾部
   for (const key of keyArr) {
     if (bucketCount[key] > 0) {
-      pressValue[key].push(pressBucket[key] / bucketCount[key])
-      areaValue[key].push(areaBucket[key] / bucketCount[key])
+      pressureValue[key].push(pressureBucket[key] / bucketCount[key])
+      forceValue[key].push(forceBucket[key] / bucketCount[key])
+      pressureAreaValue[key].push(pressureAreaBucket[key] / bucketCount[key])
+      forceAreaValue[key].push(forceAreaBucket[key] / bucketCount[key])
     }
   }
 
-  return { length, pressArr: pressValue, areaArr: areaValue, rows }
+  return {
+    length,
+    pressArr: forceValue,
+    areaArr: forceAreaValue,
+    pressureArr: pressureValue,
+    forceArr: forceValue,
+    pressureAreaArr: pressureAreaValue,
+    forceAreaArr: forceAreaValue,
+    rows,
+  }
 }
 // ─── [PERF-PLAYBACK-OPT] 结束 ──────────────────────────────────
 
@@ -995,8 +981,8 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         const frameEntry = {
           timestamp: rows[i].timestamp,
           elapsed_seconds: Number.isFinite(elapsedMs)
-            ? Math.max(0, elapsedMs / 1000).toFixed(2)
-            : (i / detectedHz).toFixed(2),
+            ? Math.max(0, elapsedMs / 1000).toFixed(3)
+            : (i / detectedHz).toFixed(3),
           back_device_mac: '',
           sit_device_mac: '',
           remark: remarkText,
@@ -1007,8 +993,21 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const key = keyArr[j]
           const item = rowData[key]
           if (!item) continue
-          const data = item.arr
-          if (!data) continue
+          if (!Array.isArray(item.arr)) continue
+
+          const pointInfo = pointConfig[key]
+          const pointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : null
+          const pointAreaCm2 = pointInfo ? pointArea / 100 : 1
+          const canonicalStats = getCanonicalMetricStats(key, item, pointAreaCm2)
+          const processedItem = canonicalStats.processedItem
+          const data = processedItem.arr
+          const pressureStats = {
+            ...canonicalStats,
+            max: canonicalStats.pressureMax,
+            aver: canonicalStats.pressureAverage,
+            total: canonicalStats.forceTotal,
+          }
+          const canonicalActiveStats = getExportMetricActiveStats(canonicalStats, metricMode)
 
           const rowEntry = {}
           rowEntry.time = timeStampTo_Date(rows[i].timestamp)
@@ -1018,25 +1017,36 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const selectionRegions = getExportSelectionRegions(selectOverride, key, data, item)
           const obj = selectionRegions[0] || null
           const selectArr = obj ? sliceSelectionData(data, obj) : []
+          const selectPressureValues = obj ? sliceSelectionData(canonicalStats.pressureValues, obj) : []
+          const selectForceValues = obj ? sliceSelectionData(canonicalStats.forceValues, obj) : []
+          const selectCanonicalStats = getMetricStatsFromValues(selectPressureValues, selectForceValues, pointAreaCm2)
+          const selectPressureStats = {
+            ...selectCanonicalStats,
+            max: selectCanonicalStats.pressureMax,
+            aver: selectCanonicalStats.pressureAverage,
+            total: selectCanonicalStats.forceTotal,
+          }
+          const selectActiveStats = getExportMetricActiveStats(selectCanonicalStats, metricMode)
+          const press = canonicalStats.forceTotal
+          const area = canonicalActiveStats.count
+          const max = canonicalStats.pressureMax
+          const min = canonicalStats.pressureMin
+          const aver = canonicalStats.pressureAverage
+          const maxIndex = canonicalActiveStats.maxIndex
+          const selectArea = selectActiveStats.count
+          const selectMin = selectCanonicalStats.pressureMin
+          const selectMaxIndex = selectActiveStats.maxIndex
 
-          const { press, area, max, min, aver, maxIndex } = colArrData(data)
-          const { area: selectArea, min: selectMin, maxIndex: selectMaxIndex } = colArrData(selectArr)
-
-          const pointInfo = pointConfig[key]
-          const matrixSize = inferExportMatrixSize(key, data, item)
+          const matrixSize = inferExportMatrixSize(key, data, processedItem)
           const dataDirection = normalizeExportDirection(item.dataDirection)
           const zeroState = normalizeExportZeroState(item.zeroState)
           const pressureConversion = getPressureConversion(key)
-          const pointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : null
-          const pointAreaCm2 = pointInfo ? pointArea / 100 : 1
-          const pressureAreaValue = pointInfo ? (area * pointArea / 100) : area
-          const pressureStats = calcPressureFormulaStats(data, key, pointAreaCm2)
+          const pressureAreaValue = canonicalActiveStats.area
           const exportMetricStats = getExportMetricStats(pressureStats, metricMode, pointAreaCm2)
-          const exportMetricData = getExportMetricPointValues(data, pressureStats, metricMode, pointAreaCm2)
+          const exportMetricData = getExportMetricPointValues(pressureStats, metricMode)
 
           // 计算框选区域受力面积
-          const selectAreaValue = pointInfo ? (selectArea * pointArea / 100) : selectArea
-          const selectPressureStats = calcPressureFormulaStats(selectArr, key, pointAreaCm2)
+          const selectAreaValue = selectActiveStats.area
 
           rowEntry.csv_format_version = CSV_FORMAT_VERSION
           rowEntry.software_version = SOFTWARE_VERSION
@@ -1131,16 +1141,22 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           frameEntry[getExportKeyFieldId(key, 'point_count')] = activePointCount
           frameEntry[getExportKeyFieldId(key, 'total_pressure_n')] = formatExportDecimal(exportMetricStats.total)
           selectionRegions.forEach((region, regionIndex) => {
-            const regionArr = sliceSelectionData(data, region)
-            const regionStats = colArrData(regionArr)
-            const regionPressureStats = calcPressureFormulaStats(regionArr, key, pointAreaCm2)
+            const regionPressureValues = sliceSelectionData(canonicalStats.pressureValues, region)
+            const regionForceValues = sliceSelectionData(canonicalStats.forceValues, region)
+            const regionPressureStats = getMetricStatsFromValues(
+              regionPressureValues,
+              regionForceValues,
+              pointAreaCm2,
+            )
             const regionMetricStats = getExportMetricStats(regionPressureStats, metricMode, pointAreaCm2)
-            const regionMetricData = getExportMetricPointValues(regionArr, regionPressureStats, metricMode, pointAreaCm2)
+            const regionActiveStats = getExportMetricActiveStats(regionPressureStats, metricMode)
+            const regionMetricData = getExportMetricPointValues(regionPressureStats, metricMode)
             const regionMax = regionMetricStats.max
             const regionAver = regionMetricStats.aver
-            const regionAreaValue = pointInfo ? (regionStats.area * pointArea / 100) : regionStats.area
+            const regionAreaValue = regionActiveStats.area
             const regionWidth = region.xEnd - region.xStart
-            const regionCoord = indexToCoord(regionStats.maxIndex, key, {
+            const regionMaxIndex = regionActiveStats.maxIndex
+            const regionCoord = indexToCoord(regionMaxIndex, key, {
               xStart: region.xStart,
               yStart: region.yStart,
               selectWidth: regionWidth,
@@ -1152,7 +1168,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             frameEntry[getExportKeyFieldId(regionPrefix, 'avg_pressure')] = formatExportDecimal(regionAver)
             frameEntry[getExportKeyFieldId(regionPrefix, 'contact_area')] = regionAreaValue
             frameEntry[getExportKeyFieldId(regionPrefix, 'real_data')] = JSON.stringify(regionMetricData)
-            frameEntry[getExportKeyFieldId(regionPrefix, 'point_count')] = regionStats.area
+            frameEntry[getExportKeyFieldId(regionPrefix, 'point_count')] = regionActiveStats.count
             frameEntry[getExportKeyFieldId(regionPrefix, 'total_pressure_n')] = formatExportDecimal(regionTotalPressure)
           })
           hasFrameMatrixData = true
@@ -1775,6 +1791,13 @@ function isSelectionImportRow(row = {}) {
   return /框选|selection/i.test(getImportDataTarget(row))
 }
 
+function getImportMetricModeFromHeader(header) {
+  const value = normalizeCsvHeader(header).toLowerCase()
+  if ((value.includes('压强') && value.includes('kpa')) || /pressure.*kpa/.test(value)) return 'pressure'
+  if ((value.includes('压力') && /\(n\)|（n）/.test(value)) || value.includes('force')) return 'force'
+  return ''
+}
+
 function getImportDeviceMac(row = {}, matrixKey = '') {
   const text = String(matrixKey || '').toLowerCase()
   if (text.includes('back')) {
@@ -1815,7 +1838,7 @@ function getCsvRowMatrixEntries(row) {
   if (!isEmptyCsvValue(row.real_data)) {
     const arr = parseMatrixCsvValue(row.real_data)
     if (arr && fallbackKey) {
-      entries.push({ key: fallbackKey, arr })
+      entries.push({ key: fallbackKey, arr, metricMode: '' })
     }
   }
 
@@ -1825,7 +1848,7 @@ function getCsvRowMatrixEntries(row) {
     if (!arr) return
     const key = fallbackKey || normalizeCsvMatrixKey(header) || inferImportMatrixKey(arr)
     if (!key || entries.some((entry) => entry.key === key)) return
-    entries.push({ key, arr })
+    entries.push({ key, arr, metricMode: getImportMetricModeFromHeader(header) })
   })
 
   return entries
@@ -1869,12 +1892,12 @@ function buildCsvPlaybackData(csvRows) {
     }
 
     const frame = groups.get(groupKey)
-    entries.forEach(({ key, arr }) => {
+    entries.forEach(({ key, arr, metricMode }) => {
       const numericArr = arr.map((value) => Number(value))
       const matrixKey = resolveImportMatrixKey(key, numericArr, frame.data)
       if (!matrixKey) return
       const matrixSize = inferExportMatrixSize(matrixKey, numericArr)
-      frame.data[matrixKey] = {
+      const matrixItem = {
         arr: numericArr,
         matrixMeta: {
           matrix_key: matrixKey,
@@ -1892,6 +1915,29 @@ function buildCsvPlaybackData(csvRows) {
         deviceType: matrixKey,
         pressureUnit: row.pressure_unit || PRESSURE_UNIT,
       }
+      if (metricMode) {
+        const pointInfo = pointConfig[matrixKey]
+        const pointAreaCm2 = pointInfo
+          ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance / 100
+          : 1
+        const forceScale = pointAreaCm2 * 0.1
+        const metricValues = numericArr.map((value) => Number((Math.max(0, value || 0)).toFixed(1)))
+        matrixItem.arr = new Array(metricValues.length).fill(0)
+        matrixItem.pressureArr = metricMode === 'pressure'
+          ? metricValues
+          : metricValues.map((value) => Number((forceScale > 0 ? value / forceScale : 0).toFixed(1)))
+        matrixItem.forceArr = metricMode === 'force'
+          ? metricValues
+          : metricValues.map((value) => Number((value * forceScale).toFixed(1)))
+        matrixItem.processing = {
+          version: PROCESSING_VERSION,
+          importedMetric: true,
+          metricMode,
+          temporal: false,
+          outputDigits: 1,
+        }
+      }
+      frame.data[matrixKey] = matrixItem
     })
   })
 
@@ -1911,45 +1957,68 @@ function buildCsvPlaybackData(csvRows) {
     }))
 
   if (!rows.length) {
-    return { length: 0, pressArr: {}, areaArr: {}, rows: [] }
+    return {
+      length: 0,
+      pressArr: {},
+      areaArr: {},
+      pressureArr: {},
+      forceArr: {},
+      pressureAreaArr: {},
+      forceAreaArr: {},
+      rows: [],
+    }
   }
 
   const firstData = JSON.parse(rows[0].data)
   const keyArr = Object.keys(firstData).filter(Boolean)
   const bucketSize = Math.max(1, Math.ceil(rows.length / PLAYBACK_CHART_TARGET_POINTS))
-  const pressArr = {}
-  const areaArr = {}
-  const pressBucket = {}
-  const areaBucket = {}
+  const pressureArr = {}
+  const forceArr = {}
+  const pressureAreaArr = {}
+  const forceAreaArr = {}
+  const pressureBucket = {}
+  const forceBucket = {}
+  const pressureAreaBucket = {}
+  const forceAreaBucket = {}
   const bucketCount = {}
 
   keyArr.forEach((key) => {
-    pressArr[key] = []
-    areaArr[key] = []
-    pressBucket[key] = 0
-    areaBucket[key] = 0
+    pressureArr[key] = []
+    forceArr[key] = []
+    pressureAreaArr[key] = []
+    forceAreaArr[key] = []
+    pressureBucket[key] = 0
+    forceBucket[key] = 0
+    pressureAreaBucket[key] = 0
+    forceAreaBucket[key] = 0
     bucketCount[key] = 0
   })
 
   rows.forEach((row) => {
     const dataObj = JSON.parse(row.data)
     keyArr.forEach((key) => {
-      const arr = dataObj[key]?.arr || []
-      const press = arr.reduce((sum, value) => sum + Number(value || 0), 0)
-      const normalizedPress = (key === 'carY-back' || key === 'carY-sit')
-        ? press / (100 / 3)
-        : press
-      const area = arr.filter((value) => Number(value) > 0).length
+      const item = dataObj[key] || {}
+      const pointInfo = pointConfig[key]
+      const pointAreaCm2 = pointInfo
+        ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance / 100
+        : 1
+      const metricStats = getCanonicalMetricStats(key, item, pointAreaCm2)
 
-      pressBucket[key] += normalizedPress
-      areaBucket[key] += area
+      pressureBucket[key] += metricStats.pressureTotal
+      forceBucket[key] += metricStats.forceTotal
+      pressureAreaBucket[key] += metricStats.pressureActiveCount
+      forceAreaBucket[key] += metricStats.forceActiveCount
       bucketCount[key] += 1
 
       if (bucketCount[key] >= bucketSize) {
-        pressArr[key].push(pressBucket[key] / bucketCount[key])
-        areaArr[key].push(areaBucket[key] / bucketCount[key])
-        pressBucket[key] = 0
-        areaBucket[key] = 0
+        pressureArr[key].push(pressureBucket[key] / bucketCount[key])
+        forceArr[key].push(forceBucket[key] / bucketCount[key])
+        pressureAreaArr[key].push(pressureAreaBucket[key] / bucketCount[key])
+        forceAreaArr[key].push(forceAreaBucket[key] / bucketCount[key])
+        pressureBucket[key] = 0
+        forceBucket[key] = 0
+        pressureAreaBucket[key] = 0
+        forceAreaBucket[key] = 0
         bucketCount[key] = 0
       }
     })
@@ -1957,12 +2026,23 @@ function buildCsvPlaybackData(csvRows) {
 
   keyArr.forEach((key) => {
     if (bucketCount[key] > 0) {
-      pressArr[key].push(pressBucket[key] / bucketCount[key])
-      areaArr[key].push(areaBucket[key] / bucketCount[key])
+      pressureArr[key].push(pressureBucket[key] / bucketCount[key])
+      forceArr[key].push(forceBucket[key] / bucketCount[key])
+      pressureAreaArr[key].push(pressureAreaBucket[key] / bucketCount[key])
+      forceAreaArr[key].push(forceAreaBucket[key] / bucketCount[key])
     }
   })
 
-  return { length: rows.length, pressArr, areaArr, rows }
+  return {
+    length: rows.length,
+    pressArr: forceArr,
+    areaArr: forceAreaArr,
+    pressureArr,
+    forceArr,
+    pressureAreaArr,
+    forceAreaArr,
+    rows,
+  }
 }
 
 module.exports = {

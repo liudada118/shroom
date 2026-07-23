@@ -1588,7 +1588,11 @@ const ColAndHistory = memo((props) => {
                                                         if (payload.areaArr || payload.pressArr) {
                                                             useEquipStore.getState().setHistoryChart({
                                                                 areaArr: payload.areaArr || {},
-                                                                pressArr: payload.pressArr || {}
+                                                                pressArr: payload.pressArr || {},
+                                                                pressureArr: payload.pressureArr || {},
+                                                                forceArr: payload.forceArr || payload.pressArr || {},
+                                                                pressureAreaArr: payload.pressureAreaArr || {},
+                                                                forceAreaArr: payload.forceAreaArr || payload.areaArr || {},
                                                             })
                                                         }
                                                         useEquipStore.getState().setStatus(new Array(4096).fill(0))
@@ -1723,7 +1727,11 @@ const ColAndHistory = memo((props) => {
                                                     })
                                                     useEquipStore.getState().setHistoryChart({
                                                         areaArr: payload.areaArr || {},
-                                                        pressArr: payload.pressArr || {}
+                                                        pressArr: payload.pressArr || {},
+                                                        pressureArr: payload.pressureArr || {},
+                                                        forceArr: payload.forceArr || payload.pressArr || {},
+                                                        pressureAreaArr: payload.pressureAreaArr || {},
+                                                        forceAreaArr: payload.forceAreaArr || payload.areaArr || {},
                                                     })
                                                     useEquipStore.getState().setStatus(new Array(4096).fill(0))
                                                     useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))

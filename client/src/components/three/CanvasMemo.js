@@ -2,23 +2,18 @@ import Stats from "three/examples/jsm/libs/stats.module.js";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { TrackballControls } from "three/examples/jsm/controls/TrackballControls";
-import React, { memo, useContext, useEffect, useImperativeHandle, useRef, useState } from "react";
+import React, { memo, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { cleanupThree } from '../../util/disposeThree'
 import { TextureLoader } from "three";
 import * as TWEEN from '@tweenjs/tween.js'
 import {
   addSide,
-  gaussBlur_return,
-  interpSquare,
-  jet,
-  jetgGrey,
 } from "../../util/util";
 import gsap from "gsap";
-import { pageContext } from "../../page/test/Test";
 import { jetWhite3, lineInterp } from "../../assets/util/line";
-import { getSettingValue, getStatus } from "../../store/equipStore";
+import { useEquipStore } from "../../store/equipStore";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
-import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
+import { getColorLimit, getDisplayColorValue } from "../../util/displayMapping";
 import { disableRightMouseControl } from "../../util/threeInteraction";
 
 let camera
@@ -72,16 +67,6 @@ const Canvas = memo(React.forwardRef((props, refs) => {
   let cleanupZoomSync = () => {};
 
   console.log('Canvas')
-
-  const pageInfo = useContext(pageContext);
-
-  const pageRef = useRef(pageInfo)
-
-  useEffect(() => {
-    pageRef.current = pageInfo
-  }, [pageInfo])
-
-
 
   local = props.local
 
@@ -681,27 +666,15 @@ const Canvas = memo(React.forwardRef((props, refs) => {
     // valuej1 = 500 
     // value1 =2
 
-    const {
-      gauss = 1, color, filter, height = 1, coherent = 1
-    } = getSettingValue()//pageRef.current.settingValue
+    const store = useEquipStore.getState()
+    const { color, height = 1 } = store.settingValue
     const colorLimit = getColorLimit(color)
     const numParticles = AMOUNTX * AMOUNTY;
     const positions = new Float32Array(numParticles * 3);
     const colors = new Float32Array(numParticles * 3);
 
-    // let ndata1 = pageRef.current.equipStatus.data.length == 4096 ?pageRef.current.equipStatus.data : new Array(4096).fill(0)
-    let ndata1 = getStatus()
-    if(!Object.keys(ndata1).length) return
-  
-    if (filter) {
-      ndata1 = ndata1.map((a) => {
-        if (a < filter) {
-          return 0
-        } else {
-          return a
-        }
-      })
-    }
+    const ndata1 = props.metricData?.current?.[store.pressureMetricMode]?.[store.systemType]
+    if (!Array.isArray(ndata1) || ndata1.length !== sitnum1 * sitnum2) return
 
     let bigArrs = addSide(
       ndata1,
@@ -710,28 +683,19 @@ const Canvas = memo(React.forwardRef((props, refs) => {
       sitOrder,
       sitOrder
     );
-    let bigArrg = gaussBlur_return(
-      bigArrs,
-      sitnum2 + sitOrder * 2,
-      sitnum1 + sitOrder * 2,
-      gauss
-    );
-
-    let bigArr = lineInterp(bigArrg, sitnum2 + sitOrder * 2, sitnum1 + sitOrder * 2, sitInterp, sitInterp)
+    const bigArr = lineInterp(bigArrs, sitnum2 + sitOrder * 2, sitnum1 + sitOrder * 2, sitInterp, sitInterp)
 
     let k = 0,
       l = 0;
     let dataArr = []
     for (let ix = 0; ix < AMOUNTX; ix++) {
       for (let iy = 0; iy < AMOUNTY; iy++) {
-        const rawValue = bigArr[l];
-        const value = shouldHideDisplayPoint(rawValue, filter) ? 0 : rawValue * 10;
-
-        //柔化处理smooth
-        smoothBig[l] = smoothBig[l] + (value - smoothBig[l]) / coherent;
+        const rawValue = Number(bigArr[l]);
+        const value = Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 0;
+        smoothBig[l] = value;
 
         positions[k] = 14400 - iy * SEPARATION - (AMOUNTY * SEPARATION) / 2;// x
-        positions[k + 1] = -smoothBig[l] * height; // y
+        positions[k + 1] = -smoothBig[l] * height * 10; // y
         positions[k + 2] = ix * SEPARATION - (AMOUNTX * SEPARATION) / 2; // z
 
         let rgb

@@ -8,7 +8,6 @@ import { TextureLoader } from "three";
 import * as TWEEN from '@tweenjs/tween.js'
 import {
     addSide,
-    gaussBlur_return,
     interpSquare,
     jet,
     jetgGrey,
@@ -16,10 +15,10 @@ import {
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
 import { jetWhite3, lineInterp } from "../../assets/util/line";
-import { getDisplayType, getSettingValue, getStatus } from "../../store/equipStore";
+import { getDisplayType, useEquipStore } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
-import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
+import { getColorLimit, getDisplayColorValue } from "../../util/displayMapping";
 import { disableRightMouseControl } from "../../util/threeInteraction";
 
 // function rotate90(arr, height, width) {
@@ -823,9 +822,7 @@ const Canvas =
 
 
             // const gauss = 1, color  =1, filter=1, height = 1, coherent = 1
-            const {
-                gauss = 1, color, filter, height = 1, coherent = 1
-            } = getSettingValue() //pageRef.current.settingValue
+            const { color, height = 1 } = useEquipStore.getState().settingValue
             const colorLimit = getColorLimit(color)
 
             // height , width , heightInterp , widthInterp
@@ -839,25 +836,20 @@ const Canvas =
                 sitOrder,
                 sitOrder
             );
-            let bigArrg = gaussBlur_return(
-                bigArrs,
-                sitnum2 * sitInterp1 + sitOrder * 2,
-                sitnum1 * sitInterp + sitOrder * 2,
-                gauss
-            );
+            const bigArrg = bigArrs
 
             let k = 0, l = 0;
             let dataArr = []
             for (let ix = 0; ix < AMOUNTX; ix++) {
                 for (let iy = 0; iy < AMOUNTY; iy++) {
-                    const rawValue = bigArrg[l];
-                    const value = shouldHideDisplayPoint(rawValue, filter) ? 0 : rawValue * 10;
+                    const rawValue = Number(bigArrg[l]);
+                    const value = Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 0;
                     //柔化处理smooth
-                    smoothBig[l] = smoothBig[l] + (value - smoothBig[l]) / coherent;
+                    smoothBig[l] = value;
 
                     position[k] = iy * SEPARATION - (AMOUNTX * SEPARATION) / 2; // x
 
-                    position[k + 1] = smoothBig[l] * height * 0.1; // y (乘以0.1缩放因子使高度调节更合理)
+                    position[k + 1] = smoothBig[l] * height; // y
 
                     position[k + 2] = ix * SEPARATION - (AMOUNTY * SEPARATION) / 2; // z 
 
@@ -967,8 +959,11 @@ const Canvas =
 
             // const {back , sit} = props.sitData.current
 
+            const metricMode = useEquipStore.getState().pressureMetricMode
+            const metricData = props.metricData?.current?.[metricMode] || {}
             const data = {
-                back: props.sitData.current.back || new Array(4096).fill(0), sit: props.sitData.current.sit || new Array(4096).fill(0),
+                back: metricData.back || new Array(4096).fill(0),
+                sit: metricData.sit || new Array(4096).fill(0),
             }
 
 

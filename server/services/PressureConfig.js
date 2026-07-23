@@ -5,7 +5,7 @@ const { state } = require('../state')
 const DEFAULT_PRESSURE_CONFIG = {
   backValueMultiplier: 1,
   pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
-  pressureFormulaProfile: 'V2.8.1',
+  pressureFormulaProfile: 'V2.7.38中英文logo',
 }
 
 let configCache = null
@@ -38,7 +38,7 @@ function normalizePressureConfig(config = {}) {
     ...config,
     backValueMultiplier: Number.isFinite(multiplier) && multiplier >= 0 ? multiplier : DEFAULT_PRESSURE_CONFIG.backValueMultiplier,
     pressureFormulaFile,
-    pressureFormulaProfile: String(config.pressureFormulaProfile || formulaName || DEFAULT_PRESSURE_CONFIG.pressureFormulaProfile),
+    pressureFormulaProfile: String(formulaName || DEFAULT_PRESSURE_CONFIG.pressureFormulaProfile),
   }
 }
 

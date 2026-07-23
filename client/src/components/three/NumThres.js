@@ -36,10 +36,10 @@ export default function NumThres(props) {
         <>{isMoreMatrix(systemType) ?
             displayType.includes('back') ?
                 (isSquareBack ?
-                    <NumThree key={`${systemType}-back`} width={width} height={height} sitData={sitData} zoom={num2DZoom} /> :
-                    <NumThree2 key={`${systemType}-back`} width={width} height={height} sitData={sitData} zoom={num2DZoom} />) :
-                <NumThree key={`${systemType}-sit`} width={width} height={height} sitData={sitData} zoom={num2DZoom} /> :
-            <NumThree width={32} height={32} sitData={sitData} zoom={num2DZoom} />}
+                    <NumThree key={`${systemType}-back`} width={width} height={height} sitData={sitData} metricData={props.metricData} zoom={num2DZoom} /> :
+                    <NumThree2 key={`${systemType}-back`} width={width} height={height} sitData={sitData} metricData={props.metricData} zoom={num2DZoom} />) :
+                <NumThree key={`${systemType}-sit`} width={width} height={height} sitData={sitData} metricData={props.metricData} zoom={num2DZoom} /> :
+            <NumThree width={32} height={32} sitData={sitData} metricData={props.metricData} zoom={num2DZoom} />}
 
             {/* <div style={{width : '100vw' , height : '100vh' , 
                 position : 'fixed' , zIndex : 1 , 

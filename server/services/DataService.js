@@ -8,6 +8,12 @@ const path = require('path')
 const constantObj = require('../../util/config')
 const { state, resetPlaybackState } = require('../state')
 const { broadcast } = require('../websocket')
+const {
+  DEFAULT_FRAME_PROCESSING_CONFIG,
+  normalizeFrameProcessingConfig,
+  processMatrixItem,
+  ensureProcessedMatrixItem,
+} = require('../../util/pressureFrameProcessor')
 
 const { blue } = constantObj
 const DEFAULT_PLAYBACK_HZ = 1
@@ -301,6 +307,53 @@ function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAU
   return directedFrame
 }
 
+function getActiveFrameProcessingConfig() {
+  const source = state.colFlag && state.collectionProcessingConfig
+    ? state.collectionProcessingConfig
+    : state.frameProcessingConfig
+  return normalizeFrameProcessingConfig(source || DEFAULT_FRAME_PROCESSING_CONFIG)
+}
+
+function buildProcessedFrame(frame, processingConfig = getActiveFrameProcessingConfig()) {
+  const directedFrame = buildDirectedFrame(frame)
+  const config = normalizeFrameProcessingConfig(processingConfig)
+  const result = {}
+
+  Object.keys(directedFrame || {}).forEach((key) => {
+    const item = directedFrame[key]
+    if (!item || typeof item !== 'object' || !Array.isArray(item.arr)) {
+      result[key] = item
+      return
+    }
+
+    const rawAdcArr = [...item.arr]
+    const zeroedAdcArr = applyZeroBaseline(key, rawAdcArr, state.zeroState)
+    result[key] = {
+      ...processMatrixItem(key, {
+        ...item,
+        arr: zeroedAdcArr,
+        rawAdcArr,
+      }, config),
+      zeroState: buildZeroMeta(state.zeroState, key),
+      pressureUnit: 'kPa',
+      forceUnit: 'N',
+    }
+  })
+
+  return result
+}
+
+function ensureProcessedFrame(frame, processingConfig = getActiveFrameProcessingConfig()) {
+  const result = {}
+  Object.keys(frame || {}).forEach((key) => {
+    const item = frame[key]
+    result[key] = item && typeof item === 'object' && Array.isArray(item.arr)
+      ? ensureProcessedMatrixItem(key, item, processingConfig)
+      : item
+  })
+  return result
+}
+
 function applyZeroBaseline(key, arr, zeroState) {
   if (!zeroState?.enabled || !zeroState?.data || !Array.isArray(arr)) return [...arr]
   const shortKey = key.includes('-') ? key.split('-')[1] : key
@@ -411,11 +464,13 @@ function sendData() {
     })
 
     if (Object.keys(obj).some((a) => Object.values(constantObj.type).includes(a))) {
-      broadcast(JSON.stringify({ data: buildDirectedFrame(obj) }))
+      obj = buildProcessedFrame(obj)
+      broadcast(JSON.stringify({ data: obj }))
     }
   } else {
     obj = parseData(state.parserArr, structuredClone(state.dataMap), 'highHZ')
-    broadcast(JSON.stringify({ sitData: buildDirectedFrame(obj) }))
+    obj = buildProcessedFrame(obj)
+    broadcast(JSON.stringify({ sitData: obj }))
   }
   return obj
 }
@@ -425,7 +480,6 @@ function sendData() {
  */
 function storageData(data) {
   const timestamp = Date.now()
-  const directionState = normalizeDataDirectionState(state.dataDirection || DEFAULT_DATA_DIRECTION)
   const newData = {}
 
   Object.keys(data || {}).forEach((key) => {
@@ -437,24 +491,11 @@ function storageData(data) {
     const nextItem = { ...item }
     if (nextItem.status) delete nextItem.status
     if (Array.isArray(nextItem.arr)) {
-      const direction = getDirectionForKey(directionState, key)
-      nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
-      nextItem.arr = applyZeroBaseline(key, nextItem.arr, state.zeroState)
-      nextItem.dataDirection = direction
-      const directedDimensions = getDirectedDimensions(key, item.arr, direction)
-      if (directedDimensions) {
-        nextItem.matrixMeta = {
-          matrix_key: key,
-          width: directedDimensions.width,
-          height: directedDimensions.height,
-          point_count: nextItem.arr.length,
-        }
-      }
-      nextItem.zeroState = buildZeroMeta(state.zeroState, key)
       nextItem.deviceMac = getDeviceMacForItem(item)
       nextItem.deviceType = key
       nextItem.softwareVersion = 'endi1.0.1'
-      nextItem.pressureUnit = 'software_unit'
+      nextItem.pressureUnit = 'kPa'
+      nextItem.forceUnit = 'N'
     }
     newData[key] = nextItem
   })
@@ -599,7 +640,7 @@ function getPlaybackSnapshot(index = state.playIndex, options = {}) {
   const maxSkips = options.skipBadFrames === false ? 0 : rows.length
   let skippedInThisLookup = 0
   let row = rows[normalizedIndex]
-  let sitDataPlay = removePlaybackSelect(parsePlaybackData(row?.data))
+  let sitDataPlay = ensureProcessedFrame(removePlaybackSelect(parsePlaybackData(row?.data)))
   let validation = validatePlaybackFrameData(sitDataPlay)
 
   while (!validation.valid && skippedInThisLookup < maxSkips) {
@@ -633,7 +674,7 @@ function getPlaybackSnapshot(index = state.playIndex, options = {}) {
     normalizedIndex += 1
     state.playIndex = normalizedIndex
     row = rows[normalizedIndex]
-    sitDataPlay = removePlaybackSelect(parsePlaybackData(row?.data))
+    sitDataPlay = ensureProcessedFrame(removePlaybackSelect(parsePlaybackData(row?.data)))
     validation = validatePlaybackFrameData(sitDataPlay)
   }
 
@@ -771,6 +812,9 @@ module.exports = {
   getPlaybackSnapshot,
   parseData,
   buildDirectedFrame,
+  buildProcessedFrame,
+  ensureProcessedFrame,
+  getActiveFrameProcessingConfig,
   normalizeDataDirectionState,
   saveDataDirection,
   loadPersistedDataDirection,

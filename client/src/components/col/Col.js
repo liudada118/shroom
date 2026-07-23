@@ -2,7 +2,7 @@ import React, { useContext, useRef } from 'react'
 import './index.scss'
 import axios from 'axios'
 import { message } from 'antd'
-import { getDisplayType, getSysType, useEquipStore } from '../../store/equipStore'
+import { getDisplayType, getFrameProcessingSettingValue, getSysType, useEquipStore } from '../../store/equipStore'
 import { localAddress, systemPointConfig } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import { pageContext } from '../../page/test/Test'
@@ -92,16 +92,23 @@ export default function Col(props) {
     }
 
     const startCollect = (collectInfo = {}) => {
+            useEquipStore.getState().setCollecting(true)
             const startStamp = Date.now()
             const fileName = startStamp
             const currentColName = collectInfo.colName ?? colName
             const currentRemark = collectInfo.remark ?? remark
             const currentHZ = collectInfo.HZ ?? HZ
             const hz = currentHZ ? currentHZ : 30
+            const currentProcessing = getFrameProcessingSettingValue()
             const startPayload = {
                 fileName: fileName,
                 HZ: hz,
                 dataDirection: getCurrentDataDirection(),
+                processingConfig: {
+                    filter: currentProcessing.filter,
+                    gauss: currentProcessing.gauss,
+                    coherent: currentProcessing.coherent,
+                },
             }
 
             axios({
@@ -122,7 +129,6 @@ export default function Col(props) {
                     setCol(!col)
                     setStartTime(startStamp)
                     currentCollectDateRef.current = String(startStamp)
-                    useEquipStore.getState().setCollecting(true)
 
                     // 始终调用 upsertRemark 保存框选数据（即使没有 alias 和 remark）
                     const alias = currentColName ? currentColName.trim() : ''
@@ -160,14 +166,15 @@ export default function Col(props) {
                     message.error(res.data.data)
                 } else {
                     message.success(t('collectSuccess'))
-                    setCol(!col)
+                    setCol(false)
+                    setStartTime(0)
                     useEquipStore.getState().setCollecting(false)
                     onCollectEnd?.({ date: collectDate })
                 }
+            }).catch((err) => {
+                console.error('[Col] endCol failed:', err)
+                message.error(t('collectFailed'))
             })
-            setStartTime(0)
-            setCol(!col)
-            useEquipStore.getState().setCollecting(false)
         }
     }
 

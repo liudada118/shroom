@@ -9,7 +9,6 @@ import { TextureLoader } from "three";
 import * as TWEEN from '@tweenjs/tween.js'
 import {
     addSide,
-    gaussBlur_return,
     interpSquare,
     jet,
     jetgGrey,
@@ -17,13 +16,12 @@ import {
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
 import { beginDynamicColorFrame, jetWhite3, lineInterp, setDynamicGammaColorEnabled } from "../../assets/util/line";
-import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from "../../store/equipStore";
+import { getDisplayType, useEquipStore } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
 import { getColorLimit } from "../../util/displayMapping";
 import { isEndiBackPointVisible } from "../../util/endiBackVisibleMask";
 import { disableRightMouseControl } from "../../util/threeInteraction";
-import { getPressureMetricPointValues } from "../../util/pressureMetrics";
 
 // function rotate90(arr, height, width) {
 //     //逆时针旋转 90 度
@@ -75,55 +73,6 @@ const sitObj = {
 
 const CHAIR_BRIGHTEN_COLOR = new THREE.Color(0xffffff)
 const CHAIR_EMISSIVE_COLOR = new THREE.Color(0x2f3338)
-const POINT_TEMPORAL_ALPHA = 0.24
-const POINT_VALUE_DEADBAND = 0.1
-const POINT_METRIC_VISIBLE_THRESHOLD = 0.05
-
-function normalizePointMetricMatrix(values, matrixKey, mode) {
-    return getPressureMetricPointValues(values, matrixKey, mode).map((value) => {
-        const numeric = Number(value)
-        return Number.isFinite(numeric) ? Number(numeric.toFixed(1)) : 0
-    })
-}
-
-function stabilizePointValues(values, stableStore, key, visibleThreshold = POINT_METRIC_VISIBLE_THRESHOLD) {
-    const count = values.length
-    const source = Array.from({ length: count }, (_, index) => {
-        const value = Number(values[index])
-        return Number.isFinite(value) ? Math.max(0, value) : 0
-    })
-
-    if (source.every(value => value < visibleThreshold)) {
-        const zero = new Array(count).fill(0)
-        stableStore[key] = { values: zero, output: zero }
-        return zero
-    }
-
-    const previous = stableStore[key]
-    if (!previous || previous.values?.length !== count) {
-        stableStore[key] = { values: source, output: source }
-        return source
-    }
-
-    const nextValues = new Array(count)
-    const output = new Array(count)
-    for (let i = 0; i < count; i++) {
-        const prevValue = previous.values[i] ?? source[i]
-        const prevOutput = previous.output[i] ?? prevValue
-        const smoothed = source[i] < visibleThreshold
-            ? 0
-            : prevValue + (source[i] - prevValue) * POINT_TEMPORAL_ALPHA
-        let nextOutput = smoothed
-        if (source[i] >= visibleThreshold && Math.abs(source[i] - prevOutput) < POINT_VALUE_DEADBAND) {
-            nextOutput = prevOutput
-        }
-        nextValues[i] = smoothed
-        output[i] = nextOutput
-    }
-
-    stableStore[key] = { values: nextValues, output }
-    return output
-}
 
 function brightenChairModel(root) {
     if (!root) return
@@ -195,7 +144,6 @@ const Canvas =
         const chairRef = useRef(null)
         const tweenRef = useRef(null)
         const tween1Ref = useRef(null)
-        const pointStableRef = useRef({})
         const [configPanelOpen, setConfigPanelOpen] = useState(false)
         const [configValues, setConfigValues] = useState({
             back: {
@@ -1187,9 +1135,7 @@ const Canvas =
 
 
             // const gauss = 1, color  =1, filter=1, height = 1, coherent = 1
-            const {
-                gauss = 1, color, height = 1, coherent = 1, autoColor
-            } = getSettingValue() //pageRef.current.settingValue
+            const { color, height = 1, autoColor } = useEquipStore.getState().settingValue
             const metricMode = useEquipStore.getState().pressureMetricMode
             const colorScope = `point-${name}-${metricMode}`
             setDynamicGammaColorEnabled(Boolean(autoColor), colorScope)
@@ -1206,28 +1152,17 @@ const Canvas =
                 sitOrder,
                 sitOrder
             );
-            let bigArrg = gaussBlur_return(
-                bigArrs,
-                sitnum2 * sitInterp1 + sitOrder * 2,
-                sitnum1 * sitInterp + sitOrder * 2,
-                gauss
-            );
-            bigArrg = stabilizePointValues(
-                bigArrg,
-                pointStableRef.current,
-                `${name}-${AMOUNTX}x${AMOUNTY}`,
-                POINT_METRIC_VISIBLE_THRESHOLD
-            )
+            const bigArrg = bigArrs
             beginDynamicColorFrame(bigArrg, colorLimit, colorScope)
 
             let k = 0, l = 0, j = 0;
             let dataArr = []
             for (let ix = 0; ix < AMOUNTX; ix++) {
                 for (let iy = 0; iy < AMOUNTY; iy++) {
-                    const rawValue = bigArrg[l];
-                    const value = rawValue < POINT_METRIC_VISIBLE_THRESHOLD ? 0 : rawValue;
+                    const rawValue = Number(bigArrg[l]);
+                    const value = Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 0;
                     //柔化处理smooth
-                    smoothBig[l] = value < POINT_METRIC_VISIBLE_THRESHOLD ? 0 : smoothBig[l] + (value - smoothBig[l]) / coherent;
+                    smoothBig[l] = value;
 
                     position[k] = iy * SEPARATION - (AMOUNTX * SEPARATION) / 2; // x
 
@@ -1353,9 +1288,11 @@ const Canvas =
             const defaultSitLen = sitW * sitH
             const defaultBackLen = backW * backH
 
+            const metricMode = useEquipStore.getState().pressureMetricMode
+            const metricData = props.metricData?.current?.[metricMode] || {}
             const data = {
-                back: props.sitData.current.back || new Array(defaultBackLen).fill(0),
-                sit: props.sitData.current.sit || new Array(defaultSitLen).fill(0),
+                back: metricData.back || new Array(defaultBackLen).fill(0),
+                sit: metricData.sit || new Array(defaultSitLen).fill(0),
             }
 
             {
@@ -1389,17 +1326,6 @@ const Canvas =
                 }
                 data.back = newArr
             }
-
-            const { filter } = getSettingValue()
-            const filterValue = Number(filter)
-            const hasRawFilter = Number.isFinite(filterValue) && filterValue > 0
-            const metricMode = useEquipStore.getState().pressureMetricMode
-            const systemType = getSysType()
-            const toFilteredRaw = (values) => hasRawFilter
-                ? values.map((value) => (Number(value) < filterValue ? 0 : value))
-                : values
-            data.back = normalizePointMetricMatrix(toFilteredRaw(data.back), `${systemType}-back`, metricMode)
-            data.sit = normalizePointMetricMatrix(toFilteredRaw(data.sit), `${systemType}-sit`, metricMode)
 
             Object.keys(allConfig).forEach((key) => {
                 const obj = allConfig[key]

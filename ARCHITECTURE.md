@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-20
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-22
 
 ## 1. 项目概述
 
@@ -54,6 +54,7 @@ shroom/
 ├── util/                       # 通用工具模块
 │   ├── portFinder.js           # 端口检测与动态分配
 │   ├── db.js                   # SQLite 数据库操作
+│   ├── pressureFrameProcessor.js # 后端单帧滤波及 ADC→kPa/N 标准矩阵生成
 │   ├── logger.js               # 统一日志模块
 │   ├── config.js               # 加密配置读写
 │   ├── serialCache.js          # MAC→设备类型本地缓存（serial_cache.json）
@@ -112,6 +113,7 @@ shroom/
 ├── test/
 │   └── portFinder.test.js      # 端口分配单元测试
 │   └── pressureMetric.test.mjs # 压强/压力换算与默认模式单元测试
+│   └── pressureFrameProcessor.test.js # 后端空间滤波、无时序与标准矩阵测试
 ├── sdk/                        # 独立 Core SDK（无后端服务依赖）
 │   ├── package.json            # SDK 独立包配置
 │   ├── index.js                # 底层函数聚合入口
@@ -337,16 +339,17 @@ graph TD
 
 28. **压强/压力统一计量模式**
     - `equipStore.pressureMetricMode` 是全局显示口径，值为 `pressure`（压强，kPa）或 `force`（压力，N），默认沿用原压力总和曲线的 `force` 口径，并持久化到 `localStorage.pressureMetricMode`。
-    - `pressureMetrics.js` 统一输出平均值、最大值、总和值和格点值。单点压力按 `压力(N) = 压强(kPa) × 单点面积(cm²) × 0.1` 换算；总压力等于平均压强乘有效受力面积后完成同一单位换算。
-    - 压强基础值统一按 V2.8.1 单点公式计算：先对每个 ADC 点调用 `master(adc, sensor)` 并乘当前帧 `computeScale(adcMax)` 得到单点 kPa，再从换算后的点值数组统计平均压强、最大压强、压强总和和压力总和；不再用平均 ADC 推导平均/最大压强。
-    - 点数和面积按 V2.8.1 单点公式转换后的点矩阵统计：先得到 `pressureValues` / `forceValues`，再按转换后点值 `> 0` 计算有效点，避免 raw ADC 非零但公式换算后无效的点进入点数和面积；左侧统计中的“压力总和”始终显示真实压力 `N`，不随压强/压力显示模式改成 kPa。
+    - `util/pressureFrameProcessor.js` 是实时、采集、回放与导出的标准数据入口。每个传感器帧按“方向修正 → 置零 → ADC 阈值 → 单层空间高斯 → 阈值复核 → V2.7.38 中英文 logo 公式 → 1 位小数矩阵”生成 `arr`、`pressureArr` 和 `forceArr`。
+    - 后端高斯采用横向、纵向两次可分离卷积，只读取当前帧，不保留上一帧状态。`coherent` 随采集配置快照保留以兼容旧配置，但不再参与跨帧平滑；帧元数据明确写入 `processing.temporal=false`。
+    - 单点压力按 `压力(N) = 压强(kPa) × 单点面积(cm²) × 0.1` 换算。点数、面积、最大值、平均值、正态分布和曲线都从后端已量化的 `pressureArr/forceArr` 聚合，确保与 2D 数字矩阵逐点一致；“压力总和”固定为 `forceArr` 求和后的真实压力 `N`。
     - `pressureMetrics.js` 进一步集中维护 `getPressureMetricDisplay()` 展示定义，统一返回当前口径的单位、曲线名、坐标轴标题、统计项文案、趋势数组字段和数据前缀；左侧图表、数据对比页和 COP 报告不再各自硬编码 `N/kPa` 与“压力/压强”文案。
-    - 左侧曲线旁的交换按钮只修改全局模式；`ChartsAside`、`useMatrixData`、3D 点图、2D 数字图、框选统计、数据对比和 COP 报告均从公共模式和公共公式读取数值与单位。COP 重心仍使用原始矩阵权重，不因显示单位切换而改变轨迹。
-    - 3D 点图在原始 ADC 阶段先应用可视化噪点过滤，再将矩阵逐点换算为当前显示模式的 kPa/N；进入插值和高度/颜色渲染前统一保留 1 位小数。
+    - `DataService.sendData()` 只处理一次帧对象，并把同一个结果用于 WebSocket 广播和 `storageData()` 入库，避免实时 2D 与下载 CSV 分别滤波。旧历史记录缺少标准矩阵时由后端补算一次；带 `processing.version` 的新记录不会重复处理。
+    - 左侧曲线旁的交换按钮只修改全局显示模式；`useMatrixData`、3D 点图、2D 数字图、框选统计、数据对比和 COP 报告直接消费后端 `pressureArr/forceArr`，前端不再执行阈值、高斯、压力公式或时序平滑。Three.js 仍可做不改变传感器格点语义的几何插值。
+    - 开始采集时 `/startCol` 把 `filter/gauss/coherent` 保存为 `collectionProcessingConfig` 并锁定；采集期间可视化面板禁用这三个控件，`/setFrameProcessingConfig` 也会拒绝修改，直至 `/endCol` 解锁。
     - 2D 数字矩阵的贴图图集统一按 `显示值 × 10` 选择格子，压强 kPa 与压力 N 都以 1 位小数展示；V3/V4 使用 64x64 图集，避免高压强小数索引被 16x16 图集截断。
     - 可视化调节面板里的“当前最大值”使用同一套压强/压力点矩阵计算，并随当前模式显示 `kPa` 或 `N`，不再显示原始 ADC 最大值。
-    - 历史导出请求通过 `exportOptions.metricMode` 把当前口径传给后端；`/downloadFields` 动态返回最大值、平均值和矩阵数据的压强/压力字段标题，`/download` 按同一口径导出整体矩阵和最多四个框选区域的最大值、平均值及格点数据；`total_pressure_n` 固定为压力总和 `N`，不提供“压强总和”概念。
-    - 固定导出字段新增 `elapsed_seconds`（表头“秒数(s)”），优先按当前帧时间戳减首帧时间戳计算，首帧为 `0.00`；时间戳不可用时才回退为帧号除以检测采样率。
+    - 历史导出直接读取入库帧的标准矩阵，不再根据 ADC 二次调用公式。`/download` 按当前口径导出整体及最多四个框选区域的最大值、平均值和格点数据；`total_pressure_n` 始终取 `forceArr` 总和，不提供“压强总和”概念。
+    - 固定导出字段 `elapsed_seconds`（表头“秒数(s)”）优先按当前帧时间戳减首帧时间戳计算，首帧为 `0.000`，统一保留三位小数；时间戳不可用时才回退为帧号除以检测采样率。
 
 ## 5. API 端点 (Endpoints)
 
@@ -362,6 +365,8 @@ graph TD
 | `GET` | `/stopPort` | 断开所有串口连接 |
 | `GET` | `/sendMac` | 发送 MAC 地址绑定（保留兼容） |
 | `POST` | `/startCol` | 开始数据采集 |
+| `GET` | `/getFrameProcessingConfig` | 获取后端当前单帧处理参数及采集锁定状态 |
+| `POST` | `/setFrameProcessingConfig` | 更新 `filter/gauss/coherent`；采集期间拒绝修改 |
 | `POST` | `/setDataDirection` | 同步并持久化当前翻转方向，供实时输出和采集保存统一按显示方向转换 |
 | `GET` | `/getDataDirection` | 获取后端持久化的当前翻转方向，供前端初始化同步 |
 | `POST` | `/setZeroBaseline` | 同步预压力置零基线，供采集保存和 CSV 导出记录置零口径 |
@@ -540,6 +545,8 @@ graph TD
 | 2026-07-15 | COP 报告描述排版对齐 | 图表描述区固定为两行高度，保证同一行图表从一致的水平位置开始渲染 |
 | 2026-07-20 | 压强颜色调节范围统一 | ADC 转压强后的颜色调节统一使用 `0.01-60 kPa` 范围和 `0.01 kPa` 步进，旧 ADC 色阶缓存自动收敛到新范围 |
 | 2026-07-20 | 自动颜色改用渲染值 | 自动调节按完成压强/压力换算、过滤和平滑后的当前渲染矩阵最大值确定色阶；手动颜色默认值调整为 `5.00` |
+| 2026-07-21 | 左侧统计与 2D 数字矩阵统一 | 压力/压强曲线、平均值、最大值、压力总和、点数、面积及框选统计统一基于 2D 实际显示的一位小数矩阵计算 |
+| 2026-07-22 | 后端统一单帧处理 | 阈值、单层空间高斯和压强/压力换算统一由后端完成，实时显示、入库、历史、报告和导出复用 `pressureArr/forceArr`，采集期间锁定处理参数 |
 
 ## 9. 更新日志
 
@@ -569,6 +576,7 @@ graph TD
 | 2026-07-15 | 修复缺陷 | COP 报告图表描述区固定两行高度并裁剪溢出文案，修复四列图表起始位置不对齐 |
 | 2026-07-20 | 配置变更 | 颜色调节最小值改为 `0.01 kPa`、最大值改为 `60 kPa`、步进改为 `0.01 kPa`，并同步前后端默认配置与本地缓存迁移 |
 | 2026-07-20 | 修复缺陷 | 移除自动色阶的 ADC 下限 `15/80`，改为基于当前渲染 kPa/N 矩阵动态归一；手动默认值改为 `5.00`，旧 ADC 参数按 V2.8.1 公式迁移 |
+| 2026-07-21 | 修复缺陷 | 修复左侧压力总和曲线、点数和面积仍按中间 ADC 矩阵统计，导致与右侧 2D 数字不一致的问题 |
 | 2026-06-05 | 新增功能 | 数据对比导出支持选择保存路径和 CSV/XLSX 两种格式 |
 | 2026-06-05 | 配置变更 | 靠背默认方向再执行一次左右翻转，并迁移旧默认方向缓存 |
 | 2026-06-05 | 修复缺陷 | 修复播放控件、数据对比、图表轴标题、下载提示和前端端口递增等界面/启动问题 |
@@ -1666,7 +1674,7 @@ graph TD
 | 2026-07-15 | Fix | Keep COP report chart descriptions at a fixed two-line height so chart canvases align across columns |
 
 ## 2026-07-20 Pressure color adjustment range
-- `visualSettingStorage.js` centralizes the pressure color setting contract as minimum `0.01 kPa`, maximum/default `60 kPa`, and step `0.01 kPa`.
+- `visualSettingStorage.js` centralizes the pressure color setting contract as minimum `0.01 kPa`, maximum `60 kPa`, manual default `5 kPa`, and step `0.01 kPa`.
 - The realtime visualization drawer and system settings page share the same range constants; numeric inputs use two-decimal precision and the current matrix maximum is shown with two decimals.
 - 2D numeric textures and shared 3D display mapping preserve the `0.01 kPa` color-limit precision instead of rounding the configured limit to an integer before rendering.
 - Persisted legacy ADC color values are clamped and quantized during loading and saving. Frontend fallback configuration and backend `/getSystem` normalization now return `60` instead of the former `120/255` ADC-scale defaults.
@@ -1679,3 +1687,39 @@ graph TD
 - Manual color adjustment defaults to `5.00` while retaining the `0.01-60.00` range. This approximates the former `ADC=120` default after V2.8.1 conversion without making normal pressure values visually disappear.
 - Local settings from the ADC era are migrated through the V2.8.1 seat calibration for an equivalent pressure threshold. Settings written by the immediately preceding pressure-range version remain unchanged except its temporary `60` default, which migrates to `5`.
 | 2026-07-20 | Fix | Drive automatic colors from rendered kPa/N values, set the manual default to 5, and migrate legacy ADC color thresholds into the pressure range |
+
+## 2026-07-21 Shared 2D display matrix statistics
+- `client/src/util/pressureDisplayMatrix.js` centralizes the 2D numeric pipeline: ADC threshold filtering, Gaussian processing, post-filtering, backrest visibility masking, V2.8.1 point conversion, temporal stabilization, and one-decimal display quantization.
+- `useMatrixData` builds pressure (`kPa`) and force (`N`) display matrices once per incoming sensor frame after line-order direction normalization. It keeps separate stabilization state for each sensor surface, setting combination, direction, and metric mode.
+- The left pressure/force trend, average, maximum, fixed force total, point count, physical area, and selection-region statistics are calculated from those displayed values. Values rendered as `0.0` are not counted as active points.
+- Pressure and force keep separate area trend buffers because a low point can remain visible after `kPa` rounding but become `0.0 N` after force conversion. `ChartsAside` selects the matching area series and instantaneous point total when the unit is switched.
+- `NumThreeColorV3` and `NumThreeColorV4` consume the same `renderedMetricDataRef` instead of independently repeating conversion and stabilization in the Three.js animation loop. Their local pipeline remains only as a compatibility fallback when no shared matrix is supplied.
+- Verification: `node --test test/pressureMetric.test.mjs` passes 7 tests, and `npm run build` completes successfully with only the existing Sass, duplicate-key, ASI, and chunk-size warnings.
+| 2026-07-21 | Fix | Use one shared, rounded 2D kPa/N matrix for rendering, left-side totals, point/area trends, and selection statistics |
+
+## 2026-07-21 V2.7.38 logo pressure formula unification
+- `server/services/PressureConfig.js`, `client/src/util/pressureConfig.js`, the system-settings fallback, and `db/pressure_config.json` now default to `pressureFormula_V2.7.38中英文logo.js`. The formula profile is derived from the selected file name, so a stale `V2.8.1` profile cannot make the browser use a different calculation from the backend.
+- `client/src/util/pressureMetrics.js` mirrors the selected logo formula for browser rendering. Values at or below `ADC=30` are invalid; weight mode uses the seat TOP-70 or backrest TOP-46 average, while more than 300 valid points switches to the full valid-point average and the logo human-pressure branch.
+- Because the logo formula exposes frame average/max functions rather than a matrix function, the point matrix is expanded with `P_point = P_formula_avg * ADC_point / ADC_calibration_avg`. This preserves the formula's proportional maximum and gives 2D/3D rendering, realtime/selection statistics, comparison, and COP analysis one shared kPa matrix; force remains `N_point = P_point * point_area_cm2 * 0.1`.
+- `util/db.js` applies the same `ADC > 30` calibration and point expansion before calculating CSV/XLSX average, maximum, force total, active-point count, and matrix cells. Exported aggregate values therefore come from the same converted points instead of the former V2.8.1 `master * scale` path.
+- Verification: `node --test test/pressureMetric.test.mjs` passes 10 tests covering stale-profile normalization, seat TOP-70, backrest TOP-46, the strict 300/301 boundary, kPa/N conversion, rendered-matrix statistics, and color range behavior. `npm run build` completes with only the existing Sass, duplicate-key, ASI, and chunk-size warnings.
+| 2026-07-21 | Fix | Use the V2.7.38 Chinese-English-logo formula consistently for frontend matrices, statistics, reports, and history exports |
+
+## 2026-07-21 Display-metric normal distribution
+- `pressureDisplayMatrix.js` calculates normal distributions from the final one-decimal display matrix rather than raw ADC values. Only displayed values above `0.0` participate, matching the active-point semantics used by average, maximum, point count, and area statistics.
+- `useMatrixData` stores independent pressure (`kPa`) and force (`N`) distributions for each sensor surface and each selection box. Both are derived from the same rendered matrices consumed by the 2D numeric view, so switching units does not require another sensor frame.
+- `ChartsAside` selects the distribution matching `pressureMetricMode`, changes the title and X-axis unit between pressure and force, and derives the X-axis range from current display values instead of the former fixed `0-255 ADC` domain.
+- Distribution generation guards empty, constant, and small samples so mean/variance/skewness/kurtosis and all chart points remain finite. Verification adds a final-display distribution test to `pressureMetric.test.mjs`.
+| 2026-07-21 | Fix | Calculate realtime and selection normal-distribution charts from the active kPa/N display matrix |
+
+## 2026-07-21 Export elapsed-seconds precision
+- History CSV/XLSX export formats `elapsed_seconds` / `秒数(s)` with three decimal places. Timestamp-derived values and detected-sample-rate fallback values share the same precision, and the first exported frame is represented as `0.000`.
+| 2026-07-21 | Config | Preserve millisecond precision by exporting elapsed seconds with three decimal places |
+
+## 2026-07-22 Backend-owned frame processing
+- `util/pressureFrameProcessor.js` now owns threshold filtering, one lightweight spatial Gaussian pass, pressure-formula conversion, per-point force conversion, backrest visibility masking, and one-decimal canonical matrices. It is stateless across frames and records `processing.temporal=false`.
+- `DataService` creates one processed frame for both WebSocket broadcast and SQLite storage. Realtime 2D/3D rendering, selection statistics, normal distributions, history curves, A/B comparison, COP reports, and CSV/XLSX export consume the stored `pressureArr/forceArr` instead of independently filtering or converting ADC.
+- `/startCol` snapshots and locks `filter/gauss/coherent`; `/setFrameProcessingConfig` rejects changes during collection, and `/endCol` releases the lock. The frontend locks the matching controls from the start request until the backend confirms collection has ended.
+- Existing histories without canonical arrays are processed once on the backend. New frames and imported metric CSV rows carry `processing.version`, preventing duplicate filtering or formula conversion.
+- Verification: backend syntax checks pass, `node --test test/pressureMetric.test.mjs test/pressureFrameProcessor.test.js` passes 15 tests, and the Vite production build succeeds with only the existing Sass, ASI, and chunk-size warnings.
+| 2026-07-22 | Refactor | Make stateless backend frame processing the single source for realtime display, collection storage, history analysis, reports, and export |

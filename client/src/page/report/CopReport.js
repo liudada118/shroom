@@ -6,9 +6,8 @@ import * as echarts from 'echarts'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
-import { FORCE_METRIC_MODE, computePressureMetrics, getPressureMetricDisplay, getPressureMetricPointValues, getPressureMetricSummary } from '../../util/pressureMetrics'
+import { FORCE_METRIC_MODE, getPressureMetricDisplay, getPressurePointAreaCm2 } from '../../util/pressureMetrics'
 import { useEquipStore } from '../../store/equipStore'
-import { loadPressureRuntimeConfig } from '../../util/pressureConfig'
 import { jetWhite3NoWhite } from '../../assets/util/line'
 import './CopReport.scss'
 
@@ -20,6 +19,14 @@ const POINT_SPACING_MM = 10
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 const formatNumber = (value, digits = 2) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '-'
 const safeArray = (value) => Array.isArray(value) ? value : []
+const getMatrixMetricValues = (matrix, metricMode = FORCE_METRIC_MODE) => {
+  const source = metricMode === FORCE_METRIC_MODE ? matrix?.forceArr : matrix?.pressureArr
+  const length = safeArray(matrix?.arr).length || safeArray(source).length
+  return Array.from({ length }, (_, index) => {
+    const value = Number(source?.[index])
+    return Number.isFinite(value) && value > 0 ? value : 0
+  })
+}
 const downsample = (items, limit = 160) => {
   if (!Array.isArray(items) || items.length <= limit) return items || []
   const bucketSize = Math.ceil(items.length / limit)
@@ -165,7 +172,10 @@ const normalizeSelections = (selectValue, matrixKey, matrixSize) => {
 }
 
 const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = FORCE_METRIC_MODE) => {
-  const arr = safeArray(matrix?.arr)
+  const adcValues = safeArray(matrix?.arr)
+  const pressureValues = getMatrixMetricValues(matrix, 'pressure')
+  const forceValues = getMatrixMetricValues(matrix, FORCE_METRIC_MODE)
+  const metricValues = metricMode === FORCE_METRIC_MODE ? forceValues : pressureValues
   const { width, height } = inferSize(matrix)
   const scope = rect || { xStart: 0, yStart: 0, xEnd: width, yEnd: height }
   let pMax = 0
@@ -179,55 +189,57 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = FORC
 
   for (let y = scope.yStart; y < scope.yEnd; y++) {
     for (let x = scope.xStart; x < scope.xEnd; x++) {
-      const value = Number(arr[y * width + x]) || 0
-      pMax = Math.max(pMax, value)
-      adcMax = Math.max(adcMax, value)
-      adcSum += value
-      if (value > 0) pSum += value
-      if (value >= EFFECTIVE_THRESHOLD) {
+      const index = y * width + x
+      const adcValue = Number(adcValues[index]) || 0
+      const metricValue = Number(metricValues[index]) || 0
+      pMax = Math.max(pMax, metricValue)
+      adcMax = Math.max(adcMax, adcValue)
+      adcSum += adcValue
+      pSum += metricValue
+      if (metricValue > 0) {
         effectivePoints++
-        weightSum += value
-        xWeighted += x * value
-        yWeighted += y * value
+        const weight = metricValue
+        weightSum += weight
+        xWeighted += x * weight
+        yWeighted += y * weight
       }
     }
   }
 
-  const scopeValues = []
+  let forceSum = 0
+  let pressureMax = 0
   for (let y = scope.yStart; y < scope.yEnd; y++) {
     for (let x = scope.xStart; x < scope.xEnd; x++) {
-      scopeValues.push(Number(arr[y * width + x]) || 0)
+      const index = y * width + x
+      forceSum += Number(forceValues[index]) || 0
+      pressureMax = Math.max(pressureMax, Number(pressureValues[index]) || 0)
     }
   }
-  const pressureMetrics = computePressureMetrics(scopeValues, matrixKey)
-  const metricSummary = getPressureMetricSummary(scopeValues, matrixKey, metricMode)
-  pMax = metricSummary.max
-  const pAvg = metricSummary.average
-  pSum = metricSummary.total
+  const pAvg = effectivePoints ? pSum / effectivePoints : 0
   const copXIndex = weightSum ? xWeighted / weightSum : width / 2
   const copYIndex = weightSum ? yWeighted / weightSum : height / 2
   return {
     pMax,
     pAvg,
     pSum,
-    forceSum: pressureMetrics.total,
-    pressureMax: pressureMetrics.pressMax,
+    forceSum,
+    pressureMax,
     adcSum,
     adcMax,
-    effectivePoints: pressureMetrics.activeCount,
-    effectiveArea: pressureMetrics.effectiveArea || pressureMetrics.activeCount * POINT_AREA_CM2,
+    effectivePoints,
+    effectiveArea: effectivePoints * getPressurePointAreaCm2(matrixKey),
     copX: (copXIndex - (width - 1) / 2) * POINT_SPACING_MM,
     copY: ((height - 1) / 2 - copYIndex) * POINT_SPACING_MM,
   }
 }
 
-const buildAverageMap = (frames, matrixKey) => {
+const buildAverageMap = (frames, matrixKey, metricMode = FORCE_METRIC_MODE) => {
   const firstMatrix = frames[0]?.data?.[matrixKey]
   const { width, height } = inferSize(firstMatrix)
   const sum = Array(width * height).fill(0)
   let count = 0
   frames.forEach((frame) => {
-    const arr = safeArray(frame?.data?.[matrixKey]?.arr)
+    const arr = getMatrixMetricValues(frame?.data?.[matrixKey], metricMode)
     if (arr.length !== sum.length) return
     count++
     arr.forEach((value, index) => { sum[index] += Number(value) || 0 })
@@ -238,12 +250,8 @@ const buildAverageMap = (frames, matrixKey) => {
 const buildSingleAnalysis = (payload, matrixKey, metricMode = FORCE_METRIC_MODE) => {
   const frames = safeArray(payload?.frames)
   if (!frames.length || !matrixKey) return null
-  const rawAverageMatrix = buildAverageMap(frames, matrixKey)
-  const averageMatrix = {
-    ...rawAverageMatrix,
-    arr: getPressureMetricPointValues(rawAverageMatrix.arr, matrixKey, metricMode),
-  }
-  const size = inferSize(rawAverageMatrix)
+  const averageMatrix = buildAverageMap(frames, matrixKey, metricMode)
+  const size = inferSize(averageMatrix)
   const selections = normalizeSelections(payload?.select, matrixKey, size)
   const metrics = frames.map((frame) => calcFrameMetrics(frame.data?.[matrixKey], null, matrixKey, metricMode))
   const durationSeconds = Number(payload?.durationMs) > 0 ? Number(payload.durationMs) / 1000 : Math.max(1, frames.length / (Number(payload?.sampleRate) || 60))
@@ -670,10 +678,6 @@ function CopReport() {
 
   const analysis = useMemo(() => buildAnalysis(payload, pressureMetricMode), [payload, pressureMetricMode])
   const generatedTime = payload?.generatedAt ? new Date(payload.generatedAt).toLocaleString() : new Date().toLocaleString()
-
-  useEffect(() => {
-    loadPressureRuntimeConfig()
-  }, [])
 
   const backToHome = () => {
     const store = useEquipStore.getState()

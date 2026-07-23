@@ -6,8 +6,7 @@ import { shallow } from 'zustand/shallow'
 import { pageContext } from '../../page/test/Test'
 import { useEquipStore } from '../../store/equipStore'
 import { localAddress } from '../../util/constant'
-import { FORCE_METRIC_MODE, countActiveMetricPoints, getPressureMetricDisplay, getPressureMetricPointValues, getPressureMetricSummary, getPressurePointAreaCm2 } from '../../util/pressureMetrics'
-import { loadPressureRuntimeConfig } from '../../util/pressureConfig'
+import { FORCE_METRIC_MODE, getPressureMetricDisplay, getPressurePointAreaCm2 } from '../../util/pressureMetrics'
 import { calcCentroidRatio } from '../../util/util'
 import ContrastHeatmap from './ContrastHeatmap'
 import { useTranslation } from 'react-i18next'
@@ -327,23 +326,34 @@ function calcSafeCentroidRatio(arr = [], width = 1, height = 1) {
     }
 }
 
+function getFrameMetricValues(data = {}, metricMode = FORCE_METRIC_MODE) {
+    const source = metricMode === FORCE_METRIC_MODE ? data.forceArr : data.pressureArr
+    const length = Array.isArray(data.arr) ? data.arr.length : (Array.isArray(source) ? source.length : 0)
+    return Array.from({ length }, (_, index) => {
+        const value = Number(source?.[index])
+        return Number.isFinite(value) && value > 0 ? value : 0
+    })
+}
+
 function calcMetrics(arr = [], width = 1, height = 1, matrixRect = null, matrixKey = '', metricMode = FORCE_METRIC_MODE) {
-    const metricSummary = getPressureMetricSummary(arr, matrixKey, metricMode)
-    const convertedValues = metricSummary.mode === FORCE_METRIC_MODE
-        ? metricSummary.metrics.forceValues
-        : metricSummary.metrics.pressureValues
-    const points = countActiveMetricPoints(convertedValues)
-    const area = metricSummary.metrics.effectiveArea
-    const center = calcSafeCentroidRatio([...arr], width, height)
+    const values = arr.map((value) => {
+        const numeric = Number(value)
+        return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
+    })
+    const activeValues = values.filter((value) => value > 0)
+    const points = activeValues.length
+    const total = values.reduce((sum, value) => sum + value, 0)
+    const area = points * getPressurePointAreaCm2(matrixKey)
+    const center = calcSafeCentroidRatio(values, width, height)
     const matrixCenter = matrixRect
         ? projectCenterToMatrix(center, matrixRect, Number(matrixRect.width) || width, Number(matrixRect.height) || height)
         : center
     return {
-        press: metricSummary.total,
+        press: total,
         area,
         points,
-        max: metricSummary.max,
-        aver: metricSummary.average,
+        max: points ? Math.max(...activeValues) : 0,
+        aver: points ? total / points : 0,
         center: points ? formatCenter(matrixCenter) : 'N/A',
     }
 }
@@ -482,7 +492,7 @@ function buildMetricSeriesFromFrames(frames = [], matrixKey, metricKey, matrixRe
         const data = frame?.[matrixKey] || {}
         const width = data.width || 1
         const height = data.height || Math.max(1, Math.ceil((data.arr || []).length / width))
-        const source = getRegionArr(data.arr || [], width, matrixRect)
+        const source = getRegionArr(getFrameMetricValues(data, metricMode), width, matrixRect)
         const metricWidth = matrixRect ? Math.max(1, matrixRect.xEnd - matrixRect.xStart) : width
         const metricHeight = matrixRect ? Math.max(1, matrixRect.yEnd - matrixRect.yStart) : height
         return Number(calcMetrics(source, metricWidth, metricHeight, matrixRect, matrixKey, metricMode)[metricKey]) || 0
@@ -624,7 +634,6 @@ export default function NumThresContrast() {
     const [exportFormat, setExportFormat] = useState('csv')
     const [exporting, setExporting] = useState(false)
     const [activeKey, setActiveKey] = useState('')
-    const [pressureFormulaRevision, setPressureFormulaRevision] = useState(0)
 
     const keys = contrast?.keys || []
     const isTimePointMode = contrast?.mode === 'single_record_frame'
@@ -632,16 +641,6 @@ export default function NumThresContrast() {
     const [timeIndexB, setTimeIndexB] = useState(1)
     const [playbackIndexA, setPlaybackIndexA] = useState(0)
     const [playbackIndexB, setPlaybackIndexB] = useState(0)
-
-    useEffect(() => {
-        let active = true
-        loadPressureRuntimeConfig().finally(() => {
-            if (active) setPressureFormulaRevision((value) => value + 1)
-        })
-        return () => {
-            active = false
-        }
-    }, [])
 
     useEffect(() => {
         if (!exportModalOpen || exportPath) return
@@ -712,18 +711,16 @@ export default function NumThresContrast() {
     const rightData = rightFrame?.[activeKey] || {}
     const width = leftData.width || rightData.width || 32
     const height = leftData.height || rightData.height || 32
-    const leftArr = leftData.arr || []
-    const rightArr = rightData.arr || []
-    const leftDisplayArr = useMemo(() => getPressureMetricPointValues(leftArr, activeKey, pressureMetricMode), [leftArr, activeKey, pressureMetricMode, pressureFormulaRevision])
-    const rightDisplayArr = useMemo(() => getPressureMetricPointValues(rightArr, activeKey, pressureMetricMode), [rightArr, activeKey, pressureMetricMode, pressureFormulaRevision])
+    const leftDisplayArr = useMemo(() => getFrameMetricValues(leftData, pressureMetricMode), [leftData, pressureMetricMode])
+    const rightDisplayArr = useMemo(() => getFrameMetricValues(rightData, pressureMetricMode), [rightData, pressureMetricMode])
     const diffArr = useMemo(() => buildDiffArr(leftDisplayArr, rightDisplayArr), [leftDisplayArr, rightDisplayArr])
     const metricColorMax = pressureMetricMode === FORCE_METRIC_MODE ? getPressurePointAreaCm2(activeKey) * 2.5 : 25
 
     const activeSelect = null
 
     const metricRows = useMemo(() => {
-        const sourceA = getRegionArr(leftArr, width, activeSelect)
-        const sourceB = getRegionArr(rightArr, width, activeSelect)
+        const sourceA = getRegionArr(leftDisplayArr, width, activeSelect)
+        const sourceB = getRegionArr(rightDisplayArr, width, activeSelect)
         const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : width
         const metricHeight = activeSelect ? Math.max(1, activeSelect.yEnd - activeSelect.yStart) : height
         const metricA = calcMetrics(sourceA, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode)
@@ -740,7 +737,7 @@ export default function NumThresContrast() {
                 rate: typeof a === 'number' && typeof b === 'number' ? formatRate(a, b) : 'N/A',
             }
         })
-    }, [leftArr, rightArr, width, height, activeSelect, activeKey, metrics, pressureFormulaRevision, pressureMetricMode])
+    }, [leftDisplayArr, rightDisplayArr, width, height, activeSelect, activeKey, metrics, pressureMetricMode])
 
     const conclusion = useMemo(() => {
         const pressRow = metricRows.find((row) => row.key === 'press')
@@ -782,10 +779,10 @@ export default function NumThresContrast() {
         ? Math.max(0, Math.min(rightFrameCount - 1, timeIndexB))
         : getClampedFrameIndex(rightFrameCount, playbackIndexB)
 
-    const leftPressureValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.left?.frames, activeKey, 'press', activeSelect, pressureMetricMode), [contrast, activeKey, activeSelect, pressureFormulaRevision, pressureMetricMode])
-    const rightPressureValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.right?.frames, activeKey, 'press', activeSelect, pressureMetricMode), [contrast, activeKey, activeSelect, pressureFormulaRevision, pressureMetricMode])
-    const leftAreaValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.left?.frames, activeKey, 'area', activeSelect), [contrast, activeKey, activeSelect, pressureFormulaRevision])
-    const rightAreaValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.right?.frames, activeKey, 'area', activeSelect), [contrast, activeKey, activeSelect, pressureFormulaRevision])
+    const leftPressureValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.left?.frames, activeKey, 'press', activeSelect, pressureMetricMode), [contrast, activeKey, activeSelect, pressureMetricMode])
+    const rightPressureValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.right?.frames, activeKey, 'press', activeSelect, pressureMetricMode), [contrast, activeKey, activeSelect, pressureMetricMode])
+    const leftAreaValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.left?.frames, activeKey, 'area', activeSelect), [contrast, activeKey, activeSelect])
+    const rightAreaValues = useMemo(() => buildMetricSeriesFromFrames(contrast?.right?.frames, activeKey, 'area', activeSelect), [contrast, activeKey, activeSelect])
 
     const pressSeries = useMemo(() => (
         isTimePointMode
@@ -882,8 +879,8 @@ export default function NumThresContrast() {
             const leftFrameItem = getFrameByIndex(leftFrames, leftIndex)?.[activeKey] || {}
             const rightFrameItem = getFrameByIndex(rightFrames, rightIndex)?.[activeKey] || {}
             const rowWidth = leftFrameItem.width || rightFrameItem.width || width
-            const leftSource = getRegionArr(leftFrameItem.arr || [], rowWidth, activeSelect)
-            const rightSource = getRegionArr(rightFrameItem.arr || [], rowWidth, activeSelect)
+            const leftSource = getRegionArr(getFrameMetricValues(leftFrameItem, pressureMetricMode), rowWidth, activeSelect)
+            const rightSource = getRegionArr(getFrameMetricValues(rightFrameItem, pressureMetricMode), rowWidth, activeSelect)
             const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : rowWidth
             const rowHeight = leftFrameItem.height || rightFrameItem.height || Math.max(1, Math.ceil(Math.max(leftSource.length, rightSource.length) / metricWidth))
             const metricHeight = activeSelect ? Math.max(1, activeSelect.yEnd - activeSelect.yStart) : rowHeight
@@ -918,8 +915,8 @@ export default function NumThresContrast() {
             const leftFrameItem = getFrameByIndex(leftFrames, leftFrameIndex)?.[activeKey] || {}
             const rightFrameItem = getFrameByIndex(rightFrames, rightFrameIndex)?.[activeKey] || {}
             const rowWidth = leftFrameItem.width || rightFrameItem.width || width
-            const leftSource = getRegionArr(leftFrameItem.arr || [], rowWidth, activeSelect)
-            const rightSource = getRegionArr(rightFrameItem.arr || [], rowWidth, activeSelect)
+            const leftSource = getRegionArr(getFrameMetricValues(leftFrameItem, pressureMetricMode), rowWidth, activeSelect)
+            const rightSource = getRegionArr(getFrameMetricValues(rightFrameItem, pressureMetricMode), rowWidth, activeSelect)
             const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : rowWidth
             const rowHeight = leftFrameItem.height || rightFrameItem.height || Math.max(1, Math.ceil(Math.max(leftSource.length, rightSource.length) / metricWidth))
             const metricHeight = activeSelect ? Math.max(1, activeSelect.yEnd - activeSelect.yStart) : rowHeight

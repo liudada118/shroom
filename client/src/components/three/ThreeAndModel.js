@@ -8,7 +8,6 @@ import { TextureLoader } from "three";
 import * as TWEEN from '@tweenjs/tween.js'
 import {
     addSide,
-    gaussBlur_return,
     interpSquare,
     jet,
     jetgGrey,
@@ -16,10 +15,10 @@ import {
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
 import { jetWhite3, lineInterp } from "../../assets/util/line";
-import { getSettingValue, getStatus } from "../../store/equipStore";
+import { useEquipStore } from "../../store/equipStore";
 import { Scheduler } from "../../scheduler/scheduler";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
-import { getColorLimit, getDisplayColorValue, shouldHideDisplayPoint } from "../../util/displayMapping";
+import { getColorLimit, getDisplayColorValue } from "../../util/displayMapping";
 import { disableRightMouseControl } from "../../util/threeInteraction";
 
 // function rotate90(arr, height, width) {
@@ -671,9 +670,7 @@ const Canvas =
             // valuej1 = 500 
             // value1 =2
 
-            const {
-                gauss = 1, color, filter, height = 1, coherent = 1
-            } = getSettingValue()//pageRef.current.settingValue
+            const { color, height = 1 } = useEquipStore.getState().settingValue
             const colorLimit = getColorLimit(color)
             const numParticles = AMOUNTX * AMOUNTY;
             const positions = new Float32Array(numParticles * 3);
@@ -682,7 +679,8 @@ const Canvas =
             // let ndata1 = pageRef.current.equipStatus.data.length == 4096 ?pageRef.current.equipStatus.data : new Array(4096).fill(0)
             // let ndata1 = getStatus()
           
-            let ndata1 = props.sitData.current.bed || new Array(1024).fill(0)
+            const metricMode = useEquipStore.getState().pressureMetricMode
+            let ndata1 = props.metricData?.current?.[metricMode]?.bed || new Array(1024).fill(0)
             // console.log(ndata1)
             // if (props.type) {
 
@@ -697,26 +695,21 @@ const Canvas =
                 sitOrder,
                 sitOrder
             );
-            let bigArrg = gaussBlur_return(
-                bigArrs,
-                sitnum2 * sitInterp2 + sitOrder * 2,
-                sitnum1 * sitInterp + sitOrder * 2,
-                gauss
-            );
+            const bigArrg = bigArrs
 
             let k = 0,
                 l = 0;
             let dataArr = []
             for (let ix = 0; ix < AMOUNTX; ix++) {
                 for (let iy = 0; iy < AMOUNTY; iy++) {
-                    const rawValue = bigArrg[l];
-                    const value = shouldHideDisplayPoint(rawValue, filter) ? 0 : rawValue * 10;
+                    const rawValue = Number(bigArrg[l]);
+                    const value = Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 0;
 
                     //柔化处理smooth
-                    smoothBig[l] = smoothBig[l] + (value - smoothBig[l] + 0.5) / coherent;
+                    smoothBig[l] = value;
 
                     positions[k] = 13500 - iy * SEPARATION - (AMOUNTY * SEPARATION) / 2;// x
-                    positions[k + 1] = smoothBig[l] * height; // y
+                    positions[k + 1] = smoothBig[l] * height * 10; // y
                     positions[k + 2] = ix * SEPARATION - (AMOUNTX * SEPARATION) / 2; // z
 
                     let rgb

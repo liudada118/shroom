@@ -25,6 +25,7 @@ export const useEquipStore = create((set) => ({
   status: {},
   equipStamp: 0,
   displayStatus: {},
+  metricStatus: { pressure: {}, force: {} },
   cop: {},
 
   // 系统配置
@@ -52,7 +53,14 @@ export const useEquipStore = create((set) => ({
 
   // 历史数据
   history: {},
-  historyChart: { pressArr: {}, areaArr: {} },
+  historyChart: {
+    pressArr: {},
+    areaArr: {},
+    pressureArr: {},
+    forceArr: {},
+    pressureAreaArr: {},
+    forceAreaArr: {},
+  },
   dataStatus: 'realtime',  // 'realtime' | 'history' | 'replay' | 'contrast'
   playbackHasSelection: false,
   playbackRecordDate: '',
@@ -65,6 +73,7 @@ export const useEquipStore = create((set) => ({
   setStatus: (s) => set({ status: s }),
   setEquipStamp: (s) => set({ equipStamp: s }),
   setDisplayStatus: (s) => set({ displayStatus: s }),
+  setMetricStatus: (s) => set({ metricStatus: s }),
   setEquipCop: (s) => set({ cop: s }),
 
   setSystemType: (s) => set({ systemType: s }),
@@ -106,7 +115,13 @@ export const useEquipStore = create((set) => ({
 export const getStatus = () => useEquipStore.getState().status
 export const getsetDisplayStatus = () => useEquipStore.getState().displayStatus
 export const getSysType = () => useEquipStore.getState().systemType
-export const getSettingValue = () => useEquipStore.getState().settingValue
+export const getSettingValue = () => ({
+  ...useEquipStore.getState().settingValue,
+  filter: 0,
+  gauss: 0.01,
+  coherent: 1,
+})
+export const getFrameProcessingSettingValue = () => useEquipStore.getState().settingValue
 export const getDisplayType = () => useEquipStore.getState().displayType
 export const getSettingValueOptimal = () => useEquipStore.getState().settingValueOptimal
 export const getSelectArr = () => useEquipStore.getState().selectArr

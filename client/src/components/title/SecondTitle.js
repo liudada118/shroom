@@ -7,10 +7,10 @@ import { Button, Col, ConfigProvider, Input, InputNumber, message, Modal, Popove
 import { pageContext } from '../../page/test/Test'
 import { SelectionHelper } from '../selectBox/SelectBox'
 import { withTranslation } from 'react-i18next'
-import { getDisplayType, getSettingValue, getSettingValueOptimal, getSysType, useEquipStore } from '../../store/equipStore'
+import { getDisplayType, getSettingValueOptimal, getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
-import { localAddress, pointConfig, systemPointConfig } from '../../util/constant'
+import { localAddress, pointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
 import {
     normalizeVisualSettingMax,
@@ -20,9 +20,7 @@ import {
     VISUAL_COLOR_SETTING_STEP,
 } from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
-import { gaussBlur_return } from '../../assets/util/line'
-import { isEndiBackVisibleIndex } from '../../util/endiBackVisibleMask'
-import { getPressureMetricDisplay, getPressureMetricPointValues } from '../../util/pressureMetrics'
+import { getPressureMetricDisplay } from '../../util/pressureMetrics'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
@@ -42,10 +40,13 @@ function SecondTitle(props) {
     const systemType = useEquipStore(s => s.systemType, shallow);
     const currentDisplayType = useEquipStore(s => s.displayType, shallow);
     const pressureMetricMode = useEquipStore(s => s.pressureMetricMode);
+    const metricStatus = useEquipStore(s => s.metricStatus, shallow);
+    const collecting = useEquipStore(s => s.collecting);
     const activeDisplayType = pageInfo.displayType || currentDisplayType;
-    const displayStatus = useEquipStore(s => s.displayStatus, shallow);
 
     const setSettingValue = useEquipStore.getState().setSettingValue
+    const isCollectionLockedSetting = (type) => ['filter', 'gauss', 'coherent'].includes(type)
+    const showCollectionLockMessage = () => message.warning(t('collectingProcessingLocked'))
 
     const getSettingKey = (a) => {
         return a.type
@@ -60,6 +61,10 @@ function SecondTitle(props) {
 
     const onChange = (newValue, a) => {
         console.log(newValue, settingValue)
+        if (collecting && isCollectionLockedSetting(a.type)) {
+            showCollectionLockMessage()
+            return
+        }
         if (newValue === null || newValue === undefined) return
         const numericValue = Number(newValue)
         if (!Number.isFinite(numericValue)) return
@@ -94,44 +99,18 @@ function SecondTitle(props) {
             ? arr.reduce((max, value) => Math.max(max, Number(value) || 0), 0)
             : null
         const target = activeDisplayType?.includes('back') ? 'back' : activeDisplayType?.includes('sit') ? 'sit' : ''
-        if (Array.isArray(displayStatus)) {
-            const fullKey = target && systemType ? `${systemType}-${target}` : systemType
-            return getMax(getPressureMetricPointValues(displayStatus, fullKey, pressureMetricMode))
-        }
-        if (!displayStatus || typeof displayStatus !== 'object') return null
-        const values = Object.entries(displayStatus)
+        const activeMetricStatus = metricStatus?.[pressureMetricMode]
+        if (!activeMetricStatus || typeof activeMetricStatus !== 'object') return null
+        const values = Object.entries(activeMetricStatus)
         if (!values.length) return null
         const matched = target
             ? values.filter(([key]) => key === target || key.endsWith(`-${target}`))
             : values
         const maxList = (matched.length ? matched : values)
-            .map(([key, arr]) => {
-                if (!Array.isArray(arr)) return null
-                const fullKey = key.includes('-') ? key : (target && systemType ? `${systemType}-${target}` : key)
-                const matrixConfig = systemPointConfig[fullKey]
-                if (!matrixConfig?.width || !matrixConfig?.height) return getMax(arr)
-                const count = matrixConfig.width * matrixConfig.height
-                let next = Array.from({ length: count }, (_, index) => Number(arr[index]) || 0)
-                const filter = Number(settingValue.filter)
-                if (Number.isFinite(filter) && filter > 0) {
-                    next = next.map(value => (value < filter ? 0 : value))
-                }
-                const gauss = Number(settingValue.gauss)
-                const effectiveGauss = Number.isFinite(gauss) ? gauss * 0.5 : 0.5
-                if (effectiveGauss > 0.01) {
-                    next = gaussBlur_return(next, matrixConfig.width, matrixConfig.height, effectiveGauss)
-                }
-                if (Number.isFinite(filter) && filter > 0) {
-                    next = next.map(value => (value < filter ? 0 : value))
-                }
-                if (fullKey === 'endi-back') {
-                    next = next.map((value, index) => isEndiBackVisibleIndex(index, matrixConfig.width, matrixConfig.height) ? value : 0)
-                }
-                return getMax(getPressureMetricPointValues(next, fullKey, pressureMetricMode))
-            })
+            .map(([, arr]) => getMax(arr))
             .filter((value) => value !== null)
         return maxList.length ? Math.max(...maxList) : null
-    }, [displayStatus, activeDisplayType, systemType, settingValue.gauss, settingValue.filter, pressureMetricMode])
+    }, [metricStatus, activeDisplayType, pressureMetricMode])
     const currentDataMaxDisplay = getPressureMetricDisplay(pressureMetricMode, t, i18n.language)
 
 
@@ -537,6 +516,7 @@ function SecondTitle(props) {
                                         min={getSliderMin(a)}
                                         max={getSliderMax(a)}
                                         step={getSliderStep(a)}
+                                        disabled={collecting && isCollectionLockedSetting(a.type)}
                                         onChange={(value) => {
                                             onChange(getSettingValueFromSlider(value, a), a)
                                         }}
@@ -564,6 +544,7 @@ function SecondTitle(props) {
                                             precision={a.type === 'color' ? 2 : undefined}
                                             style={{ margin: '0 16px' }}
                                             className='setItemInput'
+                                            disabled={collecting && isCollectionLockedSetting(a.type)}
                                             value={getRowValue(a)}
                                             onChange={(value) => {
                                                 onChange(value, a)
@@ -590,6 +571,10 @@ function SecondTitle(props) {
 
                     <div style={{ display: 'flex', justifyContent: 'end' }}>
                         <div onClick={() => {
+                            if (collecting) {
+                                showCollectionLockMessage()
+                                return
+                            }
                             const optimalObj = getSettingValueOptimal()
                             useEquipStore.getState().setSettingValue(optimalObj)
                             saveVisualSettingValue(systemType || getSysType(), optimalObj)

@@ -5,8 +5,7 @@ import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
-import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, gaussBlur_return, jetWhite3NoWhite, setDynamicGammaColorEnabled } from '../../assets/util/line';
-import { getPressureMetricPointValues } from '../../util/pressureMetrics';
+import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicGammaColorEnabled } from '../../assets/util/line';
 import { normalizeVisualColorSetting } from '../../util/visualSettingStorage';
 
 function jet(min, max, x) {
@@ -53,16 +52,6 @@ function normalizeDisplayValue(value, mode = useEquipStore.getState().pressureMe
   return Math.max(0, Math.min(DIGIT_DISPLAY_MAX, Math.round(atlasValue)));
 }
 
-function displayIndexToMetricValue(index, mode = useEquipStore.getState().pressureMetricMode) {
-  const numeric = Number(index);
-  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
-  return numeric / 10;
-}
-
-function getMetricVisibleThreshold(mode = useEquipStore.getState().pressureMetricMode) {
-  return 0.05;
-}
-
 function getTextureColorMax(color) {
   return normalizeVisualColorSetting(color);
 }
@@ -91,70 +80,6 @@ const DIGIT_ATLAS_SIZE = DIGIT_ATLAS_GRID * DIGIT_ATLAS_CELL;
 const DIGIT_ATLAS_COUNT = DIGIT_ATLAS_GRID * DIGIT_ATLAS_GRID;
 const DIGIT_DISPLAY_MAX = DIGIT_ATLAS_COUNT - 1;
 const DIGIT_TILE_INSET = 2;
-const NUM_2D_GAUSS_KERNEL_FACTOR = 0.5;
-const NUM_2D_TEMPORAL_ALPHA = 0.22;
-const NUM_2D_DISPLAY_DEADBAND = 1.1;
-
-function prepareDisplayData(data, width, height, settings) {
-  const count = width * height;
-  let next = Array.from({ length: count }, (_, index) => Number(data?.[index]) || 0);
-  const filter = Number(settings?.filter);
-  if (Number.isFinite(filter) && filter > 0) {
-    next = next.map(value => (value < filter ? 0 : value));
-  }
-  const gauss = Number(settings?.gauss);
-  const effectiveGauss = Number.isFinite(gauss) ? gauss * NUM_2D_GAUSS_KERNEL_FACTOR : NUM_2D_GAUSS_KERNEL_FACTOR;
-  if (effectiveGauss > 0.01) {
-    next = gaussBlur_return(next, width, height, effectiveGauss);
-  }
-  if (Number.isFinite(filter) && filter > 0) {
-    next = next.map(value => (value < filter ? 0 : value));
-  }
-  return next;
-}
-
-function stabilizeDisplayData(data, stableRef, key, mode = useEquipStore.getState().pressureMetricMode) {
-  const count = data.length;
-  const source = Array.from({ length: count }, (_, index) => {
-    const value = Number(data[index]);
-    return Number.isFinite(value) ? Math.max(0, value) : 0;
-  });
-  const visibleThreshold = getMetricVisibleThreshold(mode);
-
-  if (source.every(value => value < visibleThreshold)) {
-    const zero = new Array(count).fill(0);
-    stableRef.current = { key, values: zero, display: zero };
-    return zero;
-  }
-
-  const previous = stableRef.current;
-  const shouldReset = !previous || previous.key !== key || previous.values?.length !== count;
-  if (shouldReset) {
-    const display = source.map(value => normalizeDisplayValue(value, mode));
-    stableRef.current = { key, values: source, display };
-    return display.map(value => displayIndexToMetricValue(value, mode));
-  }
-
-  const values = new Array(count);
-  const display = new Array(count);
-  for (let i = 0; i < count; i++) {
-    const prevValue = previous.values[i] ?? source[i];
-    const prevDisplay = previous.display[i] ?? normalizeDisplayValue(prevValue, mode);
-    const smoothed = source[i] < visibleThreshold
-      ? 0
-      : prevValue + (source[i] - prevValue) * NUM_2D_TEMPORAL_ALPHA;
-    let nextDisplay = normalizeDisplayValue(smoothed, mode);
-    const sourceDisplay = normalizeDisplayValue(source[i], mode);
-    if (nextDisplay !== prevDisplay && source[i] >= visibleThreshold && Math.abs(sourceDisplay - prevDisplay) < NUM_2D_DISPLAY_DEADBAND) {
-      nextDisplay = prevDisplay;
-    }
-    values[i] = smoothed;
-    display[i] = nextDisplay;
-  }
-  stableRef.current = { key, values, display };
-  return display.map(value => displayIndexToMetricValue(value, mode));
-}
-
 function drawCellValue(ctx, value, cx, cy, cellSize) {
   const text = String(value);
   const fontSize = value >= 100 ? cellSize * 0.42 : cellSize * 0.5;
@@ -194,7 +119,6 @@ export default function NumThree(props) {
   const drawMagnifierRef = useRef(null);
   const magnifierZoomRef = useRef(1);
   const zoomRef = useRef(normalizeZoomScale(props.zoom));
-  const stableDataRef = useRef(null);
   // const pageRef = useRef(pageInfo)
 
   // useEffect(() => {
@@ -490,15 +414,17 @@ export default function NumThree(props) {
 
 
       const settingValue = getSettingValue()
-      const {
-        gauss, color, filter, height, coherent, autoColor,
-      } = settingValue //pageRef.current.settingValue
-      data = prepareDisplayData(data, gridSize, gridSize, settingValue);
+      const { color, height, autoColor } = settingValue //pageRef.current.settingValue
       const metricMode = useEquipStore.getState().pressureMetricMode
       const colorScope = `num-${matrixKey}-${metricMode}`
       setDynamicGammaColorEnabled(Boolean(autoColor), colorScope);
-      data = getPressureMetricPointValues(data, matrixKey, metricMode);
-      data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize}x${gridSize}-g${gauss}-f${filter}-m${metricMode}`, metricMode);
+      const metricDataKey = matrixKey.includes('-') ? matrixKey.split('-').pop() : matrixKey
+      const sharedMetricData = props.metricData?.current?.[metricMode]?.[metricDataKey]
+      if (Array.isArray(sharedMetricData)) {
+        data = sharedMetricData
+      } else {
+        data = new Array(gridSize * gridSize).fill(0)
+      }
       dataRef.current = data;
       gridRef.current = { width: gridSize, height: gridSize };
       // const { wsLocalData } = pageRef.current

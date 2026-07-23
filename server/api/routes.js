@@ -15,6 +15,7 @@ const { broadcast } = require('../websocket')
 const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
 const { colAndSendData, sendData, clearPlayTimer, ensureRealtimeTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot, saveDataDirection } = require('../services/DataService')
 const { loadPressureConfig, savePressureConfig, listPressureFormulaFiles } = require('../services/PressureConfig')
+const { normalizeFrameProcessingConfig, ensureProcessedMatrixItem } = require('../../util/pressureFrameProcessor')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES } = require('../../util/deviceConfigValidation')
 
@@ -198,7 +199,9 @@ function normalizeContrastFrame(row, keys) {
     _timestamp: row?.timestamp ?? '',
   }
   keys.forEach((key) => {
-    const source = frame[key] || {}
+    const rawSource = frame[key] || {}
+    const sourceKey = rawSource.sourceMatrixKey || key
+    const source = ensureProcessedMatrixItem(sourceKey, rawSource, state.frameProcessingConfig)
     const arr = Array.isArray(source.arr) ? source.arr.map((value) => Number(value) || 0) : []
     const size = inferMatrixSizeFromItem(key, source, arr)
     result[key] = {
@@ -219,7 +222,7 @@ function normalizeReportFrame(row, keys) {
     data: {},
   }
   keys.forEach((key) => {
-    const source = frame[key] || {}
+    const source = ensureProcessedMatrixItem(key, frame[key] || {}, state.frameProcessingConfig)
     const arr = Array.isArray(source.arr) ? source.arr.map((value) => Number(value) || 0) : []
     const size = inferMatrixSize(key, arr)
     result.data[key] = {
@@ -705,6 +708,16 @@ function resolveZeroState(req) {
   }
 }
 
+function resolveFrameProcessingConfig(req) {
+  const parsedValue = tryParseRequestJson(resolveRequestValue(req, [
+    'processingConfig',
+    'frameProcessingConfig',
+    'visualProcessingConfig',
+  ]))
+  const source = parsedValue && typeof parsedValue === 'object' ? parsedValue : {}
+  return normalizeFrameProcessingConfig(source, state.frameProcessingConfig)
+}
+
 // ─── 通用错误处理包装器 ──────────────────────────────────
 function asyncHandler(fn) {
   return (req, res, next) => {
@@ -733,6 +746,7 @@ router.get('/getSystem', asyncHandler(async (req, res) => {
     return
   }
   configResult.value = systemFile
+  configResult.frameProcessingConfig = normalizeFrameProcessingConfig(state.frameProcessingConfig)
 
   state.baudRate = constantObj.baudRateObj[configResult.value] || 1000000
 
@@ -1120,6 +1134,28 @@ router.post('/setZeroBaseline', asyncHandler(async (req, res) => {
   res.json(new HttpResult(0, { zeroState: state.zeroState }, 'success'))
 }))
 
+router.get('/getFrameProcessingConfig', asyncHandler(async (req, res) => {
+  res.json(new HttpResult(0, {
+    config: normalizeFrameProcessingConfig(state.frameProcessingConfig),
+    locked: Boolean(state.processingConfigLocked || state.colFlag),
+  }, 'success'))
+}))
+
+router.post('/setFrameProcessingConfig', asyncHandler(async (req, res) => {
+  if (state.processingConfigLocked || state.colFlag) {
+    res.json(new HttpResult(1, {
+      config: normalizeFrameProcessingConfig(state.collectionProcessingConfig || state.frameProcessingConfig),
+      locked: true,
+    }, 'Processing config is locked during collection'))
+    return
+  }
+  state.frameProcessingConfig = resolveFrameProcessingConfig(req)
+  res.json(new HttpResult(0, {
+    config: state.frameProcessingConfig,
+    locked: false,
+  }, 'success'))
+}))
+
 router.post('/startCol', asyncHandler(async (req, res) => {
   const fileName = resolveRequestValue(req, ['fileName', 'filename'])
   state.selectArr = []
@@ -1137,9 +1173,15 @@ router.post('/startCol', asyncHandler(async (req, res) => {
   const matchCount = sensorArr.filter((a) => typeof a === 'string' && a.includes(currentFile)).length
 
   if (matchCount > 0) {
+    state.frameProcessingConfig = resolveFrameProcessingConfig(req)
+    state.collectionProcessingConfig = { ...state.frameProcessingConfig }
+    state.processingConfigLocked = true
     state.colFlag = true
     state.colName = String(fileName ?? Date.now())
-    res.json(new HttpResult(0, {}, 'Collection started'))
+    res.json(new HttpResult(0, {
+      processingConfig: state.collectionProcessingConfig,
+      processingConfigLocked: true,
+    }, 'Collection started'))
   } else {
     res.json(new HttpResult(0, 'Please select correct sensor type', 'error'))
   }
@@ -1147,6 +1189,8 @@ router.post('/startCol', asyncHandler(async (req, res) => {
 
 router.get('/endCol', (req, res) => {
   state.colFlag = false
+  state.processingConfigLocked = false
+  state.collectionProcessingConfig = null
   res.json(new HttpResult(0, 'success', 'Collection stopped'))
 })
 
@@ -1197,7 +1241,8 @@ router.post('/getDbHistory', asyncHandler(async (req, res) => {
     return
   }
 
-  const { length, pressArr, areaArr, rows } = await dbGetData({ db, params: [time] })
+  const historyData = await dbGetData({ db, params: [time] })
+  const { rows, ...historyChartData } = historyData
 
   state.historyDbArr = rows
   state.colMaxHZ = state.historyDbArr.length > 1
@@ -1207,7 +1252,7 @@ router.post('/getDbHistory', asyncHandler(async (req, res) => {
   state.historyFlag = true
   state.playIndex = 0
 
-  res.json(new HttpResult(0, { length, pressArr, areaArr }, 'success'))
+  res.json(new HttpResult(0, historyChartData, 'success'))
 }))
 
 router.post('/copReportData', asyncHandler(async (req, res) => {
@@ -1278,7 +1323,14 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
 
   if (!Object.keys(selectJson).length) {
     state.historySelectCache = null
-    res.json(new HttpResult(0, { pressArr: {}, areaArr: {} }, 'success'))
+    res.json(new HttpResult(0, {
+      pressArr: {},
+      areaArr: {},
+      pressureArr: {},
+      forceArr: {},
+      pressureAreaArr: {},
+      forceAreaArr: {},
+    }, 'success'))
     return
   }
 
@@ -1295,50 +1347,71 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
   const PLAYBACK_CHART_TARGET_POINTS = 500
   const rows = state.historyDbArr
   const keyArr = Object.keys(JSON.parse(rows[0].data || '{}'))
-  const pressArr = {}
-  const areaArr = {}
-  const pressBucket = {}
-  const areaBucket = {}
+  const pressureArr = {}
+  const forceArr = {}
+  const pressureAreaArr = {}
+  const forceAreaArr = {}
+  const pressureBucket = {}
+  const forceBucket = {}
+  const pressureAreaBucket = {}
+  const forceAreaBucket = {}
   const bucketCount = {}
   const bucketSize = Math.max(1, Math.ceil(rows.length / PLAYBACK_CHART_TARGET_POINTS))
   keyArr.forEach((key) => {
-    pressArr[key] = []
-    areaArr[key] = []
-    pressBucket[key] = 0
-    areaBucket[key] = 0
+    pressureArr[key] = []
+    forceArr[key] = []
+    pressureAreaArr[key] = []
+    forceAreaArr[key] = []
+    pressureBucket[key] = 0
+    forceBucket[key] = 0
+    pressureAreaBucket[key] = 0
+    forceAreaBucket[key] = 0
     bucketCount[key] = 0
   })
 
   for (let i = 0; i < rows.length; i++) {
     const dataObj = JSON.parse(rows[i].data || '{}')
     for (const key of keyArr) {
-      const item = dataObj[key]
-      const arr = item && item.arr ? item.arr : []
+      const item = ensureProcessedMatrixItem(key, dataObj[key] || {}, state.frameProcessingConfig)
+      const pressureValues = Array.isArray(item.pressureArr) ? item.pressureArr : []
+      const forceValues = Array.isArray(item.forceArr) ? item.forceArr : []
       const sel = getFirstSelectionRegion(getSelectionForMatrixKey(selectJson, key))
 
-      let press = 0
-      let area = 0
+      let pressureTotal = 0
+      let forceTotal = 0
+      let pressureArea = 0
+      let forceArea = 0
       if (sel && typeof sel === 'object') {
         const { xStart, xEnd, yStart, yEnd, width } = sel
         if ([xStart, xEnd, yStart, yEnd, width].every((v) => typeof v === 'number')) {
           for (let y = yStart; y < yEnd; y++) {
             for (let x = xStart; x < xEnd; x++) {
-              const v = arr[y * width + x] || 0
-              press += v
-              if (v > 0) area++
+              const index = y * width + x
+              const pressure = Number(pressureValues[index]) || 0
+              const force = Number(forceValues[index]) || 0
+              pressureTotal += pressure
+              forceTotal += force
+              if (pressure > 0) pressureArea++
+              if (force > 0) forceArea++
             }
           }
         }
       }
 
-      pressBucket[key] += press
-      areaBucket[key] += area
+      pressureBucket[key] += pressureTotal
+      forceBucket[key] += forceTotal
+      pressureAreaBucket[key] += pressureArea
+      forceAreaBucket[key] += forceArea
       bucketCount[key]++
       if (bucketCount[key] >= bucketSize) {
-        pressArr[key].push(pressBucket[key] / bucketCount[key])
-        areaArr[key].push(areaBucket[key] / bucketCount[key])
-        pressBucket[key] = 0
-        areaBucket[key] = 0
+        pressureArr[key].push(pressureBucket[key] / bucketCount[key])
+        forceArr[key].push(forceBucket[key] / bucketCount[key])
+        pressureAreaArr[key].push(pressureAreaBucket[key] / bucketCount[key])
+        forceAreaArr[key].push(forceAreaBucket[key] / bucketCount[key])
+        pressureBucket[key] = 0
+        forceBucket[key] = 0
+        pressureAreaBucket[key] = 0
+        forceAreaBucket[key] = 0
         bucketCount[key] = 0
       }
     }
@@ -1347,13 +1420,23 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
   // flush 尾部
   for (const key of keyArr) {
     if (bucketCount[key] > 0) {
-      pressArr[key].push(pressBucket[key] / bucketCount[key])
-      areaArr[key].push(areaBucket[key] / bucketCount[key])
+      pressureArr[key].push(pressureBucket[key] / bucketCount[key])
+      forceArr[key].push(forceBucket[key] / bucketCount[key])
+      pressureAreaArr[key].push(pressureAreaBucket[key] / bucketCount[key])
+      forceAreaArr[key].push(forceAreaBucket[key] / bucketCount[key])
     }
   }
   // ─── [PERF-PLAYBACK-OPT] 结束 ──────────────────────────────────
 
-  res.json(new HttpResult(0, { length: rows.length, pressArr, areaArr }, 'success'))
+  res.json(new HttpResult(0, {
+    length: rows.length,
+    pressArr: forceArr,
+    areaArr: forceAreaArr,
+    pressureArr,
+    forceArr,
+    pressureAreaArr,
+    forceAreaArr,
+  }, 'success'))
 }))
 
 router.post('/getContrastData', asyncHandler(async (req, res) => {
@@ -2112,6 +2195,10 @@ router.post('/getCsvData', asyncHandler(async (req, res) => {
     length: playback.length,
     pressArr: playback.pressArr,
     areaArr: playback.areaArr,
+    pressureArr: playback.pressureArr,
+    forceArr: playback.forceArr,
+    pressureAreaArr: playback.pressureAreaArr,
+    forceAreaArr: playback.forceAreaArr,
     initialIndex: 0,
     initialTimestamp: state.historyDbArr[0]?.timestamp || '',
   }, 'success'))
