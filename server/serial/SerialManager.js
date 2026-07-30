@@ -201,7 +201,7 @@ function broadcastDataQualityIfNeeded(portPath, dataItem, broadcastFn, now = Dat
   if (quality.status === 'ok') return
   if (now - quality.lastNotifyAt < DATA_QUALITY_NOTIFY_INTERVAL) return
   quality.lastNotifyAt = now
-  broadcastFn(JSON.stringify({
+  broadcastFn({
     dataQuality: {
       port: portPath,
       type: dataItem.type,
@@ -213,7 +213,7 @@ function broadcastDataQualityIfNeeded(portPath, dataItem, broadcastFn, now = Dat
       badFrameRate: quality.badFrameRate,
       lastError: quality.lastError,
     }
-  }))
+  })
 }
 
 function recordBadFrame(portPath, dataItem, broadcastFn, errorType, detail = {}) {
@@ -803,19 +803,6 @@ function updateHZAndStartTimer(dataItem, stamp, onTimerStart, portPath, broadcas
   return true
 }
 
-function updateArrList(dataItem, data, maxLength = 3) {
-  if (!dataItem.arrList) {
-    dataItem.arrList = []
-  } else {
-    if (dataItem.arrList.length < maxLength) {
-      dataItem.arrList.push(data)
-    } else {
-      dataItem.arrList.shift()
-      dataItem.arrList.push(data)
-    }
-  }
-}
-
 // ═══════════════════════════════════════════════════════════
 //  Data Frame Callback Binding
 // ═══════════════════════════════════════════════════════════
@@ -850,7 +837,7 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       state.macInfo[portPath] = { uniqueId, version }
 
       if (Object.keys(state.macInfo).length === allPorts.length) {
-        broadcastFn(JSON.stringify({ macInfo: state.macInfo }))
+        broadcastFn({ macInfo: state.macInfo })
       }
 
       if (uniqueId && dataItem.deviceClass === 'foot') {
@@ -859,7 +846,7 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
           dataItem.type = deviceType
           dataItem.premission = premission
           console.log(`[Serial] ${portPath} final type: ${deviceType}, auth: ${premission}`)
-          broadcastFn(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission } }))
+          broadcastFn({ deviceUpdate: { path: portPath, type: deviceType, premission } })
         }
       }
       return
@@ -894,10 +881,6 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       dataItem.stamp = stamp
       recordGoodFrame(portPath, dataItem, pointArr.length, dataItem.arr.length, stamp)
       if (!updateHZAndStartTimer(dataItem, stamp, onTimerStart, portPath, broadcastFn)) return
-
-      if (state.file === 'foot') {
-        updateArrList(dataItem, dataItem.arr, 60)
-      }
       return
     }
 
@@ -975,7 +958,6 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       dataItem.stamp = stamp
       state.oldTimeObj[dataItem.type] = stamp
       recordGoodFrame(portPath, dataItem, pointArr.length, dataItem.arr.length, stamp)
-      updateArrList(dataItem, pointArr)
       return
     }
 
@@ -1021,7 +1003,6 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       dataItem.stamp = stamp
       state.oldTimeObj[dataItem.type] = stamp
       recordGoodFrame(portPath, dataItem, pointArr.length, dataItem.arr.length, stamp)
-      updateArrList(dataItem, matrixData)
       return
     }
 
@@ -1054,7 +1035,7 @@ async function connectPort(broadcastFn, onTimerStart) {
     }))
   } catch (err) {
     const normalized = normalizeConnectionError(err)
-    broadcastFn(JSON.stringify({ connectResult: serializeConnectionError(normalized) }))
+    broadcastFn({ connectResult: serializeConnectionError(normalized) })
     await cleanupSerialResources().catch((cleanupErr) => {
       console.warn(`[Connect] Cleanup after failure failed: ${cleanupErr.message}`)
     })
@@ -1070,7 +1051,7 @@ async function connectPortUnlocked(broadcastFn, onTimerStart, options = {}) {
   const failedPorts = []
 
   if (options.cleanupBeforeConnect !== false) {
-    broadcastFn(JSON.stringify({ connectProgress: { stage: 'cleaning' } }))
+    broadcastFn({ connectProgress: { stage: 'cleaning' } })
     await cleanupSerialResources()
   }
 
@@ -1095,7 +1076,7 @@ async function connectPortUnlocked(broadcastFn, onTimerStart, options = {}) {
   for (const portInfo of ports) {
     const { path: portPath } = portInfo
     console.log(`[Connect] Detecting baud rate for ${portPath}...`)
-    broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'detecting_baud' } }))
+    broadcastFn({ connectProgress: { path: portPath, stage: 'detecting_baud' } })
 
     let detectedBaud = null
     try {
@@ -1124,7 +1105,7 @@ async function connectPortUnlocked(broadcastFn, onTimerStart, options = {}) {
     const { path: portPath } = portInfo
     const deviceClass = BAUD_DEVICE_MAP[detectedBaud] || 'unknown'
     console.log(`[Connect] ${portPath} -> baud: ${detectedBaud}, device class: ${deviceClass}`)
-    broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'connecting', baudRate: detectedBaud, deviceClass } }))
+    broadcastFn({ connectProgress: { path: portPath, stage: 'connecting', baudRate: detectedBaud, deviceClass } })
 
     let stablePort, stableParser
     try {
@@ -1154,7 +1135,7 @@ async function connectPortUnlocked(broadcastFn, onTimerStart, options = {}) {
     if (deviceClass === 'sit' || deviceClass === 'foot') {
       try {
         console.log(`[Connect] ${portPath} -> ${deviceClass} device, querying MAC...`)
-        broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'getting_mac' } }))
+        broadcastFn({ connectProgress: { path: portPath, stage: 'getting_mac' } })
         const { uniqueId, version } = await sendMacCommand(stablePort, { timeoutMs: MAC_CONNECT_TIMEOUT })
         if (!uniqueId) {
           failedPorts.push({ path: portPath, status: 'mac_failed', code: 'MAC_FAIL', message: CONNECTION_ERROR_META.MAC_FAIL.message })
@@ -1163,7 +1144,7 @@ async function connectPortUnlocked(broadcastFn, onTimerStart, options = {}) {
         }
 
         state.macInfo[portPath] = { uniqueId, version }
-        broadcastFn(JSON.stringify({ connectProgress: { path: portPath, stage: 'resolving_type', uniqueId } }))
+        broadcastFn({ connectProgress: { path: portPath, stage: 'resolving_type', uniqueId } })
         const { type: deviceType, premission } = await resolveDeviceType(uniqueId, { timeoutMs: TYPE_RESOLVE_TIMEOUT })
 
         if (!deviceType) {
@@ -1181,7 +1162,7 @@ async function connectPortUnlocked(broadcastFn, onTimerStart, options = {}) {
         dataItem.type = deviceType
         dataItem.premission = true
         bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerStart, ports)
-        broadcastFn(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission: true } }))
+        broadcastFn({ deviceUpdate: { path: portPath, type: deviceType, premission: true } })
       } catch (err) {
         const normalized = normalizeConnectionError(err, 'MAC_FAIL', 'mac')
         failedPorts.push({ path: portPath, status: 'mac_or_type_failed', code: normalized.code, message: normalized.userMessage })
@@ -1213,7 +1194,7 @@ async function connectPortUnlocked(broadcastFn, onTimerStart, options = {}) {
       premission: dataItem.premission,
     })
 
-    broadcastFn(JSON.stringify({
+    broadcastFn({
       connectProgress: {
         path: portPath,
         stage: 'connected',
@@ -1221,7 +1202,7 @@ async function connectPortUnlocked(broadcastFn, onTimerStart, options = {}) {
         deviceClass,
         type: dataItem.type,
       }
-    }))
+    })
   }
 
   if (!connectedPorts.length) {
@@ -1237,9 +1218,9 @@ async function connectPortUnlocked(broadcastFn, onTimerStart, options = {}) {
     authMode: constantObj.AUTH_MODE,
   }
 
-  broadcastFn(JSON.stringify({ connectResult: result }))
+  broadcastFn({ connectResult: result })
   if (Object.keys(state.macInfo).length > 0) {
-    broadcastFn(JSON.stringify({ macInfo: state.macInfo }))
+    broadcastFn({ macInfo: state.macInfo })
   }
 
   console.log(`[Connect] One-click connect done, connected ${connectedPorts.length}/${ports.length} device(s)`)
@@ -1285,22 +1266,22 @@ async function rescanPort(broadcastFn, onTimerStart) {
   try {
     return await runWithConnectionLock('rescan', async () => {
       console.log('[Rescan] Starting full reconnect...')
-      broadcastFn(JSON.stringify({ rescanProgress: { stage: 'cleaning' } }))
+      broadcastFn({ rescanProgress: { stage: 'cleaning' } })
       const cleanupResult = await cleanupSerialResources()
       await new Promise(r => setTimeout(r, 1000))
 
       console.log(`[Rescan] Cleaned ${cleanupResult.cleaned} port(s), reconnecting...`)
-      broadcastFn(JSON.stringify({ rescanProgress: { stage: 'reconnecting', cleaned: cleanupResult.cleaned } }))
+      broadcastFn({ rescanProgress: { stage: 'reconnecting', cleaned: cleanupResult.cleaned } })
 
       const result = await connectPortUnlocked(broadcastFn, onTimerStart, { cleanupBeforeConnect: false })
-      broadcastFn(JSON.stringify({ rescanProgress: { stage: 'done', cleaned: cleanupResult.cleaned, result } }))
+      broadcastFn({ rescanProgress: { stage: 'done', cleaned: cleanupResult.cleaned, result } })
       console.log('[Rescan] Rescan complete')
       return result
     })
   } catch (err) {
     const normalized = normalizeConnectionError(err)
-    broadcastFn(JSON.stringify({ rescanProgress: { stage: 'failed', error: serializeConnectionError(normalized) } }))
-    broadcastFn(JSON.stringify({ connectResult: serializeConnectionError(normalized) }))
+    broadcastFn({ rescanProgress: { stage: 'failed', error: serializeConnectionError(normalized) } })
+    broadcastFn({ connectResult: serializeConnectionError(normalized) })
     await cleanupSerialResources().catch((cleanupErr) => {
       console.warn(`[Rescan] Cleanup after failure failed: ${cleanupErr.message}`)
     })

@@ -33,7 +33,7 @@ function createWsServer() {
   wsServer.on('connection', (ws, req) => {
     const clientName = `${req.connection.remoteAddress}:${req.connection.remotePort}`
     console.log(`[WS] Client connected: ${clientName}`)
-    broadcast(JSON.stringify({}))
+    broadcast({})
   })
 
   return { wsHttpServer, wsServer }
@@ -42,24 +42,34 @@ function createWsServer() {
 /**
  * 向所有已连接的 WebSocket 客户端广播数据
  * 如果 msgpack 可用，自动使用二进制格式传输（体积更小、解析更快）
- * @param {string|Object} data - JSON 字符串或对象
+ *
+ * 优先传对象而不是 JSON 字符串：传字符串会多一次 stringify + parse 往返，
+ * 实时帧动辄两万个数字，这次往返是纯浪费。
+ * @param {string|Object} data - 对象（推荐）或 JSON 字符串
  */
 function broadcast(data) {
   if (!wsServer) return
+
+  // 没有客户端时直接跳过编码
+  const clients = []
+  wsServer.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) clients.push(client)
+  })
+  if (!clients.length) return
+
   let payload
   if (msgpack) {
-    // 二进制模式：将对象编码为 MessagePack
+    // 二进制模式：只有传进来的是字符串时才需要先解析回对象
     const obj = typeof data === 'string' ? JSON.parse(data) : data
     payload = Buffer.from(msgpack.encode(obj))
   } else {
     // JSON 回退模式
     payload = typeof data === 'string' ? data : JSON.stringify(data)
   }
-  wsServer.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(payload)
-    }
-  })
+
+  for (const client of clients) {
+    client.send(payload)
+  }
 }
 
 /**

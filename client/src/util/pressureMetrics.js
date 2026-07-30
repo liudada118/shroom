@@ -195,12 +195,27 @@ export function estimateMaxPressure(adcMax, nValid, sensor, adcAvg) {
   return Number(Math.max(0, avgP * (adcMax / adcAvg)).toFixed(2))
 }
 
+// 单点面积必须与后端 util/pressureFrameProcessor.js 的 MATRIX_CONFIG.pointAreaCm2 保持一致，
+// 否则压强与压力互相换算时前后端口径会不一致。
+const POINT_AREA_CM2 = {
+  'endi-back': 1.3,
+  'endi-sit': 1,
+  'cary-back': 1.9,
+  'cary-sit': 2.25,
+  'car-back': 1,
+  'car-sit': 1,
+  bed: 1,
+  hand: 1,
+  foot: 1,
+  bighand: 1,
+}
+
 export function getPressurePointAreaCm2(key) {
   const value = String(key || '').toLowerCase()
-  if (value.includes('carY-back')) return (10 * 19) / 100
-  if (value.includes('carY-sit')) return (15 * 15) / 100
-  if (value.includes('back')) return (13 * 10) / 100
-  if (value.includes('sit')) return (10 * 10) / 100
+  if (POINT_AREA_CM2[value] !== undefined) return POINT_AREA_CM2[value]
+  if (value.includes('cary-back')) return POINT_AREA_CM2['cary-back']
+  if (value.includes('cary-sit')) return POINT_AREA_CM2['cary-sit']
+  if (value.includes('endi-back')) return POINT_AREA_CM2['endi-back']
   return 1
 }
 

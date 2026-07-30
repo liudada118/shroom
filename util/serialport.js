@@ -3,24 +3,45 @@ var os = require('os');
 
 let parserArr = {}
 
+/** CH340/CH341 官方 USB VID，串口厂商字段不统一时用它兜底 */
+const CH34X_VENDOR_IDS = ['1a86']
+
+/** 候选设备的厂商与型号关键字 */
+const CH34X_KEYWORDS = ['wch', 'ch340', 'ch341']
+
 /**
- * 返回所有ch340的串口
+ * 判断单个串口是否为压力设备候选
+ * 依次看 vendorId、manufacturer、友好名称，命中任一即认为是候选
+ */
+const isCandidatePort = (port) => {
+    const vendorId = String(port.vendorId || '').toLowerCase()
+    if (CH34X_VENDOR_IDS.includes(vendorId)) return true
+
+    const description = [port.manufacturer, port.friendlyName, port.pnpId, port.path]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+    return CH34X_KEYWORDS.some((keyword) => description.includes(keyword))
+}
+
+/**
+ * 筛选出压力设备候选串口
+ * 注意：必须用 os.platform() 调用，直接比较函数引用会恒为假，导致过滤失效
  * @param {*obj} ports 全部串口和串口的全部信息
- * @returns 筛选出ch340的串口
+ * @returns 筛选出的候选串口
  */
 const getPort = (ports) => {
-    // console.log(ports)
-    if (os.platform == 'win32') {
-        return ports.filter((port) => {
-            return port.manufacturer == 'wch.cn'
-        })
-    } else if (os.platform == 'darwin') {
-        return ports.filter((port) => {
-            return port.path.includes('usb')
-        })
-    } else {
-        return ports
+    const platform = os.platform()
+    if (platform === 'win32') {
+        return ports.filter(isCandidatePort)
     }
+    if (platform === 'darwin') {
+        return ports.filter((port) => {
+            const path = String(port.path || '').toLowerCase()
+            return path.includes('usb') || isCandidatePort(port)
+        })
+    }
+    return ports
 }
 
 
@@ -175,5 +196,6 @@ async function connectPort() {
 module.exports = {
     connectPort,
     newSerialPortLink,
-    getPort
+    getPort,
+    isCandidatePort
 }

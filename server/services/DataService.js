@@ -450,12 +450,46 @@ function parseData(parserArr, objs, type) {
 }
 
 /**
+ * 为组帧克隆 dataMap
+ *
+ * 不用 structuredClone(state.dataMap) 的原因：dataMap 上挂着 arrList 这类
+ * 只写不读的历史缓存（脚垫场景 60 帧 × 4096 个数），深拷贝它纯属浪费。
+ * 这里只复制组帧真正会用到的字段，矩阵数组做一层浅拷贝即可 —— 下游
+ * buildDirectedFrame / processMatrixItem 都不会原地改写传入的数组。
+ */
+const FRAME_CLONE_FIELDS = [
+  'type', 'premission', 'status', 'deviceClass', 'baudRate',
+  'arr', 'rotate', 'stamp', 'HZ', 'sampleRateHz', 'frameIntervalMs',
+  'rawFrame', 'rawPointArray', 'dataQuality', 'cop', 'breatheData',
+  'hardwareSampleRateHz', 'last', 'next',
+]
+
+function cloneDataMapForFrame(dataMap) {
+  const result = {}
+  for (const portPath of Object.keys(dataMap || {})) {
+    const item = dataMap[portPath]
+    if (!item || typeof item !== 'object') {
+      result[portPath] = item
+      continue
+    }
+    const clone = {}
+    for (const field of FRAME_CLONE_FIELDS) {
+      const value = item[field]
+      if (value === undefined) continue
+      clone[field] = Array.isArray(value) ? [...value] : value
+    }
+    result[portPath] = clone
+  }
+  return result
+}
+
+/**
  * 发送实时数据给前端
  */
 function sendData() {
   let obj
   if (state.baudRate === 921600) {
-    obj = parseData(state.parserArr, structuredClone(state.dataMap))
+    obj = parseData(state.parserArr, cloneDataMapForFrame(state.dataMap))
 
     Object.keys(obj).forEach((key) => {
       if (!Object.values(constantObj.type).includes(key)) {
@@ -465,12 +499,12 @@ function sendData() {
 
     if (Object.keys(obj).some((a) => Object.values(constantObj.type).includes(a))) {
       obj = buildProcessedFrame(obj)
-      broadcast(JSON.stringify({ data: obj }))
+      broadcast({ data: obj })
     }
   } else {
-    obj = parseData(state.parserArr, structuredClone(state.dataMap), 'highHZ')
+    obj = parseData(state.parserArr, cloneDataMapForFrame(state.dataMap), 'highHZ')
     obj = buildProcessedFrame(obj)
-    broadcast(JSON.stringify({ sitData: obj }))
+    broadcast({ sitData: obj })
   }
   return obj
 }
@@ -715,7 +749,7 @@ function finishPlayback() {
   clearPlayTimer()
 
   const realtimeAvailable = Object.keys(state.parserArr || {}).length > 0
-  broadcast(JSON.stringify({ playEnd: false, realtimeAvailable }))
+  broadcast({ playEnd: false, realtimeAvailable })
 }
 
 function getPlaybackIntervalMs() {
@@ -733,7 +767,7 @@ function runPlaybackTick() {
     return
   }
 
-  broadcast(JSON.stringify(snapshot.payload))
+  broadcast(snapshot.payload)
 
   if (snapshot.payload?.playError) {
     finishPlayback()
@@ -768,7 +802,7 @@ function startPlayback() {
   state.playbackConsecutiveBadFrames = 0
 
   clearPlayTimer()
-  broadcast(JSON.stringify({ playEnd: true }))
+  broadcast({ playEnd: true })
 
   runPlaybackTick()
   if (state.historyPlayFlag) {

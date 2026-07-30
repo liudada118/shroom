@@ -805,7 +805,7 @@ router.post('/changeSystemType', asyncHandler(async (req, res) => {
   state.baudRate = constantObj.baudRateObj[system] || 1000000
   const { db } = await initDb(state.file, state._dbPath)
   state.currentDb = db
-  broadcast(JSON.stringify({ sitData: {} }))
+  broadcast({ sitData: {} })
   const result = readSystemConfig()
   res.json(new HttpResult(0, { optimalObj: result.optimalObj[state.file], maxObj: result.maxObj[state.file] }, 'success'))
 }))
@@ -940,7 +940,7 @@ router.get('/sendMacConnected', asyncHandler(async (req, res) => {
     return
   }
 
-  broadcast(JSON.stringify({ macReaderLog: { message: `检测到 ${connectedPorts.length} 个已连接设备，开始读取 MAC...`, type: 'info', timestamp: Date.now() } }))
+  broadcast({ macReaderLog: { message: `检测到 ${connectedPorts.length} 个已连接设备，开始读取 MAC...`, type: 'info', timestamp: Date.now() } })
 
   const results = []
 
@@ -950,7 +950,7 @@ router.get('/sendMacConnected', asyncHandler(async (req, res) => {
     const port = parserItem.port
 
     if (!port || !port.isOpen) {
-      broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 端口未打开，跳过`, type: 'warning', timestamp: Date.now() } }))
+      broadcast({ macReaderLog: { message: `${portPath}: 端口未打开，跳过`, type: 'warning', timestamp: Date.now() } })
       results.push({ path: portPath, status: 'not_open' })
       continue
     }
@@ -959,17 +959,17 @@ router.get('/sendMacConnected', asyncHandler(async (req, res) => {
     const baudRate = dataItem.baudRate || parserItem.baudRate
     const deviceLabel = { hand: '手套', sit: '坐垫', foot: '脚垫' }[deviceClass] || '未知'
 
-    broadcast(JSON.stringify({
+    broadcast({
       macReaderDetect: { path: portPath, baudRate, deviceClass, deviceLabel }
-    }))
-    broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 发送 AT 指令读取 MAC (${deviceLabel})...`, type: 'info', timestamp: Date.now() } }))
-    broadcast(JSON.stringify({ macReaderStatus: { path: portPath, stage: 'reading' } }))
+    })
+    broadcast({ macReaderLog: { message: `${portPath}: 发送 AT 指令读取 MAC (${deviceLabel})...`, type: 'info', timestamp: Date.now() } })
+    broadcast({ macReaderStatus: { path: portPath, stage: 'reading' } })
 
     try {
       const { uniqueId, version } = await sendMacCommand(port)
 
       if (uniqueId) {
-        broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: MAC 读取成功 - ${uniqueId}`, type: 'success', timestamp: Date.now() } }))
+        broadcast({ macReaderLog: { message: `${portPath}: MAC 读取成功 - ${uniqueId}`, type: 'success', timestamp: Date.now() } })
         state.macInfo[portPath] = { uniqueId, version }
 
         // Auto-resolve device type via server query
@@ -978,11 +978,11 @@ router.get('/sendMacConnected', asyncHandler(async (req, res) => {
           dataItem.type = deviceType
           dataItem.premission = premission
           console.log(`[sendMacConnected] ${portPath} type resolved: ${deviceType}, auth: ${premission}`)
-          broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 设备类型已更新为 ${deviceType}`, type: 'success', timestamp: Date.now() } }))
-          broadcast(JSON.stringify({ deviceUpdate: { path: portPath, type: deviceType, premission } }))
+          broadcast({ macReaderLog: { message: `${portPath}: 设备类型已更新为 ${deviceType}`, type: 'success', timestamp: Date.now() } })
+          broadcast({ deviceUpdate: { path: portPath, type: deviceType, premission } })
         } else {
           console.warn(`[sendMacConnected] ${portPath} type not resolved for MAC ${uniqueId}`)
-          broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 服务器未返回设备类型`, type: 'warning', timestamp: Date.now() } }))
+          broadcast({ macReaderLog: { message: `${portPath}: 服务器未返回设备类型`, type: 'warning', timestamp: Date.now() } })
         }
 
         const result = {
@@ -994,25 +994,25 @@ router.get('/sendMacConnected', asyncHandler(async (req, res) => {
         }
         results.push(result)
 
-        broadcast(JSON.stringify({
+        broadcast({
           macReaderResult: {
             path: portPath, uniqueId, version,
             baudRate, deviceClass, deviceLabel,
             deviceType: deviceType || null
           }
-        }))
+        })
       } else {
-        broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: MAC 读取超时`, type: 'warning', timestamp: Date.now() } }))
+        broadcast({ macReaderLog: { message: `${portPath}: MAC 读取超时`, type: 'warning', timestamp: Date.now() } })
         results.push({ path: portPath, status: 'mac_timeout', baudRate, deviceClass, deviceLabel })
       }
     } catch (err) {
-      broadcast(JSON.stringify({ macReaderLog: { message: `${portPath}: 错误 - ${err.message}`, type: 'error', timestamp: Date.now() } }))
+      broadcast({ macReaderLog: { message: `${portPath}: 错误 - ${err.message}`, type: 'error', timestamp: Date.now() } })
       results.push({ path: portPath, status: 'error', error: err.message })
     }
   }
 
-  broadcast(JSON.stringify({ macReaderLog: { message: `MAC 读取完成: ${results.filter(r => r.status === 'success').length}/${connectedPorts.length} 成功`, type: 'success', timestamp: Date.now() } }))
-  broadcast(JSON.stringify({ macReaderDone: { results } }))
+  broadcast({ macReaderLog: { message: `MAC 读取完成: ${results.filter(r => r.status === 'success').length}/${connectedPorts.length} 成功`, type: 'success', timestamp: Date.now() } })
+  broadcast({ macReaderDone: { results } })
   res.json(new HttpResult(0, { results }, 'MAC reading complete'))
 }))
 
@@ -1027,7 +1027,7 @@ router.get('/readMacOnly', asyncHandler(async (req, res) => {
   const { getPort } = require('../../util/serialport')
 
   const sendLog = (msg, type = 'info') => {
-    broadcast(JSON.stringify({ macReaderLog: { message: msg, type, timestamp: Date.now() } }))
+    broadcast({ macReaderLog: { message: msg, type, timestamp: Date.now() } })
   }
 
   sendLog('Enumerating serial ports...', 'info')
@@ -1047,7 +1047,7 @@ router.get('/readMacOnly', asyncHandler(async (req, res) => {
     sendLog(`Detecting baud rate for ${portPath}...`, 'info')
 
     // Phase 1: Baud rate detection
-    broadcast(JSON.stringify({ macReaderStatus: { path: portPath, stage: 'detecting' } }))
+    broadcast({ macReaderStatus: { path: portPath, stage: 'detecting' } })
     const detectedBaud = await detectBaudRate(portPath)
 
     if (!detectedBaud) {
@@ -1060,14 +1060,14 @@ router.get('/readMacOnly', asyncHandler(async (req, res) => {
     const deviceLabel = { hand: 'Glove', sit: 'Sit Pad', foot: 'Foot Pad' }[deviceClass] || 'Unknown'
     sendLog(`${portPath}: Baud ${detectedBaud} matched -> ${deviceLabel}`, 'success')
 
-    broadcast(JSON.stringify({
+    broadcast({
       macReaderDetect: { path: portPath, baudRate: detectedBaud, deviceClass, deviceLabel }
-    }))
+    })
 
     // Phase 2: Re-open and read MAC
     await new Promise(r => setTimeout(r, 200))
     sendLog(`${portPath}: Opening stable connection for MAC reading...`, 'info')
-    broadcast(JSON.stringify({ macReaderStatus: { path: portPath, stage: 'reading' } }))
+    broadcast({ macReaderStatus: { path: portPath, stage: 'reading' } })
 
     let tempPort = null
     try {
@@ -1087,12 +1087,12 @@ router.get('/readMacOnly', asyncHandler(async (req, res) => {
           uniqueId, version, timestamp: Date.now()
         })
 
-        broadcast(JSON.stringify({
+        broadcast({
           macReaderResult: {
             path: portPath, uniqueId, version,
             baudRate: detectedBaud, deviceClass, deviceLabel
           }
-        }))
+        })
       } else {
         sendLog(`${portPath}: MAC read timeout, device may not support AT query`, 'warning')
         results.push({
@@ -1114,7 +1114,7 @@ router.get('/readMacOnly', asyncHandler(async (req, res) => {
   }
 
   sendLog(`MAC reading complete: ${results.filter(r => r.status === 'success').length}/${ports.length} successful`, 'success')
-  broadcast(JSON.stringify({ macReaderDone: { results } }))
+  broadcast({ macReaderDone: { results } })
   res.json(new HttpResult(0, { results }, 'MAC reading complete'))
 }))
 
@@ -1531,9 +1531,9 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
       warnings: [],
     }
 
-    broadcast(JSON.stringify({
+    broadcast({
       contrastData: initialFrame
-    }))
+    })
 
     res.json(new HttpResult(0, payload, 'success'))
     return
@@ -1605,9 +1605,9 @@ router.post('/getContrastData', asyncHandler(async (req, res) => {
     payload.warnings = ['两组数据帧数不同，播放时按帧号同步，较短数据保持末帧。']
   }
 
-  broadcast(JSON.stringify({
+  broadcast({
     contrastData: initialFrame
-  }))
+  })
 
   res.json(new HttpResult(0, payload, 'success'))
 }))
@@ -1625,7 +1625,7 @@ router.post('/getContrastIndex', asyncHandler(async (req, res) => {
   const frame = (leftIndex !== undefined || rightIndex !== undefined)
     ? buildContrastFrameByIndex(state.leftDbArr, state.rightDbArr, keys, leftIndex ?? 0, rightIndex ?? 0)
     : buildContrastFrame(state.leftDbArr, state.rightDbArr, keys, frameIndex)
-  broadcast(JSON.stringify({ contrastData: frame }))
+  broadcast({ contrastData: frame })
   res.json(new HttpResult(0, frame, 'success'))
 }))
 
@@ -1693,7 +1693,7 @@ router.post('/getDbHistoryIndex', asyncHandler(async (req, res) => {
     return
   }
 
-  broadcast(JSON.stringify(snapshot.payload))
+  broadcast(snapshot.payload)
   if (snapshot.payload?.playError) {
     res.json(new HttpResult(1, snapshot.payload.playError, snapshot.payload.playError.message))
     return
