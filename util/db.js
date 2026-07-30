@@ -1457,53 +1457,25 @@ function isEmptyCsvValue(value) {
   return value === undefined || value === null || String(value).trim() === ''
 }
 
-function isOriginalDataColumn(header) {
-  const normalized = normalizeCsvHeader(header)
-  if (!normalized) return false
-  if (/selectData$/i.test(normalized) || normalized.includes('框选区域')) return false
-  return /realData$/i.test(normalized) || normalized.endsWith(' 原始数据')
-}
+// 压强/压力模式导出的数据列带单位后缀（如「坐垫压强数据(kPa)」「坐垫压力数据(N)」），
+// 表头判定与前缀提取都必须先剥掉单位，否则自家导出的文件反过来导入会被判为缺少必需表头。
+const CSV_UNIT_SUFFIX_PATTERN = /[（(]\s*(?:kpa|n|cm²|cm2)\s*[）)]\s*$/i
+const CSV_METRIC_WORD_PATTERN = /(?:压强|压力|pressure|force)\s*$/i
 
-function getMetricPrefix(realDataHeader) {
-  const normalized = normalizeCsvHeader(realDataHeader)
-  if (/realData$/i.test(normalized)) {
-    return normalized.replace(/realData$/i, '')
-  }
-  return normalized.replace(/\s*原始数据$/, '').trim()
-}
-
-function hasImportMetricHeaders(headers, realDataHeader) {
-  const normalizedHeaders = headers.map(normalizeCsvHeader)
-  const prefix = getMetricPrefix(realDataHeader)
-  if (!prefix) return false
-
-  if (/realData$/i.test(realDataHeader)) {
-    return [
-      `${prefix}max`,
-      `${prefix}maxCoord`,
-      `${prefix}aver`,
-      `${prefix}pressureArea`,
-    ].every((header) => normalizedHeaders.includes(header))
-  }
-
-  const matches = (tester) => normalizedHeaders.some((header) => header.startsWith(`${prefix} `) && tester(header))
-  return [
-    (header) => /原始最大压强\s*\(/.test(header),
-    (header) => header.includes('原始最大压强坐标'),
-    (header) => header.includes('原始平均压强'),
-    (header) => header.includes('原始受力面积'),
-  ].every(matches)
+function stripCsvUnitSuffix(header) {
+  return String(header ?? '').replace(CSV_UNIT_SUFFIX_PATTERN, '').trim()
 }
 
 function isOriginalDataColumn(header) {
   const normalized = normalizeCsvHeader(header)
   if (!normalized) return false
   if (/select\s*Data$/i.test(normalized) || /selectData$/i.test(normalized) || normalized.includes('框选')) return false
-  return normalized === '数据' || /数据$/.test(normalized) || /realData$/i.test(normalized) || /\sData$/i.test(normalized) || /原始数据$/.test(normalized)
+  const base = stripCsvUnitSuffix(normalized)
+  return base === '数据' || /数据$/.test(base) || /realData$/i.test(base) || /\sData$/i.test(base) || /原始数据$/.test(base)
 }
 
 function getMetricPrefix(realDataHeader) {
-  const normalized = normalizeCsvHeader(realDataHeader)
+  const normalized = stripCsvUnitSuffix(normalizeCsvHeader(realDataHeader))
   if (normalized === '数据') return ''
   if (/realData$/i.test(normalized)) {
     return normalized.replace(/realData$/i, '')
@@ -1512,7 +1484,8 @@ function getMetricPrefix(realDataHeader) {
     return normalized.replace(/\sData$/i, '').trim()
   }
   if (/数据$/.test(normalized)) {
-    return normalized.replace(/\s*数据$/, '').trim()
+    // 「坐垫压强数据」去掉「数据」后还剩计量词「压强」，一并去掉才是真正的传感面标签「坐垫」
+    return normalized.replace(/\s*数据$/, '').replace(CSV_METRIC_WORD_PATTERN, '').trim()
   }
   return normalized.replace(/\s*原始数据$/, '').trim()
 }
