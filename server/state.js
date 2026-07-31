@@ -28,6 +28,9 @@ const state = {
   colFlag: false,           // 采集开关
   colName: '',              // 采集命名
   selectArr: [],            // 框选区域
+  frameProcessingConfig: { filter: 30, gauss: 2, coherent: 1 },
+  collectionProcessingConfig: null,
+  processingConfigLocked: false,
   dataDirection: {
     left: true,
     up: true,

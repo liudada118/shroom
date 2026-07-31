@@ -4,6 +4,7 @@ const { state } = require('../state')
 
 const DEFAULT_PRESSURE_CONFIG = {
   backValueMultiplier: 3,
+  dummyPressureFormulaFile: 'dummyPressure_v2.10.3.js',
   pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
   pressureFormulaProfile: 'V2.7.38中英文logo',
 }
@@ -11,6 +12,7 @@ const DEFAULT_PRESSURE_CONFIG = {
 let configCache = null
 let configMtimeMs = 0
 let formulaCache = null
+let dummyFormulaCache = null
 
 function getPressureConfigPath() {
   if (process.env.PRESSURE_CONFIG_PATH) return process.env.PRESSURE_CONFIG_PATH
@@ -29,15 +31,24 @@ function normalizeFormulaFile(fileName) {
     : DEFAULT_PRESSURE_CONFIG.pressureFormulaFile
 }
 
+function normalizeDummyFormulaFile(fileName) {
+  const baseName = path.basename(String(fileName || DEFAULT_PRESSURE_CONFIG.dummyPressureFormulaFile))
+  return /^dummyPressure.*\.js$/i.test(baseName)
+    ? baseName
+    : DEFAULT_PRESSURE_CONFIG.dummyPressureFormulaFile
+}
+
 function normalizePressureConfig(config = {}) {
   const multiplier = Number(config.backValueMultiplier)
   const pressureFormulaFile = normalizeFormulaFile(config.pressureFormulaFile)
+  const dummyPressureFormulaFile = normalizeDummyFormulaFile(config.dummyPressureFormulaFile)
   const formulaName = path.basename(pressureFormulaFile, '.js').replace(/^pressureFormula_?/i, '')
   return {
     ...DEFAULT_PRESSURE_CONFIG,
     ...config,
     backValueMultiplier: Number.isFinite(multiplier) && multiplier >= 0 ? multiplier : DEFAULT_PRESSURE_CONFIG.backValueMultiplier,
     pressureFormulaFile,
+    dummyPressureFormulaFile,
     pressureFormulaProfile: String(config.pressureFormulaProfile || formulaName || DEFAULT_PRESSURE_CONFIG.pressureFormulaProfile),
   }
 }
@@ -78,11 +89,17 @@ function savePressureConfig(config = {}) {
     throw new Error(`Pressure formula file not found: ${nextConfig.pressureFormulaFile}`)
   }
   requirePressureFormula(formulaPath, nextConfig.pressureFormulaFile)
+  const dummyFormulaPath = path.join(getFormulaDir(), nextConfig.dummyPressureFormulaFile)
+  if (!fs.existsSync(dummyFormulaPath)) {
+    throw new Error(`Dummy pressure formula file not found: ${nextConfig.dummyPressureFormulaFile}`)
+  }
+  requireDummyPressureFormula(dummyFormulaPath, nextConfig.dummyPressureFormulaFile)
   fs.mkdirSync(path.dirname(configPath), { recursive: true })
   fs.writeFileSync(configPath, JSON.stringify(nextConfig, null, 2), 'utf-8')
   configCache = nextConfig
   configMtimeMs = fs.statSync(configPath).mtimeMs
   formulaCache = null
+  dummyFormulaCache = null
   return nextConfig
 }
 
@@ -126,6 +143,38 @@ function loadPressureFormula() {
   return moduleValue
 }
 
+function requireDummyPressureFormula(formulaPath, formulaFile) {
+  const resolvedPath = require.resolve(formulaPath)
+  delete require.cache[resolvedPath]
+  const moduleValue = require(resolvedPath)
+  const requiredExports = [
+    'calculateDummyValuesPressure',
+    'calculateDummyMatrixPressure',
+    'bodyAdcToKpaRaw',
+    'legAdcToKpaRaw',
+  ]
+  if (requiredExports.some((name) => typeof moduleValue[name] !== 'function')) {
+    throw new Error(`Dummy pressure formula file has invalid exports: ${formulaFile}`)
+  }
+  return moduleValue
+}
+
+function loadDummyPressureFormula() {
+  const config = loadPressureConfig()
+  const formulaPath = path.join(getFormulaDir(), config.dummyPressureFormulaFile)
+  if (!fs.existsSync(formulaPath)) {
+    throw new Error(`Dummy pressure formula file not found: ${config.dummyPressureFormulaFile}`)
+  }
+  const stat = fs.statSync(formulaPath)
+  if (dummyFormulaCache?.formulaPath === formulaPath && dummyFormulaCache?.mtimeMs === stat.mtimeMs) {
+    return dummyFormulaCache.module
+  }
+
+  const moduleValue = requireDummyPressureFormula(formulaPath, config.dummyPressureFormulaFile)
+  dummyFormulaCache = { formulaPath, mtimeMs: stat.mtimeMs, module: moduleValue }
+  return moduleValue
+}
+
 module.exports = {
   DEFAULT_PRESSURE_CONFIG,
   getPressureConfigPath,
@@ -135,4 +184,5 @@ module.exports = {
   listPressureFormulaFiles,
   getBackValueMultiplier,
   loadPressureFormula,
+  loadDummyPressureFormula,
 }

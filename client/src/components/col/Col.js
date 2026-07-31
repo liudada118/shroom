@@ -102,6 +102,10 @@ export default function Col(props) {
                 fileName: fileName,
                 HZ: hz,
                 dataDirection: getCurrentDataDirection(),
+                processingConfig: (() => {
+                    const { filter, gauss, coherent } = useEquipStore.getState().settingValue || {}
+                    return { filter, gauss, coherent }
+                })(),
             }
 
             axios({

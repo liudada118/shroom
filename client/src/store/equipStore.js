@@ -1,9 +1,16 @@
 import { create } from 'zustand'
 import { maxObj } from '../assets/util/constant'
 import { loadVisualSettingValue, normalizeVisualSettingMax } from '../util/visualSettingStorage'
+import { FORCE_METRIC_MODE, normalizePressureMetricMode } from '../util/pressureMetrics'
 
 // ─── 持久化设置值 ────────────────────────────────────────
-const DEFAULT_SETTINGS = { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 }
+const DEFAULT_SETTINGS = { gauss: 2, color: 5, filter: 30, height: 80, coherent: 1, autoColor: 1 }
+const PRESSURE_METRIC_MODE_STORAGE_KEY = 'pressureMetricMode'
+
+function loadPressureMetricMode() {
+  if (typeof localStorage === 'undefined') return FORCE_METRIC_MODE
+  return normalizePressureMetricMode(localStorage.getItem(PRESSURE_METRIC_MODE_STORAGE_KEY))
+}
 
 function loadSettingValue() {
   return loadVisualSettingValue('default', DEFAULT_SETTINGS, maxObj.bed)
@@ -18,6 +25,7 @@ export const useEquipStore = create((set) => ({
   status: {},
   equipStamp: 0,
   displayStatus: {},
+  metricStatus: { pressure: {}, force: {} },
   cop: {},
 
   // 系统配置
@@ -38,13 +46,21 @@ export const useEquipStore = create((set) => ({
   settingValueMax: initialMaxData,
   settingValueOptimal: initialSettings,
   num2DZoom: 100,
+  pressureMetricMode: loadPressureMetricMode(),
 
   // 框选工具
   selectArr: [],
 
   // 历史数据
   history: {},
-  historyChart: { pressArr: {}, areaArr: {} },
+  historyChart: {
+    pressArr: {},
+    areaArr: {},
+    pressureArr: {},
+    forceArr: {},
+    pressureAreaArr: {},
+    forceAreaArr: {},
+  },
   dataStatus: 'realtime',  // 'realtime' | 'history' | 'replay' | 'contrast'
   playbackHasSelection: false,
   playbackRecordDate: '',
@@ -57,6 +73,7 @@ export const useEquipStore = create((set) => ({
   setStatus: (s) => set({ status: s }),
   setEquipStamp: (s) => set({ equipStamp: s }),
   setDisplayStatus: (s) => set({ displayStatus: s }),
+  setMetricStatus: (s) => set({ metricStatus: s }),
   setEquipCop: (s) => set({ cop: s }),
 
   setSystemType: (s) => set({ systemType: s }),
@@ -74,6 +91,13 @@ export const useEquipStore = create((set) => ({
   setSettingValueMax: (s) => set({ settingValueMax: s }),
   setSettingValueOptimal: (s) => set({ settingValueOptimal: s }),
   setNum2DZoom: (s) => set({ num2DZoom: s }),
+  setPressureMetricMode: (mode) => {
+    const nextMode = normalizePressureMetricMode(mode)
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(PRESSURE_METRIC_MODE_STORAGE_KEY, nextMode)
+    }
+    set({ pressureMetricMode: nextMode })
+  },
 
   setSelectArr: (s) => set({ selectArr: s }),
 
@@ -91,7 +115,13 @@ export const useEquipStore = create((set) => ({
 export const getStatus = () => useEquipStore.getState().status
 export const getsetDisplayStatus = () => useEquipStore.getState().displayStatus
 export const getSysType = () => useEquipStore.getState().systemType
-export const getSettingValue = () => useEquipStore.getState().settingValue
+export const getSettingValue = () => ({
+  ...useEquipStore.getState().settingValue,
+  filter: 0,
+  gauss: 0,
+  coherent: 1,
+})
+export const getFrameProcessingSettingValue = () => useEquipStore.getState().settingValue
 export const getDisplayType = () => useEquipStore.getState().displayType
 export const getSettingValueOptimal = () => useEquipStore.getState().settingValueOptimal
 export const getSelectArr = () => useEquipStore.getState().selectArr

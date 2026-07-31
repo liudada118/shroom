@@ -32,16 +32,16 @@ function shouldHideCell(matrixKey, row, col, width, height) {
 }
 
 function getCellDisplay(rawValue, mode, maxAbs, colorMax) {
-    const displayValue = mode === 'diff'
-        ? Math.round(Number(rawValue) || 0)
+    const numericValue = mode === 'diff'
+        ? Math.round((Number(rawValue) || 0) * 10) / 10
         : normalizeDisplayValue(rawValue)
     const color = mode === 'diff'
         ? diffColor(Number(rawValue) || 0, maxAbs)
-        : jetWhite3NoWhite(0, getTextureColorMax(colorMax), displayValue)
+        : jetWhite3NoWhite(0, getTextureColorMax(colorMax), numericValue)
     const background = mode === 'diff'
         ? `rgb(${color[0]}, ${color[1]}, ${color[2]})`
         : `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${NUMBER_TEXT_COLOR_ALPHA})`
-    return { displayValue, background }
+    return { displayValue: numericValue.toFixed(1), background }
 }
 
 function drawValue(ctx, value, x, y, cellSize) {

@@ -40,6 +40,26 @@
         color: #FFFFFF;
     }
 
+    .chartNameWithAction {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        min-width: 0;
+    }
+
+    .pressureMetricSwap {
+        width: 1.75rem;
+        height: 1.75rem;
+        min-width: 1.75rem;
+        padding: 0;
+        color: #7fb4ff;
+
+        &:hover {
+            color: #ffffff !important;
+            background: rgba(22, 119, 255, 0.2) !important;
+        }
+    }
+
     .chartType {
         font-size: 0.75rem;
         font-weight: normal;

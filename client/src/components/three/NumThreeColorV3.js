@@ -5,7 +5,7 @@ import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
-import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, gaussBlur_return, jetWhite3NoWhite, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
+import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
 import { getMatrixPartFromDisplayType } from '../../util/constant';
 
 function jet(min, max, x) {
@@ -48,7 +48,11 @@ function jet(min, max, x) {
 function normalizeDisplayValue(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
-  return Math.max(0, Math.min(255, Math.round(numeric)));
+  return Math.max(0, Math.min(102.3, Math.round(numeric * 10) / 10));
+}
+
+function getDigitAtlasIndex(value) {
+  return Math.max(0, Math.min(1023, Math.round(normalizeDisplayValue(value) * 10)));
 }
 
 function getTextureColorMax(color) {
@@ -74,13 +78,10 @@ function getMagnifierCells(zoom) {
   return 5;
 }
 
-const DIGIT_ATLAS_GRID = 16;
-const DIGIT_ATLAS_CELL = 128;
+const DIGIT_ATLAS_GRID = 32;
+const DIGIT_ATLAS_CELL = 64;
 const DIGIT_ATLAS_SIZE = DIGIT_ATLAS_GRID * DIGIT_ATLAS_CELL;
-const DIGIT_TILE_INSET = 8;
-const NUM_2D_GAUSS_KERNEL_FACTOR = 0.5;
-const NUM_2D_TEMPORAL_ALPHA = 0.22;
-const NUM_2D_DISPLAY_DEADBAND = 1.1;
+const DIGIT_TILE_INSET = 4;
 const COLOR_VALUE_STEP = 0.01;
 const ENDI_JACKET_WIDTH = 24;
 const ENDI_JACKET_HEIGHT = 54;
@@ -124,61 +125,14 @@ function createEndiNullMask(systemType, displayType, width, height) {
   return null;
 }
 
-function prepareDisplayData(data, width, height, settings) {
+function prepareDisplayData(data, width, height) {
   const count = width * height;
-  let next = Array.from({ length: count }, (_, index) => Number(data?.[index]) || 0);
-  const filter = Number(settings?.filter);
-  if (Number.isFinite(filter) && filter > 0) {
-    next = next.map(value => (value < filter ? 0 : value));
-  }
-  const gauss = Number(settings?.gauss);
-  const effectiveGauss = Number.isFinite(gauss) ? gauss * NUM_2D_GAUSS_KERNEL_FACTOR : NUM_2D_GAUSS_KERNEL_FACTOR;
-  if (effectiveGauss > 0.01) {
-    next = gaussBlur_return(next, width, height, effectiveGauss, COLOR_VALUE_STEP);
-  }
-  if (Number.isFinite(filter) && filter > 0) {
-    next = next.map(value => (value < filter ? 0 : value));
-  }
-  return next;
+  return Array.from({ length: count }, (_, index) => normalizeDisplayValue(data?.[index]));
 }
 
 function stabilizeDisplayData(data, stableRef, key) {
-  const count = data.length;
-  const source = Array.from({ length: count }, (_, index) => {
-    const value = Number(data[index]);
-    return Number.isFinite(value) ? Math.max(0, value) : 0;
-  });
-
-  if (source.every(value => value < 0.5)) {
-    const zero = new Array(count).fill(0);
-    stableRef.current = { key, values: zero, display: zero };
-    return zero;
-  }
-
-  const previous = stableRef.current;
-  const shouldReset = !previous || previous.key !== key || previous.values?.length !== count;
-  if (shouldReset) {
-    const display = source.map(normalizeDisplayValue);
-    stableRef.current = { key, values: source, display };
-    return display;
-  }
-
-  const values = new Array(count);
-  const display = new Array(count);
-  for (let i = 0; i < count; i++) {
-    const prevValue = previous.values[i] ?? source[i];
-    const prevDisplay = previous.display[i] ?? normalizeDisplayValue(prevValue);
-    const smoothed = source[i] < 0.5
-      ? 0
-      : prevValue + (source[i] - prevValue) * NUM_2D_TEMPORAL_ALPHA;
-    let nextDisplay = normalizeDisplayValue(smoothed);
-    if (nextDisplay !== prevDisplay && source[i] >= 0.5 && Math.abs(source[i] - prevDisplay) < NUM_2D_DISPLAY_DEADBAND) {
-      nextDisplay = prevDisplay;
-    }
-    values[i] = smoothed;
-    display[i] = nextDisplay;
-  }
-  stableRef.current = { key, values, display };
+  const display = data.map(normalizeDisplayValue);
+  stableRef.current = { key, display };
   return display;
 }
 
@@ -262,14 +216,15 @@ export default function NumThree(props) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    for (let i = 0; i < 256; i++) {
+    for (let i = 0; i < DIGIT_ATLAS_GRID * DIGIT_ATLAS_GRID; i++) {
       const x = i % gridSize;
       const y = Math.floor(i / gridSize);
       const cx = x * cellSize;
       const cy = y * cellSize;
+      const displayValue = i / 10;
 
       // ✅ 计算背景颜色
-      const [r, g, b] = jetWhite3NoWhite(0, value, i);
+      const [r, g, b] = jetWhite3NoWhite(0, value, displayValue);
       ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
@@ -277,7 +232,7 @@ export default function NumThree(props) {
       ctx.lineWidth = 3;
       ctx.strokeRect(cx + 1.5, cy + 1.5, cellSize - 3, cellSize - 3);
 
-      drawCellValue(ctx, i, cx, cy, cellSize);
+      drawCellValue(ctx, displayValue.toFixed(1), cx, cy, cellSize);
     }
 
     const tex = new THREE.CanvasTexture(canvas);
@@ -383,7 +338,7 @@ export default function NumThree(props) {
     const material = new THREE.ShaderMaterial({
       uniforms: {
         map: { value: texture },
-        tileSize: { value: 1.0 / 16.0 },
+        tileSize: { value: 1.0 / DIGIT_ATLAS_GRID },
         tileInset: { value: DIGIT_TILE_INSET / DIGIT_ATLAS_SIZE }
       },
       vertexShader: `
@@ -504,7 +459,7 @@ export default function NumThree(props) {
         gauss, color, filter, height, coherent, autoColor,
       } = settingValue //pageRef.current.settingValue
       setDynamicGammaColorEnabled(Boolean(autoColor));
-      data = prepareDisplayData(data, gridSize1, gridSize2, settingValue);
+      data = prepareDisplayData(data, gridSize1, gridSize2);
       data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}-g${gauss}-f${filter}`);
       const nullMask = createEndiNullMask(systemType, displayType, gridSize1, gridSize2);
       dataRef.current = data;
@@ -563,9 +518,9 @@ export default function NumThree(props) {
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
 
-        const d = normalizeDisplayValue(data[i])//Math.floor(Math.random() * 256);
-        uvOffsets[i * 2] = (d % 16) / 16;
-        uvOffsets[i * 2 + 1] = Math.floor(d / 16) / 16;
+        const d = getDigitAtlasIndex(data[i]);
+        uvOffsets[i * 2] = (d % DIGIT_ATLAS_GRID) / DIGIT_ATLAS_GRID;
+        uvOffsets[i * 2 + 1] = Math.floor(d / DIGIT_ATLAS_GRID) / DIGIT_ATLAS_GRID;
 
         colorArray[i * 3 + 0] = 1;
         colorArray[i * 3 + 1] = 1;
@@ -716,7 +671,7 @@ export default function NumThree(props) {
           ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
           ctx.globalAlpha = 1;
           ctx.fillStyle = '#fff';
-          ctx.fillText(Math.round(value), x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
+          ctx.fillText(value.toFixed(1), x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
         }
       }
       ctx.strokeStyle = '#fff';

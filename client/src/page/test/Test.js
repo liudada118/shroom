@@ -281,12 +281,23 @@ function Test() {
                 data: { selectJson }
             }).then((res) => {
                 const data = res.data?.data || {}
-                const { areaArr, pressArr } = data
+                const {
+                    areaArr,
+                    pressArr,
+                    pressureArr,
+                    forceArr,
+                    pressureAreaArr,
+                    forceAreaArr,
+                } = data
                 if (areaArr || pressArr) {
                     const selectedKeys = new Set(Object.keys(selectJson))
                     useEquipStore.getState().setHistoryChart({
                         areaArr: filterSelectedHistoryChartKeys(areaArr || {}, selectedKeys),
                         pressArr: filterSelectedHistoryChartKeys(pressArr || {}, selectedKeys),
+                        pressureArr: filterSelectedHistoryChartKeys(pressureArr || {}, selectedKeys),
+                        forceArr: filterSelectedHistoryChartKeys(forceArr || pressArr || {}, selectedKeys),
+                        pressureAreaArr: filterSelectedHistoryChartKeys(pressureAreaArr || {}, selectedKeys),
+                        forceAreaArr: filterSelectedHistoryChartKeys(forceAreaArr || areaArr || {}, selectedKeys),
                         selection: {
                             active: true,
                             ranges: safeArr,
@@ -307,7 +318,7 @@ function Test() {
     // ─── 状态 ────────────────────────────────────────────
     const [sitData, setSitData] = useState([])
     const [equipStatus, setStatus] = useState({ back: 'offline', sit: 'offline', data: new Array(4096).fill(0) })
-    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 }
+    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 2, color: 5, filter: 30, height: 80, coherent: 1, autoColor: 1 }
     const [settingValue, setSettingValue] = useState(setValueData)
     const [selectArr, setSelectArr] = useState([])
     const [wsLocalData, setWsLocalData] = useState(new Array(4096).fill(0))
@@ -325,10 +336,20 @@ function Test() {
 
     const systemType = useEquipStore(s => s.systemType, shallow)
     const visualSettingValue = useEquipStore(s => s.settingValue, shallow)
+    const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
+
+    useEffect(() => {
+        const processingConfig = {
+            filter: visualSettingValue.filter,
+            gauss: visualSettingValue.gauss,
+            coherent: visualSettingValue.coherent,
+        }
+        axios.post(`${localAddress}/setFrameProcessingConfig`, { processingConfig }).catch(() => { })
+    }, [visualSettingValue.gauss, visualSettingValue.filter, visualSettingValue.coherent])
 
     useEffect(() => {
         refreshDisplayWithCurrentSettings(persistentDataRef.current)
-    }, [visualSettingValue.gauss, visualSettingValue.filter])
+    }, [pressureMetricMode])
 
     useLayoutEffect(() => {
         const { setSystemType, setSystemTypeArr } = useEquipStore.getState()

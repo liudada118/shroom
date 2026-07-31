@@ -126,6 +126,16 @@ export function estimateMaxPressure(adcMax, nValid, sensor, adcAvg) {
 
 export function getPressurePointAreaCm2(key) {
   const value = String(key || '').toLowerCase()
+  if (
+    value === 'endi-jacket'
+    || value === 'endi-lefthand'
+    || value === 'endi-righthand'
+    || value === 'endi-leftfoot'
+    || value === 'endi-rightfoot'
+    || value === 'endi-foot'
+  ) {
+    return 1.5625
+  }
   if (value.includes('carY-back')) return (10 * 19) / 100
   if (value.includes('carY-sit')) return (15 * 15) / 100
   if (value.includes('back')) return (13 * 10) / 100
@@ -185,5 +195,146 @@ export function computePressureMetrics(arr, key, options = {}) {
     pressMax,
     pressAver,
     total: toNewton(pressAver),
+  }
+}
+
+export const PRESSURE_METRIC_MODE = 'pressure'
+export const FORCE_METRIC_MODE = 'force'
+
+export function normalizePressureMetricMode(mode) {
+  return mode === PRESSURE_METRIC_MODE ? PRESSURE_METRIC_MODE : FORCE_METRIC_MODE
+}
+
+export function getPressureMetricMeta(mode) {
+  const normalizedMode = normalizePressureMetricMode(mode)
+  return normalizedMode === PRESSURE_METRIC_MODE
+    ? {
+        mode: normalizedMode,
+        unit: 'kPa',
+        label: '压强',
+        englishLabel: 'Pressure',
+        valuePrefix: 'pressure',
+        trendField: 'pressureArr',
+      }
+    : {
+        mode: normalizedMode,
+        unit: 'N',
+        label: '压力',
+        englishLabel: 'Force',
+        valuePrefix: 'force',
+        trendField: 'forceArr',
+      }
+}
+
+const PRESSURE_METRIC_DISPLAY = {
+  [PRESSURE_METRIC_MODE]: {
+    unit: 'kPa',
+    valuePrefix: 'pressure',
+    trendField: 'pressureArr',
+    zh: {
+      name: '压强',
+      curve: '压强总和曲线',
+      axis: '压强总和',
+      average: '平均压强',
+      max: '最大压强',
+      total: '压强总和',
+      data: '压强数据',
+    },
+    en: {
+      name: 'Pressure',
+      curve: 'Pressure Sum Curve',
+      axis: 'Pressure Sum',
+      average: 'Average Pressure',
+      max: 'Maximum Pressure',
+      total: 'Pressure Sum',
+      data: 'Pressure Data',
+    },
+  },
+  [FORCE_METRIC_MODE]: {
+    unit: 'N',
+    valuePrefix: 'force',
+    trendField: 'forceArr',
+    zh: {
+      name: '压力',
+      curve: '压力总和曲线',
+      axis: '压力总和',
+      average: '平均压力',
+      max: '最大压力',
+      total: '压力总和',
+      data: '压力数据',
+    },
+    en: {
+      name: 'Force',
+      curve: 'Total Force Curve',
+      axis: 'Total Force',
+      average: 'Average Force',
+      max: 'Maximum Force',
+      total: 'Total Force',
+      data: 'Force Data',
+    },
+  },
+}
+
+export function getPressureMetricDisplay(mode, _t, language = 'zh') {
+  const normalizedMode = normalizePressureMetricMode(mode)
+  const config = PRESSURE_METRIC_DISPLAY[normalizedMode]
+  const labels = String(language || '').toLowerCase().startsWith('en') ? config.en : config.zh
+  return {
+    mode: normalizedMode,
+    nextMode: normalizedMode === FORCE_METRIC_MODE ? PRESSURE_METRIC_MODE : FORCE_METRIC_MODE,
+    unit: config.unit,
+    name: labels.name,
+    curveLabel: labels.curve,
+    axisLabel: labels.axis,
+    valuePrefix: config.valuePrefix,
+    trendField: config.trendField,
+    labels: {
+      average: labels.average,
+      max: labels.max,
+      total: labels.total,
+      data: labels.data,
+    },
+  }
+}
+
+export function normalizeMetricValues(values = [], expectedLength) {
+  const source = Array.isArray(values) ? values : []
+  const length = Number.isInteger(expectedLength) && expectedLength >= 0
+    ? expectedLength
+    : source.length
+  return Array.from({ length }, (_, index) => {
+    const numeric = Number(source[index])
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
+  })
+}
+
+export function countActiveMetricPoints(values = []) {
+  return normalizeMetricValues(values).filter((value) => value > 0).length
+}
+
+export function summarizeMetricValues(values = []) {
+  const normalized = normalizeMetricValues(values)
+  const activeValues = normalized.filter((value) => value > 0)
+  const total = normalized.reduce((sum, value) => sum + value, 0)
+  return {
+    metricValues: normalized,
+    activeCount: activeValues.length,
+    total,
+    max: activeValues.length ? Math.max(...activeValues) : 0,
+    average: activeValues.length ? total / activeValues.length : 0,
+  }
+}
+
+export function getCanonicalMetricSummary(pressureValues, forceValues, mode) {
+  const normalizedMode = normalizePressureMetricMode(mode)
+  const pressureSummary = summarizeMetricValues(pressureValues)
+  const forceSummary = summarizeMetricValues(forceValues)
+  const activeSummary = normalizedMode === PRESSURE_METRIC_MODE ? pressureSummary : forceSummary
+  return {
+    ...getPressureMetricMeta(normalizedMode),
+    ...activeSummary,
+    pressureSummary,
+    forceSummary,
+    forceTotal: forceSummary.total,
   }
 }

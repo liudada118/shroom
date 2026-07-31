@@ -23,7 +23,7 @@ const DEFAULT_HUMAN_POSITION = { x: 0, y: -54.7, z: -39 }
 
 function formatDisplacementValue(value) {
   const numericValue = Number(value)
-  return Number.isFinite(numericValue) ? numericValue.toFixed(2) : '0.00'
+  return Number.isFinite(numericValue) ? numericValue.toFixed(1) : '0.0'
 }
 
 const HUMAN_ATLAS_GRID_SIZE = 40

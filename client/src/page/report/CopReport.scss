@@ -152,6 +152,19 @@
   font-weight: 700;
 }
 
+.chart-description {
+  display: -webkit-box;
+  height: 26px;
+  margin: -2px 4px 6px;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 13px;
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .heatmap-svg,
 .cop-svg,
 .line-svg {

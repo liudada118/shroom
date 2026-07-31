@@ -10,6 +10,11 @@ const constantObj = require("./config");
 const { loadPressureConfig, loadPressureFormula } = require("../server/services/PressureConfig");
 const { DEVICE_MATRIX_CONFIG } = require("./deviceMatrixConfig");
 const { interpolateEndiWearSource } = require("./line");
+const {
+  PROCESSING_VERSION,
+  ensureProcessedFrame,
+  ensureProcessedMatrixItem,
+} = require("./pressureFrameProcessor");
 
 // ─── 传感器点位配置 ──────────────────────────────────────
 const pointConfig = DEVICE_MATRIX_CONFIG
@@ -95,7 +100,7 @@ function parseMatrixFrameData(value) {
   if (!value) return {}
   try {
     const frame = typeof value === 'string' ? JSON.parse(value) : value
-    return normalizeEndiFootFrame(frame)
+    return ensureProcessedFrame(normalizeEndiFootFrame(frame))
   } catch {
     return {}
   }
@@ -143,6 +148,122 @@ function colArrData(arr) {
   const min = positiveArr.length ? Math.min(...positiveArr) : 0
   const aver = area > 0 ? Number((press / area).toFixed(1)) : 0
   return { press, area, max, min, aver, maxIndex }
+}
+
+function normalizeMetricValues(values, length) {
+  return Array.from({ length }, (_, index) => {
+    const value = Number(values?.[index])
+    return Number.isFinite(value) && value > 0 ? value : 0
+  })
+}
+
+function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1) {
+  const processedItem = ensureProcessedMatrixItem(key, item)
+  const length = Array.isArray(processedItem.arr) ? processedItem.arr.length : 0
+  const pressureValues = normalizeMetricValues(processedItem.pressureArr, length)
+  const forceValues = normalizeMetricValues(processedItem.forceArr, length)
+  let pressureActiveCount = 0
+  let forceActiveCount = 0
+  let pressureTotal = 0
+  let forceTotal = 0
+  let pressureMax = 0
+  let forceMax = 0
+  let pressureMaxIndex = ''
+  let forceMaxIndex = ''
+  let pressureMin = 0
+  let forceMin = 0
+
+  for (let index = 0; index < length; index++) {
+    const pressure = pressureValues[index]
+    const force = forceValues[index]
+    pressureTotal += pressure
+    forceTotal += force
+    if (pressure > 0) pressureActiveCount++
+    if (force > 0) forceActiveCount++
+    if (pressure > pressureMax) {
+      pressureMax = pressure
+      pressureMaxIndex = index
+    }
+    if (force > forceMax) {
+      forceMax = force
+      forceMaxIndex = index
+    }
+    if (pressure > 0 && (pressureMin === 0 || pressure < pressureMin)) pressureMin = pressure
+    if (force > 0 && (forceMin === 0 || force < forceMin)) forceMin = force
+  }
+
+  const areaFactor = Number(pointAreaCm2) || 1
+  return {
+    processedItem,
+    pressureValues,
+    forceValues,
+    pressureTotal,
+    forceTotal,
+    pressureMax,
+    forceMax,
+    pressureMaxIndex,
+    forceMaxIndex,
+    pressureMin,
+    forceMin,
+    pressureAverage: pressureActiveCount ? pressureTotal / pressureActiveCount : 0,
+    forceAverage: forceActiveCount ? forceTotal / forceActiveCount : 0,
+    pressureActiveCount,
+    forceActiveCount,
+    pressureEffectiveArea: pressureActiveCount * areaFactor,
+    forceEffectiveArea: forceActiveCount * areaFactor,
+  }
+}
+
+function getMetricStatsFromValues(pressureValues, forceValues, pointAreaCm2 = 1) {
+  return getCanonicalMetricStats('__selection__', {
+    arr: new Array(Math.max(pressureValues.length, forceValues.length)).fill(0),
+    pressureArr: pressureValues,
+    forceArr: forceValues,
+    processing: { version: PROCESSING_VERSION },
+  }, pointAreaCm2)
+}
+
+function normalizePressureMetricMode(mode) {
+  return mode === 'pressure' ? 'pressure' : 'force'
+}
+
+function getExportMetricStats(stats, metricMode) {
+  if (normalizePressureMetricMode(metricMode) === 'pressure') {
+    return {
+      max: Number(stats.pressureMax) || 0,
+      aver: Number(stats.pressureAverage) || 0,
+      total: Number(stats.forceTotal) || 0,
+      min: Number(stats.pressureMin) || 0,
+    }
+  }
+  return {
+    max: Number(stats.forceMax) || 0,
+    aver: Number(stats.forceAverage) || 0,
+    total: Number(stats.forceTotal) || 0,
+    min: Number(stats.forceMin) || 0,
+  }
+}
+
+function getExportMetricActiveStats(stats, metricMode) {
+  if (normalizePressureMetricMode(metricMode) === 'pressure') {
+    return {
+      count: Number(stats.pressureActiveCount) || 0,
+      area: Number(stats.pressureEffectiveArea) || 0,
+      maxIndex: stats.pressureMaxIndex,
+    }
+  }
+  return {
+    count: Number(stats.forceActiveCount) || 0,
+    area: Number(stats.forceEffectiveArea) || 0,
+    maxIndex: stats.forceMaxIndex,
+  }
+}
+
+function getExportMetricPointValues(stats, metricMode) {
+  const sourceValues = normalizePressureMetricMode(metricMode) === 'pressure'
+    ? stats.pressureValues
+    : stats.forceValues
+  return sourceValues.map((value) => Number((Number(value) || 0).toFixed(1)))
 }
 
 function getPressureSensor(key) {
@@ -690,7 +811,16 @@ async function dbGetData({ db, params }) {
   const rows = await dbAll(db, "SELECT * FROM matrix WHERE date=?", params)
 
   if (!rows.length) {
-    return { length: 0, pressArr: {}, areaArr: {}, rows: [] }
+    return {
+      length: 0,
+      pressArr: {},
+      areaArr: {},
+      pressureArr: {},
+      forceArr: {},
+      pressureAreaArr: {},
+      forceAreaArr: {},
+      rows: [],
+    }
   }
 
   const length = rows.length
@@ -703,16 +833,32 @@ async function dbGetData({ db, params }) {
 
   const pressValue = {}
   const areaValue = {}
+  const pressureValue = {}
+  const forceValue = {}
+  const pressureAreaValue = {}
+  const forceAreaValue = {}
   // bucket 累加器
   const pressBucket = {}
   const areaBucket = {}
   const bucketCount = {}
+  const pressureBucket = {}
+  const forceBucket = {}
+  const pressureAreaBucket = {}
+  const forceAreaBucket = {}
   keyArr.forEach((key) => {
     pressValue[key] = []
     areaValue[key] = []
+    pressureValue[key] = []
+    forceValue[key] = []
+    pressureAreaValue[key] = []
+    forceAreaValue[key] = []
     pressBucket[key] = 0
     areaBucket[key] = 0
     bucketCount[key] = 0
+    pressureBucket[key] = 0
+    forceBucket[key] = 0
+    pressureAreaBucket[key] = 0
+    forceAreaBucket[key] = 0
   })
 
   for (let i = 0; i < rows.length; i++) {
@@ -722,25 +868,37 @@ async function dbGetData({ db, params }) {
     for (const key of keyArr) {
       const item = dataObj[key]
       if (!item || !item.arr) continue
-      const arr = item.arr
-      const press = arr.reduce((a, b) => a + b, 0)
-      const normalizedPress = (key === 'carY-back' || key === 'carY-sit')
-        ? press / (100 / 3)
-        : press
-      const area = arr.filter((a) => a > 0).length
+      const pressureValues = Array.isArray(item.pressureArr) ? item.pressureArr : []
+      const forceValues = Array.isArray(item.forceArr) ? item.forceArr : []
+      const pressureTotal = pressureValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
+      const forceTotal = forceValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
+      const pressureArea = pressureValues.filter((value) => Number(value) > 0).length
+      const forceArea = forceValues.filter((value) => Number(value) > 0).length
 
       // [PERF-PLAYBACK-OPT] 累加到当前 bucket
-      pressBucket[key] += normalizedPress
-      areaBucket[key] += area
+      pressBucket[key] += forceTotal
+      areaBucket[key] += forceArea
+      pressureBucket[key] += pressureTotal
+      forceBucket[key] += forceTotal
+      pressureAreaBucket[key] += pressureArea
+      forceAreaBucket[key] += forceArea
       bucketCount[key]++
 
       // bucket 满了，写出平均值
       if (bucketCount[key] >= bucketSize) {
         pressValue[key].push(pressBucket[key] / bucketCount[key])
         areaValue[key].push(areaBucket[key] / bucketCount[key])
+        pressureValue[key].push(pressureBucket[key] / bucketCount[key])
+        forceValue[key].push(forceBucket[key] / bucketCount[key])
+        pressureAreaValue[key].push(pressureAreaBucket[key] / bucketCount[key])
+        forceAreaValue[key].push(forceAreaBucket[key] / bucketCount[key])
         pressBucket[key] = 0
         areaBucket[key] = 0
         bucketCount[key] = 0
+        pressureBucket[key] = 0
+        forceBucket[key] = 0
+        pressureAreaBucket[key] = 0
+        forceAreaBucket[key] = 0
       }
     }
   }
@@ -750,10 +908,23 @@ async function dbGetData({ db, params }) {
     if (bucketCount[key] > 0) {
       pressValue[key].push(pressBucket[key] / bucketCount[key])
       areaValue[key].push(areaBucket[key] / bucketCount[key])
+      pressureValue[key].push(pressureBucket[key] / bucketCount[key])
+      forceValue[key].push(forceBucket[key] / bucketCount[key])
+      pressureAreaValue[key].push(pressureAreaBucket[key] / bucketCount[key])
+      forceAreaValue[key].push(forceAreaBucket[key] / bucketCount[key])
     }
   }
 
-  return { length, pressArr: pressValue, areaArr: areaValue, rows }
+  return {
+    length,
+    pressArr: forceValue,
+    areaArr: forceAreaValue,
+    pressureArr: pressureValue,
+    forceArr: forceValue,
+    pressureAreaArr: pressureAreaValue,
+    forceAreaArr: forceAreaValue,
+    rows,
+  }
 }
 // ─── [PERF-PLAYBACK-OPT] 结束 ──────────────────────────────────
 
@@ -773,20 +944,28 @@ const EXPORT_BASE_FIELDS = [
   { id: 'max_pressure_coord', title: '最大压强坐标' },
   { id: 'avg_pressure', title: '平均压强(kPa)' },
   { id: 'contact_area', title: '受力面积(cm²)' },
-  { id: 'real_data', title: '数据' },
+  { id: 'real_data', title: '压强数据(kPa)' },
   { id: 'point_count', title: '点数' },
-  { id: 'total_pressure_n', title: '总压力(N)' },
+  { id: 'total_pressure_n', title: '压力总和(N)' },
 ]
 
 const EXPORT_FIXED_FIELDS = [
   { id: 'timestamp', title: '时间戳' },
-  { id: 'back_device_mac', title: '靠背MAC' },
-  { id: 'sit_device_mac', title: '座椅MAC' },
+  { id: 'elapsed_seconds', title: '秒数(s)' },
 ]
 
-const EXPORT_TRAILING_FIELDS = [
-  { id: 'remark', title: '备注' },
-]
+const EXPORT_TRAILING_FIELDS = []
+
+function getExportBaseFields(metricMode) {
+  if (normalizePressureMetricMode(metricMode) === 'pressure') return EXPORT_BASE_FIELDS
+  return EXPORT_BASE_FIELDS.map((field) => {
+    if (field.id === 'max_pressure') return { ...field, title: '最大压力(N)' }
+    if (field.id === 'max_pressure_coord') return { ...field, title: '最大压力坐标' }
+    if (field.id === 'avg_pressure') return { ...field, title: '平均压力(N)' }
+    if (field.id === 'real_data') return { ...field, title: '压力数据(N)' }
+    return field
+  })
+}
 
 function isEndiMatrixKey(key) {
   return String(key || '').toLowerCase().startsWith('endi-')
@@ -809,24 +988,25 @@ function formatExportDecimal(value, digits = 1) {
 }
 
 function buildSingleKeyExportHeaders(key, options = {}) {
-  const { suffix = '', labelSuffix = '' } = options
+  const { suffix = '', labelSuffix = '', metricMode = 'force' } = options
   const label = `${getExportKeyLabel(key)}${labelSuffix}`
   const idPrefix = suffix ? `${key}_${suffix}` : key
-  return EXPORT_BASE_FIELDS.map((field) => ({
+  return getExportBaseFields(metricMode).map((field) => ({
     id: getExportKeyFieldId(idPrefix, field.id),
     title: `${label}${field.title}`,
   }))
 }
 
-function buildExportHeadersForKeys(keys, selectionMap = {}) {
+function buildExportHeadersForKeys(keys, selectionMap = {}, metricMode = 'force') {
   const headers = [...EXPORT_FIXED_FIELDS]
   sortExportKeys(keys).forEach((key) => {
-    headers.push(...buildSingleKeyExportHeaders(key))
+    headers.push(...buildSingleKeyExportHeaders(key, { metricMode }))
     const selectionCount = Math.min(4, Math.max(0, Number(selectionMap[key] || 0)))
     for (let index = 1; index <= selectionCount; index++) {
       headers.push(...buildSingleKeyExportHeaders(key, {
         suffix: `selection_${index}`,
         labelSuffix: `框选${index}`,
+        metricMode,
       }))
     }
   })
@@ -839,7 +1019,11 @@ function normalizeExportOptions(options = {}) {
   const fields = Array.isArray(options.fields)
     ? options.fields.map((field) => String(field || '').trim()).filter(Boolean)
     : []
-  return { format, fields }
+  return {
+    format,
+    fields,
+    metricMode: normalizePressureMetricMode(options.metricMode),
+  }
 }
 
 function filterExportHeaders(headers, fields) {
@@ -860,7 +1044,7 @@ function recordsForHeaders(records, headers) {
     const next = {}
     ids.forEach((id) => {
       const value = record[id] === undefined || record[id] === null ? '' : record[id]
-      next[id] = ['timestamp', 'back_device_mac', 'sit_device_mac'].includes(id) ? String(value) : value
+      next[id] = ['timestamp', 'elapsed_seconds'].includes(id) ? String(value) : value
     })
     return next
   })
@@ -879,14 +1063,13 @@ async function writeXlsxFile(filePath, headers, records) {
   XLSX.writeFile(workbook, filePath, { bookType: 'xlsx' })
 }
 
-async function getExportFieldOptions({ db, params }) {
-  const isEndiExport = await isEndiExportRequest(db, params)
-  const fixedFields = isEndiExport
-    ? EXPORT_FIXED_FIELDS.filter((field) => !['back_device_mac', 'sit_device_mac'].includes(field.id))
-    : EXPORT_FIXED_FIELDS
+async function getExportFieldOptions({ db, params, exportOptions = {} }) {
+  void db
+  void params
+  const { metricMode } = normalizeExportOptions(exportOptions)
   const headers = [
-    ...fixedFields,
-    ...EXPORT_BASE_FIELDS,
+    ...EXPORT_FIXED_FIELDS,
+    ...getExportBaseFields(metricMode),
     ...EXPORT_TRAILING_FIELDS,
   ]
   return {
@@ -1019,6 +1202,8 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         }
       }
       const selectionCountMap = getSelectionCountMap(selectOverride, keyArr, firstData)
+      const normalizedExportOptions = normalizeExportOptions(exportOptions)
+      const metricMode = normalizedExportOptions.metricMode
 
       // 根据前几帧 timestamp 自动推算帧率
       let detectedHz = 12 // 默认帧率
@@ -1039,8 +1224,12 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
 
       for (let i = 0; i < rows.length; i++) {
         const rowData = parseMatrixFrameData(rows[i].data)
+        const elapsedMs = Number(rows[i].timestamp) - Number(rows[0].timestamp)
         const frameEntry = {
           timestamp: rows[i].timestamp,
+          elapsed_seconds: Number.isFinite(elapsedMs)
+            ? Math.max(0, elapsedMs / 1000).toFixed(3)
+            : (i / detectedHz).toFixed(3),
           back_device_mac: '',
           sit_device_mac: '',
           remark: remarkText,
@@ -1051,36 +1240,50 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const key = keyArr[j]
           const item = rowData[key]
           if (!item) continue
-          const data = item.arr
-          if (!data) continue
+          if (!Array.isArray(item.arr)) continue
+
+          const pointInfo = pointConfig[key]
+          const pointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : null
+          const pointAreaCm2 = pointInfo ? pointArea / 100 : 1
+          const canonicalStats = getCanonicalMetricStats(key, item, pointAreaCm2)
+          const processedItem = canonicalStats.processedItem
+          const data = processedItem.arr
+          const exportMetricStats = getExportMetricStats(canonicalStats, metricMode)
+          const canonicalActiveStats = getExportMetricActiveStats(canonicalStats, metricMode)
+          const exportMetricData = getExportMetricPointValues(canonicalStats, metricMode)
 
           const rowEntry = {}
           rowEntry.time = timeStampTo_Date(rows[i].timestamp)
-          rowEntry.sec = (i / detectedHz).toFixed(2)
+          rowEntry.sec = frameEntry.elapsed_seconds
 
-          const matrixSize = inferExportMatrixSize(key, data, item)
-          const statsData = getExportDisplayMatrixData(data, key, matrixSize)
+          const matrixSize = inferExportMatrixSize(key, data, processedItem)
 
           // 框选区域计算：导出保留整体靠背/坐垫列，同时按同一字段模板展开最多 4 个框选列。
-          const selectionRegions = getExportSelectionRegions(selectOverride, key, statsData, item)
+          const selectionRegions = getExportSelectionRegions(selectOverride, key, data, processedItem)
           const obj = selectionRegions[0] || null
-          const selectArr = obj ? sliceSelectionData(statsData, obj) : []
+          const selectPressureValues = obj ? sliceSelectionData(canonicalStats.pressureValues, obj) : []
+          const selectForceValues = obj ? sliceSelectionData(canonicalStats.forceValues, obj) : []
+          const selectCanonicalStats = getMetricStatsFromValues(selectPressureValues, selectForceValues, pointAreaCm2)
+          const selectMetricStats = getExportMetricStats(selectCanonicalStats, metricMode)
+          const selectActiveStats = getExportMetricActiveStats(selectCanonicalStats, metricMode)
+          const selectMetricData = getExportMetricPointValues(selectCanonicalStats, metricMode)
+          const press = canonicalStats.forceTotal
+          const area = canonicalActiveStats.count
+          const max = exportMetricStats.max
+          const min = exportMetricStats.min
+          const aver = exportMetricStats.aver
+          const maxIndex = canonicalActiveStats.maxIndex
+          const selectArea = selectActiveStats.count
+          const selectMin = selectMetricStats.min
+          const selectMaxIndex = selectActiveStats.maxIndex
 
-          const { press, area, max, min, aver, maxIndex } = colArrData(statsData)
-          const { area: selectArea, min: selectMin, maxIndex: selectMaxIndex } = colArrData(selectArr)
-
-          const pointInfo = pointConfig[key]
           const dataDirection = normalizeExportDirection(item.dataDirection)
           const zeroState = normalizeExportZeroState(item.zeroState)
           const pressureConversion = getPressureConversion(key)
-          const pointArea = pointInfo ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance : null
-          const pointAreaCm2 = pointInfo ? pointArea / 100 : 1
-          const pressureAreaValue = pointInfo ? (area * pointArea / 100) : area
-          const pressureStats = calcPressureFormulaStats(statsData, key, pointAreaCm2)
+          const pressureAreaValue = canonicalActiveStats.area
 
           // 计算框选区域受力面积
-          const selectAreaValue = pointInfo ? (selectArea * pointArea / 100) : selectArea
-          const selectPressureStats = calcPressureFormulaStats(selectArr, key, pointAreaCm2)
+          const selectAreaValue = selectActiveStats.area
 
           rowEntry.csv_format_version = CSV_FORMAT_VERSION
           rowEntry.software_version = SOFTWARE_VERSION
@@ -1115,44 +1318,44 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.zero_time = zeroState.zero_time
           rowEntry.zero_state = zeroState.has_baseline ? 'baseline_recorded' : (zeroState.zero_enabled ? 'enabled_no_baseline' : 'disabled')
           rowEntry.timestamp = rows[i].timestamp
-          rowEntry.avg_pressure = pressureStats.aver
-          rowEntry.max_pressure = pressureStats.max
+          rowEntry.avg_pressure = aver
+          rowEntry.max_pressure = max
           rowEntry.max_pressure_coord = indexToCoord(maxIndex, key)
           rowEntry.min_pressure_non_zero = min
-          rowEntry.pressure_sum = pressureStats.total
+          rowEntry.pressure_sum = exportMetricStats.total
           rowEntry.contact_area = pressureAreaValue
           rowEntry.active_sensor_count = area
-          rowEntry.real_data = JSON.stringify(statsData)
-          rowEntry[`${key}max`] = pressureStats.max
+          rowEntry.real_data = JSON.stringify(exportMetricData)
+          rowEntry[`${key}max`] = max
           rowEntry[`${key}maxCoord`] = indexToCoord(maxIndex, key)
-          rowEntry[`${key}aver`] = pressureStats.aver
+          rowEntry[`${key}aver`] = aver
           rowEntry[`${key}pressureArea`] = pressureAreaValue
-          rowEntry[`${key}realData`] = JSON.stringify(statsData)
-          rowEntry[`${key}selectMax`] = selectPressureStats.max
+          rowEntry[`${key}realData`] = JSON.stringify(exportMetricData)
+          rowEntry[`${key}selectMax`] = selectMetricStats.max
           const selectWidth = (obj && obj.xEnd && obj.xStart !== undefined) ? (obj.xEnd - obj.xStart) : 0
           const selectCoordInfo = (obj && selectWidth > 0) ? { xStart: obj.xStart, yStart: obj.yStart, selectWidth } : null
           rowEntry[`${key}selectMaxCoord`] = indexToCoord(selectMaxIndex, key, selectCoordInfo)
-          rowEntry[`${key}selectAver`] = selectPressureStats.aver
+          rowEntry[`${key}selectAver`] = selectMetricStats.aver
           rowEntry[`${key}selectArea`] = selectAreaValue
-          rowEntry[`${key}selectData`] = JSON.stringify(selectArr)
-          rowEntry.select_data = JSON.stringify(selectArr)
+          rowEntry[`${key}selectData`] = JSON.stringify(selectMetricData)
+          rowEntry.select_data = JSON.stringify(selectMetricData)
           rowEntry.selection_1_id = obj ? (obj.region_id || 1) : ''
           rowEntry.selection_1_name = obj ? (obj.name || obj.regionName || '框选1') : ''
           rowEntry.selection_1_row_range = obj ? `${obj.yStart}-${obj.yEnd}` : ''
           rowEntry.selection_1_column_range = obj ? `${obj.xStart}-${obj.xEnd}` : ''
-          rowEntry.selection_1_avg_pressure = selectPressureStats.aver
-          rowEntry.selection_1_max_pressure = selectPressureStats.max
+          rowEntry.selection_1_avg_pressure = selectMetricStats.aver
+          rowEntry.selection_1_max_pressure = selectMetricStats.max
           rowEntry.selection_1_max_pressure_coord = rowEntry[`${key}selectMaxCoord`]
           rowEntry.selection_1_min_pressure_non_zero = selectMin
-          rowEntry.selection_1_pressure_sum = selectPressureStats.total
+          rowEntry.selection_1_pressure_sum = selectMetricStats.total
           rowEntry.selection_1_contact_area = selectAreaValue
           rowEntry.selection_1_active_sensor_count = selectArea
-          rowEntry.selection_1_data = JSON.stringify(selectArr)
+          rowEntry.selection_1_data = JSON.stringify(selectMetricData)
 
           if (pointInfo) {
             const pointValue = area
             rowEntry[`${key}point`] = pointValue
-            rowEntry[`${key}pressTotal`] = pressureStats.total
+            rowEntry[`${key}pressTotal`] = exportMetricStats.total
           }
 
           const activePointCount = pointInfo
@@ -1167,34 +1370,41 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.total_pressure_n = pointInfo ? rowEntry[`${key}pressTotal`] : press
           rowEntry.remark = remarkText
 
-          frameEntry[getExportKeyFieldId(key, 'max_pressure')] = formatExportDecimal(rowEntry[`${key}max`])
+          frameEntry[getExportKeyFieldId(key, 'max_pressure')] = formatExportDecimal(exportMetricStats.max)
           frameEntry[getExportKeyFieldId(key, 'max_pressure_coord')] = rowEntry[`${key}maxCoord`]
-          frameEntry[getExportKeyFieldId(key, 'avg_pressure')] = formatExportDecimal(rowEntry[`${key}aver`])
+          frameEntry[getExportKeyFieldId(key, 'avg_pressure')] = formatExportDecimal(exportMetricStats.aver)
           frameEntry[getExportKeyFieldId(key, 'contact_area')] = rowEntry[`${key}pressureArea`]
-          frameEntry[getExportKeyFieldId(key, 'real_data')] = rowEntry[`${key}realData`]
+          frameEntry[getExportKeyFieldId(key, 'real_data')] = JSON.stringify(exportMetricData)
           frameEntry[getExportKeyFieldId(key, 'point_count')] = activePointCount
           frameEntry[getExportKeyFieldId(key, 'total_pressure_n')] = formatExportDecimal(rowEntry.total_pressure_n)
           selectionRegions.forEach((region, regionIndex) => {
-            const regionArr = sliceSelectionData(statsData, region)
-            const regionStats = colArrData(regionArr)
-            const regionPressureStats = calcPressureFormulaStats(regionArr, key, pointAreaCm2)
-            const regionMax = regionPressureStats.max
-            const regionAver = regionPressureStats.aver
-            const regionAreaValue = pointInfo ? (regionStats.area * pointArea / 100) : regionStats.area
+            const regionPressureValues = sliceSelectionData(canonicalStats.pressureValues, region)
+            const regionForceValues = sliceSelectionData(canonicalStats.forceValues, region)
+            const regionCanonicalStats = getMetricStatsFromValues(
+              regionPressureValues,
+              regionForceValues,
+              pointAreaCm2,
+            )
+            const regionMetricStats = getExportMetricStats(regionCanonicalStats, metricMode)
+            const regionActiveStats = getExportMetricActiveStats(regionCanonicalStats, metricMode)
+            const regionMetricData = getExportMetricPointValues(regionCanonicalStats, metricMode)
+            const regionMax = regionMetricStats.max
+            const regionAver = regionMetricStats.aver
+            const regionAreaValue = regionActiveStats.area
             const regionWidth = region.xEnd - region.xStart
-            const regionCoord = indexToCoord(regionStats.maxIndex, key, {
+            const regionCoord = indexToCoord(regionActiveStats.maxIndex, key, {
               xStart: region.xStart,
               yStart: region.yStart,
               selectWidth: regionWidth,
             })
-            const regionTotalPressure = regionPressureStats.total
+            const regionTotalPressure = regionMetricStats.total
             const regionPrefix = `${key}_selection_${regionIndex + 1}`
             frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure')] = formatExportDecimal(regionMax)
             frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure_coord')] = regionCoord
             frameEntry[getExportKeyFieldId(regionPrefix, 'avg_pressure')] = formatExportDecimal(regionAver)
             frameEntry[getExportKeyFieldId(regionPrefix, 'contact_area')] = regionAreaValue
-            frameEntry[getExportKeyFieldId(regionPrefix, 'real_data')] = JSON.stringify(regionArr)
-            frameEntry[getExportKeyFieldId(regionPrefix, 'point_count')] = regionStats.area
+            frameEntry[getExportKeyFieldId(regionPrefix, 'real_data')] = JSON.stringify(regionMetricData)
+            frameEntry[getExportKeyFieldId(regionPrefix, 'point_count')] = regionActiveStats.count
             frameEntry[getExportKeyFieldId(regionPrefix, 'total_pressure_n')] = formatExportDecimal(regionTotalPressure)
           })
           hasFrameMatrixData = true
@@ -1221,11 +1431,11 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
 
       // 单个 key 的 CSV 表头（保留 ld 分支的中文表头）
       function buildSingleKeyHeaders(key) {
-        return buildSingleKeyExportHeaders(key)
+        return buildSingleKeyExportHeaders(key, { metricMode })
       }
 
       function buildCombinedHeaders(keys, selections = {}) {
-        return buildExportHeadersForKeys(keys, selections)
+        return buildExportHeadersForKeys(keys, selections, metricMode)
       }
 
       // 写入单个 CSV 文件的辅助函数
@@ -1243,7 +1453,6 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
 
       try {
         const csvBaseName = buildCsvBaseName(file)
-        const normalizedExportOptions = normalizeExportOptions(exportOptions)
         const fileExt = normalizedExportOptions.format === 'xlsx' ? 'xlsx' : 'csv'
         const exportFilePath = path.join(csvPath, `${csvBaseName}_${safeName}.${fileExt}`)
         const headers = filterExportHeaders(buildCombinedHeaders(keyArr, selectionCountMap), normalizedExportOptions.fields)
@@ -1522,15 +1731,23 @@ function hasImportMetricHeaders(headers, realDataHeader) {
   ].every(matches)
 }
 
+const CSV_UNIT_SUFFIX_PATTERN = /[（(]\s*(?:kpa|n|cm²|cm2)\s*[）)]\s*$/i
+const CSV_METRIC_WORD_PATTERN = /(?:压强|压力|pressure|force)\s*$/i
+
+function stripCsvUnitSuffix(header) {
+  return String(header ?? '').replace(CSV_UNIT_SUFFIX_PATTERN, '').trim()
+}
+
 function isOriginalDataColumn(header) {
   const normalized = normalizeCsvHeader(header)
   if (!normalized) return false
   if (/select\s*Data$/i.test(normalized) || /selectData$/i.test(normalized) || normalized.includes('框选')) return false
-  return normalized === '数据' || /数据$/.test(normalized) || /realData$/i.test(normalized) || /\sData$/i.test(normalized) || /原始数据$/.test(normalized)
+  const base = stripCsvUnitSuffix(normalized)
+  return base === '数据' || /数据$/.test(base) || /realData$/i.test(base) || /\sData$/i.test(base) || /原始数据$/.test(base)
 }
 
 function getMetricPrefix(realDataHeader) {
-  const normalized = normalizeCsvHeader(realDataHeader)
+  const normalized = stripCsvUnitSuffix(normalizeCsvHeader(realDataHeader))
   if (normalized === '数据') return ''
   if (/realData$/i.test(normalized)) {
     return normalized.replace(/realData$/i, '')
@@ -1539,7 +1756,7 @@ function getMetricPrefix(realDataHeader) {
     return normalized.replace(/\sData$/i, '').trim()
   }
   if (/数据$/.test(normalized)) {
-    return normalized.replace(/\s*数据$/, '').trim()
+    return normalized.replace(/\s*数据$/, '').replace(CSV_METRIC_WORD_PATTERN, '').trim()
   }
   return normalized.replace(/\s*原始数据$/, '').trim()
 }
@@ -1619,7 +1836,12 @@ function isValidMatrixCsvValue(value) {
 
 function analyzeImportHeaders(headers) {
   const normalizedHeaders = headers.map(normalizeCsvHeader).filter(Boolean)
-  const secHeader = normalizedHeaders.find((header) => header === 'sec(s)' || header === 'sec')
+  const secHeader = normalizedHeaders.find((header) => (
+    header === 'sec(s)'
+    || header === 'sec'
+    || header === 'elapsed_seconds'
+    || header === '秒数(s)'
+  ))
   const timeHeader = normalizedHeaders.find((header) => header === 'time' || header === '时间' || header === 'timestamp' || header === '时间戳')
   const realDataColumns = normalizedHeaders
     .filter(isOriginalDataColumn)
@@ -1785,7 +2007,7 @@ async function getCsvData(file) {
 // ─── 导出 ────────────────────────────────────────────────
 
 function normalizeCsvMatrixKey(value) {
-  const text = normalizeCsvHeader(value)
+  const text = stripCsvUnitSuffix(normalizeCsvHeader(value))
   if (!text) return ''
   if (text === '数据') return ''
   const normalized = text
@@ -1793,6 +2015,7 @@ function normalizeCsvMatrixKey(value) {
     .replace(/\s*数据$/, '')
     .replace(/realData$/i, '')
     .replace(/\sData$/i, '')
+    .replace(CSV_METRIC_WORD_PATTERN, '')
     .trim()
   const lower = normalized.toLowerCase()
   if (lower === 'back') return 'endi-back'
@@ -1828,6 +2051,13 @@ function getImportDataTarget(row = {}) {
 
 function isSelectionImportRow(row = {}) {
   return /框选|selection/i.test(getImportDataTarget(row))
+}
+
+function getImportMetricModeFromHeader(header) {
+  const value = normalizeCsvHeader(header).toLowerCase()
+  if ((value.includes('压强') && value.includes('kpa')) || /pressure.*kpa/.test(value)) return 'pressure'
+  if ((value.includes('压力') && (/\(n\)|（n）/.test(value))) || value.includes('force')) return 'force'
+  return ''
 }
 
 function getImportDeviceMac(row = {}, matrixKey = '') {
@@ -1871,7 +2101,7 @@ function getCsvRowMatrixEntries(row) {
   if (!isEmptyCsvValue(row.real_data)) {
     const arr = parseMatrixCsvValue(row.real_data)
     if (arr && fallbackKey) {
-      entries.push({ key: fallbackKey, arr })
+      entries.push({ key: fallbackKey, arr, metricMode: '' })
     }
   }
 
@@ -1881,7 +2111,7 @@ function getCsvRowMatrixEntries(row) {
     if (!arr) return
     const key = fallbackKey || normalizeCsvMatrixKey(header) || inferImportMatrixKey(arr)
     if (!key || entries.some((entry) => entry.key === key)) return
-    entries.push({ key, arr })
+    entries.push({ key, arr, metricMode: getImportMetricModeFromHeader(header) })
   })
 
   return entries
@@ -1925,12 +2155,12 @@ function buildCsvPlaybackData(csvRows) {
     }
 
     const frame = groups.get(groupKey)
-    entries.forEach(({ key, arr }) => {
+    entries.forEach(({ key, arr, metricMode }) => {
       const numericArr = arr.map((value) => Number(value))
       const matrixKey = resolveImportMatrixKey(key, numericArr, frame.data)
       if (!matrixKey) return
       const matrixSize = inferExportMatrixSize(matrixKey, numericArr)
-      frame.data[matrixKey] = {
+      const matrixItem = {
         arr: numericArr,
         matrixMeta: {
           matrix_key: matrixKey,
@@ -1948,6 +2178,29 @@ function buildCsvPlaybackData(csvRows) {
         deviceType: matrixKey,
         pressureUnit: row.pressure_unit || PRESSURE_UNIT,
       }
+      if (metricMode) {
+        const pointInfo = pointConfig[matrixKey]
+        const pointAreaCm2 = pointInfo
+          ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance / 100
+          : 1
+        const forceScale = pointAreaCm2 * 0.1
+        const metricValues = numericArr.map((value) => Number((Math.max(0, value || 0)).toFixed(1)))
+        matrixItem.arr = new Array(metricValues.length).fill(0)
+        matrixItem.pressureArr = metricMode === 'pressure'
+          ? metricValues
+          : metricValues.map((value) => Number((forceScale > 0 ? value / forceScale : 0).toFixed(1)))
+        matrixItem.forceArr = metricMode === 'force'
+          ? metricValues
+          : metricValues.map((value) => Number((value * forceScale).toFixed(1)))
+        matrixItem.processing = {
+          version: PROCESSING_VERSION,
+          importedMetric: true,
+          metricMode,
+          temporal: false,
+          outputDigits: 1,
+        }
+      }
+      frame.data[matrixKey] = matrixItem
     })
   })
 
@@ -1967,7 +2220,16 @@ function buildCsvPlaybackData(csvRows) {
     }))
 
   if (!rows.length) {
-    return { length: 0, pressArr: {}, areaArr: {}, rows: [] }
+    return {
+      length: 0,
+      pressArr: {},
+      areaArr: {},
+      pressureArr: {},
+      forceArr: {},
+      pressureAreaArr: {},
+      forceAreaArr: {},
+      rows: [],
+    }
   }
 
   const firstData = parseMatrixFrameData(rows[0].data)
@@ -1975,38 +2237,67 @@ function buildCsvPlaybackData(csvRows) {
   const bucketSize = Math.max(1, Math.ceil(rows.length / PLAYBACK_CHART_TARGET_POINTS))
   const pressArr = {}
   const areaArr = {}
+  const pressureArr = {}
+  const forceArr = {}
+  const pressureAreaArr = {}
+  const forceAreaArr = {}
   const pressBucket = {}
   const areaBucket = {}
   const bucketCount = {}
+  const pressureBucket = {}
+  const forceBucket = {}
+  const pressureAreaBucket = {}
+  const forceAreaBucket = {}
 
   keyArr.forEach((key) => {
     pressArr[key] = []
     areaArr[key] = []
+    pressureArr[key] = []
+    forceArr[key] = []
+    pressureAreaArr[key] = []
+    forceAreaArr[key] = []
     pressBucket[key] = 0
     areaBucket[key] = 0
     bucketCount[key] = 0
+    pressureBucket[key] = 0
+    forceBucket[key] = 0
+    pressureAreaBucket[key] = 0
+    forceAreaBucket[key] = 0
   })
 
   rows.forEach((row) => {
     const dataObj = parseMatrixFrameData(row.data)
     keyArr.forEach((key) => {
-      const arr = dataObj[key]?.arr || []
-      const press = arr.reduce((sum, value) => sum + Number(value || 0), 0)
-      const normalizedPress = (key === 'carY-back' || key === 'carY-sit')
-        ? press / (100 / 3)
-        : press
-      const area = arr.filter((value) => Number(value) > 0).length
+      const item = dataObj[key] || {}
+      const pressureValues = Array.isArray(item.pressureArr) ? item.pressureArr : []
+      const forceValues = Array.isArray(item.forceArr) ? item.forceArr : []
+      const pressureTotal = pressureValues.reduce((sum, value) => sum + Number(value || 0), 0)
+      const forceTotal = forceValues.reduce((sum, value) => sum + Number(value || 0), 0)
+      const pressureArea = pressureValues.filter((value) => Number(value) > 0).length
+      const forceArea = forceValues.filter((value) => Number(value) > 0).length
 
-      pressBucket[key] += normalizedPress
-      areaBucket[key] += area
+      pressBucket[key] += forceTotal
+      areaBucket[key] += forceArea
+      pressureBucket[key] += pressureTotal
+      forceBucket[key] += forceTotal
+      pressureAreaBucket[key] += pressureArea
+      forceAreaBucket[key] += forceArea
       bucketCount[key] += 1
 
       if (bucketCount[key] >= bucketSize) {
         pressArr[key].push(pressBucket[key] / bucketCount[key])
         areaArr[key].push(areaBucket[key] / bucketCount[key])
+        pressureArr[key].push(pressureBucket[key] / bucketCount[key])
+        forceArr[key].push(forceBucket[key] / bucketCount[key])
+        pressureAreaArr[key].push(pressureAreaBucket[key] / bucketCount[key])
+        forceAreaArr[key].push(forceAreaBucket[key] / bucketCount[key])
         pressBucket[key] = 0
         areaBucket[key] = 0
         bucketCount[key] = 0
+        pressureBucket[key] = 0
+        forceBucket[key] = 0
+        pressureAreaBucket[key] = 0
+        forceAreaBucket[key] = 0
       }
     })
   })
@@ -2015,10 +2306,23 @@ function buildCsvPlaybackData(csvRows) {
     if (bucketCount[key] > 0) {
       pressArr[key].push(pressBucket[key] / bucketCount[key])
       areaArr[key].push(areaBucket[key] / bucketCount[key])
+      pressureArr[key].push(pressureBucket[key] / bucketCount[key])
+      forceArr[key].push(forceBucket[key] / bucketCount[key])
+      pressureAreaArr[key].push(pressureAreaBucket[key] / bucketCount[key])
+      forceAreaArr[key].push(forceAreaBucket[key] / bucketCount[key])
     }
   })
 
-  return { length: rows.length, pressArr, areaArr, rows }
+  return {
+    length: rows.length,
+    pressArr: forceArr,
+    areaArr: forceAreaArr,
+    pressureArr,
+    forceArr,
+    pressureAreaArr,
+    forceAreaArr,
+    rows,
+  }
 }
 
 module.exports = {

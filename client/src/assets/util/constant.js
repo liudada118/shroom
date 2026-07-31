@@ -14,7 +14,7 @@ length64Arr.forEach((file) => {
 
 const baseMax = {
     gauss: 4,
-    color: 255,
+    color: 60,
     filter: 200,
     height: 400,
     coherent: 10,
@@ -22,21 +22,21 @@ const baseMax = {
 }
 
 export const optimalObj = {
-  bed: { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 },
-  car: { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 },
-  endi: { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 },
-  carY: { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 },
-  bigHand: { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 },
-  hand: { gauss: 2, color: 120, filter: 30, height: 80, coherent: 1, autoColor: 1 }
+  bed: { gauss: 2, color: 5, filter: 30, height: 80, coherent: 1, autoColor: 1 },
+  car: { gauss: 2, color: 5, filter: 30, height: 80, coherent: 1, autoColor: 1 },
+  endi: { gauss: 2, color: 5, filter: 30, height: 80, coherent: 1, autoColor: 1 },
+  carY: { gauss: 2, color: 5, filter: 30, height: 80, coherent: 1, autoColor: 1 },
+  bigHand: { gauss: 2, color: 5, filter: 30, height: 80, coherent: 1, autoColor: 1 },
+  hand: { gauss: 2, color: 5, filter: 30, height: 80, coherent: 1, autoColor: 1 }
 };
 
 export const maxObj = {
-  bed: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 },
-  car: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 },
-  endi: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 },
-  carY: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 },
-  bigHand: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 },
-  hand: { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 }
+  bed: { gauss: 4, color: 60, filter: 200, height: 400, coherent: 10, autoColor: 1 },
+  car: { gauss: 4, color: 60, filter: 200, height: 400, coherent: 10, autoColor: 1 },
+  endi: { gauss: 4, color: 60, filter: 200, height: 400, coherent: 10, autoColor: 1 },
+  carY: { gauss: 4, color: 60, filter: 200, height: 400, coherent: 10, autoColor: 1 },
+  bigHand: { gauss: 4, color: 60, filter: 200, height: 400, coherent: 10, autoColor: 1 },
+  hand: { gauss: 4, color: 60, filter: 200, height: 400, coherent: 10, autoColor: 1 }
 };
 
 export { lengthObj }

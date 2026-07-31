@@ -149,6 +149,7 @@ const ColAndHistory = memo((props) => {
     const pageInfo = useContext(pageContext);
     const { setDisplay, display, setDisplayType, setOnRuler } = pageInfo
     const dataStatus = useEquipStore(s => s.dataStatus, shallow)
+    const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
 
     const [messageApi, contextHolder] = message.useMessage();
     const { t, i18n } = props;
@@ -578,7 +579,10 @@ const ColAndHistory = memo((props) => {
         const selectedFiles = Array.isArray(selectArr)
             ? selectArr.map((item) => item == null ? '' : String(item).trim()).filter(Boolean)
             : []
-        const payload = { fileArr: selectedFiles }
+        const payload = {
+            fileArr: selectedFiles,
+            exportOptions: { metricMode: pressureMetricMode },
+        }
         axios({
             method: 'post',
             url: `${localAddress}/downloadFields`,
@@ -708,6 +712,7 @@ const ColAndHistory = memo((props) => {
             exportOptions: {
                 format: exportFormat,
                 fields: exportFields,
+                metricMode: pressureMetricMode,
             },
         }
 
@@ -1592,7 +1597,11 @@ const ColAndHistory = memo((props) => {
                                                         if (payload.areaArr || payload.pressArr) {
                                                             useEquipStore.getState().setHistoryChart({
                                                                 areaArr: payload.areaArr || {},
-                                                                pressArr: payload.pressArr || {}
+                                                                pressArr: payload.pressArr || {},
+                                                                pressureArr: payload.pressureArr || {},
+                                                                forceArr: payload.forceArr || payload.pressArr || {},
+                                                                pressureAreaArr: payload.pressureAreaArr || {},
+                                                                forceAreaArr: payload.forceAreaArr || payload.areaArr || {},
                                                             })
                                                         }
                                                         useEquipStore.getState().setStatus(new Array(4096).fill(0))
@@ -1722,7 +1731,11 @@ const ColAndHistory = memo((props) => {
                                                     })
                                                     useEquipStore.getState().setHistoryChart({
                                                         areaArr: payload.areaArr || {},
-                                                        pressArr: payload.pressArr || {}
+                                                        pressArr: payload.pressArr || {},
+                                                        pressureArr: payload.pressureArr || {},
+                                                        forceArr: payload.forceArr || payload.pressArr || {},
+                                                        pressureAreaArr: payload.pressureAreaArr || {},
+                                                        forceAreaArr: payload.forceAreaArr || payload.areaArr || {},
                                                     })
                                                     useEquipStore.getState().setStatus(new Array(4096).fill(0))
                                                     useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))

@@ -14,8 +14,7 @@ import { getMatrixPartFromDisplayType, getMatrixPartLabelKey, getSystemMatrixPar
 import SelectSet from './SelectSet'
 import { normalizeVisualSettingMax, saveVisualSettingValue } from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
-import { gaussBlur_return } from '../../assets/util/line'
-import { isEndiBackVisibleIndex } from '../../util/endiBackVisibleMask'
+import { getPressureMetricDisplay } from '../../util/pressureMetrics'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
@@ -36,6 +35,9 @@ function SecondTitle(props) {
     const currentDisplayType = useEquipStore(s => s.displayType, shallow);
     const activeDisplayType = pageInfo.displayType || currentDisplayType;
     const displayStatus = useEquipStore(s => s.displayStatus, shallow);
+    const collecting = useEquipStore(s => s.collecting);
+    const pressureMetricMode = useEquipStore(s => s.pressureMetricMode);
+    const pressureMetricDisplay = getPressureMetricDisplay(pressureMetricMode, t, i18n?.language);
 
     const setSettingValue = useEquipStore.getState().setSettingValue
 
@@ -94,33 +96,10 @@ function SecondTitle(props) {
             ? values.filter(([key]) => key === target || key.endsWith(`-${target}`))
             : values
         const maxList = (matched.length ? matched : values)
-            .map(([key, arr]) => {
-                if (!Array.isArray(arr)) return null
-                const fullKey = key.includes('-') ? key : (target && systemType ? `${systemType}-${target}` : key)
-                const matrixConfig = systemPointConfig[fullKey]
-                if (!matrixConfig?.width || !matrixConfig?.height) return getMax(arr)
-                const count = matrixConfig.width * matrixConfig.height
-                let next = Array.from({ length: count }, (_, index) => Number(arr[index]) || 0)
-                const filter = Number(settingValue.filter)
-                if (Number.isFinite(filter) && filter > 0) {
-                    next = next.map(value => (value < filter ? 0 : value))
-                }
-                const gauss = Number(settingValue.gauss)
-                const effectiveGauss = Number.isFinite(gauss) ? gauss * 0.5 : 0.5
-                if (effectiveGauss > 0.01) {
-                    next = gaussBlur_return(next, matrixConfig.width, matrixConfig.height, effectiveGauss, 0.01)
-                }
-                if (Number.isFinite(filter) && filter > 0) {
-                    next = next.map(value => (value < filter ? 0 : value))
-                }
-                if (fullKey === 'endi-back') {
-                    next = next.map((value, index) => isEndiBackVisibleIndex(index, matrixConfig.width, matrixConfig.height) ? value : 0)
-                }
-                return getMax(next.map(value => Math.max(0, Math.min(255, Math.round((Number(value) || 0) * 100) / 100))))
-            })
+            .map(([, arr]) => Array.isArray(arr) ? getMax(arr) : null)
             .filter((value) => value !== null)
         return maxList.length ? Math.max(...maxList) : null
-    }, [displayStatus, activeDisplayType, systemType, settingValue.gauss, settingValue.filter])
+    }, [displayStatus, activeDisplayType, systemType])
 
 
 
@@ -139,8 +118,8 @@ function SecondTitle(props) {
         {
             title: t('colorAdj'),
             type: 'color',
-            max: settingValueMax.color,
-            min: 1,
+            max: 60,
+            min: 0.01,
             step: 0.01,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoRedBlue')}</div>
         },
@@ -436,13 +415,14 @@ function SecondTitle(props) {
                     </div> */}
                     {
                         setType.map((a, index) => {
+                            const processingSettingLocked = collecting && ['gauss', 'filter', 'coherent'].includes(a.type)
                             return (
                                 <div key={a.type} className={`setItem ${a.type === 'color' ? 'setItemColor' : ''}`}>
                                     <Popover color='#32373E' className='set-popover' placement="bottomLeft" content={a.content} >
                                         <div className="setItemLabel">
                                             <span>{a.title}</span>
                                             {a.type === 'color' ? (
-                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : Number(currentDataMax).toFixed(2)}</em>
+                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : `${Number(currentDataMax).toFixed(1)} ${pressureMetricDisplay.unit}`}</em>
                                             ) : null}
                                         </div>
                                     </Popover>
@@ -456,6 +436,7 @@ function SecondTitle(props) {
                                         }}
                                         className='setItemSlide'
                                         value={getSliderValue(a)}
+                                        disabled={processingSettingLocked}
                                     />
 
                                     <ConfigProvider
@@ -478,6 +459,7 @@ function SecondTitle(props) {
                                             style={{ margin: '0 16px' }}
                                             className='setItemInput'
                                             value={getRowValue(a)}
+                                            disabled={processingSettingLocked}
                                             onChange={(value) => {
                                                 onChange(value, a)
                                             }}

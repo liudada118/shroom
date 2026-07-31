@@ -8,6 +8,11 @@ const path = require('path')
 const constantObj = require('../../util/config')
 const { MATRIX_DIMENSIONS } = require('../../util/deviceMatrixConfig')
 const { interpolateEndiWearSource } = require('../../util/line')
+const {
+  ensureProcessedFrame,
+  normalizeFrameProcessingConfig,
+  processFrame,
+} = require('../../util/pressureFrameProcessor')
 const { state, resetPlaybackState } = require('../state')
 const { broadcast } = require('../websocket')
 
@@ -384,6 +389,11 @@ function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAU
     if (Array.isArray(nextItem.arr) && isValidMatrix(key, nextItem.arr)) {
       const direction = getDirectionForKey(normalizedState, key)
       nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
+      for (const field of ['rawAdcArr', 'pressureArr', 'forceArr']) {
+        if (Array.isArray(nextItem[field]) && nextItem[field].length === nextItem.arr.length) {
+          nextItem[field] = applyCollectionDirection(key, nextItem[field], direction)
+        }
+      }
       nextItem.dataDirection = direction
       const directedDimensions = getDirectedDimensions(key, nextItem.arr, direction)
       if (directedDimensions) {
@@ -399,6 +409,33 @@ function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAU
   })
 
   return directedFrame
+}
+
+function getActiveFrameProcessingConfig() {
+  const configured = state.colFlag && state.collectionProcessingConfig
+    ? state.collectionProcessingConfig
+    : state.frameProcessingConfig
+  return normalizeFrameProcessingConfig(configured)
+}
+
+function prepareProcessedFrame(frame) {
+  const sourceFrame = combineEndiFootMatrices({ ...(frame || {}) })
+  const zeroedFrame = {}
+
+  Object.keys(sourceFrame).forEach((key) => {
+    const item = sourceFrame[key]
+    if (!item || typeof item !== 'object' || !Array.isArray(item.arr)) {
+      zeroedFrame[key] = item
+      return
+    }
+    zeroedFrame[key] = {
+      ...item,
+      arr: applyZeroBaseline(key, normalizeEndiWearMatrixSource(key, item.arr), state.zeroState),
+      zeroState: buildZeroMeta(state.zeroState, key),
+    }
+  })
+
+  return processFrame(zeroedFrame, getActiveFrameProcessingConfig())
 }
 
 function applyZeroBaseline(key, arr, zeroState) {
@@ -511,11 +548,13 @@ function sendData() {
     })
 
     if (Object.keys(obj).some((a) => Object.values(constantObj.type).includes(a))) {
-      broadcast(JSON.stringify({ data: buildDirectedFrame(obj) }))
+      obj = buildDirectedFrame(prepareProcessedFrame(obj))
+      broadcast(JSON.stringify({ data: obj }))
     }
   } else {
     obj = parseData(state.parserArr, structuredClone(state.dataMap), 'highHZ')
-    broadcast(JSON.stringify({ sitData: buildDirectedFrame(obj) }))
+    obj = buildDirectedFrame(prepareProcessedFrame(obj))
+    broadcast(JSON.stringify({ sitData: obj }))
   }
   return obj
 }
@@ -525,9 +564,8 @@ function sendData() {
  */
 function storageData(data) {
   const timestamp = Date.now()
-  const directionState = normalizeDataDirectionState(state.dataDirection || DEFAULT_DATA_DIRECTION)
   const newData = {}
-  const sourceData = combineEndiFootMatrices({ ...(data || {}) })
+  const sourceData = { ...(data || {}) }
 
   Object.keys(sourceData || {}).forEach((key) => {
     const item = sourceData[key]
@@ -538,25 +576,22 @@ function storageData(data) {
     const nextItem = { ...item }
     if (nextItem.status) delete nextItem.status
     if (Array.isArray(nextItem.arr)) {
-      nextItem.arr = normalizeEndiWearMatrixSource(key, nextItem.arr)
-      const direction = getDirectionForKey(directionState, key)
-      nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
-      nextItem.arr = applyZeroBaseline(key, nextItem.arr, state.zeroState)
-      nextItem.dataDirection = direction
-      const directedDimensions = getDirectedDimensions(key, nextItem.arr, direction)
-      if (directedDimensions) {
+      const dimensions = getMatrixDimensions(key, nextItem.arr)
+      if (dimensions) {
         nextItem.matrixMeta = {
           matrix_key: key,
-          width: directedDimensions.width,
-          height: directedDimensions.height,
+          width: dimensions.width,
+          height: dimensions.height,
           point_count: nextItem.arr.length,
         }
       }
-      nextItem.zeroState = buildZeroMeta(state.zeroState, key)
       nextItem.deviceMac = getDeviceMacForItem(item)
       nextItem.deviceType = key
       nextItem.softwareVersion = 'endi1.0.1'
-      nextItem.pressureUnit = 'software_unit'
+      nextItem.pressureUnit = 'kPa'
+      nextItem.forceUnit = 'N'
+      nextItem.pointSpacingCm = 1.25
+      nextItem.pointAreaCm2 = 1.5625
     }
     newData[key] = nextItem
   })
@@ -701,7 +736,10 @@ function getPlaybackSnapshot(index = state.playIndex, options = {}) {
   const maxSkips = options.skipBadFrames === false ? 0 : rows.length
   let skippedInThisLookup = 0
   let row = rows[normalizedIndex]
-  let sitDataPlay = normalizeFrameMatrixSources(removePlaybackSelect(parsePlaybackData(row?.data)))
+  let sitDataPlay = ensureProcessedFrame(
+    normalizeFrameMatrixSources(removePlaybackSelect(parsePlaybackData(row?.data))),
+    getActiveFrameProcessingConfig(),
+  )
   let validation = validatePlaybackFrameData(sitDataPlay)
 
   while (!validation.valid && skippedInThisLookup < maxSkips) {
@@ -735,7 +773,10 @@ function getPlaybackSnapshot(index = state.playIndex, options = {}) {
     normalizedIndex += 1
     state.playIndex = normalizedIndex
     row = rows[normalizedIndex]
-    sitDataPlay = normalizeFrameMatrixSources(removePlaybackSelect(parsePlaybackData(row?.data)))
+    sitDataPlay = ensureProcessedFrame(
+      normalizeFrameMatrixSources(removePlaybackSelect(parsePlaybackData(row?.data))),
+      getActiveFrameProcessingConfig(),
+    )
     validation = validatePlaybackFrameData(sitDataPlay)
   }
 
@@ -876,4 +917,5 @@ module.exports = {
   normalizeDataDirectionState,
   saveDataDirection,
   loadPersistedDataDirection,
+  prepareProcessedFrame,
 }

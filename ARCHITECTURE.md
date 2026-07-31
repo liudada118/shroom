@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-20
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-30
 
 ## 1. 项目概述
 
@@ -521,11 +521,13 @@ graph TD
 | 2026-06-29 | Endi 左右脚源矩阵保留 | 合并 `endi-foot` 时额外携带左右脚源矩阵，前端优先用源矩阵拆 2D 展示，避免左腿展示为空 |
 | 2026-07-16 | 压强颜色步进调整 | ADC 转压强后的可视化颜色步进改为 0.1，覆盖实时调节面板、2D 数字、3D 点图和对比热力图 |
 | 2026-07-20 | 压强颜色步进精细化 | 压强可视化颜色步进从 0.1 进一步改为 0.01，颜色调节、动态色域和热力图保持两位小数粒度 |
+| 2026-07-30 | Dummy 压强/压力统一数据链路 | 后端以 `dummyPressure_v2.10.3.js` 生成压强矩阵，并按统一 1.25 cm 点距生成压力矩阵；实时、历史、对比、COP、框选和 CSV 统一消费同一组规范矩阵 |
 
 ## 9. 更新日志
 
 | 日期 | 变更类型 | 描述 |
 | :--- | :--- | :--- |
+| 2026-07-30 | 新增功能 | Dummy 分支接入全局 kPa/N 切换和后端规范矩阵，统一实时渲染、统计、历史、对比、COP 报告与 CSV 导出口径 |
 | 2026-07-20 | 优化重构 | 压强矩阵颜色链路步进从 0.1 收细到 0.01，颜色调节输入、动态颜色范围和对比热力图同步支持 2 位小数 |
 | 2026-07-16 | 优化重构 | 压强矩阵颜色链路从整数步进调整为 0.1，颜色调节输入和动态颜色范围同步支持 1 位小数 |
 | 2026-06-05 | 新增功能 | 数据对比导出支持选择保存路径和 CSV/XLSX 两种格式 |
@@ -1639,3 +1641,44 @@ graph TD
 - `NumThreeColorV3`, `NumThreeColorV4`, `ThreeAndCarPointV2`, legacy 3D point entries, and `ContrastHeatmap` quantize pressure color values at `0.01` instead of integer steps.
 | 2026-07-16 | Refactor | Use 0.1 color granularity for pressure-based visualization after ADC-to-pressure conversion |
 | 2026-07-20 | Refactor | Tighten pressure visualization color granularity from 0.1 to 0.01 |
+
+## 2026-07-30 Dummy 压强/压力统一数据链路
+
+### 业务口径
+
+- 全局展示模式分为压强模式和压力模式。压强模式单位为 `kPa`，压力模式单位为 `N`。
+- 所有 Dummy 传感器点间距均为 `1.25 cm`，单点受力面积固定为 `1.25 × 1.25 = 1.5625 cm²`。
+- 单点压力换算公式为 `F(N) = P(kPa) × 1000 × 1.5625 / 10000 = P(kPa) × 0.15625`。
+- “压力总和”始终表示所有有效点的真实压力之和，单位固定为 `N`，不随全局展示模式变成“压强总和”。
+- 平均值、最大值、有效点数和有效面积均基于当前展示模式对应的规范矩阵计算；二维数字、三维点图、框选统计、历史回放、数据对比、COP 报告和 CSV 导出使用相同数据源。
+
+### 后端处理链路
+
+1. `server/services/PressureConfig.js` 配置并校验 `server/kpa/dummyPressure_v2.10.3.js`，通过缓存加载器提供 Dummy 压强公式。
+2. `util/pressureFrameProcessor.js` 将上衣、袖子、裤腿等展示矩阵还原到物理矩阵，应用结构掩码、阈值和轻量空间高斯滤波，再调用 Dummy 公式完成 ADC 到 kPa 的标定。
+3. 处理器为每个矩阵生成同尺寸的 `pressureArr` 和 `forceArr`。`pressureArr` 保存一位小数的单点压强，`forceArr` 按单点面积换算并保存一位小数的单点压力。
+4. `server/services/DataService.js` 在置零之后、方向变换之前调用统一处理器；同一个处理结果同时用于 WebSocket 实时推送和采集落库，避免实时画面与 CSV 因前后端重复滤波而不一致。
+5. 开始采集时锁定 `filter/gauss/coherent` 配置，采集中不允许改变数据口径；前端不再执行矩阵滤波、时序平滑或高斯处理。
+6. 历史回放、导入 CSV、对比和报告读取旧数据时通过兼容处理补齐规范矩阵，已带处理版本的帧不会重复换算。
+
+### 前端消费链路
+
+- `client/src/store/equipStore.js` 持久化全局 `pressureMetricMode`，`client/src/util/pressureMetrics.js` 统一提供模式、单位、格式化和矩阵统计方法。
+- `client/src/hooks/useMatrixData.js` 直接消费后端 `pressureArr/forceArr`：当前模式矩阵用于二维、三维、框选和分布图；`forceArr` 的总和固定用于压力总和曲线。
+- `ChartsAside` 提供 kPa/N 交换按钮。平均值、最大值和分布图随模式切换，压力总和行和趋势值始终为 `N`。
+- 二维数字、三维点图和当前最大值均保留一位小数；颜色调节以当前展示矩阵为依据，步进 `0.01`、最小值 `0.01`、最大值 `60`、默认值 `5`。
+- 历史回放、对比和 COP 报告沿用全局模式。COP 轨迹轴表示 X/Y 方向压力中心偏移距离（mm），压力总和趋势 X 轴为时间（s）、Y 轴为压力总和（N）。
+
+### 导出与接口
+
+- CSV 根据导出时的全局模式输出单点、平均值和最大值：压强模式为 `kPa`，压力模式为 `N`；压力总和字段始终为 `N`。
+- CSV “秒数(s)”从首帧 `0.000` 开始，保留三位小数；导出字段中不包含靠背 MAC、坐垫 MAC和备注。
+- `/getFrameProcessingConfig` 返回当前处理参数及采集锁定状态；`/setFrameProcessingConfig` 在非采集状态更新处理参数。
+- `/downloadFields` 和 `/download` 接收导出模式，确保字段名称、单位和数据矩阵一致。
+
+### 验证
+
+- `test/pressureFrameProcessor.test.js` 覆盖公式自检、1.25 cm 几何与压力系数、各 Dummy 矩阵规范化、左右腿合并、后端滤波确定性及两种模式 CSV 往返校验。
+- 前端生产构建通过，新增专项测试共 6 项全部通过。
+
+| 2026-07-30 | Feature | Add the Dummy canonical kPa/N matrix pipeline based on `dummyPressure_v2.10.3.js`, with 1.25 cm sensor spacing and unified realtime, history, report, comparison and CSV semantics |

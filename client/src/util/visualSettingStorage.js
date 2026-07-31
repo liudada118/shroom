@@ -1,13 +1,16 @@
 const VISUAL_SETTING_MAP_KEY = 'visualSettingValueBySystemV1'
 const LEGACY_SETTING_KEY = 'setValueData'
 const VISUAL_DEFAULT_VERSION_KEY = 'visualDefaultVersion'
-const VISUAL_DEFAULT_VERSION = '2026-06-05-visual-defaults-filter-30'
+const VISUAL_DEFAULT_VERSION = '2026-07-30-dummy-pressure-force-defaults'
 const DEFAULT_SYSTEM_KEY = 'default'
-const VISUAL_SETTING_DEFAULTS = { gauss: 2, color: 120, filter: 30, height: 80, autoColor: 1 }
-const LEGACY_DEFAULT_COLORS = new Set([200, 255, 355, 495])
+export const VISUAL_COLOR_SETTING_MIN = 0.01
+export const VISUAL_COLOR_SETTING_MAX = 60
+export const VISUAL_COLOR_SETTING_DEFAULT = 5
+const VISUAL_SETTING_DEFAULTS = { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 30, height: 80, autoColor: 1 }
+const LEGACY_DEFAULT_COLORS = new Set([50, 120, 180, 200, 255, 355, 495])
 const LEGACY_DEFAULT_VALUES = {
   gauss: new Set([1, 2, 2.6, 3]),
-  color: new Set([50, 180, ...LEGACY_DEFAULT_COLORS]),
+  color: LEGACY_DEFAULT_COLORS,
   filter: new Set([0, 1, 6]),
   height: new Set([1, 2.02, 3.36, 10, 150]),
   autoColor: new Set([0]),
@@ -21,6 +24,7 @@ export function normalizeVisualSettingMax(maxValue = {}) {
   const filterMax = Number(maxValue?.filter)
   return {
     ...maxValue,
+    color: VISUAL_COLOR_SETTING_MAX,
     filter: Number.isFinite(filterMax)
       ? Math.max(filterMax, DEFAULT_FILTER_SETTING_MAX)
       : DEFAULT_FILTER_SETTING_MAX,
@@ -52,6 +56,9 @@ function normalizeSettingValue(value = {}, fallback = {}, maxValue = {}) {
 
     const max = Number(normalizedMax?.[key])
     result[key] = Number.isFinite(max) ? Math.min(raw, max) : raw
+    if (key === 'color') {
+      result[key] = Math.max(VISUAL_COLOR_SETTING_MIN, result[key])
+    }
   })
 
   return result
