@@ -89,7 +89,13 @@
       "deviceClass": "foot",
       "lastSeen": "2026-07-22T06:32:02.045Z",
       "alias": ""
+    },
+    "344637301550321301": {
+      "type": "endi-sit",
+      "deviceClass": "foot",
+      "lastSeen": "2026-07-31T09:26:15.752Z",
+      "alias": ""
     }
   },
-  "updatedAt": "2026-07-22T06:32:02.555Z"
+  "updatedAt": "2026-07-31T09:26:15.752Z"
 }
