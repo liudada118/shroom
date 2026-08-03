@@ -6,9 +6,14 @@ const GAUSSIAN_SIGMA_FACTOR = 0.5
 const DUMMY_POINT_SPACING_CM = 1.25
 const DUMMY_POINT_AREA_CM2 = DUMMY_POINT_SPACING_CM * DUMMY_POINT_SPACING_CM
 const FORCE_PER_KPA = DUMMY_POINT_AREA_CM2 * 0.1
+const ADC_FILTER_MODE = 'adc'
+const PRESSURE_FILTER_MODE = 'pressure'
+const FORCE_FILTER_MODE = 'force'
+const FILTER_MODES = new Set([ADC_FILTER_MODE, PRESSURE_FILTER_MODE, FORCE_FILTER_MODE])
 
 const DEFAULT_FRAME_PROCESSING_CONFIG = Object.freeze({
-  filter: 30,
+  filter: 0,
+  filterMode: PRESSURE_FILTER_MODE,
   gauss: 2,
   coherent: 1,
 })
@@ -64,8 +69,12 @@ function clampNumber(value, fallback, min, max) {
 }
 
 function normalizeFrameProcessingConfig(config = {}, fallback = DEFAULT_FRAME_PROCESSING_CONFIG) {
+  const fallbackFilterMode = FILTER_MODES.has(fallback.filterMode)
+    ? fallback.filterMode
+    : PRESSURE_FILTER_MODE
   return {
     filter: clampNumber(config.filter, Number(fallback.filter) || 0, 0, 4095),
+    filterMode: FILTER_MODES.has(config.filterMode) ? config.filterMode : fallbackFilterMode,
     gauss: clampNumber(config.gauss, Number(fallback.gauss) || 0, 0, 4),
     coherent: clampNumber(config.coherent, Number(fallback.coherent) || 1, 1, 10),
   }
@@ -106,6 +115,20 @@ function isDisplayCellValid(key, row, col) {
     return col >= 4 || (row >= 16 && row <= 29)
   }
   return true
+}
+
+function normalizeRawAdcMatrix(key, values) {
+  const config = DUMMY_MATRIX_CONFIG[key]
+  if (!config || !Array.isArray(values)) return []
+  const displayLength = config.displayWidth * config.displayHeight
+  const source = values.length === displayLength
+    ? values
+    : interpolatePhysicalMatrix(key, recoverPhysicalMatrix(key, values))
+  if (source.length !== displayLength) return []
+  return source.map((value) => {
+    const numeric = Number(value)
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
+  })
 }
 
 function gaussianBlur(values, width, height, sigma) {
@@ -238,9 +261,6 @@ function processPhysicalAdcMatrix(key, values, processingConfig) {
     return Math.max(0, numeric)
   })
 
-  if (settings.filter > 0) {
-    result = result.map((value) => (value < settings.filter ? 0 : value))
-  }
   result = gaussianBlur(
     result,
     config.sourceWidth,
@@ -251,10 +271,34 @@ function processPhysicalAdcMatrix(key, values, processingConfig) {
     const row = Math.floor(index / config.sourceWidth)
     const col = index % config.sourceWidth
     if (!isPhysicalCellValid(key, row, col)) return 0
-    if (settings.filter > 0 && value < settings.filter) return 0
     return value
   })
   return result
+}
+
+function applyDisplayMetricFilter(adcValues, pressureValues, processingConfig) {
+  const settings = normalizeFrameProcessingConfig(processingConfig)
+  const length = Math.max(adcValues.length, pressureValues.length)
+  const adc = Array.from({ length }, (_, index) => Math.max(0, Number(adcValues[index]) || 0))
+  const pressure = Array.from({ length }, (_, index) => Math.max(0, Number(pressureValues[index]) || 0))
+  const force = pressure.map((value) => value * FORCE_PER_KPA)
+
+  if (settings.filter <= 0) {
+    return { adc, pressure, force }
+  }
+
+  const activeValues = settings.filterMode === ADC_FILTER_MODE
+    ? adc
+    : settings.filterMode === PRESSURE_FILTER_MODE
+      ? pressure
+      : force
+  const keepPoint = activeValues.map((value) => value >= settings.filter)
+
+  return {
+    adc: adc.map((value, index) => keepPoint[index] ? value : 0),
+    pressure: pressure.map((value, index) => keepPoint[index] ? value : 0),
+    force: force.map((value, index) => keepPoint[index] ? value : 0),
+  }
 }
 
 function buildTopAveragePointPressures(values, validIndexes, stats) {
@@ -320,16 +364,19 @@ function convertPhysicalPressureMatrix(key, adcValues) {
 
 function buildProcessingMetadata(config) {
   const pressureConfig = loadPressureConfig()
+  const versionMatch = String(pressureConfig.dummyPressureFormulaFile || '').match(/v(\d+(?:\.\d+)*)/i)
   return {
     version: PROCESSING_VERSION,
     filter: config.filter,
+    filterMode: config.filterMode,
+    filterStage: 'converted-display-matrix',
     gauss: config.gauss,
     coherent: config.coherent,
     gaussianSigma: Number((config.gauss * GAUSSIAN_SIGMA_FACTOR).toFixed(3)),
     temporal: false,
     outputDigits: DISPLAY_DIGITS,
     formulaFile: pressureConfig.dummyPressureFormulaFile,
-    formulaProfile: 'dummy-v2.10.3',
+    formulaProfile: versionMatch ? `dummy-v${versionMatch[1]}` : 'dummy',
     pointSpacingCm: DUMMY_POINT_SPACING_CM,
     pointAreaCm2: DUMMY_POINT_AREA_CM2,
   }
@@ -339,14 +386,18 @@ function processSingleDummyMatrix(key, sourceValues, processingConfig) {
   const config = normalizeFrameProcessingConfig(processingConfig)
   const physicalSource = recoverPhysicalMatrix(key, sourceValues)
   if (!physicalSource.length) return null
+  const rawAdcArr = normalizeRawAdcMatrix(key, sourceValues)
   const physicalAdc = processPhysicalAdcMatrix(key, physicalSource, config)
   const physicalPressure = convertPhysicalPressureMatrix(key, physicalAdc)
-  const displayAdc = interpolatePhysicalMatrix(key, physicalAdc).map((value) => roundValue(value, 2))
+  const displayAdcRaw = interpolatePhysicalMatrix(key, physicalAdc)
   const displayPressureRaw = interpolatePhysicalMatrix(key, physicalPressure)
-  const pressureArr = displayPressureRaw.map((value) => roundValue(value))
-  const forceArr = displayPressureRaw.map((value) => roundValue(value * FORCE_PER_KPA))
+  const filtered = applyDisplayMetricFilter(displayAdcRaw, displayPressureRaw, config)
+  const displayAdc = filtered.adc.map((value) => roundValue(value, 2))
+  const pressureArr = filtered.pressure.map((value) => roundValue(value))
+  const forceArr = filtered.force.map((value) => roundValue(value))
 
   return {
+    rawAdcArr,
     arr: displayAdc,
     pressureArr,
     forceArr,
@@ -386,20 +437,30 @@ function combineFootRows(leftValues, rightValues) {
 
 function processFootMatrixItem(item, processingConfig) {
   const source = Array.isArray(item.arr) ? item.arr : []
+  const rawSource = Array.isArray(item.rawAdcArr) && item.rawAdcArr.length === source.length
+    ? item.rawAdcArr
+    : source
   const { left, right } = splitFootRows(source)
+  const { left: rawLeft, right: rawRight } = splitFootRows(rawSource)
   const leftResult = processSingleDummyMatrix(ENDI_LEFT_FOOT_KEY, left, processingConfig)
   const rightResult = processSingleDummyMatrix(ENDI_RIGHT_FOOT_KEY, right, processingConfig)
   if (!leftResult || !rightResult) return { ...item }
+  const leftRawAdc = normalizeRawAdcMatrix(ENDI_LEFT_FOOT_KEY, rawLeft)
+  const rightRawAdc = normalizeRawAdcMatrix(ENDI_RIGHT_FOOT_KEY, rawRight)
 
   return {
     ...item,
-    rawAdcArr: Array.isArray(item.rawAdcArr) ? [...item.rawAdcArr] : [...source],
+    rawAdcArr: combineFootRows(leftRawAdc, rightRawAdc),
     arr: combineFootRows(leftResult.arr, rightResult.arr),
     pressureArr: combineFootRows(leftResult.pressureArr, rightResult.pressureArr),
     forceArr: combineFootRows(leftResult.forceArr, rightResult.forceArr),
     sourceMatrices: {
       [ENDI_LEFT_FOOT_KEY]: leftResult.arr,
       [ENDI_RIGHT_FOOT_KEY]: rightResult.arr,
+    },
+    sourceRawAdcMatrices: {
+      [ENDI_LEFT_FOOT_KEY]: leftRawAdc,
+      [ENDI_RIGHT_FOOT_KEY]: rightRawAdc,
     },
     sourcePressureMatrices: {
       [ENDI_LEFT_FOOT_KEY]: leftResult.pressureArr,
@@ -420,10 +481,13 @@ function processMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROC
   const source = Array.isArray(item.arr) ? item.arr : []
   const result = processSingleDummyMatrix(key, source, processingConfig)
   if (!result) return { ...item }
+  const rawAdcArr = Array.isArray(item.rawAdcArr)
+    ? normalizeRawAdcMatrix(key, item.rawAdcArr)
+    : result.rawAdcArr
   return {
     ...item,
-    rawAdcArr: Array.isArray(item.rawAdcArr) ? [...item.rawAdcArr] : [...source],
     ...result,
+    rawAdcArr,
   }
 }
 
@@ -468,6 +532,9 @@ module.exports = {
   DUMMY_POINT_SPACING_CM,
   DUMMY_POINT_AREA_CM2,
   FORCE_PER_KPA,
+  ADC_FILTER_MODE,
+  PRESSURE_FILTER_MODE,
+  FORCE_FILTER_MODE,
   DEFAULT_FRAME_PROCESSING_CONFIG,
   DUMMY_MATRIX_CONFIG,
   normalizeFrameProcessingConfig,
@@ -477,6 +544,7 @@ module.exports = {
   interpolatePhysicalMatrix,
   processPhysicalAdcMatrix,
   convertPhysicalPressureMatrix,
+  applyDisplayMetricFilter,
   processSingleDummyMatrix,
   processMatrixItem,
   hasCanonicalMetricArrays,

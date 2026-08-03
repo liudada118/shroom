@@ -14,8 +14,6 @@ import FootTrack from '../chart/Chart';
 import { graCenter } from '../../util/util';
 import DraggablePanel from '../draggablePanel/DraggablePanel';
 import { formatSelectionName } from '../../util/selectionName';
-import { Button, Tooltip } from 'antd';
-import { SwapOutlined } from '@ant-design/icons';
 import { getPressureMetricDisplay } from '../../util/pressureMetrics';
 
 function ChartsAside(props) {
@@ -611,9 +609,6 @@ function ChartsAside(props) {
 
     const { t, i18n } = useTranslation()
     const metricDisplay = getPressureMetricDisplay(pressureMetricMode, t, i18n.language)
-    const togglePressureMetric = () => {
-        useEquipStore.getState().setPressureMetricMode(metricDisplay.nextMode)
-    }
 
     const system = getSysType()
     const pressDataArr = ['pressAver', 'pressMax', 'total']
@@ -774,19 +769,7 @@ function ChartsAside(props) {
             >
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
-                        <div className="chartName chartNameWithAction">
-                            <span>{metricDisplay.curveLabel}</span>
-                            <Tooltip title={metricDisplay.nextMode === 'pressure' ? '切换为压强' : '切换为压力'}>
-                                <Button
-                                    type="text"
-                                    size="small"
-                                    className="pressureMetricSwap"
-                                    icon={<SwapOutlined />}
-                                    onClick={togglePressureMetric}
-                                    aria-label="切换压强与压力"
-                                />
-                            </Tooltip>
-                        </div>
+                        <div className="chartName">{metricDisplay.curveLabel}</div>
                         <div className="chartType">{renderLegend(pressColorArr)}</div>
                     </div>
                     <div ref={myChart1Dom} id="myChart1" className="chartCanvas" style={{ opacity: '0.8' }}></div>

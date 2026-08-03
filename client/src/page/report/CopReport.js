@@ -7,9 +7,11 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { getMatrixDisplayLabel, localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import {
+  ADC_METRIC_MODE,
   FORCE_METRIC_MODE,
   getPressureMetricDisplay,
   getPressurePointAreaCm2,
+  PRESSURE_METRIC_MODE,
 } from '../../util/pressureMetrics'
 import { useEquipStore } from '../../store/equipStore'
 import { jetWhite3NoWhite } from '../../assets/util/line'
@@ -23,8 +25,12 @@ const POINT_SPACING_MM = 12.5
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 const formatNumber = (value, digits = 2) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '-'
 const safeArray = (value) => Array.isArray(value) ? value : []
-const getMatrixMetricValues = (matrix, metricMode = FORCE_METRIC_MODE) => {
-  const source = metricMode === FORCE_METRIC_MODE ? matrix?.forceArr : matrix?.pressureArr
+const getMatrixMetricValues = (matrix, metricMode = PRESSURE_METRIC_MODE) => {
+  const source = metricMode === ADC_METRIC_MODE
+    ? (matrix?.rawAdcArr || matrix?.arr)
+    : metricMode === FORCE_METRIC_MODE
+      ? matrix?.forceArr
+      : matrix?.pressureArr
   const length = safeArray(matrix?.arr).length || safeArray(source).length
   return Array.from({ length }, (_, index) => {
     const value = Number(source?.[index])
@@ -176,11 +182,11 @@ const normalizeSelections = (selectValue, matrixKey, matrixSize) => {
   }).filter(Boolean)
 }
 
-const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = FORCE_METRIC_MODE) => {
-  const adcValues = safeArray(matrix?.arr)
+const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = PRESSURE_METRIC_MODE) => {
+  const adcValues = getMatrixMetricValues(matrix, ADC_METRIC_MODE)
   const pressureValues = getMatrixMetricValues(matrix, 'pressure')
   const forceValues = getMatrixMetricValues(matrix, FORCE_METRIC_MODE)
-  const metricValues = metricMode === FORCE_METRIC_MODE ? forceValues : pressureValues
+  const metricValues = getMatrixMetricValues(matrix, metricMode)
   const { width, height } = inferSize(matrix)
   const scope = rect || { xStart: 0, yStart: 0, xEnd: width, yEnd: height }
   let pMax = 0
@@ -237,7 +243,7 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = FORC
   }
 }
 
-const buildAverageMap = (frames, matrixKey, metricMode = FORCE_METRIC_MODE) => {
+const buildAverageMap = (frames, matrixKey, metricMode = PRESSURE_METRIC_MODE) => {
   const firstMatrix = frames[0]?.data?.[matrixKey]
   const { width, height } = inferSize(firstMatrix)
   const sum = Array(width * height).fill(0)
@@ -251,7 +257,7 @@ const buildAverageMap = (frames, matrixKey, metricMode = FORCE_METRIC_MODE) => {
   return { arr: count ? sum.map((value) => value / count) : sum, width, height }
 }
 
-const buildSingleAnalysis = (payload, matrixKey, metricMode = FORCE_METRIC_MODE) => {
+const buildSingleAnalysis = (payload, matrixKey, metricMode = PRESSURE_METRIC_MODE) => {
   const frames = safeArray(payload?.frames)
   if (!frames.length || !matrixKey) return null
   const averageMatrix = buildAverageMap(frames, matrixKey, metricMode)
@@ -335,7 +341,7 @@ const buildSingleAnalysis = (payload, matrixKey, metricMode = FORCE_METRIC_MODE)
   }
 }
 
-const buildAnalysis = (payload, metricMode = FORCE_METRIC_MODE) => {
+const buildAnalysis = (payload, metricMode = PRESSURE_METRIC_MODE) => {
   const keys = getReportMatrixKeys(payload)
   const orderedKeys = keys
   const analyses = orderedKeys
@@ -354,7 +360,7 @@ const heatColor = (value, max) => {
   return `rgb(${r},${g},${b})`
 }
 
-const HEATMAP_DESCRIPTION = 'X轴为传感器横向点位，Y轴为传感器纵向点位；颜色表示对应点位的压力/压强大小。'
+const HEATMAP_DESCRIPTION = 'X轴为传感器横向点位，Y轴为传感器纵向点位；颜色表示对应点位的当前展示指标大小。'
 const COP_DESCRIPTION = 'X轴距离表示压力中心左右偏移的距离；Y轴距离表示压力中心上下偏移的距离，单位均为 mm。'
 const FORCE_TREND_DESCRIPTION = 'X轴表示采集时间，单位为 s；Y轴表示压力总和，单位为 N。'
 const COP_DX_TREND_DESCRIPTION = 'X轴表示采集时间，单位为 s；Y轴表示压力中心左右偏移距离，单位为 mm。'
@@ -645,6 +651,7 @@ function CopReport() {
   )
   const metricName = metricDisplay.name
   const metricUnit = metricDisplay.unit
+  const effectiveThreshold = pressureMetricMode === ADC_METRIC_MODE ? 1 : EFFECTIVE_THRESHOLD
   const query = new URLSearchParams(location.search)
   const date = query.get('date') || query.get('time') || ''
   const source = query.get('source') || ''
@@ -763,7 +770,7 @@ function CopReport() {
             <MetricCard label="采样时长" value={formatNumber(analysis.durationSeconds, 2)} unit="秒" />
             <MetricCard label="采样率" value={formatNumber(analysis.sampleRate, 1)} unit="帧/秒" />
             <MetricCard label="矩阵尺寸" value={`${size.width} x ${size.height}`} unit="" />
-            <MetricCard label="有效阈值" value={EFFECTIVE_THRESHOLD} unit={metricUnit} />
+            <MetricCard label="有效阈值" value={effectiveThreshold} unit={metricUnit} />
             <MetricCard label={`${metricName}单位`} value={metricUnit} unit="" />
             <MetricCard label="坐标单位" value="mm" unit="" />
           </div>
@@ -887,7 +894,7 @@ function CopReport() {
             </div>
             <div>
               <b>阈值配置</b>
-              <p>有效阈值：{EFFECTIVE_THRESHOLD} {metricUnit}。</p>
+              <p>有效阈值：{effectiveThreshold} {metricUnit}。</p>
               <p>风险等级：结合压力占比和最大压强估算。</p>
             </div>
             <div>
@@ -904,7 +911,7 @@ function CopReport() {
   )
 }
 
-function SurfaceAnalysisReport({ analysis, indexLabel, metricMode = FORCE_METRIC_MODE }) {
+function SurfaceAnalysisReport({ analysis, indexLabel, metricMode = PRESSURE_METRIC_MODE }) {
   const { totalSummary, averageMatrix, metrics, selections, size, matrixKey, sampleRate } = analysis
   const label = getMatrixLabel(matrixKey)
   const metricDisplay = getPressureMetricDisplay(metricMode)

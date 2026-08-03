@@ -2,7 +2,6 @@ import React, { memo, useEffect, useImperativeHandle, useRef, useState } from 'r
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls'
-import { beginDynamicColorFrame, setDynamicGammaColorEnabled } from '../../assets/util/line'
 import { WebGLCanvas } from '../webgl/WebGL.HeatMap copy 2'
 import { getSettingValue } from '../../store/equipStore'
 import { cleanupThree } from '../../util/disposeThree'
@@ -11,7 +10,6 @@ import { animateCameraZoom, applyZoomBounds, bindZoomValueSync, getZoomValueFrom
 const MODEL_PATH = './model/human_matrix_atlas_rectangular_less_spike_long_legs_vfixed_arm_hflip_swap_lr.glb'
 const UV_CANVAS_SIZE = 512
 const HEATMAP_FRAME_MS = 100
-const HUMAN_COLOR_SCOPE = 'endi-human-atlas'
 const DEFAULT_COLOR_MAX = 120
 const HUMAN_HEATMAP_MATERIAL_NAMES = ['Posterior_Matrix_Atlas']
 const TEXTURE_BASE_COLOR = '#ffffff'
@@ -193,7 +191,7 @@ function getAtlasPointRadius(part, width, matrixHeight, heightValue, regionMap) 
   return Math.max(cellW, cellH) * DEFAULT_HEAT_RADIUS_SCALE * heightRatio
 }
 
-function buildHumanAtlasHeatmapData(frame, filterValue, heightValue, regionMap) {
+function buildHumanAtlasHeatmapData(frame, heightValue, regionMap) {
   const data = []
   HUMAN_TEXTURE_PARTS.forEach((part) => {
     const matrix = getPartMatrixData(frame, part)
@@ -210,7 +208,7 @@ function buildHumanAtlasHeatmapData(frame, filterValue, heightValue, regionMap) 
         data.push([
           region.x + col * cellW + cellW / 2,
           region.y + row * cellH + cellH / 2,
-          value >= filterValue ? value : 0,
+          value,
           radius + 1,
         ])
       }
@@ -225,14 +223,9 @@ function drawHumanHeatmap(canvas, frame, webglHeatmap, regionMap) {
   if (!ctx) return
   const settingValue = getSettingValue?.() || {}
   const fallbackMax = Number(settingValue.color) > 0 ? Number(settingValue.color) : DEFAULT_COLOR_MAX
-  const filterValue = Math.max(0, Number(settingValue.filter) || 0)
   const values = getFrameValues(frame)
   const frameMax = getFrameMax(values)
-  setDynamicGammaColorEnabled(Boolean(settingValue.autoColor), HUMAN_COLOR_SCOPE)
-  const dynamicMax = beginDynamicColorFrame(values, fallbackMax, HUMAN_COLOR_SCOPE)
-  const colorMax = Boolean(settingValue.autoColor)
-    ? Math.max(dynamicMax || 0, frameMax, fallbackMax)
-    : fallbackMax
+  const colorMax = Boolean(settingValue.autoColor) && frameMax > 0 ? frameMax : fallbackMax
 
   const sourceCanvas = webglHeatmap.render(
     {
@@ -247,11 +240,11 @@ function drawHumanHeatmap(canvas, frame, webglHeatmap, regionMap) {
       ),
       max: colorMax,
       min: 0,
-      filter: filterValue,
+      filter: 0,
       blurFactor: 0.46,
       class: 'endi-human-atlas',
     },
-    buildHumanAtlasHeatmapData(frame, filterValue, settingValue.height, regionMap),
+    buildHumanAtlasHeatmapData(frame, settingValue.height, regionMap),
     'endi-human-atlas-webgl'
   )?.[0]
 

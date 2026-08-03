@@ -1,15 +1,17 @@
 import { create } from 'zustand'
 import { maxObj } from '../assets/util/constant'
 import { loadVisualSettingValue, normalizeVisualSettingMax } from '../util/visualSettingStorage'
-import { FORCE_METRIC_MODE, normalizePressureMetricMode } from '../util/pressureMetrics'
+import { PRESSURE_METRIC_MODE } from '../util/pressureMetrics'
 
 // ─── 持久化设置值 ────────────────────────────────────────
-const DEFAULT_SETTINGS = { gauss: 2, color: 5, filter: 30, height: 80, coherent: 1, autoColor: 1 }
+const DEFAULT_SETTINGS = { gauss: 2, color: 5, filter: 0, height: 80, coherent: 1, autoColor: 1 }
 const PRESSURE_METRIC_MODE_STORAGE_KEY = 'pressureMetricMode'
 
 function loadPressureMetricMode() {
-  if (typeof localStorage === 'undefined') return FORCE_METRIC_MODE
-  return normalizePressureMetricMode(localStorage.getItem(PRESSURE_METRIC_MODE_STORAGE_KEY))
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(PRESSURE_METRIC_MODE_STORAGE_KEY, PRESSURE_METRIC_MODE)
+  }
+  return PRESSURE_METRIC_MODE
 }
 
 function loadSettingValue() {
@@ -25,7 +27,7 @@ export const useEquipStore = create((set) => ({
   status: {},
   equipStamp: 0,
   displayStatus: {},
-  metricStatus: { pressure: {}, force: {} },
+  metricStatus: { adc: {}, pressure: {}, force: {} },
   cop: {},
 
   // 系统配置
@@ -56,6 +58,8 @@ export const useEquipStore = create((set) => ({
   historyChart: {
     pressArr: {},
     areaArr: {},
+    adcArr: {},
+    adcAreaArr: {},
     pressureArr: {},
     forceArr: {},
     pressureAreaArr: {},
@@ -91,12 +95,11 @@ export const useEquipStore = create((set) => ({
   setSettingValueMax: (s) => set({ settingValueMax: s }),
   setSettingValueOptimal: (s) => set({ settingValueOptimal: s }),
   setNum2DZoom: (s) => set({ num2DZoom: s }),
-  setPressureMetricMode: (mode) => {
-    const nextMode = normalizePressureMetricMode(mode)
+  setPressureMetricMode: () => {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(PRESSURE_METRIC_MODE_STORAGE_KEY, nextMode)
+      localStorage.setItem(PRESSURE_METRIC_MODE_STORAGE_KEY, PRESSURE_METRIC_MODE)
     }
-    set({ pressureMetricMode: nextMode })
+    set({ pressureMetricMode: PRESSURE_METRIC_MODE })
   },
 
   setSelectArr: (s) => set({ selectArr: s }),

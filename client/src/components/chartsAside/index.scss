@@ -40,26 +40,6 @@
         color: #FFFFFF;
     }
 
-    .chartNameWithAction {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.25rem;
-        min-width: 0;
-    }
-
-    .pressureMetricSwap {
-        width: 1.75rem;
-        height: 1.75rem;
-        min-width: 1.75rem;
-        padding: 0;
-        color: #7fb4ff;
-
-        &:hover {
-            color: #ffffff !important;
-            background: rgba(22, 119, 255, 0.2) !important;
-        }
-    }
-
     .chartType {
         font-size: 0.75rem;
         font-weight: normal;
@@ -87,7 +67,7 @@
 
     .chartTypeContent {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
         align-items: center;
         gap: 0.5rem 0.75rem;
         flex: 0 1 auto;
@@ -97,7 +77,7 @@
 
     .chartTypeContent--selection {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
         align-items: center;
         gap: 0.35rem;
         flex: 1 1 auto;
@@ -154,10 +134,13 @@
     }
 
     .chartMetricValueGroup {
-        display: flex;
+        display: inline-flex;
+        align-items: baseline;
         justify-content: flex-start;
+        gap: 0.35rem;
         min-width: 0;
-        width: auto;
+        width: max-content;
+        max-width: 100%;
         white-space: nowrap;
     }
 
@@ -166,14 +149,14 @@
         min-width: 0;
         text-align: left;
         display: inline-block;
+        flex: 0 0 auto;
         white-space: nowrap;
     }
 
     .chartMetricUnit {
         width: auto;
-        margin-left: 0.15rem;
         text-align: left;
-        flex-shrink: 0;
+        flex: 0 0 auto;
         white-space: nowrap;
     }
 

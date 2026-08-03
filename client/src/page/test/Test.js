@@ -37,6 +37,7 @@ import { buildFallbackParams } from '../../util/request'
 import { formatSelectionName } from '../../util/selectionName'
 import { loadVisualSettingValue, normalizeVisualSettingMax } from '../../util/visualSettingStorage'
 import { loadPressureRuntimeConfig } from '../../util/pressureConfig'
+import { PRESSURE_METRIC_MODE } from '../../util/pressureMetrics'
 
 export const pageContext = createContext(null)
 
@@ -284,6 +285,8 @@ function Test() {
                 const {
                     areaArr,
                     pressArr,
+                    adcArr,
+                    adcAreaArr,
                     pressureArr,
                     forceArr,
                     pressureAreaArr,
@@ -294,6 +297,8 @@ function Test() {
                     useEquipStore.getState().setHistoryChart({
                         areaArr: filterSelectedHistoryChartKeys(areaArr || {}, selectedKeys),
                         pressArr: filterSelectedHistoryChartKeys(pressArr || {}, selectedKeys),
+                        adcArr: filterSelectedHistoryChartKeys(adcArr || {}, selectedKeys),
+                        adcAreaArr: filterSelectedHistoryChartKeys(adcAreaArr || {}, selectedKeys),
                         pressureArr: filterSelectedHistoryChartKeys(pressureArr || {}, selectedKeys),
                         forceArr: filterSelectedHistoryChartKeys(forceArr || pressArr || {}, selectedKeys),
                         pressureAreaArr: filterSelectedHistoryChartKeys(pressureAreaArr || {}, selectedKeys),
@@ -318,7 +323,7 @@ function Test() {
     // ─── 状态 ────────────────────────────────────────────
     const [sitData, setSitData] = useState([])
     const [equipStatus, setStatus] = useState({ back: 'offline', sit: 'offline', data: new Array(4096).fill(0) })
-    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 2, color: 5, filter: 30, height: 80, coherent: 1, autoColor: 1 }
+    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 2, color: 5, filter: 0, height: 80, coherent: 1, autoColor: 1 }
     const [settingValue, setSettingValue] = useState(setValueData)
     const [selectArr, setSelectArr] = useState([])
     const [wsLocalData, setWsLocalData] = useState(new Array(4096).fill(0))
@@ -341,6 +346,7 @@ function Test() {
     useEffect(() => {
         const processingConfig = {
             filter: visualSettingValue.filter,
+            filterMode: PRESSURE_METRIC_MODE,
             gauss: visualSettingValue.gauss,
             coherent: visualSettingValue.coherent,
         }

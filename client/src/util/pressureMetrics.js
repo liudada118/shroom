@@ -200,13 +200,30 @@ export function computePressureMetrics(arr, key, options = {}) {
 
 export const PRESSURE_METRIC_MODE = 'pressure'
 export const FORCE_METRIC_MODE = 'force'
+export const ADC_METRIC_MODE = 'adc'
+
+const PRESSURE_METRIC_MODE_SEQUENCE = [
+  FORCE_METRIC_MODE,
+  PRESSURE_METRIC_MODE,
+  ADC_METRIC_MODE,
+]
 
 export function normalizePressureMetricMode(mode) {
-  return mode === PRESSURE_METRIC_MODE ? PRESSURE_METRIC_MODE : FORCE_METRIC_MODE
+  return PRESSURE_METRIC_MODE_SEQUENCE.includes(mode) ? mode : PRESSURE_METRIC_MODE
 }
 
 export function getPressureMetricMeta(mode) {
   const normalizedMode = normalizePressureMetricMode(mode)
+  if (normalizedMode === ADC_METRIC_MODE) {
+    return {
+      mode: normalizedMode,
+      unit: 'ADC',
+      label: '原始ADC',
+      englishLabel: 'Raw ADC',
+      valuePrefix: 'adc',
+      trendField: 'adcArr',
+    }
+  }
   return normalizedMode === PRESSURE_METRIC_MODE
     ? {
         mode: normalizedMode,
@@ -227,6 +244,29 @@ export function getPressureMetricMeta(mode) {
 }
 
 const PRESSURE_METRIC_DISPLAY = {
+  [ADC_METRIC_MODE]: {
+    unit: 'ADC',
+    valuePrefix: 'adc',
+    trendField: 'adcArr',
+    zh: {
+      name: '原始ADC',
+      curve: '原始ADC总和曲线',
+      axis: '原始ADC总和',
+      average: '平均原始ADC',
+      max: '最大原始ADC',
+      total: '原始ADC总和',
+      data: '原始ADC数据',
+    },
+    en: {
+      name: 'Raw ADC',
+      curve: 'Raw ADC Sum Curve',
+      axis: 'Raw ADC Sum',
+      average: 'Average Raw ADC',
+      max: 'Maximum Raw ADC',
+      total: 'Raw ADC Sum',
+      data: 'Raw ADC Data',
+    },
+  },
   [PRESSURE_METRIC_MODE]: {
     unit: 'kPa',
     valuePrefix: 'pressure',
@@ -279,9 +319,10 @@ export function getPressureMetricDisplay(mode, _t, language = 'zh') {
   const normalizedMode = normalizePressureMetricMode(mode)
   const config = PRESSURE_METRIC_DISPLAY[normalizedMode]
   const labels = String(language || '').toLowerCase().startsWith('en') ? config.en : config.zh
+  const currentIndex = PRESSURE_METRIC_MODE_SEQUENCE.indexOf(normalizedMode)
   return {
     mode: normalizedMode,
-    nextMode: normalizedMode === FORCE_METRIC_MODE ? PRESSURE_METRIC_MODE : FORCE_METRIC_MODE,
+    nextMode: PRESSURE_METRIC_MODE_SEQUENCE[(currentIndex + 1) % PRESSURE_METRIC_MODE_SEQUENCE.length],
     unit: config.unit,
     name: labels.name,
     curveLabel: labels.curve,
@@ -325,14 +366,20 @@ export function summarizeMetricValues(values = []) {
   }
 }
 
-export function getCanonicalMetricSummary(pressureValues, forceValues, mode) {
+export function getCanonicalMetricSummary(pressureValues, forceValues, mode, adcValues = []) {
   const normalizedMode = normalizePressureMetricMode(mode)
+  const adcSummary = summarizeMetricValues(adcValues)
   const pressureSummary = summarizeMetricValues(pressureValues)
   const forceSummary = summarizeMetricValues(forceValues)
-  const activeSummary = normalizedMode === PRESSURE_METRIC_MODE ? pressureSummary : forceSummary
+  const activeSummary = normalizedMode === ADC_METRIC_MODE
+    ? adcSummary
+    : normalizedMode === PRESSURE_METRIC_MODE
+      ? pressureSummary
+      : forceSummary
   return {
     ...getPressureMetricMeta(normalizedMode),
     ...activeSummary,
+    adcSummary,
     pressureSummary,
     forceSummary,
     forceTotal: forceSummary.total,

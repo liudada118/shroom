@@ -9,6 +9,7 @@ import { pageContext } from '../../page/test/Test'
 import { useTranslation } from 'react-i18next'
 import { isMoreMatrix } from '../../assets/util/util'
 import { colSelectMatrix } from '../../util/util'
+import { PRESSURE_METRIC_MODE } from '../../util/pressureMetrics'
 
 export default function Col(props) {
     const { t } = useTranslation()
@@ -104,7 +105,12 @@ export default function Col(props) {
                 dataDirection: getCurrentDataDirection(),
                 processingConfig: (() => {
                     const { filter, gauss, coherent } = useEquipStore.getState().settingValue || {}
-                    return { filter, gauss, coherent }
+                    return {
+                        filter,
+                        filterMode: PRESSURE_METRIC_MODE,
+                        gauss,
+                        coherent,
+                    }
                 })(),
             }
 

@@ -7,6 +7,7 @@ import { isMoreMatrix } from '../assets/util/util'
 import { message } from 'antd'
 import { formatSelectionName, getDefaultSelectionName } from '../util/selectionName'
 import {
+  ADC_METRIC_MODE,
   FORCE_METRIC_MODE,
   PRESSURE_METRIC_MODE,
   getCanonicalMetricSummary,
@@ -142,6 +143,7 @@ export function useMatrixData() {
   const disPlayDataRef = useRef({})
   const chartRef = useRef({})
   const renderedMetricDataRef = useRef({
+    [ADC_METRIC_MODE]: {},
     [PRESSURE_METRIC_MODE]: {},
     [FORCE_METRIC_MODE]: {},
   })
@@ -314,8 +316,8 @@ export function useMatrixData() {
   /**
    * 计算单个数据集的统计指标
    */
-  function computeSingleStats(pressureValues, forceValues, mode) {
-    const summary = getCanonicalMetricSummary(pressureValues, forceValues, mode)
+  function computeSingleStats(adcValues, pressureValues, forceValues, mode) {
+    const summary = getCanonicalMetricSummary(pressureValues, forceValues, mode, adcValues)
     const positiveValues = summary.metricValues.filter((value) => value > 0)
     const minimum = positiveValues.length ? Math.min(...positiveValues) : 0
     const stats = {
@@ -325,6 +327,9 @@ export function useMatrixData() {
       pressMax: summary.max.toFixed(1),
       pressAver: summary.average.toFixed(1),
       pressMin: minimum.toFixed(1),
+      adcMax: summary.adcSummary.max.toFixed(1),
+      adcAver: summary.adcSummary.average.toFixed(1),
+      adcTotal: summary.adcSummary.total.toFixed(1),
       pressureMax: summary.pressureSummary.max.toFixed(1),
       pressureAver: summary.pressureSummary.average.toFixed(1),
       pressureTotal: summary.pressureSummary.total.toFixed(1),
@@ -390,8 +395,10 @@ export function useMatrixData() {
     if (!data[key]) data[key] = {}
     if (!data[key].areaArr) data[key].areaArr = []
     if (!data[key].pressArr) data[key].pressArr = []
+    if (!data[key].adcArr) data[key].adcArr = []
     if (!data[key].pressureArr) data[key].pressureArr = []
     if (!data[key].forceArr) data[key].forceArr = []
+    if (!data[key].adcAreaArr) data[key].adcAreaArr = []
     if (!data[key].pressureAreaArr) data[key].pressureAreaArr = []
     if (!data[key].forceAreaArr) data[key].forceAreaArr = []
     if (!data[key].data) data[key].data = {}
@@ -399,16 +406,19 @@ export function useMatrixData() {
 
     const selectedArr = selectResult.default
     const metricMode = normalizePressureMetricMode(metricData.mode)
+    const adcSelectResult = metricData.adcSelectResult || { default: [], boxes: [] }
     const pressureSelectResult = metricData.pressureSelectResult || { default: [], boxes: [] }
     const forceSelectResult = metricData.forceSelectResult || { default: [], boxes: [] }
     const {
       summary: activeSummary,
       stats: activeStats,
     } = computeSingleStats(
+      adcSelectResult.default,
       pressureSelectResult.default,
       forceSelectResult.default,
       metricMode,
     )
+    const adcSummary = activeSummary.adcSummary
     const pressureSummary = activeSummary.pressureSummary
     const forceSummary = activeSummary.forceSummary
     const firstBox = selectResult.boxes?.[0]
@@ -438,9 +448,11 @@ export function useMatrixData() {
 
     // 默认统计（全部数据或第一个框）
     setTrendValue(data[key].areaArr, activeSummary.activeCount, options)
+    setTrendValue(data[key].adcAreaArr, adcSummary.activeCount, options)
     setTrendValue(data[key].pressureAreaArr, pressureSummary.activeCount, options)
     setTrendValue(data[key].forceAreaArr, forceSummary.activeCount, options)
     setTrendValue(data[key].pressArr, Number(forceSummary.total.toFixed(1)), options)
+    setTrendValue(data[key].adcArr, Number(adcSummary.total.toFixed(1)), options)
     setTrendValue(data[key].pressureArr, Number(pressureSummary.total.toFixed(1)), options)
     setTrendValue(data[key].forceArr, Number(forceSummary.total.toFixed(1)), options)
 
@@ -459,9 +471,11 @@ export function useMatrixData() {
           bgc: '#FF6B6B',
           name: getDefaultSelectionName(data[key].boxStats.length + 1),
           pressArr: [],
+          adcArr: [],
           pressureArr: [],
           forceArr: [],
           areaArr: [],
+          adcAreaArr: [],
           pressureAreaArr: [],
           forceAreaArr: [],
           data: {},
@@ -479,12 +493,13 @@ export function useMatrixData() {
         boxStat.bgc = box.bgc
         boxStat.name = formatSelectionName(box.name, i + 1)
 
+        const adcBox = adcSelectResult.boxes[i]?.data || []
         const pressureBox = pressureSelectResult.boxes[i]?.data || []
         const forceBox = forceSelectResult.boxes[i]?.data || []
         const {
           summary: boxSummary,
           stats,
-        } = computeSingleStats(pressureBox, forceBox, metricMode)
+        } = computeSingleStats(adcBox, pressureBox, forceBox, metricMode)
         boxStat.data = stats
         const boxWidth = Math.max(1, Number(box.matrix?.xEnd) - Number(box.matrix?.xStart) || width)
         const boxHeight = Math.max(1, Number(box.matrix?.yEnd) - Number(box.matrix?.yStart) || height)
@@ -506,9 +521,11 @@ export function useMatrixData() {
         }
 
         setTrendValue(boxStat.pressArr, Number(boxSummary.forceSummary.total.toFixed(1)), options)
+        setTrendValue(boxStat.adcArr, Number(boxSummary.adcSummary.total.toFixed(1)), options)
         setTrendValue(boxStat.pressureArr, Number(boxSummary.pressureSummary.total.toFixed(1)), options)
         setTrendValue(boxStat.forceArr, Number(boxSummary.forceSummary.total.toFixed(1)), options)
         setTrendValue(boxStat.areaArr, boxSummary.activeCount, options)
+        setTrendValue(boxStat.adcAreaArr, boxSummary.adcSummary.activeCount, options)
         setTrendValue(boxStat.pressureAreaArr, boxSummary.pressureSummary.activeCount, options)
         setTrendValue(boxStat.forceAreaArr, boxSummary.forceSummary.activeCount, options)
       }
@@ -702,13 +719,22 @@ export function useMatrixData() {
   }
 
   function buildCanonicalMetricMaps(sitData, keyArr) {
+    const adcMap = {}
     const pressureMap = {}
     const forceMap = {}
 
     for (const fullKey of keyArr) {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       const item = sitData[fullKey] || {}
-      const count = Array.isArray(item.arr) ? item.arr.length : 0
+      const rawAdcValues = Array.isArray(item.rawAdcArr) ? item.rawAdcArr : item.arr
+      const count = Math.max(
+        Array.isArray(item.arr) ? item.arr.length : 0,
+        Array.isArray(rawAdcValues) ? rawAdcValues.length : 0,
+      )
+      adcMap[key] = Array.from({ length: count }, (_, index) => {
+        const value = Number(rawAdcValues?.[index])
+        return Number.isFinite(value) && value > 0 ? value : 0
+      })
       pressureMap[key] = Array.from({ length: count }, (_, index) => {
         const value = Number(item.pressureArr?.[index])
         return Number.isFinite(value) && value > 0 ? value : 0
@@ -720,6 +746,11 @@ export function useMatrixData() {
     }
 
     const metricMaps = {
+      [ADC_METRIC_MODE]: splitEndiFootDisplayParts(
+        adcMap,
+        sitData,
+        'sourceRawAdcMatrices',
+      ),
       [PRESSURE_METRIC_MODE]: splitEndiFootDisplayParts(
         pressureMap,
         sitData,
@@ -745,6 +776,7 @@ export function useMatrixData() {
       useEquipStore.getState().setStatus(new Array(4096).fill(0))
       useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
       useEquipStore.getState().setMetricStatus({
+        [ADC_METRIC_MODE]: {},
         [PRESSURE_METRIC_MODE]: {},
         [FORCE_METRIC_MODE]: {},
       })
@@ -780,11 +812,20 @@ export function useMatrixData() {
     for (let i = 0; i < keyArr.length; i++) {
       const fullKey = keyArr[i]
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
+      const adcValues = metricMaps[ADC_METRIC_MODE][key]
       const pressureValues = metricMaps[PRESSURE_METRIC_MODE][key]
       const forceValues = metricMaps[FORCE_METRIC_MODE][key]
       const activeValues = activeMetricMap[key]
       if (!activeValues) continue
 
+      const adcSelectResult = computeSelectArr(
+        adcValues,
+        key,
+        fullKey,
+        select,
+        displayType,
+        sitData[fullKey],
+      )
       const pressureSelectResult = computeSelectArr(
         pressureValues,
         key,
@@ -801,13 +842,16 @@ export function useMatrixData() {
         displayType,
         sitData[fullKey],
       )
-      const selectResult = metricMode === PRESSURE_METRIC_MODE
-        ? pressureSelectResult
-        : forceSelectResult
+      const selectResult = metricMode === ADC_METRIC_MODE
+        ? adcSelectResult
+        : metricMode === PRESSURE_METRIC_MODE
+          ? pressureSelectResult
+          : forceSelectResult
       computeStats(data, activeValues, selectResult, key, fullKey, {
         replaceLast: Boolean(options.replaceLast),
       }, {
         mode: metricMode,
+        adcSelectResult,
         pressureSelectResult,
         forceSelectResult,
       })
@@ -1009,6 +1053,7 @@ export function useMatrixData() {
     sitDataRef.current = {}
     disPlayDataRef.current = {}
     renderedMetricDataRef.current = {
+      [ADC_METRIC_MODE]: {},
       [PRESSURE_METRIC_MODE]: {},
       [FORCE_METRIC_MODE]: {},
     }
@@ -1016,6 +1061,7 @@ export function useMatrixData() {
     useEquipStore.getState().setStatus({})
     useEquipStore.getState().setDisplayStatus({})
     useEquipStore.getState().setMetricStatus({
+      [ADC_METRIC_MODE]: {},
       [PRESSURE_METRIC_MODE]: {},
       [FORCE_METRIC_MODE]: {},
     })

@@ -10,11 +10,11 @@ import { withTranslation } from 'react-i18next'
 import { getDisplayType, getSettingValue, getSettingValueOptimal, getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
-import { getMatrixPartFromDisplayType, getMatrixPartLabelKey, getSystemMatrixParts, localAddress, pointConfig, systemPointConfig } from '../../util/constant'
+import { getMatrixPartFromDisplayType, localAddress, pointConfig, systemPointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
 import { normalizeVisualSettingMax, saveVisualSettingValue } from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
-import { getPressureMetricDisplay } from '../../util/pressureMetrics'
+import { getPressureMetricDisplay, PRESSURE_METRIC_MODE } from '../../util/pressureMetrics'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
@@ -36,8 +36,8 @@ function SecondTitle(props) {
     const activeDisplayType = pageInfo.displayType || currentDisplayType;
     const displayStatus = useEquipStore(s => s.displayStatus, shallow);
     const collecting = useEquipStore(s => s.collecting);
-    const pressureMetricMode = useEquipStore(s => s.pressureMetricMode);
-    const pressureMetricDisplay = getPressureMetricDisplay(pressureMetricMode, t, i18n?.language);
+    const pressureMetricDisplay = getPressureMetricDisplay(PRESSURE_METRIC_MODE, t, i18n?.language);
+    const pressureFilterDisplay = getPressureMetricDisplay(PRESSURE_METRIC_MODE, t, i18n?.language);
 
     const setSettingValue = useEquipStore.getState().setSettingValue
 
@@ -126,9 +126,9 @@ function SecondTitle(props) {
         {
             title: t('denoise'),
             type: 'filter',
-            max: settingValueMax.filter,
-            min: 1,
-            step: 1,
+            max: 60,
+            min: 0,
+            step: 0.1,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('filterNoise')}</div>
         },
         {
@@ -363,24 +363,15 @@ function SecondTitle(props) {
 
      const selectArr = useEquipStore(s => s.selectArr, shallow);
 
-    const flipOptions = system === 'endi'
-        ? getSystemMatrixParts(system).flatMap((part) => {
-            const label = t(getMatrixPartLabelKey(part.key))
-            return [
-                { label: `${label}${t('flipV')}`, value: 'up', target: part.key },
-                { label: `${label}${t('flipH')}`, value: 'left', target: part.key },
-                { label: `${label}${t('rotate90')}`, value: 'rotate', target: part.key },
-            ]
-        })
-        : [{
-            label: `${t('seatPad')}${t('flipV')}`, value: 'up', target: 'sit'
-        }, {
-            label: `${t('seatPad')}${t('flipH')}`, value: 'left', target: 'sit'
-        }, {
-            label: `${t('seatPad')}${t('rotate90')}`, value: 'rotate', target: 'sit'
-        }, {
-            label: `${t('backPad')}${t('flipH')}`, value: 'left', target: 'back'
-        }]
+    const flipOptions = [{
+        label: `${t('seatPad')}${t('flipV')}`, value: 'up', target: 'sit'
+    }, {
+        label: `${t('seatPad')}${t('flipH')}`, value: 'left', target: 'sit'
+    }, {
+        label: `${t('seatPad')}${t('rotate90')}`, value: 'rotate', target: 'sit'
+    }, {
+        label: `${t('backPad')}${t('flipH')}`, value: 'left', target: 'back'
+    }]
 
     return (
 
@@ -423,7 +414,7 @@ function SecondTitle(props) {
                                             <span>{a.title}</span>
                                             {a.type === 'color' ? (
                                                 <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : `${Number(currentDataMax).toFixed(1)} ${pressureMetricDisplay.unit}`}</em>
-                                            ) : null}
+                                            ) : a.type === 'filter' ? <em>{pressureFilterDisplay.unit}</em> : null}
                                         </div>
                                     </Popover>
 
@@ -503,9 +494,11 @@ function SecondTitle(props) {
                 // }}
                 >
                     {/* <IconAndText text='画布翻转' /> */}
-                    <IconAndTextAndSelect text={t('flip')} show={show} options={flipOptions}
-                        icon={<div className='iconContentBox'><i className='iconfont fs18'>&#xe60c;</i></div>}
-                    />
+                    {system !== 'endi' ? (
+                        <IconAndTextAndSelect text={t('flip')} show={show} options={flipOptions}
+                            icon={<div className='iconContentBox'><i className='iconfont fs18'>&#xe60c;</i></div>}
+                        />
+                    ) : null}
                     <IconAndTextAndSelect
                         text={t('zeroPre')}
                         onClickStatus={onZero}

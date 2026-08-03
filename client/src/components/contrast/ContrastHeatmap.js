@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicGammaColorEnabled } from '../../assets/util/line'
 import { useEquipStore } from '../../store/equipStore'
 import { isEndiBackVisibleCell } from '../../util/endiBackVisibleMask'
+import { ADC_METRIC_MODE } from '../../util/pressureMetrics'
 
 const COLOR_VALUE_STEP = 0.01
 
@@ -31,17 +32,21 @@ function shouldHideCell(matrixKey, row, col, width, height) {
     return isEndiBack && !isEndiBackVisibleCell(row, col, width, height)
 }
 
-function getCellDisplay(rawValue, mode, maxAbs, colorMax) {
+function getCellDisplay(rawValue, mode, maxAbs, colorMax, rawAdcMode = false) {
     const numericValue = mode === 'diff'
-        ? Math.round((Number(rawValue) || 0) * 10) / 10
-        : normalizeDisplayValue(rawValue)
+        ? rawAdcMode
+            ? Math.round(Number(rawValue) || 0)
+            : Math.round((Number(rawValue) || 0) * 10) / 10
+        : rawAdcMode
+            ? Math.max(0, Math.min(255, Math.round(Number(rawValue) || 0)))
+            : normalizeDisplayValue(rawValue)
     const color = mode === 'diff'
         ? diffColor(Number(rawValue) || 0, maxAbs)
         : jetWhite3NoWhite(0, getTextureColorMax(colorMax), numericValue)
     const background = mode === 'diff'
         ? `rgb(${color[0]}, ${color[1]}, ${color[2]})`
         : `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${NUMBER_TEXT_COLOR_ALPHA})`
-    return { displayValue: numericValue.toFixed(1), background }
+    return { displayValue: numericValue.toFixed(rawAdcMode ? 0 : 1), background }
 }
 
 function drawValue(ctx, value, x, y, cellSize) {
@@ -59,6 +64,7 @@ function drawValue(ctx, value, x, y, cellSize) {
 export default function ContrastHeatmap(props) {
     const { title, subtitle, arr = [], width = 32, height = 32, mode = 'normal', className = '', matrixKey = '', colorMax = 1, disableExpand = false } = props
     const { i18n } = useTranslation()
+    const rawAdcMode = useEquipStore(s => s.pressureMetricMode) === ADC_METRIC_MODE
     const isEnglish = String(i18n.language || localStorage.getItem('language') || '').toLowerCase().startsWith('en')
     const copy = isEnglish ? {
         diffTitle: 'B-A Difference',
@@ -118,7 +124,7 @@ export default function ContrastHeatmap(props) {
                         continue
                     }
                     const rawValue = Number(arr[row * drawWidth + col]) || 0
-                    const { displayValue, background } = getCellDisplay(rawValue, mode, maxAbs, safeColorMax)
+                    const { displayValue, background } = getCellDisplay(rawValue, mode, maxAbs, safeColorMax, rawAdcMode)
                     const x = offsetX + col * cell
                     const y = offsetY + row * cell
                     ctx.globalAlpha = 1
@@ -142,7 +148,7 @@ export default function ContrastHeatmap(props) {
             cleanup = () => window.removeEventListener('resize', draw)
         }
         return cleanup
-    }, [arr, width, height, mode, maxAbs, matrixKey, colorMax])
+    }, [arr, width, height, mode, maxAbs, matrixKey, colorMax, rawAdcMode])
 
     const handleMouseMove = (event) => {
         const wrap = wrapRef.current
@@ -176,7 +182,7 @@ export default function ContrastHeatmap(props) {
                 const inRange = col >= 0 && row >= 0 && col < drawWidth && row < drawHeight
                 const hidden = inRange && shouldHideCell(matrixKey, row, col, drawWidth, drawHeight)
                 const rawValue = inRange && !hidden ? (Number(arr[row * drawWidth + col]) || 0) : 0
-                const { displayValue, background } = getCellDisplay(rawValue, mode, maxAbs, colorMax)
+                const { displayValue, background } = getCellDisplay(rawValue, mode, maxAbs, colorMax, rawAdcMode)
                 cells.push(
                     <div
                         key={`${x}-${y}`}

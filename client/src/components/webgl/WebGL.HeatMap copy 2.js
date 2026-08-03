@@ -443,10 +443,11 @@ WebGLCanvas.prototype.createTplCanvas = function (cfg, data ,index) {
 WebGLCanvas.prototype.dataCuter = function (cfg, data, margin) {
     var result = [];
 
-    // 将数据取整
+    // Pressure and force matrices contain decimals; keep their original precision.
     for (var i in data) {
         for (var j in data[i]) {
-            data[i][j] = parseInt(data[i][j]);
+            var numericValue = Number(data[i][j]);
+            data[i][j] = Number.isFinite(numericValue) ? numericValue : 0;
         }
     };
 

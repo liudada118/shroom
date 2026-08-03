@@ -1,17 +1,17 @@
 const VISUAL_SETTING_MAP_KEY = 'visualSettingValueBySystemV1'
 const LEGACY_SETTING_KEY = 'setValueData'
 const VISUAL_DEFAULT_VERSION_KEY = 'visualDefaultVersion'
-const VISUAL_DEFAULT_VERSION = '2026-07-30-dummy-pressure-force-defaults'
+const VISUAL_DEFAULT_VERSION = '2026-08-03-pressure-filter-zero-default'
 const DEFAULT_SYSTEM_KEY = 'default'
 export const VISUAL_COLOR_SETTING_MIN = 0.01
 export const VISUAL_COLOR_SETTING_MAX = 60
 export const VISUAL_COLOR_SETTING_DEFAULT = 5
-const VISUAL_SETTING_DEFAULTS = { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 30, height: 80, autoColor: 1 }
+const VISUAL_SETTING_DEFAULTS = { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 0, height: 80, autoColor: 1 }
 const LEGACY_DEFAULT_COLORS = new Set([50, 120, 180, 200, 255, 355, 495])
 const LEGACY_DEFAULT_VALUES = {
   gauss: new Set([1, 2, 2.6, 3]),
   color: LEGACY_DEFAULT_COLORS,
-  filter: new Set([0, 1, 6]),
+  filter: new Set([0, 0.1, 1, 6, 30]),
   height: new Set([1, 2.02, 3.36, 10, 150]),
   autoColor: new Set([0]),
 }
@@ -80,10 +80,15 @@ function migrateVisualDefaultValue(value) {
   let changed = false
   const nextValue = { ...value }
   Object.entries(VISUAL_SETTING_DEFAULTS).forEach(([key, defaultValue]) => {
+    if (key === 'filter') return
     if (!isLegacyDefaultSetting(key, nextValue[key])) return
     nextValue[key] = defaultValue
     changed = true
   })
+  if (Number(nextValue.filter) !== VISUAL_SETTING_DEFAULTS.filter) {
+    nextValue.filter = VISUAL_SETTING_DEFAULTS.filter
+    changed = true
+  }
   return changed ? nextValue : value
 }
 

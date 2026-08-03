@@ -7,6 +7,7 @@ import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore }
 import { isMoreMatrix } from '../../assets/util/util';
 import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
 import { getMatrixPartFromDisplayType } from '../../util/constant';
+import { ADC_METRIC_MODE } from '../../util/pressureMetrics';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -45,14 +46,18 @@ function jet(min, max, x) {
   return rgb;
 }
 
-function normalizeDisplayValue(value) {
+function normalizeDisplayValue(value, rawAdcMode = false) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
+  if (rawAdcMode) return Math.max(0, Math.min(255, Math.round(numeric)));
   return Math.max(0, Math.min(102.3, Math.round(numeric * 10) / 10));
 }
 
-function getDigitAtlasIndex(value) {
-  return Math.max(0, Math.min(1023, Math.round(normalizeDisplayValue(value) * 10)));
+function getDigitAtlasIndex(value, rawAdcMode = false) {
+  const normalized = normalizeDisplayValue(value, rawAdcMode);
+  return rawAdcMode
+    ? Math.max(0, Math.min(255, Math.round(normalized)))
+    : Math.max(0, Math.min(1023, Math.round(normalized * 10)));
 }
 
 function getTextureColorMax(color) {
@@ -125,13 +130,13 @@ function createEndiNullMask(systemType, displayType, width, height) {
   return null;
 }
 
-function prepareDisplayData(data, width, height) {
+function prepareDisplayData(data, width, height, rawAdcMode = false) {
   const count = width * height;
-  return Array.from({ length: count }, (_, index) => normalizeDisplayValue(data?.[index]));
+  return Array.from({ length: count }, (_, index) => normalizeDisplayValue(data?.[index], rawAdcMode));
 }
 
-function stabilizeDisplayData(data, stableRef, key) {
-  const display = data.map(normalizeDisplayValue);
+function stabilizeDisplayData(data, stableRef, key, rawAdcMode = false) {
+  const display = data.map((value) => normalizeDisplayValue(value, rawAdcMode));
   stableRef.current = { key, display };
   return display;
 }
@@ -170,6 +175,7 @@ export default function NumThree(props) {
   const nullMaskRef = useRef(null);
   const gridRef = useRef({ width: 0, height: 0 });
   const textureMaxRef = useRef(22);
+  const rawAdcModeRef = useRef(false);
   const magnifierPosRef = useRef({ col: -1, row: -1 });
   const drawMagnifierRef = useRef(null);
   const magnifierZoomRef = useRef(1);
@@ -202,7 +208,7 @@ export default function NumThree(props) {
   // }
 
 
-  function createDigitSpriteSheetWithJet(value = 22) {
+  function createDigitSpriteSheetWithJet(value = 22, rawAdcMode = false) {
     syncDynamicColorRange(value);
     const canvas = document.createElement("canvas");
     // document.body.appendChild(canvas)
@@ -221,7 +227,7 @@ export default function NumThree(props) {
       const y = Math.floor(i / gridSize);
       const cx = x * cellSize;
       const cy = y * cellSize;
-      const displayValue = i / 10;
+      const displayValue = rawAdcMode ? Math.min(255, i) : i / 10;
 
       // ✅ 计算背景颜色
       const [r, g, b] = jetWhite3NoWhite(0, value, displayValue);
@@ -232,7 +238,7 @@ export default function NumThree(props) {
       ctx.lineWidth = 3;
       ctx.strokeRect(cx + 1.5, cy + 1.5, cellSize - 3, cellSize - 3);
 
-      drawCellValue(ctx, displayValue.toFixed(1), cx, cy, cellSize);
+      drawCellValue(ctx, rawAdcMode ? String(displayValue) : displayValue.toFixed(1), cx, cy, cellSize);
     }
 
     const tex = new THREE.CanvasTexture(canvas);
@@ -330,7 +336,8 @@ export default function NumThree(props) {
     };
 
     let currentTextureMax = getTextureColorMax(getSettingValue()?.color)
-    const texture = createDigitSpriteSheetWithJet(currentTextureMax);
+    let currentTextureMode = useEquipStore.getState().pressureMetricMode
+    const texture = createDigitSpriteSheetWithJet(currentTextureMax, currentTextureMode === ADC_METRIC_MODE);
     textureMaxRef.current = currentTextureMax;
     // texture.flipY = false;
 
@@ -458,9 +465,12 @@ export default function NumThree(props) {
       const {
         gauss, color, filter, height, coherent, autoColor,
       } = settingValue //pageRef.current.settingValue
+      const currentMetricMode = useEquipStore.getState().pressureMetricMode;
+      const rawAdcMode = currentMetricMode === ADC_METRIC_MODE;
+      rawAdcModeRef.current = rawAdcMode;
       setDynamicGammaColorEnabled(Boolean(autoColor));
-      data = prepareDisplayData(data, gridSize1, gridSize2);
-      data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}-g${gauss}-f${filter}`);
+      data = prepareDisplayData(data, gridSize1, gridSize2, rawAdcMode);
+      data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}-g${gauss}-f${filter}-${currentMetricMode}`, rawAdcMode);
       const nullMask = createEndiNullMask(systemType, displayType, gridSize1, gridSize2);
       dataRef.current = data;
       nullMaskRef.current = nullMask;
@@ -486,13 +496,15 @@ export default function NumThree(props) {
       //   })
       // }
 
-      const nextMax = Math.round((beginDynamicColorFrame(data, color) || getTextureColorMax(color)) / COLOR_VALUE_STEP) * COLOR_VALUE_STEP;
-      if (Math.abs(currentTextureMax - nextMax) >= COLOR_VALUE_STEP) {
+      const colorValueStep = rawAdcMode ? 1 : COLOR_VALUE_STEP;
+      const nextMax = Math.round((beginDynamicColorFrame(data, color) || getTextureColorMax(color)) / colorValueStep) * colorValueStep;
+      if (currentTextureMode !== currentMetricMode || Math.abs(currentTextureMax - nextMax) >= colorValueStep) {
         console.log('colorChange')
-        const texture = createDigitSpriteSheetWithJet(nextMax)
+        const texture = createDigitSpriteSheetWithJet(nextMax, rawAdcMode)
         material.uniforms.map.value = texture
         textureMaxRef.current = nextMax
         currentTextureMax = nextMax
+        currentTextureMode = currentMetricMode
       }
 
 
@@ -518,7 +530,7 @@ export default function NumThree(props) {
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
 
-        const d = getDigitAtlasIndex(data[i]);
+        const d = getDigitAtlasIndex(data[i], rawAdcMode);
         uvOffsets[i * 2] = (d % DIGIT_ATLAS_GRID) / DIGIT_ATLAS_GRID;
         uvOffsets[i * 2 + 1] = Math.floor(d / DIGIT_ATLAS_GRID) / DIGIT_ATLAS_GRID;
 
@@ -663,7 +675,8 @@ export default function NumThree(props) {
             }
             value = dataArr[dataIndex] ?? 0;
           }
-          value = normalizeDisplayValue(value);
+          const rawAdcMode = rawAdcModeRef.current;
+          value = normalizeDisplayValue(value, rawAdcMode);
           const [r, g, b] = applyMatrixColor(value, colorMax);
           ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
           ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
@@ -671,7 +684,7 @@ export default function NumThree(props) {
           ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
           ctx.globalAlpha = 1;
           ctx.fillStyle = '#fff';
-          ctx.fillText(value.toFixed(1), x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
+          ctx.fillText(rawAdcMode ? String(value) : value.toFixed(1), x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
         }
       }
       ctx.strokeStyle = '#fff';

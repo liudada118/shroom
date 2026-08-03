@@ -10,6 +10,7 @@ const { MATRIX_DIMENSIONS } = require('../../util/deviceMatrixConfig')
 const { interpolateEndiWearSource } = require('../../util/line')
 const {
   ensureProcessedFrame,
+  isDummyMatrixKey,
   normalizeFrameProcessingConfig,
   processFrame,
 } = require('../../util/pressureFrameProcessor')
@@ -157,6 +158,9 @@ function saveDataDirection(direction) {
 }
 
 function getDirectionForKey(directionState, key) {
+  if (isDummyMatrixKey(key)) {
+    return normalizeDataDirection({ left: true, up: true, rotateDegree: 0 })
+  }
   const state = normalizeDataDirectionState(directionState || DEFAULT_DATA_DIRECTION)
   return normalizeDataDirection(state.byKey?.[key] || state)
 }
@@ -269,6 +273,29 @@ function combineFootRows(leftArr = [], rightArr = []) {
   }
 
   return combined
+}
+
+function splitFootRows(combinedArr = []) {
+  const singleLength = ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT
+  const left = []
+  const right = []
+  if (!Array.isArray(combinedArr) || combinedArr.length !== singleLength * 2) {
+    return { left: makeZeroMatrix(singleLength), right: makeZeroMatrix(singleLength) }
+  }
+  for (let row = 0; row < ENDI_FOOT_HEIGHT; row++) {
+    const start = row * ENDI_SINGLE_FOOT_WIDTH * 2
+    left.push(...combinedArr.slice(start, start + ENDI_SINGLE_FOOT_WIDTH))
+    right.push(...combinedArr.slice(start + ENDI_SINGLE_FOOT_WIDTH, start + ENDI_SINGLE_FOOT_WIDTH * 2))
+  }
+  return { left, right }
+}
+
+function buildFootSourceMap(combinedArr) {
+  const { left, right } = splitFootRows(combinedArr)
+  return {
+    [ENDI_FOOT_LEFT_KEY]: left,
+    [ENDI_FOOT_RIGHT_KEY]: right,
+  }
 }
 
 function combineEndiFootMatrices(frame) {
@@ -394,6 +421,12 @@ function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAU
           nextItem[field] = applyCollectionDirection(key, nextItem[field], direction)
         }
       }
+      if (key === ENDI_FOOT_COMBINED_KEY) {
+        nextItem.sourceMatrices = buildFootSourceMap(nextItem.arr)
+        nextItem.sourceRawAdcMatrices = buildFootSourceMap(nextItem.rawAdcArr)
+        nextItem.sourcePressureMatrices = buildFootSourceMap(nextItem.pressureArr)
+        nextItem.sourceForceMatrices = buildFootSourceMap(nextItem.forceArr)
+      }
       nextItem.dataDirection = direction
       const directedDimensions = getDirectedDimensions(key, nextItem.arr, direction)
       if (directedDimensions) {
@@ -428,9 +461,14 @@ function prepareProcessedFrame(frame) {
       zeroedFrame[key] = item
       return
     }
+    const normalizedArr = normalizeEndiWearMatrixSource(key, item.arr)
+    const rawAdcArr = Array.isArray(item.rawAdcArr) && item.rawAdcArr.length === normalizedArr.length
+      ? [...item.rawAdcArr]
+      : [...normalizedArr]
     zeroedFrame[key] = {
       ...item,
-      arr: applyZeroBaseline(key, normalizeEndiWearMatrixSource(key, item.arr), state.zeroState),
+      rawAdcArr,
+      arr: applyZeroBaseline(key, normalizedArr, state.zeroState),
       zeroState: buildZeroMeta(state.zeroState, key),
     }
   })

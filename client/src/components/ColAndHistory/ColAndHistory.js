@@ -1598,6 +1598,8 @@ const ColAndHistory = memo((props) => {
                                                             useEquipStore.getState().setHistoryChart({
                                                                 areaArr: payload.areaArr || {},
                                                                 pressArr: payload.pressArr || {},
+                                                                adcArr: payload.adcArr || {},
+                                                                adcAreaArr: payload.adcAreaArr || {},
                                                                 pressureArr: payload.pressureArr || {},
                                                                 forceArr: payload.forceArr || payload.pressArr || {},
                                                                 pressureAreaArr: payload.pressureAreaArr || {},
@@ -1732,6 +1734,8 @@ const ColAndHistory = memo((props) => {
                                                     useEquipStore.getState().setHistoryChart({
                                                         areaArr: payload.areaArr || {},
                                                         pressArr: payload.pressArr || {},
+                                                        adcArr: payload.adcArr || {},
+                                                        adcAreaArr: payload.adcAreaArr || {},
                                                         pressureArr: payload.pressureArr || {},
                                                         forceArr: payload.forceArr || payload.pressArr || {},
                                                         pressureAreaArr: payload.pressureAreaArr || {},

@@ -7,9 +7,11 @@ import { pageContext } from '../../page/test/Test'
 import { useEquipStore } from '../../store/equipStore'
 import { getMatrixDisplayLabel, getMatrixPartFromDisplayType, getSystemMatrixParts, localAddress } from '../../util/constant'
 import {
+    ADC_METRIC_MODE,
     FORCE_METRIC_MODE,
     getPressureMetricDisplay,
     getPressurePointAreaCm2,
+    PRESSURE_METRIC_MODE,
 } from '../../util/pressureMetrics'
 import { calcCentroidRatio } from '../../util/util'
 import ContrastHeatmap from './ContrastHeatmap'
@@ -330,8 +332,12 @@ function calcSafeCentroidRatio(arr = [], width = 1, height = 1) {
     }
 }
 
-function getFrameMetricValues(data = {}, metricMode = FORCE_METRIC_MODE) {
-    const source = metricMode === FORCE_METRIC_MODE ? data.forceArr : data.pressureArr
+function getFrameMetricValues(data = {}, metricMode = PRESSURE_METRIC_MODE) {
+    const source = metricMode === ADC_METRIC_MODE
+        ? (data.rawAdcArr || data.arr)
+        : metricMode === FORCE_METRIC_MODE
+            ? data.forceArr
+            : data.pressureArr
     const length = Array.isArray(data.arr) ? data.arr.length : (Array.isArray(source) ? source.length : 0)
     return Array.from({ length }, (_, index) => {
         const value = Number(source?.[index])
@@ -505,7 +511,7 @@ function buildSingleSeries(values = []) {
     }))
 }
 
-function buildMetricSeriesFromFrames(frames = [], matrixKey, metricKey, matrixRect = null, metricMode = FORCE_METRIC_MODE) {
+function buildMetricSeriesFromFrames(frames = [], matrixKey, metricKey, matrixRect = null, metricMode = PRESSURE_METRIC_MODE) {
     if (!Array.isArray(frames) || !matrixKey) return []
     return frames.map((frame) => {
         const data = frame?.[matrixKey] || {}
@@ -819,17 +825,25 @@ export default function NumThresContrast() {
 
     const pressSeries = useMemo(() => (
         isTimePointMode
-            ? buildSingleSeries(leftPressureValues.length ? leftPressureValues : (contrast?.record?.pressArr?.[activeKey] || contrast?.left?.pressArr?.[activeKey]))
+            ? buildSingleSeries(leftPressureValues.length
+                ? leftPressureValues
+                : pressureMetricMode === ADC_METRIC_MODE
+                    ? contrast?.record?.adcArr?.[activeKey] || contrast?.left?.adcArr?.[activeKey]
+                    : pressureMetricMode === FORCE_METRIC_MODE
+                        ? contrast?.record?.forceArr?.[activeKey] || contrast?.left?.forceArr?.[activeKey] || contrast?.record?.pressArr?.[activeKey]
+                        : contrast?.record?.pressureArr?.[activeKey] || contrast?.left?.pressureArr?.[activeKey])
             : buildSeriesByFrameIndex(leftPressureValues, rightPressureValues)
-    ), [contrast, activeKey, isTimePointMode, leftPressureValues, rightPressureValues])
+    ), [contrast, activeKey, isTimePointMode, leftPressureValues, rightPressureValues, pressureMetricMode])
 
     const areaSeries = useMemo(() => (
         isTimePointMode
             ? buildSingleSeries(leftAreaValues.length
                 ? leftAreaValues
-                : (pressureMetricMode === FORCE_METRIC_MODE
-                    ? contrast?.record?.forceAreaArr?.[activeKey] || contrast?.left?.forceAreaArr?.[activeKey]
-                    : contrast?.record?.pressureAreaArr?.[activeKey] || contrast?.left?.pressureAreaArr?.[activeKey]))
+                : (pressureMetricMode === ADC_METRIC_MODE
+                    ? contrast?.record?.adcAreaArr?.[activeKey] || contrast?.left?.adcAreaArr?.[activeKey]
+                    : pressureMetricMode === FORCE_METRIC_MODE
+                        ? contrast?.record?.forceAreaArr?.[activeKey] || contrast?.left?.forceAreaArr?.[activeKey]
+                        : contrast?.record?.pressureAreaArr?.[activeKey] || contrast?.left?.pressureAreaArr?.[activeKey]))
             : buildSeriesByFrameIndex(leftAreaValues, rightAreaValues)
     ), [contrast, activeKey, isTimePointMode, leftAreaValues, rightAreaValues, pressureMetricMode])
 
@@ -895,7 +909,11 @@ export default function NumThresContrast() {
     }
 
     const buildContrastExportPayload = () => {
-        const exportMetricKey = pressureMetricMode === FORCE_METRIC_MODE ? 'force' : 'pressure'
+        const exportMetricKey = pressureMetricMode === ADC_METRIC_MODE
+            ? 'adc'
+            : pressureMetricMode === FORCE_METRIC_MODE
+                ? 'force'
+                : 'pressure'
         const buildExportMetricValues = (metricA, metricB) => ({
             metric_mode: pressureMetricMode,
             metric_unit: metricDisplay.unit,

@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-30
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-08-03
 
 ## 1. 项目概述
 
@@ -522,11 +522,21 @@ graph TD
 | 2026-07-16 | 压强颜色步进调整 | ADC 转压强后的可视化颜色步进改为 0.1，覆盖实时调节面板、2D 数字、3D 点图和对比热力图 |
 | 2026-07-20 | 压强颜色步进精细化 | 压强可视化颜色步进从 0.1 进一步改为 0.01，颜色调节、动态色域和热力图保持两位小数粒度 |
 | 2026-07-30 | Dummy 压强/压力统一数据链路 | 后端以 `dummyPressure_v2.10.3.js` 生成压强矩阵，并按统一 1.25 cm 点距生成压力矩阵；实时、历史、对比、COP、框选和 CSV 统一消费同一组规范矩阵 |
+| 2026-07-31 | 原始 ADC 内部诊断与假人线序稳定 | 保留原始矩阵用于内部诊断并绕过置零、阈值、高斯和公式换算；假人穿戴矩阵取消方向配置产生的二次旋转与翻转 |
+| 2026-08-03 | Dummy 压强标定升级至 V2.10.4 | 默认和当前运行配置切换到 `dummyPressure_v2.10.4.js`，修复腿部低 ADC 区间有效点被换算为伪零的问题 |
+| 2026-08-03 | Dummy 3D 热力图指标适配 | 移除 3D 人体热力图对 kPa/N 矩阵重复应用 ADC 阈值和最低 80 ADC 色域的问题，自动色域直接跟随当前展示矩阵最大值 |
+| 2026-08-03 | Dummy 压强单一展示与噪点消除 | 用户侧只保留压强 `kPa` 数据，噪点阈值固定在压强换算后判定，默认值为 0、范围为 0..60、步进为 0.1 |
+| 2026-08-03 | 左侧统计单位布局修复 | 统计项按可用宽度自动分列，数值与单位禁止收缩并保留固定间距，避免长面积值与 `cm²` 重叠 |
 
 ## 9. 更新日志
 
 | 日期 | 变更类型 | 描述 |
 | :--- | :--- | :--- |
+| 2026-08-03 | 需求调整 | Dummy 用户侧取消压力和原始 ADC 展示模式，只保留压强；噪点消除固定使用 kPa，默认值改为 0、步进改为 0.1 |
+| 2026-08-03 | 修复缺陷 | 修复左侧面积统计长数值与 `cm²` 单位因固定四列和 flex 收缩发生重叠的问题 |
+| 2026-08-03 | 修复缺陷 | 修复 Dummy 2D 数字有值但 3D 人体热力图被旧 ADC 阈值及色域清空的问题 |
+| 2026-08-03 | 配置变更 | Dummy 压强标定从 V2.10.3 升级至 V2.10.4，处理元数据按实际公式文件动态记录版本 |
+| 2026-07-31 | 修复缺陷 | 增加原始 ADC 全链路调试模式，并禁止假人矩阵执行持久化方向翻转，保证 ADC、kPa、N 三套矩阵坐标一致 |
 | 2026-07-30 | 新增功能 | Dummy 分支接入全局 kPa/N 切换和后端规范矩阵，统一实时渲染、统计、历史、对比、COP 报告与 CSV 导出口径 |
 | 2026-07-20 | 优化重构 | 压强矩阵颜色链路步进从 0.1 收细到 0.01，颜色调节输入、动态颜色范围和对比热力图同步支持 2 位小数 |
 | 2026-07-16 | 优化重构 | 压强矩阵颜色链路从整数步进调整为 0.1，颜色调节输入和动态颜色范围同步支持 1 位小数 |
@@ -1642,43 +1652,102 @@ graph TD
 | 2026-07-16 | Refactor | Use 0.1 color granularity for pressure-based visualization after ADC-to-pressure conversion |
 | 2026-07-20 | Refactor | Tighten pressure visualization color granularity from 0.1 to 0.01 |
 
-## 2026-07-30 Dummy 压强/压力统一数据链路
+## 2026-07-30 Dummy 压强展示与压力总和统一数据链路
 
 ### 业务口径
 
-- 全局展示模式分为压强模式和压力模式。压强模式单位为 `kPa`，压力模式单位为 `N`。
+- 用户可见数据固定为压强，单位为 `kPa`；不再提供压力 `N` 和原始 ADC 的展示切换入口。
 - 所有 Dummy 传感器点间距均为 `1.25 cm`，单点受力面积固定为 `1.25 × 1.25 = 1.5625 cm²`。
 - 单点压力换算公式为 `F(N) = P(kPa) × 1000 × 1.5625 / 10000 = P(kPa) × 0.15625`。
-- “压力总和”始终表示所有有效点的真实压力之和，单位固定为 `N`，不随全局展示模式变成“压强总和”。
-- 平均值、最大值、有效点数和有效面积均基于当前展示模式对应的规范矩阵计算；二维数字、三维点图、框选统计、历史回放、数据对比、COP 报告和 CSV 导出使用相同数据源。
+- “压力总和”始终表示所有有效点的真实压力之和，单位固定为 `N`。压力矩阵仅用于计算该业务指标，不作为可切换的展示数据。
+- 平均压强、最大压强、有效点数和有效面积均基于过滤后的 `pressureArr` 计算；二维数字、三维点图、框选统计、历史回放、数据对比、COP 报告和 CSV 导出使用相同压强数据源。
 
 ### 后端处理链路
 
-1. `server/services/PressureConfig.js` 配置并校验 `server/kpa/dummyPressure_v2.10.3.js`，通过缓存加载器提供 Dummy 压强公式。
-2. `util/pressureFrameProcessor.js` 将上衣、袖子、裤腿等展示矩阵还原到物理矩阵，应用结构掩码、阈值和轻量空间高斯滤波，再调用 Dummy 公式完成 ADC 到 kPa 的标定。
+1. `server/services/PressureConfig.js` 配置并校验当前的 `server/kpa/dummyPressure_v2.10.4.js`，通过缓存加载器提供 Dummy 压强公式。
+2. `util/pressureFrameProcessor.js` 将上衣、袖子、裤腿等展示矩阵还原到物理矩阵，先应用结构掩码和轻量空间高斯，再调用 Dummy 公式完成 ADC 到 kPa/N 的换算；噪点阈值在展示矩阵换算完成后固定按 `pressure` 模式判定。
 3. 处理器为每个矩阵生成同尺寸的 `pressureArr` 和 `forceArr`。`pressureArr` 保存一位小数的单点压强，`forceArr` 按单点面积换算并保存一位小数的单点压力。
 4. `server/services/DataService.js` 在置零之后、方向变换之前调用统一处理器；同一个处理结果同时用于 WebSocket 实时推送和采集落库，避免实时画面与 CSV 因前后端重复滤波而不一致。
-5. 开始采集时锁定 `filter/gauss/coherent` 配置，采集中不允许改变数据口径；前端不再执行矩阵滤波、时序平滑或高斯处理。
+5. 开始采集时锁定 `filter/filterMode/gauss/coherent` 配置，采集中不允许改变数据口径；前端不再执行矩阵滤波、时序平滑或高斯处理。
 6. 历史回放、导入 CSV、对比和报告读取旧数据时通过兼容处理补齐规范矩阵，已带处理版本的帧不会重复换算。
 
 ### 前端消费链路
 
-- `client/src/store/equipStore.js` 持久化全局 `pressureMetricMode`，`client/src/util/pressureMetrics.js` 统一提供模式、单位、格式化和矩阵统计方法。
-- `client/src/hooks/useMatrixData.js` 直接消费后端 `pressureArr/forceArr`：当前模式矩阵用于二维、三维、框选和分布图；`forceArr` 的总和固定用于压力总和曲线。
-- `ChartsAside` 提供 kPa/N 交换按钮。平均值、最大值和分布图随模式切换，压力总和行和趋势值始终为 `N`。
-- 二维数字、三维点图和当前最大值均保留一位小数；颜色调节以当前展示矩阵为依据，步进 `0.01`、最小值 `0.01`、最大值 `60`、默认值 `5`。
-- 历史回放、对比和 COP 报告沿用全局模式。COP 轨迹轴表示 X/Y 方向压力中心偏移距离（mm），压力总和趋势 X 轴为时间（s）、Y 轴为压力总和（N）。
+- `client/src/store/equipStore.js` 在启动时将旧的 `pressureMetricMode` 强制归一为 `pressure`；`client/src/util/pressureMetrics.js` 统一提供压强单位、格式化和矩阵统计方法。
+- `client/src/hooks/useMatrixData.js` 以 `pressureArr` 作为二维、三维、框选和分布图的唯一展示矩阵；`forceArr` 只用于计算压力总和曲线和压力总和行。
+- `ChartsAside` 不再显示指标交换按钮。平均值、最大值和分布图固定为压强 `kPa`，压力总和行和趋势值固定为 `N`。
+- 二维数字、三维点图和当前最大压强均保留一位小数；颜色调节固定按压强矩阵计算，步进 `0.01`、最小值 `0.01`、最大值 `60`、默认值 `5`。
+- 历史回放、对比和 COP 报告固定展示压强。COP 轨迹轴表示 X/Y 方向压力中心偏移距离（mm），压力总和趋势 X 轴为时间（s）、Y 轴为压力总和（N）。
 
 ### 导出与接口
 
-- CSV 根据导出时的全局模式输出单点、平均值和最大值：压强模式为 `kPa`，压力模式为 `N`；压力总和字段始终为 `N`。
+- CSV 的单点、平均值和最大值固定输出压强 `kPa`；压力总和字段始终输出真实压力 `N`。
 - CSV “秒数(s)”从首帧 `0.000` 开始，保留三位小数；导出字段中不包含靠背 MAC、坐垫 MAC和备注。
 - `/getFrameProcessingConfig` 返回当前处理参数及采集锁定状态；`/setFrameProcessingConfig` 在非采集状态更新处理参数。
 - `/downloadFields` 和 `/download` 接收导出模式，确保字段名称、单位和数据矩阵一致。
 
 ### 验证
 
-- `test/pressureFrameProcessor.test.js` 覆盖公式自检、1.25 cm 几何与压力系数、各 Dummy 矩阵规范化、左右腿合并、后端滤波确定性及两种模式 CSV 往返校验。
-- 前端生产构建通过，新增专项测试共 6 项全部通过。
+- `test/pressureFrameProcessor.test.js` 覆盖公式自检、1.25 cm 几何与压力系数、各 Dummy 矩阵规范化、左右腿合并、后端滤波确定性、默认压强阈值及 CSV 往返校验。
+- 前端生产构建通过，Dummy 专项测试共 9 项全部通过。
 
 | 2026-07-30 | Feature | Add the Dummy canonical kPa/N matrix pipeline based on `dummyPressure_v2.10.3.js`, with 1.25 cm sensor spacing and unified realtime, history, report, comparison and CSV semantics |
+
+## 2026-07-31 原始 ADC 内部诊断与假人线序稳定
+
+### 内部数据与业务口径
+
+- 原始 ADC 曾用于界面调试，2026-08-03 起已取消用户侧入口；当前界面固定展示压强 `kPa`。
+- 原始 ADC 表示串口点位完成硬件索引映射和 2x 展示插值后的矩阵，取值时机早于预压力置零、阈值过滤、空间高斯和当前 `dummyPressure_v2.10.4.js` 公式换算。
+- 原始 ADC 仅用于定位无压强数据、公式换算和硬件线序问题，不进入二维数字、三维热力图、统计、报告或 CSV 的用户展示。
+- 平均压强、最大压强、有效点数、有效面积、框选统计和正态分布固定读取 `pressureArr`。“压力总和”始终由 `forceArr` 求和，名称和单位固定为 `N`。
+
+### 假人线序约束
+
+- `util/line.js` 中从 1024 原始点到上衣、左右臂、左右腿真实矩阵的硬件索引映射继续保留；这是传感器接线关系，不属于可视化方向翻转。
+- `server/services/DataService.js` 对 `isDummyMatrixKey()` 命中的穿戴矩阵固定使用无旋转、无水平翻转、无垂直翻转方向。`data_direction.json` 中旧的 `endi-foot` 等方向配置不再改变假人矩阵。
+- 假人系统工具栏不再显示画布翻转入口；座椅等其他展示系统继续保留原有方向控制。
+- 下身继续以 `endi-foot` 的 `24x64` 合并矩阵传输，同时携带左右腿各自的内部 ADC、压强和压力源矩阵。前端固定从压强源矩阵拆分左右腿，避免左右腿坐标顺序不一致。
+
+### 数据链路
+
+1. `DataService.prepareProcessedFrame()` 先保存未置零的展示线序矩阵为 `rawAdcArr`，再对计算矩阵应用预压力置零。
+2. `pressureFrameProcessor` 对计算矩阵执行轻量空间高斯和压强/压力换算，再按采集时锁定的压强阈值生成统一点位掩码，并输出同尺寸的 `pressureArr`、`forceArr`；`rawAdcArr` 不参与这些处理。
+3. WebSocket 实时帧和采集落库仍保留规范矩阵以兼容压力总和及旧历史数据；历史回放、对比、COP、框选和 CSV 的用户可见点位数据固定读取 `pressureArr`。
+4. CSV 不再提供原始 ADC 或单点压力导出模式；秒数仍从 `0.000` 开始保留三位小数，压力总和字段保持 `N`。
+
+### 验证
+
+- `test/pressureFrameProcessor.test.js` 当前共 9 项通过，内部兼容测试覆盖原始 ADC 绕过置零与滤波、假人忽略方向翻转、左右腿源矩阵坐标一致，以及旧 ADC CSV 往返。
+- `npm --prefix client run build` 通过；构建仍报告既有的重复 `color`、自动分号和大分包警告，本次改动未新增构建错误。
+
+| 2026-07-31 | Fix | Add end-to-end raw ADC diagnostics and disable secondary direction transforms for Dummy wearable matrices so ADC, kPa and N keep one coordinate order |
+
+## 2026-08-03 Dummy 压强标定 V2.10.4
+
+- `server/services/PressureConfig.js` 的默认 Dummy 公式和 `db/pressure_config.json` 的当前运行公式均切换为 `dummyPressure_v2.10.4.js`。
+- V2.10.4 保持原有处理器接口，腿部标定在低 ADC 区间使用连续延伸曲线，再接回原反放砝码线性公式，避免 `ADC > 10` 的有效点被换算成 0 kPa。
+- `pressureFrameProcessor` 从实际公式文件名生成 `formulaProfile`；当前实时帧元数据记录 `formulaFile=dummyPressure_v2.10.4.js`、`formulaProfile=dummy-v2.10.4`。
+- 公式内置自检共 29 项全部通过；Dummy 专项数据链路测试继续校验公式版本、处理元数据、压强/压力矩阵和 CSV 往返。
+
+| 2026-08-03 | Configuration | Upgrade Dummy pressure calibration from V2.10.3 to V2.10.4 and record the active formula version in frame metadata |
+
+## 2026-08-03 Dummy 3D 热力图当前指标适配
+
+- `client/src/components/three/ThreeHumanPoint.js` 不再读取前端 `filter` 对后端规范矩阵做二次阈值过滤；WebGL 热力图直接消费与 2D 数字一致的当前 ADC/kPa/N 矩阵。
+- 自动颜色模式使用当前展示矩阵实际最大值作为热力图量程，不再套用 ADC 动态色域的 `RANGE_MIN=15`、`MIN_RANGE_MAX=80`。
+- 共享 WebGL 热力图的数据切分保留浮点精度，不再通过 `parseInt` 把小于 `1 kPa/N` 的有效点截断为 0。
+- 手动颜色模式继续使用可视化调节中的颜色最大值，点半径、高度调节、UV 区域和模型纹理绑定保持不变。
+
+| 2026-08-03 | Fix | Render the Dummy 3D heatmap from the same active ADC/kPa/N matrix as the 2D numeric view without legacy ADC thresholding |
+
+## 2026-08-03 Dummy 压强单一展示与噪点消除
+
+- 前端实时配置和开始采集请求同时提交 `filter` 与固定值 `filterMode=pressure`；开始采集后与高斯参数一起锁定。
+- 后端处理顺序为“物理矩阵校验 -> 空间高斯 -> 压强标定 -> 压力换算 -> 压强阈值过滤 -> 一位小数输出”，不再在公式换算前用 ADC 阈值过滤。
+- 阈值在插值后的展示矩阵上判断。低于阈值的点会同时从处理 ADC、`pressureArr` 和 `forceArr` 清零，确保 2D、3D、左侧统计、框选、历史、报告和 CSV 使用同一有效点集合。
+- 原始 ADC 调试矩阵 `rawAdcArr` 继续保留未置零、未高斯、未过滤数据，不受噪点消除影响。
+- 噪点消除只使用压强 `kPa`，输入范围为 `0..60`、步进为 `0.1`、默认值为 `0`。升级后首次加载会把旧缓存阈值重置为 `0`，避免旧 ADC/N 数值被误当作 kPa。
+- 用户侧只展示 `pressureArr`，左侧交换按钮已移除，旧的 `pressureMetricMode` 缓存会在启动时改写为 `pressure`。`rawAdcArr` 和 `forceArr` 仅作为内部诊断、兼容及压力总和计算数据，不作为可选展示单位。
+
+| 2026-08-03 | Change | Keep pressure (kPa) as the only visible Dummy metric and apply a disabled-by-default 0.1-step pressure denoise threshold after calibration |
