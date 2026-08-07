@@ -1,4 +1,4 @@
-import React, { forwardRef, useContext, useEffect, useImperativeHandle, useMemo, useState } from 'react'
+import React, { forwardRef, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import './index.scss'
 import { Dropdown, Input, Popover, message } from 'antd'
 import { pageContext } from '../../page/test/Test';
@@ -8,6 +8,11 @@ import { shallow } from 'zustand/shallow';
 import { isMoreMatrix } from '../../assets/util/util';
 import { getMatrixPartFromDisplayType, getMatrixPartLabelKey, getSystemMatrixParts, pointConfig } from '../../util/constant';
 import { APP_VERSION } from '../../util/version';
+import { HolderOutlined } from '@ant-design/icons';
+
+// 工具条初始位置贴在左下角「对称系数/压力梯度」面板正下方时的间距与视口留白
+const TOOLBAR_PANEL_GAP = 14
+const TOOLBAR_VIEWPORT_MARGIN = 12
 
 const normalizeAngleIndex = (value) => {
     const index = Number(value)
@@ -28,6 +33,11 @@ const DropRight = () => {
 
 const ViewSetting = (props) => {
     const { t, i18n } = props;
+    const toolbarRef = useRef(null)
+    const rowRef = useRef(null)
+    const toolbarMovedRef = useRef(false)
+    const [toolbarPos, setToolbarPos] = useState(null)
+    const [toolbarDragging, setToolbarDragging] = useState(false)
     const pageInfo = useContext(pageContext);
     console.log('ViewSetting')
     const { setDisplay, display, setDisplayType, setOnRuler, onSelect } = pageInfo
@@ -388,9 +398,128 @@ const ViewSetting = (props) => {
         setOnRuler(false)
     }
 
+    // 工具条只在启动时量一次左下角的「对称系数/压力梯度」面板，贴到它正下方并与它同宽。
+    // 定完位就不再跟随：之后拖动那块面板不会带着工具条走，两者各自独立。
+    useEffect(() => {
+        let raf = 0
+        let timer = 0
+        let last = null
+        let stable = 0
+        let attempts = 0
+
+        const schedule = () => {
+            if (!raf) raf = requestAnimationFrame(measure)
+        }
+
+        const retry = () => {
+            timer = setTimeout(schedule, 300)
+        }
+
+        function measure() {
+            raf = 0
+            attempts += 1
+            // 用户已经自己拖过工具条，就不要再去改它的位置
+            if (toolbarMovedRef.current) return
+            const bar = toolbarRef.current
+            // 对称系数面板要等有数据才出现，还没出现时先贴在上面那块曲线面板下方
+            const shapePanel = document.querySelector('.shape-panel')
+            const panel = shapePanel || document.querySelector('.charts-panel')
+            if (!bar || !panel) {
+                retry()
+                return
+            }
+            const panelRect = panel.getBoundingClientRect()
+            const barRect = bar.getBoundingClientRect()
+            // offsetWidth 是未经 transform 的布局宽度，缩放后再量也不会漂
+            const naturalWidth = rowRef.current?.offsetWidth || 0
+            if (!naturalWidth) {
+                retry()
+                return
+            }
+            const next = {
+                left: Math.round(Math.max(TOOLBAR_VIEWPORT_MARGIN, panelRect.left)),
+                top: Math.round(Math.min(
+                    panelRect.bottom + TOOLBAR_PANEL_GAP,
+                    window.innerHeight - barRect.height - TOOLBAR_VIEWPORT_MARGIN,
+                )),
+                // 整条工具条按比例缩放，使可见宽度正好等于面板宽度
+                scale: Math.round((panelRect.width / naturalWidth) * 1e4) / 1e4,
+            }
+            if (last && last.left === next.left && last.top === next.top && last.scale === next.scale) {
+                stable += 1
+            } else {
+                stable = 0
+                last = next
+                setToolbarPos(next)
+            }
+            // 面板里的图表首帧之后还会把高度撑开，量到连续两次不变才收手；
+            // 还没锚到对称系数面板就继续等它出现（约 30s 后放弃，非假人系统没有这块面板）
+            const settled = shapePanel ? stable >= 2 : attempts > 100
+            if (!settled) retry()
+        }
+
+        schedule()
+        return () => {
+            if (raf) cancelAnimationFrame(raf)
+            clearTimeout(timer)
+        }
+    }, [])
+
+    // 按住左侧手柄拖动工具条，位置限制在视口内
+    const onToolbarDragStart = (e) => {
+        const bar = toolbarRef.current
+        if (!bar || e.button !== 0) return
+        e.preventDefault()
+        toolbarMovedRef.current = true
+        const barRect = bar.getBoundingClientRect()
+        const offsetX = e.clientX - barRect.left
+        const offsetY = e.clientY - barRect.top
+        setToolbarDragging(true)
+
+        const onMouseMove = (event) => {
+            const maxLeft = window.innerWidth - barRect.width - TOOLBAR_VIEWPORT_MARGIN
+            const maxTop = window.innerHeight - barRect.height - TOOLBAR_VIEWPORT_MARGIN
+            const left = Math.round(Math.min(Math.max(TOOLBAR_VIEWPORT_MARGIN, event.clientX - offsetX), Math.max(TOOLBAR_VIEWPORT_MARGIN, maxLeft)))
+            const top = Math.round(Math.min(Math.max(TOOLBAR_VIEWPORT_MARGIN, event.clientY - offsetY), Math.max(TOOLBAR_VIEWPORT_MARGIN, maxTop)))
+            setToolbarPos((prev) => ({ ...prev, left, top }))
+        }
+
+        const onMouseUp = () => {
+            setToolbarDragging(false)
+            window.removeEventListener('mousemove', onMouseMove)
+            window.removeEventListener('mouseup', onMouseUp)
+        }
+
+        window.addEventListener('mousemove', onMouseMove)
+        window.addEventListener('mouseup', onMouseUp)
+    }
+
     return (
         <>
-            <div className='viewSetContent'>
+            <div
+                className='viewSetContent'
+                ref={toolbarRef}
+                style={toolbarPos
+                    ? {
+                        left: `${toolbarPos.left}px`,
+                        top: `${toolbarPos.top}px`,
+                        // 缩放而不是撑宽：可见长度与「压力重心点」面板严格一致，按钮不会被挤变形
+                        transform: toolbarPos.scale ? `scale(${toolbarPos.scale})` : undefined,
+                        transformOrigin: 'top left',
+                        right: 'auto',
+                        bottom: 'auto',
+                    }
+                    : undefined}
+            >
+                <div className='viewSetRow' ref={rowRef}>
+                <div
+                    className='viewSetDragHandle'
+                    title={t('dragToolbar')}
+                    style={{ cursor: toolbarDragging ? 'grabbing' : 'grab' }}
+                    onMouseDown={onToolbarDragStart}
+                >
+                    <HolderOutlined />
+                </div>
                 <div className="secondContent viewContent1">
                     <Popover color='#32373E' className='set-popover' placement="top" content={<div style={{ color: '#E6EBF0' }} >{t('resetViewTip')}</div>} >
                         <div className='viewAdjust' style={{ display: 'flex', flexDirection: 'column' }}>
@@ -442,7 +571,7 @@ const ViewSetting = (props) => {
                             </div>
                         } */}
 
-                        <i className='iconfont add cursor' style={{ marginRight: '1.375rem' }} onClick={addShow}>&#xe631;</i>
+                        <i className='iconfont add cursor' style={{ marginRight: '0.75rem' }} onClick={addShow}>&#xe631;</i>
                     </div>
                     {canSwitchPointAngle ? <Popover color='#32373E' className='set-popover' placement="top" content={<div style={{ color: '#E6EBF0' }} >{t('viewSwitch3D')}</div>} >
                             <div className='viewAdjust cursor' onClick={threeViewChange} style={{ display: 'flex', flexDirection: 'column' }}>
@@ -479,18 +608,10 @@ const ViewSetting = (props) => {
                     </Popover> : ''} */}
                 </div>
 
-                <div style={{ 
-                    marginLeft: '1rem', 
-                    padding: '0.4rem 0.75rem', 
-                    background: '#202327', 
-                    borderRadius: '6px',
-                    fontSize: '0.75rem',
-                    color: '#6C7784',
-                    display: 'flex',
-                    alignItems: 'center',
-                    userSelect: 'none'
-                }}>
+                {/* 版本号紧跟「视图切换」，与前面两块同高 */}
+                <div className='viewSetVersion'>
                     {APP_VERSION}
+                </div>
                 </div>
 
             </div>

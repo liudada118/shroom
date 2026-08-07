@@ -15,6 +15,15 @@ const {
   ensureProcessedFrame,
   ensureProcessedMatrixItem,
 } = require("./pressureFrameProcessor");
+const {
+  GRADIENT_UNIT_PA_CM,
+  calcPartShapeMetrics,
+  formatGradientValue,
+  formatSymmetryPercent,
+  normalizeGradientUnit,
+  supportsPressureGradient,
+  supportsSymmetryCoefficient,
+} = require("./gradientMetrics");
 
 // ─── 传感器点位配置 ──────────────────────────────────────
 const pointConfig = DEVICE_MATRIX_CONFIG
@@ -987,8 +996,30 @@ const EXPORT_FIXED_FIELDS = [
 
 const EXPORT_TRAILING_FIELDS = []
 
-function getExportBaseFields() {
-  return EXPORT_BASE_FIELDS
+// 对称系数 / 压力梯度：接在各部位「压力总和(N)」之后，按部位能力决定是否输出
+// 上身 / 下身 → 对称系数 + 平均梯度 + 最大梯度；左臂 / 右臂 → 仅两项梯度
+const EXPORT_SHAPE_FIELDS = [
+  { id: 'symmetry', title: '对称系数', scope: 'symmetry', withUnit: false },
+  { id: 'avg_gradient', title: '平均梯度', scope: 'gradient', withUnit: true },
+  { id: 'max_gradient', title: '最大梯度', scope: 'gradient', withUnit: true },
+]
+
+function buildShapeFieldTitle(field, gradientUnit) {
+  return field.withUnit ? `${field.title}（${normalizeGradientUnit(gradientUnit)}）` : field.title
+}
+
+function getShapeExportFields(key, gradientUnit = GRADIENT_UNIT_PA_CM) {
+  return EXPORT_SHAPE_FIELDS
+    .filter((field) => (field.scope === 'symmetry'
+      ? supportsSymmetryCoefficient(key)
+      : supportsPressureGradient(key)))
+    .map((field) => ({ id: field.id, title: buildShapeFieldTitle(field, gradientUnit) }))
+}
+
+function getExportBaseFields(metricMode, key = '', gradientUnit = GRADIENT_UNIT_PA_CM) {
+  void metricMode
+  if (!key) return EXPORT_BASE_FIELDS
+  return [...EXPORT_BASE_FIELDS, ...getShapeExportFields(key, gradientUnit)]
 }
 
 function isEndiMatrixKey(key) {
@@ -1012,25 +1043,30 @@ function formatExportDecimal(value, digits = 1) {
 }
 
 function buildSingleKeyExportHeaders(key, options = {}) {
-  const { suffix = '', labelSuffix = '', metricMode = 'pressure' } = options
+  const { suffix = '', labelSuffix = '', metricMode = 'pressure', gradientUnit = GRADIENT_UNIT_PA_CM } = options
   const label = `${getExportKeyLabel(key)}${labelSuffix}`
   const idPrefix = suffix ? `${key}_${suffix}` : key
-  return getExportBaseFields(metricMode).map((field) => ({
+  // 形态指标只随整块部位输出，框选列沿用原有字段
+  const fields = suffix
+    ? getExportBaseFields(metricMode)
+    : getExportBaseFields(metricMode, key, gradientUnit)
+  return fields.map((field) => ({
     id: getExportKeyFieldId(idPrefix, field.id),
     title: `${label}${field.title}`,
   }))
 }
 
-function buildExportHeadersForKeys(keys, selectionMap = {}, metricMode = 'pressure') {
+function buildExportHeadersForKeys(keys, selectionMap = {}, metricMode = 'pressure', gradientUnit = GRADIENT_UNIT_PA_CM) {
   const headers = [...EXPORT_FIXED_FIELDS]
   sortExportKeys(keys).forEach((key) => {
-    headers.push(...buildSingleKeyExportHeaders(key, { metricMode }))
+    headers.push(...buildSingleKeyExportHeaders(key, { metricMode, gradientUnit }))
     const selectionCount = Math.min(4, Math.max(0, Number(selectionMap[key] || 0)))
     for (let index = 1; index <= selectionCount; index++) {
       headers.push(...buildSingleKeyExportHeaders(key, {
         suffix: `selection_${index}`,
         labelSuffix: `框选${index}`,
         metricMode,
+        gradientUnit,
       }))
     }
   })
@@ -1047,6 +1083,7 @@ function normalizeExportOptions(options = {}) {
     format,
     fields,
     metricMode: normalizePressureMetricMode(options.metricMode),
+    gradientUnit: normalizeGradientUnit(options.gradientUnit),
   }
 }
 
@@ -1055,7 +1092,7 @@ function filterExportHeaders(headers, fields) {
   const selected = new Set(fields)
   const filtered = headers.filter((header) => {
     if (selected.has(header.id)) return true
-    return EXPORT_BASE_FIELDS.some((field) => {
+    return [...EXPORT_BASE_FIELDS, ...EXPORT_SHAPE_FIELDS].some((field) => {
       return selected.has(field.id) && header.id.endsWith(`_${field.id}`)
     })
   })
@@ -1090,10 +1127,14 @@ async function writeXlsxFile(filePath, headers, records) {
 async function getExportFieldOptions({ db, params, exportOptions = {} }) {
   void db
   void params
-  const { metricMode } = normalizeExportOptions(exportOptions)
+  const { metricMode, gradientUnit } = normalizeExportOptions(exportOptions)
   const headers = [
     ...EXPORT_FIXED_FIELDS,
     ...getExportBaseFields(metricMode),
+    ...EXPORT_SHAPE_FIELDS.map((field) => ({
+      id: field.id,
+      title: buildShapeFieldTitle(field, gradientUnit),
+    })),
     ...EXPORT_TRAILING_FIELDS,
   ]
   return {
@@ -1228,6 +1269,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       const selectionCountMap = getSelectionCountMap(selectOverride, keyArr, firstData)
       const normalizedExportOptions = normalizeExportOptions(exportOptions)
       const metricMode = normalizedExportOptions.metricMode
+      const gradientUnit = normalizedExportOptions.gradientUnit
 
       // 根据前几帧 timestamp 自动推算帧率
       let detectedHz = 12 // 默认帧率
@@ -1407,6 +1449,22 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           frameEntry[getExportKeyFieldId(key, 'real_data')] = JSON.stringify(exportMetricData)
           frameEntry[getExportKeyFieldId(key, 'point_count')] = activePointCount
           frameEntry[getExportKeyFieldId(key, 'total_pressure_n')] = formatExportDecimal(rowEntry.total_pressure_n)
+
+          // 对称系数 / 压力梯度：基于整块部位的压强矩阵（kPa），与框选、当前展示指标无关
+          const shapeMetrics = calcPartShapeMetrics(
+            canonicalStats.pressureValues,
+            matrixSize.width,
+            matrixSize.height,
+            key,
+          )
+          if (supportsSymmetryCoefficient(key)) {
+            frameEntry[getExportKeyFieldId(key, 'symmetry')] = formatSymmetryPercent(shapeMetrics.symmetry)
+          }
+          if (supportsPressureGradient(key)) {
+            frameEntry[getExportKeyFieldId(key, 'avg_gradient')] = formatGradientValue(shapeMetrics.avgGradient, gradientUnit)
+            frameEntry[getExportKeyFieldId(key, 'max_gradient')] = formatGradientValue(shapeMetrics.maxGradient, gradientUnit)
+          }
+
           selectionRegions.forEach((region, regionIndex) => {
             const regionAdcValues = sliceSelectionData(canonicalStats.adcValues, region)
             const regionPressureValues = sliceSelectionData(canonicalStats.pressureValues, region)
@@ -1463,11 +1521,11 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
 
       // 单个 key 的 CSV 表头（保留 ld 分支的中文表头）
       function buildSingleKeyHeaders(key) {
-        return buildSingleKeyExportHeaders(key, { metricMode })
+        return buildSingleKeyExportHeaders(key, { metricMode, gradientUnit })
       }
 
       function buildCombinedHeaders(keys, selections = {}) {
-        return buildExportHeadersForKeys(keys, selections, metricMode)
+        return buildExportHeadersForKeys(keys, selections, metricMode, gradientUnit)
       }
 
       // 写入单个 CSV 文件的辅助函数

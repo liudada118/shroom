@@ -23,9 +23,10 @@ function nextPanelZIndex() {
  * - 可放大/缩小
  * - 在浮窗层内置顶，但保持低于历史/调节抽屉
  */
-export default function DraggablePanel({ children, defaultPosition, title, className = '' }) {
+export default function DraggablePanel({ children, defaultPosition, title, className = '', innerRef, maxBodyHeight = null }) {
     const { t } = useTranslation()
-    const panelRef = useRef(null)
+    const localRef = useRef(null)
+    const panelRef = innerRef || localRef
     const [position, setPosition] = useState(() => ({
         x: defaultPosition?.x || 0,
         y: defaultPosition?.y || 0,
@@ -152,7 +153,11 @@ export default function DraggablePanel({ children, defaultPosition, title, class
                     <span className='panel-ctrl-btn' onClick={zoomIn} title={t('zoomIn')}>+</span>
                 </div>
             </div>
-            <div className='draggable-panel-body'>
+            {/* maxBodyHeight 由外部在两块面板将要重叠时下发，分开后传 null 恢复原始长度 */}
+            <div
+                className='draggable-panel-body'
+                style={maxBodyHeight != null ? { maxHeight: `${maxBodyHeight}px`, overflowY: 'auto' } : undefined}
+            >
                 {children}
             </div>
         </div>

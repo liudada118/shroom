@@ -15,6 +15,27 @@ import { graCenter } from '../../util/util';
 import DraggablePanel from '../draggablePanel/DraggablePanel';
 import { formatSelectionName } from '../../util/selectionName';
 import { getPressureMetricDisplay } from '../../util/pressureMetrics';
+import usePanelLayoutSync from '../../hooks/usePanelLayoutSync';
+import {
+    formatGradientValue,
+    formatSymmetryPercent,
+    getNextGradientUnit,
+    supportsPressureGradient,
+    supportsSymmetryCoefficient,
+} from '../../util/gradientMetrics';
+
+// 对称系数 / 压力梯度面板中部位的固定排序
+const SHAPE_PART_ORDER = ['jacket', 'leftHand', 'rightHand', 'foot']
+
+// 左侧上下两块面板将要重叠时的最小间距，以及上面那块被压缩后的最小高度
+const PANEL_STACK_GAP = 12
+const PANEL_MIN_BODY_HEIGHT = 160
+
+// 左下角要给「重置视图/视图切换」工具条留出的高度（越小 = 对称系数面板越靠下）
+const SHAPE_PANEL_BOTTOM = 80
+
+// 左右两块面板离顶部的距离保持一致
+const PANEL_TOP = 80
 
 function ChartsAside(props) {
 
@@ -42,6 +63,13 @@ function ChartsAside(props) {
     const [data, setData] = useState({})
     const historyChart = useEquipStore(s => s.historyChart, shallow)
     const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
+    const gradientUnit = useEquipStore(s => s.gradientUnit)
+    const setGradientUnit = useEquipStore(s => s.setGradientUnit)
+    const storeDisplayType = useEquipStore(s => s.displayType)
+    // 左侧上下两块面板：重叠时把上面那块压成可滚动区，拖开后恢复原始长度
+    const mainPanelRef = useRef(null)
+    const shapePanelRef = useRef(null)
+    const [mainPanelMaxBodyHeight, setMainPanelMaxBodyHeight] = useState(null)
     const historyChartRef = useRef(historyChart)
     const pressureMetricModeRef = useRef(pressureMetricMode)
     const getMetricDisplay = () => getPressureMetricDisplay(
@@ -557,6 +585,11 @@ function ChartsAside(props) {
 
                         dataObj[key].pressureCenter = Object.values(chartData[key].center)
 
+                        // 对称系数 / 压力梯度（梯度原始值单位 pa/cm，渲染时再按当前单位换算）
+                        dataObj[key].symmetry = chartData[key].shape?.symmetry ?? null
+                        dataObj[key].avgGradient = chartData[key].shape?.avgGradient ?? null
+                        dataObj[key].maxGradient = chartData[key].shape?.maxGradient ?? null
+
                         // 多框选统计数据
                         if (chartData[key].boxStats && chartData[key].boxStats.length > 0) {
                             dataObj[key].boxStats = chartData[key].boxStats.map((box, idx) => {
@@ -606,6 +639,38 @@ function ChartsAside(props) {
         }
 
     }, [])
+
+    usePanelLayoutSync(() => {
+        const main = mainPanelRef.current
+        const shape = shapePanelRef.current
+        const body = main?.querySelector('.draggable-panel-body')
+        if (!main || !shape || !body) {
+            setMainPanelMaxBodyHeight(null)
+            return
+        }
+        const mainRect = main.getBoundingClientRect()
+        const shapeRect = shape.getBoundingClientRect()
+        // 横向错开、或对称系数面板被拖到上方 → 两块互不干扰，保持原始长度
+        const apart = shapeRect.right <= mainRect.left
+            || mainRect.right <= shapeRect.left
+            || shapeRect.top <= mainRect.top
+        if (apart) {
+            setMainPanelMaxBodyHeight(null)
+            return
+        }
+        // 面板带 scale 变换，可用高度要换回未缩放的 CSS 像素
+        const scale = main.offsetWidth ? mainRect.width / main.offsetWidth : 1
+        const bodyTop = body.getBoundingClientRect().top
+        const available = (shapeRect.top - PANEL_STACK_GAP - bodyTop) / (scale || 1)
+        // 内容本来就放得下就不加滚动条
+        setMainPanelMaxBodyHeight(
+            available >= body.scrollHeight ? null : Math.max(PANEL_MIN_BODY_HEIGHT, available),
+        )
+    }, () => [
+        mainPanelRef.current,
+        shapePanelRef.current,
+        mainPanelRef.current?.querySelector('.draggable-panel-body'),
+    ])
 
     const { t, i18n } = useTranslation()
     const metricDisplay = getPressureMetricDisplay(pressureMetricMode, t, i18n.language)
@@ -760,12 +825,110 @@ function ChartsAside(props) {
         })
     }
 
+    // ─── 对称系数 / 压力梯度 ───────────────────────────────
+    // 「整体」视图：上身/左臂/右臂/下身全部列出，无值的位置显示「-」；
+    // 单部位视图（选中某一个部位）：只列出该部位。
+    const shapePart = getMatrixPartFromDisplayType(storeDisplayType)
+    const shapeIsSinglePart = supportsPressureGradient(shapePart)
+
+    /** 部位短名 → data 里的实际 key（如 jacket → endi-jacket），没有数据时返回短名本身 */
+    const shapeDataKey = (part) => (
+        Object.keys(data).find((a) => a !== 't' && getMatrixPartFromDisplayType(a) === part) || part
+    )
+
+    const shapeKeys = SHAPE_PART_ORDER
+        .filter((part) => !shapeIsSinglePart || part === shapePart)
+        .map(shapeDataKey)
+    const symmetryKeys = shapeKeys.filter((a) => supportsSymmetryCoefficient(a))
+    // 只有假人这类带上身/四肢的系统才有这块面板
+    const hasShapeData = Object.keys(data).some((a) => a !== 't' && supportsPressureGradient(a))
+    const shapePanelVisible = hasShapeData && shapeKeys.length > 0
+
+    /** 部位图例（带名称，用于标注下方色点对应哪个部位） */
+    const renderShapeLegend = (keys) => keys.map((key) => (
+        <div className='chartTypeItem' key={`shape-legend-${key}`}>
+            <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(key, pressColorArr) }}></div>
+            {getDeviceChartLabel(key)}
+        </div>
+    ))
+
+    /** 一行指标：每个部位一个「色点 + 数值 + 单位」，色点颜色与图例一致 */
+    const renderShapeRow = (keys, format, unit) => keys.map((key) => (
+        <div className='chartTypeItem' key={`shape-${key}-${unit || 'percent'}`}>
+            <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(key, pressColorArr) }}></div>
+            <div className='chartMetricValueGroup'>
+                <span className='chartMetricValue'>{format(key)}</span>
+                {unit ? <span className='chartMetricUnit'>{unit}</span> : null}
+            </div>
+        </div>
+    ))
+
+    const renderShapePanel = () => {
+        if (!shapePanelVisible) return null
+        return (
+            <DraggablePanel
+                title={t('symmetryCoefficient') + ' / ' + t('pressureGradient')}
+                defaultPosition={{ x: 20, bottom: SHAPE_PANEL_BOTTOM }}
+                className='charts-panel shape-panel'
+                innerRef={shapePanelRef}
+            >
+                {symmetryKeys.length ? (
+                    <div className='chartAndDataContent'>
+                        <div className="chartTitle">
+                            <div className="chartName">{t('symmetryCoefficient')}</div>
+                            <div className="chartType">{renderShapeLegend(symmetryKeys)}</div>
+                        </div>
+                        <div className='chartData'>
+                            <span className="chartDataLabel">{t('symmetryCoefficient')}</span>
+                            <div className='chartTypeContent'>
+                                {renderShapeRow(symmetryKeys, (key) => formatSymmetryPercent(data[key]?.symmetry), '')}
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
+
+                <div className='chartAndDataContent'>
+                    <div className="chartTitle">
+                        <div className="chartName">{t('pressureGradient')}</div>
+                        <div className='shapeUnitBar'>
+                            <span className='shapeUnitLabel'>{t('unit')}：</span>
+                            <span className='shapeUnitValue'>{gradientUnit}</span>
+                            <button
+                                type='button'
+                                className='shapeUnitButton'
+                                title={t('switchUnit')}
+                                onClick={() => setGradientUnit(getNextGradientUnit(gradientUnit))}
+                            >
+                                ⇌
+                            </button>
+                        </div>
+                    </div>
+                    <div className="chartType shapeLegendRow">{renderShapeLegend(shapeKeys)}</div>
+                    <div className='chartData'>
+                        <span className="chartDataLabel">{t('avgGradient')}</span>
+                        <div className='chartTypeContent'>
+                            {renderShapeRow(shapeKeys, (key) => formatGradientValue(data[key]?.avgGradient, gradientUnit), gradientUnit)}
+                        </div>
+                    </div>
+                    <div className='chartData'>
+                        <span className="chartDataLabel">{t('maxGradient')}</span>
+                        <div className='chartTypeContent'>
+                            {renderShapeRow(shapeKeys, (key) => formatGradientValue(data[key]?.maxGradient, gradientUnit), gradientUnit)}
+                        </div>
+                    </div>
+                </div>
+            </DraggablePanel>
+        )
+    }
+
     return (
         <>
             <DraggablePanel
                 title={metricDisplay.curveLabel + ' / ' + t('areaCurve')}
-                defaultPosition={{ x: 20, y: 80 }}
+                defaultPosition={{ x: 20, y: PANEL_TOP }}
                 className={`charts-panel${hasSelectionStats ? ' charts-panel--expanded' : ''}`}
+                innerRef={mainPanelRef}
+                maxBodyHeight={mainPanelMaxBodyHeight}
             >
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
@@ -796,7 +959,11 @@ function ChartsAside(props) {
                 </div>
             </DraggablePanel>
 
-            <DraggablePanel title={t('pressureCenterCurve') + ' / ' + t('pressureNormalDist')} defaultPosition={{ right: 20, y: 80 }}>
+            <DraggablePanel
+                title={t('pressureCenterCurve') + ' / ' + t('pressureNormalDist')}
+                defaultPosition={{ right: 20, y: PANEL_TOP }}
+                className='center-panel'
+            >
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{t('pressureCenterCurve')}</div>
@@ -823,6 +990,8 @@ function ChartsAside(props) {
                     </div>
                 </div>
             </DraggablePanel>
+
+            {renderShapePanel()}
         </>
     )
 }

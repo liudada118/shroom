@@ -187,6 +187,50 @@
     margin-bottom: 1.25rem;
 }
 
+// 对称系数 / 压力梯度面板：标题行内的单位显示与切换
+.shapeUnitBar {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8125rem;
+    color: #E6EBF0;
+    flex: 0 0 auto;
+    white-space: nowrap;
+
+    .shapeUnitLabel {
+        color: #9AA6B2;
+    }
+
+    .shapeUnitValue {
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .shapeUnitButton {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.5rem;
+        height: 1.5rem;
+        border: 1px solid rgba(0, 114, 239, 0.6);
+        background: rgba(0, 114, 239, 0.16);
+        color: #4DA3FF;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        line-height: 1;
+        cursor: pointer;
+
+        &:hover {
+            background: rgba(0, 114, 239, 0.32);
+        }
+    }
+}
+
+// 「整体」视图下部位较多，图例单独占一行
+.shapeLegendRow {
+    justify-content: flex-start !important;
+}
+
 .chartAndDataContent {}
 
 .chartAndDataContent:last-child {

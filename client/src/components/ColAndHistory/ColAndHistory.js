@@ -150,6 +150,7 @@ const ColAndHistory = memo((props) => {
     const { setDisplay, display, setDisplayType, setOnRuler } = pageInfo
     const dataStatus = useEquipStore(s => s.dataStatus, shallow)
     const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
+    const gradientUnit = useEquipStore(s => s.gradientUnit)
 
     const [messageApi, contextHolder] = message.useMessage();
     const { t, i18n } = props;
@@ -581,7 +582,7 @@ const ColAndHistory = memo((props) => {
             : []
         const payload = {
             fileArr: selectedFiles,
-            exportOptions: { metricMode: pressureMetricMode },
+            exportOptions: { metricMode: pressureMetricMode, gradientUnit },
         }
         axios({
             method: 'post',
@@ -713,6 +714,7 @@ const ColAndHistory = memo((props) => {
                 format: exportFormat,
                 fields: exportFields,
                 metricMode: pressureMetricMode,
+                gradientUnit,
             },
         }
 

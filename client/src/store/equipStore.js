@@ -2,16 +2,24 @@ import { create } from 'zustand'
 import { maxObj } from '../assets/util/constant'
 import { loadVisualSettingValue, normalizeVisualSettingMax } from '../util/visualSettingStorage'
 import { PRESSURE_METRIC_MODE } from '../util/pressureMetrics'
+import { GRADIENT_UNIT_PA_CM, normalizeGradientUnit } from '../util/gradientMetrics'
 
 // ─── 持久化设置值 ────────────────────────────────────────
 const DEFAULT_SETTINGS = { gauss: 2, color: 5, filter: 0, height: 80, coherent: 1, autoColor: 1 }
 const PRESSURE_METRIC_MODE_STORAGE_KEY = 'pressureMetricMode'
+const GRADIENT_UNIT_STORAGE_KEY = 'gradientUnit'
 
 function loadPressureMetricMode() {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(PRESSURE_METRIC_MODE_STORAGE_KEY, PRESSURE_METRIC_MODE)
   }
   return PRESSURE_METRIC_MODE
+}
+
+// 压力梯度单位默认 pa/cm，用户切换后保持到下次启动
+function loadGradientUnit() {
+  if (typeof localStorage === 'undefined') return GRADIENT_UNIT_PA_CM
+  return normalizeGradientUnit(localStorage.getItem(GRADIENT_UNIT_STORAGE_KEY))
 }
 
 function loadSettingValue() {
@@ -49,6 +57,7 @@ export const useEquipStore = create((set) => ({
   settingValueOptimal: initialSettings,
   num2DZoom: 100,
   pressureMetricMode: loadPressureMetricMode(),
+  gradientUnit: loadGradientUnit(),
 
   // 框选工具
   selectArr: [],
@@ -101,6 +110,13 @@ export const useEquipStore = create((set) => ({
     }
     set({ pressureMetricMode: PRESSURE_METRIC_MODE })
   },
+  setGradientUnit: (s) => {
+    const unit = normalizeGradientUnit(s)
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(GRADIENT_UNIT_STORAGE_KEY, unit)
+    }
+    set({ gradientUnit: unit })
+  },
 
   setSelectArr: (s) => set({ selectArr: s }),
 
@@ -128,3 +144,4 @@ export const getFrameProcessingSettingValue = () => useEquipStore.getState().set
 export const getDisplayType = () => useEquipStore.getState().displayType
 export const getSettingValueOptimal = () => useEquipStore.getState().settingValueOptimal
 export const getSelectArr = () => useEquipStore.getState().selectArr
+export const getGradientUnit = () => useEquipStore.getState().gradientUnit

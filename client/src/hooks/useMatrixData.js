@@ -14,6 +14,7 @@ import {
   normalizePressureMetricMode,
   summarizeMetricValues,
 } from '../util/pressureMetrics'
+import { calcPartShapeMetrics } from '../util/gradientMetrics'
 
 /**
  * 矩阵数据处理 Hook
@@ -461,6 +462,14 @@ export function useMatrixData() {
     // carY 类型压力转换
     data[key].data.pressTotal = forceSummary.total.toFixed(1)
 
+    // 对称系数 / 压力梯度：始终基于整块部位的压强矩阵（kPa），不受框选影响
+    data[key].shape = calcPartShapeMetrics(
+      Array.isArray(metricData.pressureValues) ? metricData.pressureValues : pressureSelectResult.default,
+      width,
+      height,
+      fullKey || key,
+    )
+
     // ─── 多框选独立统计 ───────────────────────────────────
     const boxes = selectResult.boxes
     if (boxes.length > 0) {
@@ -854,6 +863,7 @@ export function useMatrixData() {
         adcSelectResult,
         pressureSelectResult,
         forceSelectResult,
+        pressureValues,
       })
     }
 

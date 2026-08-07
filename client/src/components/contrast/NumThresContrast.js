@@ -14,11 +14,21 @@ import {
     PRESSURE_METRIC_MODE,
 } from '../../util/pressureMetrics'
 import { calcCentroidRatio } from '../../util/util'
+import {
+    calcPartShapeMetrics,
+    formatGradientValue,
+    formatSymmetryPercent,
+    supportsPressureGradient,
+    supportsSymmetryCoefficient,
+} from '../../util/gradientMetrics'
 import ContrastHeatmap from './ContrastHeatmap'
 import { useTranslation } from 'react-i18next'
 import './contrast.scss'
 
 const METRIC_KEYS = ['aver', 'max', 'press', 'area', 'points', 'center']
+// 压力重心之后追加的形态指标（按部位能力决定是否呈现）
+const SYMMETRY_METRIC_KEY = 'symmetry'
+const GRADIENT_METRIC_KEYS = ['avgGradient', 'maxGradient']
 const CONTRAST_PLAYBACK_SPEEDS = [0.5, 1, 2, 4]
 const BASE_PLAYBACK_INTERVAL_MS = 120
 
@@ -31,6 +41,9 @@ const CONTRAST_COPY = {
             area: '受压面积(cm²)',
             points: '有效点数',
             center: '压力重心',
+            symmetry: '对称系数',
+            avgGradient: '平均梯度',
+            maxGradient: '最大梯度',
         },
         region: '区域',
         notRecorded: '未记录',
@@ -121,6 +134,9 @@ const CONTRAST_COPY = {
             area: 'Contact Area(cm²)',
             points: 'Valid Points',
             center: 'Pressure Center',
+            symmetry: 'Symmetry Coefficient',
+            avgGradient: 'Average Gradient',
+            maxGradient: 'Max Gradient',
         },
         region: 'Region',
         notRecorded: 'Not recorded',
@@ -345,7 +361,7 @@ function getFrameMetricValues(data = {}, metricMode = PRESSURE_METRIC_MODE) {
     })
 }
 
-function calcMetrics(arr = [], width = 1, height = 1, matrixRect = null, matrixKey = '', forceArr = arr) {
+function calcMetrics(arr = [], width = 1, height = 1, matrixRect = null, matrixKey = '', forceArr = arr, pressureArr = null) {
     const values = arr.map((value) => {
         const numeric = Number(value)
         return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
@@ -363,6 +379,13 @@ function calcMetrics(arr = [], width = 1, height = 1, matrixRect = null, matrixK
     const matrixCenter = matrixRect
         ? projectCenterToMatrix(center, matrixRect, Number(matrixRect.width) || width, Number(matrixRect.height) || height)
         : center
+    // 对称系数 / 压力梯度基于压强矩阵（kPa），梯度原始值单位为 pa/cm
+    const shape = calcPartShapeMetrics(
+        Array.isArray(pressureArr) ? pressureArr : values,
+        width,
+        height,
+        matrixKey,
+    )
     return {
         press: forceTotal,
         metricTotal: total,
@@ -371,6 +394,9 @@ function calcMetrics(arr = [], width = 1, height = 1, matrixRect = null, matrixK
         max: points ? Math.max(...positive) : 0,
         aver: points ? total / points : 0,
         center: points ? formatCenter(matrixCenter) : 'N/A',
+        symmetry: shape.symmetry,
+        avgGradient: shape.avgGradient,
+        maxGradient: shape.maxGradient,
     }
 }
 
@@ -643,7 +669,8 @@ export default function NumThresContrast() {
         () => getPressureMetricDisplay(pressureMetricMode, null, i18n.language),
         [pressureMetricMode, i18n.language],
     )
-    const metrics = useMemo(() => METRIC_KEYS.map((key) => {
+    const gradientUnit = useEquipStore(s => s.gradientUnit)
+    const baseMetrics = useMemo(() => METRIC_KEYS.map((key) => {
         if (key === 'aver') return { key, label: `${metricDisplay.labels.average} (${metricDisplay.unit})` }
         if (key === 'max') return { key, label: `${metricDisplay.labels.max} (${metricDisplay.unit})` }
         if (key === 'press') return { key, label: isEnglish ? 'Total Force (N)' : '压力总和 (N)' }
@@ -663,6 +690,28 @@ export default function NumThresContrast() {
     const [exportFormat, setExportFormat] = useState('csv')
     const [exporting, setExporting] = useState(false)
     const [activeKey, setActiveKey] = useState('')
+
+    // 压力重心之后追加：上身/下身 → 对称系数 + 平均梯度 + 最大梯度；左臂/右臂 → 仅两项梯度
+    const metrics = useMemo(() => {
+        const extra = []
+        if (supportsSymmetryCoefficient(activeKey)) {
+            extra.push({
+                key: SYMMETRY_METRIC_KEY,
+                label: copy.metrics[SYMMETRY_METRIC_KEY],
+                format: formatSymmetryPercent,
+            })
+        }
+        if (supportsPressureGradient(activeKey)) {
+            GRADIENT_METRIC_KEYS.forEach((key) => {
+                extra.push({
+                    key,
+                    label: `${copy.metrics[key]} (${gradientUnit})`,
+                    format: (value) => formatGradientValue(value, gradientUnit),
+                })
+            })
+        }
+        return [...baseMetrics, ...extra]
+    }, [baseMetrics, copy, activeKey, gradientUnit])
 
     const keys = contrast?.keys || []
     const isTimePointMode = contrast?.mode === 'single_record_frame'
@@ -751,6 +800,9 @@ export default function NumThresContrast() {
     )
     const leftForceArr = useMemo(() => getFrameMetricValues(leftData, FORCE_METRIC_MODE), [leftData])
     const rightForceArr = useMemo(() => getFrameMetricValues(rightData, FORCE_METRIC_MODE), [rightData])
+    // 对称系数 / 压力梯度固定基于压强矩阵（kPa），与当前展示指标无关
+    const leftPressureArr = useMemo(() => getFrameMetricValues(leftData, PRESSURE_METRIC_MODE), [leftData])
+    const rightPressureArr = useMemo(() => getFrameMetricValues(rightData, PRESSURE_METRIC_MODE), [rightData])
     const diffArr = useMemo(() => buildDiffArr(leftArr, rightArr), [leftArr, rightArr])
 
     const activeSelect = null
@@ -762,12 +814,17 @@ export default function NumThresContrast() {
         const forceSourceB = getRegionArr(rightForceArr, width, activeSelect)
         const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : width
         const metricHeight = activeSelect ? Math.max(1, activeSelect.yEnd - activeSelect.yStart) : height
-        const metricA = calcMetrics(sourceA, metricWidth, metricHeight, activeSelect, activeKey, forceSourceA)
-        const metricB = calcMetrics(sourceB, metricWidth, metricHeight, activeSelect, activeKey, forceSourceB)
+        const pressureSourceA = getRegionArr(leftPressureArr, width, activeSelect)
+        const pressureSourceB = getRegionArr(rightPressureArr, width, activeSelect)
+        const metricA = calcMetrics(sourceA, metricWidth, metricHeight, activeSelect, activeKey, forceSourceA, pressureSourceA)
+        const metricB = calcMetrics(sourceB, metricWidth, metricHeight, activeSelect, activeKey, forceSourceB, pressureSourceB)
         return metrics.map((item) => {
             const a = metricA[item.key]
             const b = metricB[item.key]
-            const diff = typeof a === 'number' && typeof b === 'number' ? calcDisplayDiff(a, b) : 'N/A'
+            // 形态指标量级远小于压强，不能走 calcDisplayDiff 的 1 位小数取整
+            const diff = typeof a === 'number' && typeof b === 'number'
+                ? (item.format ? b - a : calcDisplayDiff(a, b))
+                : 'N/A'
             return {
                 ...item,
                 a,
@@ -776,7 +833,7 @@ export default function NumThresContrast() {
                 rate: typeof a === 'number' && typeof b === 'number' ? formatRate(a, b) : 'N/A',
             }
         })
-    }, [leftArr, rightArr, leftForceArr, rightForceArr, width, height, activeSelect, activeKey, metrics])
+    }, [leftArr, rightArr, leftForceArr, rightForceArr, leftPressureArr, rightPressureArr, width, height, activeSelect, activeKey, metrics])
 
     const conclusion = useMemo(() => {
         const pressRow = metricRows.find((row) => row.key === 'press')
@@ -1408,12 +1465,15 @@ export default function NumThresContrast() {
                 </div>
                 {metricRows.map((row) => {
                     const rateInfo = getRateInfo(row.rate)
+                    const renderCell = (value) => (
+                        row.format && typeof value === 'number' ? row.format(value) : formatValue(value)
+                    )
                     return (
                         <div className="metricRow" key={row.key}>
                             <span>{row.label}</span>
-                            <span>{formatValue(row.a)}</span>
-                            <span>{formatValue(row.b)}</span>
-                            <span className={`metricDiffValue ${getSignedClass(row.diff)}`}>{formatValue(row.diff)}</span>
+                            <span>{renderCell(row.a)}</span>
+                            <span>{renderCell(row.b)}</span>
+                            <span className={`metricDiffValue ${getSignedClass(row.diff)}`}>{renderCell(row.diff)}</span>
                             <span className={`metricRateValue ${rateInfo.className}`}>{rateInfo.text} <em>{rateInfo.arrow}</em></span>
                         </div>
                     )
