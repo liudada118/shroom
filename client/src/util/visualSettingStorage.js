@@ -20,7 +20,7 @@ const LEGACY_DEFAULT_VALUES = {
   autoColor: new Set([0]),
 }
 const SETTING_KEYS = ['gauss', 'color', 'filter', 'height', 'coherent', 'autoColor']
-export const DEFAULT_HEIGHT_SETTING_MAX = 200
+export const DEFAULT_HEIGHT_SETTING_MAX = 2000
 export const DEFAULT_FILTER_SETTING_MAX = 200
 
 export function normalizeVisualSettingMax(maxValue = {}) {

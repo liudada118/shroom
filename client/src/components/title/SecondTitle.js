@@ -148,7 +148,7 @@ function SecondTitle(props) {
             type: 'height',
             max: settingValueMax.height,
             min: 0.1,
-            step: 5,
+            step: 20,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('pointHeight')}</div>
         },
     ]

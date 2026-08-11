@@ -82,12 +82,12 @@ const fallbackConfig = {
         hand:    { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 30, height: 80, coherent: 1, autoColor: 1 }
     },
     maxObj: {
-        bed:     { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-        car:     { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-        endi:    { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-        carY:    { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-        bigHand: { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
-        hand:    { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 200, coherent: 10, autoColor: 1 },
+        bed:     { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 2000, coherent: 10, autoColor: 1 },
+        car:     { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 2000, coherent: 10, autoColor: 1 },
+        endi:    { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 2000, coherent: 10, autoColor: 1 },
+        carY:    { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 2000, coherent: 10, autoColor: 1 },
+        bigHand: { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 2000, coherent: 10, autoColor: 1 },
+        hand:    { gauss: 4, color: VISUAL_COLOR_SETTING_MAX, filter: 200, height: 2000, coherent: 10, autoColor: 1 },
     }
 };
 

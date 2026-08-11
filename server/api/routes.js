@@ -33,7 +33,7 @@ const VISUAL_SETTING_DEFAULTS = {
 const VISUAL_SETTING_MAXIMUMS = {
   color: VISUAL_COLOR_MAX,
   filter: 200,
-  height: 200,
+  height: 2000,
   autoColor: 1,
 }
 
