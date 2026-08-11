@@ -20,7 +20,7 @@ import { calcPartShapeMetrics } from '../util/gradientMetrics'
  * 矩阵数据处理 Hook
  * 
  * 封装传感器数据的预处理、框选、翻转、统计计算逻辑
- * 支持多框选（最多4个），每个框独立计算统计数据
+ * 支持多框选（上限见 newSelecttBox.js 的 MAX_BOXES），每个框独立计算统计数据
  */
 
 const DEFAULT_SIT_ROTATE_DEGREE = 270

@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(rg -n \"最多.{0,4}4|slice\\\\\\(0,\\\\s*4\\\\\\)|\\\\.length\\\\s*>=?\\\\s*4|Math\\\\.min\\\\\\(4|4\\\\s*个框|selection_\\\\$\\\\{|selection_[1-4]\" client/src util server)",
+      "Bash(rg -n \"框选[0-9]|selection_[0-9]|框选\\\\$\\\\{|selectionIndex\" util/db.js client/src/util client/src/assets)",
+      "Bash(rg -n \"最多.{0,3}4|4 个框|/4\\\\\\)|Up to 4\" client/src util server)"
     ]
   }
 }

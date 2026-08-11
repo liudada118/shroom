@@ -9,7 +9,7 @@ import { colSelectMatrix } from '../../util/util'
 import { getMatrixPartFromDisplayType, localAddress, systemPointConfig } from '../../util/constant'
 import { pageContext } from '../../page/test/Test'
 import { isMoreMatrix } from '../../assets/util/util'
-import { SELECT_COLORS } from '../selectBox/newSelecttBox'
+import { MAX_BOXES, SELECT_COLORS } from '../selectBox/newSelecttBox'
 import { formatSelectionName, getDefaultSelectionName } from '../../util/selectionName'
 
 const selectInputObj = [
@@ -689,7 +689,7 @@ export default function SelectSet(props) {
             pageInfo.brushInstance.deleteByMatrixKey?.(sysType || getCurrentMatrixType())
             const templateWidth = Number(template.matrixWidth) || matrixInfo.width
             const templateHeight = Number(template.matrixHeight) || matrixInfo.height
-            template.regions.slice(0, 4).forEach((region) => {
+            template.regions.slice(0, MAX_BOXES).forEach((region) => {
                 pageInfo.brushInstance.addMatrixRange({
                     xStart: Number(region.x),
                     yStart: Number(region.y),
@@ -783,7 +783,7 @@ export default function SelectSet(props) {
         <div>{t('selectionTipLength')}</div>
         <div>{t('selectionTipWidth')}</div>
         <div style={{ marginTop: 4, color: '#FFD93D' }}>
-            {t('selectionTipLimit', { width: matrixInfo.width || '?', height: matrixInfo.height || '?' })}
+            {t('selectionTipLimit', { count: MAX_BOXES, width: matrixInfo.width || '?', height: matrixInfo.height || '?' })}
         </div>
     </div>
 
@@ -800,7 +800,7 @@ export default function SelectSet(props) {
             >
                 <div className="selectInputTitleLeft">
                     <div className="selectInputTitleInfo">{t('selectionRegion')}</div>
-                    <span className="selectCount">({boxes.length}/4)</span>
+                    <span className="selectCount">({boxes.length}/{MAX_BOXES})</span>
                     <Popover color='#32373E' placement="bottomLeft" content={selectInfoTip}>
                         <InfoCircleOutlined className="selectInfoIcon cursor" />
                     </Popover>

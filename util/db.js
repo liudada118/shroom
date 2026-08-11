@@ -986,6 +986,9 @@ function getExportKeyFieldId(key, field) {
   return `${key}_${field}`
 }
 
+// 导出展开的框选区域上限，与前端 SELECT_COLORS / MAX_BOXES（newSelecttBox.js）保持一致
+const MAX_EXPORT_SELECTIONS = 6
+
 // withPressureUnit 的字段标题按导出时选的压强单位拼后缀（kPa / N/cm²），id 不变
 const EXPORT_BASE_FIELDS = [
   { id: 'max_pressure', title: '最大压强', withPressureUnit: true },
@@ -1082,7 +1085,7 @@ function buildExportHeadersForKeys(keys, selectionMap = {}, metricMode = 'pressu
   const headers = [...EXPORT_FIXED_FIELDS]
   sortExportKeys(keys).forEach((key) => {
     headers.push(...buildSingleKeyExportHeaders(key, { metricMode, gradientUnit, pressureUnit }))
-    const selectionCount = Math.min(4, Math.max(0, Number(selectionMap[key] || 0)))
+    const selectionCount = Math.min(MAX_EXPORT_SELECTIONS, Math.max(0, Number(selectionMap[key] || 0)))
     for (let index = 1; index <= selectionCount; index++) {
       headers.push(...buildSingleKeyExportHeaders(key, {
         suffix: `selection_${index}`,
@@ -1222,7 +1225,7 @@ function getExportSelectionRegions(selectOverride, key, data, item = {}) {
       seen.add(signature)
       return true
     })
-    .slice(0, 4)
+    .slice(0, MAX_EXPORT_SELECTIONS)
 }
 
 function sliceSelectionData(data, region) {
@@ -1362,7 +1365,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
 
           const matrixSize = inferExportMatrixSize(key, data, processedItem)
 
-          // 框选区域计算：导出保留整体靠背/坐垫列，同时按同一字段模板展开最多 4 个框选列。
+          // 框选区域计算：导出保留整体靠背/坐垫列，同时按同一字段模板展开最多 MAX_EXPORT_SELECTIONS 个框选列。
           const selectionRegions = getExportSelectionRegions(selectOverride, key, data, processedItem)
           const obj = selectionRegions[0] || null
           const selectAdcValues = obj ? sliceSelectionData(canonicalStats.adcValues, obj) : []

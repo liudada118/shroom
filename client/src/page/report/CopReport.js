@@ -146,6 +146,9 @@ const normalizeRect = (source, matrixSize) => {
   return { xStart, yStart, xEnd, yEnd, width: xEnd - xStart, height: yEnd - yStart }
 }
 
+// 框选自带颜色时优先用自带的，这里只是老数据缺色时的兜底（数量与框选上限一致）
+const SELECTION_FALLBACK_COLORS = ['#ff4d4f', '#fa8c16', '#52c41a', '#1677ff', '#722ed1', '#13c2c2']
+
 const unwrapSelectionList = (value) => {
   if (Array.isArray(value)) return value
   if (!value || typeof value !== 'object') return []
@@ -176,7 +179,7 @@ const normalizeSelections = (selectValue, matrixKey, matrixSize) => {
       shapeType: item.shapeType || item.type || '矩形',
       sensorPart: item.sensorPart || item.matrixKey || matrixKey,
       createdAt: item.createdAt || item.created_at || '',
-      color: item.color || item.bgc || ['#ff4d4f', '#fa8c16', '#52c41a', '#1677ff'][index % 4],
+      color: item.color || item.bgc || SELECTION_FALLBACK_COLORS[index % SELECTION_FALLBACK_COLORS.length],
       rect,
     }
   }).filter(Boolean)
@@ -675,7 +678,10 @@ function CopReport() {
       if (selectJson && Object.keys(selectJson).length) {
         requestPayload.selectJson = selectJson
       }
-      sessionStorage.removeItem(selectionKey)
+      // 本次的那条留着，刷新报告页还要用；只清掉之前遗留的
+      Object.keys(sessionStorage)
+        .filter((key) => key.startsWith(COP_REPORT_SELECTION_PREFIX) && key !== selectionKey)
+        .forEach((key) => sessionStorage.removeItem(key))
     }
     setLoading(true)
     axios({

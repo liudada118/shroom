@@ -146,11 +146,14 @@ export function snapPixelRangeToMatrixRect(canvasRect, pixelRange, matrixConfig,
 }
 
 
+// 与 components/selectBox/newSelecttBox.js 的 SELECT_COLORS 保持一致（6 个框选）
 const HISTORY_SELECT_COLORS = [
     '#FF6B6B',
     '#4ECDC4',
     '#FFD93D',
     '#6C5CE7',
+    '#FF9F43',
+    '#C2185B',
 ]
 const HISTORY_BOX_BRIGHTNESS_RATIO = 0.18
 const HISTORY_BOX_FILL_ALPHA = 0.24

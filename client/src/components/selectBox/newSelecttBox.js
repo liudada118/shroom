@@ -8,12 +8,15 @@ import { calMatrixToSelect, matrixRectToSelectRect, snapPixelRangeToMatrixRect }
 import { getDefaultSelectionName } from '../../util/selectionName';
 import { isEndiBackVisibleCell } from '../../util/endiBackVisibleMask';
 
-// ─── 4 个框选的固定颜色 ──────────────────────────────────────
+// ─── 6 个框选的固定颜色 ──────────────────────────────────────
+// 回放侧的 HISTORY_SELECT_COLORS（assets/util/selectMatrix.js）要与此保持一致
 export const SELECT_COLORS = [
     '#FF6B6B',  // 框1 - 红
     '#4ECDC4',  // 框2 - 青
     '#FFD93D',  // 框3 - 黄
     '#6C5CE7',  // 框4 - 紫
+    '#FF9F43',  // 框5 - 橙
+    '#C2185B',  // 框6 - 深玫红（避开 jet 色阶的蓝→青→绿→黄→红，压在蓝色低压区也能看清）
 ];
 
 const SELECT_BOX_BRIGHTNESS_RATIO = 0.18;
@@ -44,7 +47,8 @@ export function getSelectBoxFillColor(color, alpha = SELECT_BOX_FILL_ALPHA) {
     return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }
 
-const MAX_BOXES = 4;
+// 框选区域上限，导出侧 util/db.js 的 MAX_EXPORT_SELECTIONS 要保持一致
+export const MAX_BOXES = 6;
 const tr = (key, options) => i18n.t(key, options);
 const defaultSelectName = (index) => getDefaultSelectionName(index, tr);
 
@@ -55,7 +59,7 @@ export class BrushManager {
         this.start = { x: 0, y: 0 };
         this.pointTopLeft = [];
         this.pointBottomRight = [];
-        this.rangeArr = []       // 最多 4 个框选 [{x1,y1,x2,y2,bgc,colorIndex,_element}]
+        this.rangeArr = []       // 最多 MAX_BOXES 个框选 [{x1,y1,x2,y2,bgc,colorIndex,_element}]
         this._resizing = false   // 是否正在拖拽调整大小
         this._dragging = false   // 是否正在拖动框
         this._isDrawing = false  // 是否正在绘制新框
@@ -74,7 +78,7 @@ export class BrushManager {
     }
 
     /**
-     * 获取下一个可用的颜色索引（0-3）
+     * 获取下一个可用的颜色索引（0 ~ MAX_BOXES-1）
      */
     _nextColorIndex() {
         const used = new Set(this.rangeArr.map(r => r.colorIndex));
