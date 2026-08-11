@@ -645,13 +645,18 @@ function CopReport() {
   const [payload, setPayload] = useState(null)
   const [exporting, setExporting] = useState(false)
   const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
+  const pressureUnit = useEquipStore(s => s.pressureUnit)
   const metricDisplay = useMemo(
-    () => getPressureMetricDisplay(pressureMetricMode),
-    [pressureMetricMode],
+    () => getPressureMetricDisplay(pressureMetricMode, undefined, 'zh', pressureUnit),
+    [pressureMetricMode, pressureUnit],
   )
   const metricName = metricDisplay.name
   const metricUnit = metricDisplay.unit
-  const effectiveThreshold = pressureMetricMode === ADC_METRIC_MODE ? 1 : EFFECTIVE_THRESHOLD
+  // 报告里压强一律保留 2 位小数，只做单位换算
+  const formatMetric = (value) => formatNumber(Number(value) * metricDisplay.valueScale)
+  const effectiveThreshold = pressureMetricMode === ADC_METRIC_MODE
+    ? 1
+    : EFFECTIVE_THRESHOLD * metricDisplay.valueScale
   const query = new URLSearchParams(location.search)
   const date = query.get('date') || query.get('time') || ''
   const source = query.get('source') || ''
@@ -789,8 +794,8 @@ function CopReport() {
           <DataTable
             columns={[`最大${metricName} (${metricUnit})`, `平均${metricName} (${metricUnit})`, '压力总和 (N)', 'ADC总和 (ADC)', 'ADC最大值 (ADC)', '有效面积 (cm²)', '有效点数 (个)']}
             rows={[[
-              formatNumber(totalSummary.pMax),
-              formatNumber(totalSummary.pAvg),
+              formatMetric(totalSummary.pMax),
+              formatMetric(totalSummary.pAvg),
               formatNumber(totalSummary.forceSum),
               formatNumber(totalSummary.adcSum, 0),
               formatNumber(totalSummary.adcMax, 0),
@@ -830,8 +835,8 @@ function CopReport() {
                 formatNumber(selection.rect.width * selection.rect.height * POINT_AREA_CM2),
                 formatNumber(selection.summary.forceSum),
                 formatNumber(selection.summary.pressureRatio, 1),
-                formatNumber(selection.summary.pMax),
-                formatNumber(selection.summary.pAvg),
+                formatMetric(selection.summary.pMax),
+                formatMetric(selection.summary.pAvg),
                 selection.summary.risk,
               ])}
             />
@@ -852,8 +857,8 @@ function CopReport() {
                   <DataTable
                     columns={['指标', '数值']}
                     rows={[
-                      [`最大${metricName} (${metricUnit})`, formatNumber(selection.summary.pMax)],
-                      [`平均${metricName} (${metricUnit})`, formatNumber(selection.summary.pAvg)],
+                      [`最大${metricName} (${metricUnit})`, formatMetric(selection.summary.pMax)],
+                      [`平均${metricName} (${metricUnit})`, formatMetric(selection.summary.pAvg)],
                       ['压力总和 (N)', `${formatNumber(selection.summary.forceSum)} (${formatNumber(selection.summary.pressureRatio, 1)}%)`],
                       ['ADC总和 (ADC)', formatNumber(selection.summary.adcSum, 0)],
                       ['有效面积 (cm²)', formatNumber(selection.summary.effectiveArea)],
@@ -881,6 +886,7 @@ function CopReport() {
             analysis={surfaceAnalysis}
             indexLabel={`${selections.length ? 7 : 6}.${index + 1}`}
             metricMode={pressureMetricMode}
+            pressureUnit={pressureUnit}
           />
         ))}
 
@@ -911,12 +917,13 @@ function CopReport() {
   )
 }
 
-function SurfaceAnalysisReport({ analysis, indexLabel, metricMode = PRESSURE_METRIC_MODE }) {
+function SurfaceAnalysisReport({ analysis, indexLabel, metricMode = PRESSURE_METRIC_MODE, pressureUnit }) {
   const { totalSummary, averageMatrix, metrics, selections, size, matrixKey, sampleRate } = analysis
   const label = getMatrixLabel(matrixKey)
-  const metricDisplay = getPressureMetricDisplay(metricMode)
+  const metricDisplay = getPressureMetricDisplay(metricMode, undefined, 'zh', pressureUnit)
   const metricName = metricDisplay.name
   const metricUnit = metricDisplay.unit
+  const formatMetric = (value) => formatNumber(Number(value) * metricDisplay.valueScale)
   return (
     <ReportSection index={indexLabel} title={`${label}${metricName}分布与COP分析`}>
       <div className="surface-summary">
@@ -934,8 +941,8 @@ function SurfaceAnalysisReport({ analysis, indexLabel, metricMode = PRESSURE_MET
       <DataTable
         columns={[`最大${metricName} (${metricUnit})`, `平均${metricName} (${metricUnit})`, '压力总和 (N)', 'ADC总和 (ADC)', 'ADC最大值 (ADC)', '有效面积 (cm²)', '有效点数 (个)']}
         rows={[[
-          formatNumber(totalSummary.pMax),
-          formatNumber(totalSummary.pAvg),
+          formatMetric(totalSummary.pMax),
+          formatMetric(totalSummary.pAvg),
           formatNumber(totalSummary.forceSum),
           formatNumber(totalSummary.adcSum, 0),
           formatNumber(totalSummary.adcMax, 0),
@@ -967,8 +974,8 @@ function SurfaceAnalysisReport({ analysis, indexLabel, metricMode = PRESSURE_MET
                 <DataTable
                   columns={['指标', '数值']}
                   rows={[
-                    [`最大${metricName} (${metricUnit})`, formatNumber(selection.summary.pMax)],
-                    [`平均${metricName} (${metricUnit})`, formatNumber(selection.summary.pAvg)],
+                    [`最大${metricName} (${metricUnit})`, formatMetric(selection.summary.pMax)],
+                    [`平均${metricName} (${metricUnit})`, formatMetric(selection.summary.pAvg)],
                     ['压力总和 (N)', `${formatNumber(selection.summary.forceSum)} (${formatNumber(selection.summary.pressureRatio, 1)}%)`],
                     ['有效面积 (cm²)', formatNumber(selection.summary.effectiveArea)],
                     ['有效点数 (个)', formatNumber(selection.summary.effectivePoints, 0)],

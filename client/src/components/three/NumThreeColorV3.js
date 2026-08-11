@@ -3,11 +3,11 @@ import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
 import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
-import { getDisplayType, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
+import { getDisplayType, getPressureUnit, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
 import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
 import { getMatrixPartFromDisplayType } from '../../util/constant';
-import { ADC_METRIC_MODE } from '../../util/pressureMetrics';
+import { ADC_METRIC_MODE, formatPressureValue } from '../../util/pressureMetrics';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -176,6 +176,8 @@ export default function NumThree(props) {
   const gridRef = useRef({ width: 0, height: 0 });
   const textureMaxRef = useRef(22);
   const rawAdcModeRef = useRef(false);
+  // 放大镜在 animate 之外重绘，单位取最新值
+  const pressureUnitRef = useRef(getPressureUnit());
   const magnifierPosRef = useRef({ col: -1, row: -1 });
   const drawMagnifierRef = useRef(null);
   const magnifierZoomRef = useRef(1);
@@ -208,7 +210,8 @@ export default function NumThree(props) {
   // }
 
 
-  function createDigitSpriteSheetWithJet(value = 22, rawAdcMode = false) {
+  // pressureUnit 只影响格子里的文字，索引编码（round(kPa×10)）与配色保持不变
+  function createDigitSpriteSheetWithJet(value = 22, rawAdcMode = false, pressureUnit) {
     syncDynamicColorRange(value);
     const canvas = document.createElement("canvas");
     // document.body.appendChild(canvas)
@@ -238,7 +241,7 @@ export default function NumThree(props) {
       ctx.lineWidth = 3;
       ctx.strokeRect(cx + 1.5, cy + 1.5, cellSize - 3, cellSize - 3);
 
-      drawCellValue(ctx, rawAdcMode ? String(displayValue) : displayValue.toFixed(1), cx, cy, cellSize);
+      drawCellValue(ctx, rawAdcMode ? String(displayValue) : formatPressureValue(displayValue, pressureUnit), cx, cy, cellSize);
     }
 
     const tex = new THREE.CanvasTexture(canvas);
@@ -337,7 +340,8 @@ export default function NumThree(props) {
 
     let currentTextureMax = getTextureColorMax(getSettingValue()?.color)
     let currentTextureMode = useEquipStore.getState().pressureMetricMode
-    const texture = createDigitSpriteSheetWithJet(currentTextureMax, currentTextureMode === ADC_METRIC_MODE);
+    let currentTextureUnit = getPressureUnit()
+    const texture = createDigitSpriteSheetWithJet(currentTextureMax, currentTextureMode === ADC_METRIC_MODE, currentTextureUnit);
     textureMaxRef.current = currentTextureMax;
     // texture.flipY = false;
 
@@ -496,15 +500,22 @@ export default function NumThree(props) {
       //   })
       // }
 
+      const currentPressureUnit = getPressureUnit();
+      pressureUnitRef.current = currentPressureUnit;
       const colorValueStep = rawAdcMode ? 1 : COLOR_VALUE_STEP;
       const nextMax = Math.round((beginDynamicColorFrame(data, color) || getTextureColorMax(color)) / colorValueStep) * colorValueStep;
-      if (currentTextureMode !== currentMetricMode || Math.abs(currentTextureMax - nextMax) >= colorValueStep) {
+      if (
+        currentTextureMode !== currentMetricMode
+        || currentTextureUnit !== currentPressureUnit
+        || Math.abs(currentTextureMax - nextMax) >= colorValueStep
+      ) {
         console.log('colorChange')
-        const texture = createDigitSpriteSheetWithJet(nextMax, rawAdcMode)
+        const texture = createDigitSpriteSheetWithJet(nextMax, rawAdcMode, currentPressureUnit)
         material.uniforms.map.value = texture
         textureMaxRef.current = nextMax
         currentTextureMax = nextMax
         currentTextureMode = currentMetricMode
+        currentTextureUnit = currentPressureUnit
       }
 
 
@@ -684,7 +695,7 @@ export default function NumThree(props) {
           ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
           ctx.globalAlpha = 1;
           ctx.fillStyle = '#fff';
-          ctx.fillText(rawAdcMode ? String(value) : value.toFixed(1), x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
+          ctx.fillText(rawAdcMode ? String(value) : formatPressureValue(value, pressureUnitRef.current), x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
         }
       }
       ctx.strokeStyle = '#fff';

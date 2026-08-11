@@ -14,7 +14,7 @@ import FootTrack from '../chart/Chart';
 import { graCenter } from '../../util/util';
 import DraggablePanel from '../draggablePanel/DraggablePanel';
 import { formatSelectionName } from '../../util/selectionName';
-import { getPressureMetricDisplay } from '../../util/pressureMetrics';
+import { getNextPressureUnit, getPressureMetricDisplay } from '../../util/pressureMetrics';
 import usePanelLayoutSync from '../../hooks/usePanelLayoutSync';
 import {
     formatGradientValue,
@@ -65,6 +65,8 @@ function ChartsAside(props) {
     const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
     const gradientUnit = useEquipStore(s => s.gradientUnit)
     const setGradientUnit = useEquipStore(s => s.setGradientUnit)
+    const pressureUnit = useEquipStore(s => s.pressureUnit)
+    const setPressureUnit = useEquipStore(s => s.setPressureUnit)
     const storeDisplayType = useEquipStore(s => s.displayType)
     // 左侧上下两块面板：重叠时把上面那块压成可滚动区，拖开后恢复原始长度
     const mainPanelRef = useRef(null)
@@ -72,10 +74,13 @@ function ChartsAside(props) {
     const [mainPanelMaxBodyHeight, setMainPanelMaxBodyHeight] = useState(null)
     const historyChartRef = useRef(historyChart)
     const pressureMetricModeRef = useRef(pressureMetricMode)
+    // 图表在 Scheduler 回调里重绘，取不到最新的 state，统一走 ref
+    const pressureUnitRef = useRef(pressureUnit)
     const getMetricDisplay = () => getPressureMetricDisplay(
         pressureMetricModeRef.current,
         props.t,
         props.i18n?.language,
+        pressureUnitRef.current,
     )
     const getMetricTrendField = () => getMetricDisplay().trendField
     const getMetricAreaTrendField = () => `${getMetricDisplay().valuePrefix}AreaArr`
@@ -95,11 +100,12 @@ function ChartsAside(props) {
 
     useEffect(() => {
         pressureMetricModeRef.current = pressureMetricMode
+        pressureUnitRef.current = pressureUnit
         renderCharts1()
         renderCharts2()
         renderNormal()
         setData((current) => ({ ...current, t: Date.now() }))
-    }, [pressureMetricMode])
+    }, [pressureMetricMode, pressureUnit])
 
     const clearChartViews = () => {
         myChart1.current?.clear()
@@ -120,6 +126,15 @@ function ChartsAside(props) {
         const colorMap = type === 'press' ? pressColorArr : areaColorArr
         const dataField = type === 'press' ? getMetricTrendField() : getMetricAreaTrendField()
         const onlyBoxStats = !isHistory && useBoxStats && getBoxStats(props.chartData.current).length > 0
+        // 压强曲线按当前显示单位换算（非压强指标 valueScale 恒为 1）
+        const valueScale = type === 'press' ? getMetricDisplay().valueScale : 1
+        const scaleLine = (line) => {
+            if (valueScale === 1 || !Array.isArray(line)) return line || []
+            return line.map((item) => {
+                const numeric = Number(item)
+                return Number.isFinite(numeric) ? numeric * valueScale : item
+            })
+        }
 
         for (let i = 0; i < keyArr.length; i++) {
             const key = keyArr[i]
@@ -138,7 +153,7 @@ function ChartsAside(props) {
                     const seriesName = `${formatSelectionName(box.name, b + 1, props.t)}${keyArr.length > 1 ? `-${deviceLabel}` : ''}`
                     series.push({
                         symbol: 'none',
-                        data: box[dataField] || [],
+                        data: scaleLine(box[dataField]),
                         type: 'line',
                         smooth: true,
                         color: box.bgc || SELECT_COLORS[box.colorIndex] || SELECT_COLORS[b],
@@ -152,7 +167,7 @@ function ChartsAside(props) {
                 const color = getDeviceChartColor(key, colorMap, i)
                 series.push({
                     symbol: 'none',
-                    data: historyLine || dataMap[key],
+                    data: scaleLine(historyLine || dataMap[key]),
                     type: 'line',
                     smooth: true,
                     color: color,
@@ -268,15 +283,16 @@ function ChartsAside(props) {
 
     const handleCharts = (pressObj, value, isHistory = false) => {
         if (!myChart1.current) return
+        const metricDisplay = getMetricDisplay()
         const series = buildSeries(pressObj, 'press', true, isHistory)
         const xLength = Math.max(20, ...series.map(item => Array.isArray(item.data) ? item.data.length : 0))
         initCharts1({
             series,
             xData: Array.from({ length: xLength }, (_, i) => i + 1),
             myChart: myChart1.current,
-            yMax: getChartYMax(value),
+            yMax: getChartYMax(Number(value) * metricDisplay.valueScale),
             xName: props.t('timeFrame'),
-            yName: `${getMetricDisplay().axisLabel} (${getMetricDisplay().unit})`,
+            yName: `${metricDisplay.axisLabel} (${metricDisplay.unit})`,
         });
     }
 
@@ -435,6 +451,9 @@ function ChartsAside(props) {
             return
         }
         let series = [], Xmax = 0, valueMax = 1
+        // x 轴是压强值，按当前显示单位换算（非压强指标 valueScale 恒为 1）
+        const metricDisplay = getMetricDisplay()
+        const valueScale = metricDisplay.valueScale
         const boxStats = getBoxStats(chartData).filter((box) => Array.isArray(box.normalDis?.yData))
         const seriesSource = boxStats.length
             ? boxStats
@@ -450,7 +469,7 @@ function ChartsAside(props) {
             const xValues = Array.isArray(item.normalDis?.xData)
                 ? item.normalDis.xData
                 : Array.from({ length: item.normalDis?.yData?.length || 0 }, (_, index) => index)
-            const xDataRes = xValues.map((x, idx) => [x, item.normalDis?.yData?.[idx] || 0])
+            const xDataRes = xValues.map((x, idx) => [(Number(x) || 0) * valueScale, item.normalDis?.yData?.[idx] || 0])
             series.push({
                 symbol: 'none',
                 data: xDataRes,
@@ -464,7 +483,6 @@ function ChartsAside(props) {
             valueMax = Math.max(valueMax, ...xDataRes.map((a) => Number(a[0]) || 0))
         }
 
-        const metricDisplay = getMetricDisplay()
         const pressureValueLabel = metricDisplay.labels.data
         const probabilityDensityLabel = props.t('probabilityDensity') || '概率密度'
         chart.current.setOption({
@@ -502,7 +520,7 @@ function ChartsAside(props) {
                 trigger: 'axis',
                 formatter: p => {
                     const { value } = p[0];
-                    return `${pressureValueLabel} (${metricDisplay.unit})：${Number(value[0]).toFixed(1)}<br/>${probabilityDensityLabel}(%)：${(value[1] * 100).toFixed(2)}`;
+                    return `${pressureValueLabel} (${metricDisplay.unit})：${Number(value[0]).toFixed(metricDisplay.valueDigits)}<br/>${probabilityDensityLabel}(%)：${(value[1] * 100).toFixed(2)}`;
                 }
             },
             xAxis: {
@@ -673,7 +691,7 @@ function ChartsAside(props) {
     ])
 
     const { t, i18n } = useTranslation()
-    const metricDisplay = getPressureMetricDisplay(pressureMetricMode, t, i18n.language)
+    const metricDisplay = getPressureMetricDisplay(pressureMetricMode, t, i18n.language, pressureUnit)
 
     const system = getSysType()
     const pressDataArr = ['pressAver', 'pressMax', 'total']
@@ -699,7 +717,10 @@ function ChartsAside(props) {
         if (value === undefined || value === null || value === '') return '-'
         if (!pressureMetricKeys.has(item)) return value
         const numeric = Number(value)
-        return Number.isFinite(numeric) ? numeric.toFixed(1) : value
+        if (!Number.isFinite(numeric)) return value
+        // 压力总和固定是 N，只有平均/最大压强跟随压强显示单位
+        if (item === 'total') return numeric.toFixed(1)
+        return metricDisplay.formatValue(numeric)
     }
 
     /**
@@ -933,6 +954,18 @@ function ChartsAside(props) {
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{metricDisplay.curveLabel}</div>
+                        <div className='shapeUnitBar'>
+                            <span className='shapeUnitLabel'>{t('unit')}：</span>
+                            <span className='shapeUnitValue'>{metricDisplay.unit}</span>
+                            <button
+                                type='button'
+                                className='shapeUnitButton'
+                                title={t('switchUnit')}
+                                onClick={() => setPressureUnit(getNextPressureUnit(pressureUnit))}
+                            >
+                                ⇌
+                            </button>
+                        </div>
                         <div className="chartType">{renderLegend(pressColorArr)}</div>
                     </div>
                     <div ref={myChart1Dom} id="myChart1" className="chartCanvas" style={{ opacity: '0.8' }}></div>

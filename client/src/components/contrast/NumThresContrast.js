@@ -665,14 +665,15 @@ export default function NumThresContrast() {
     const isEnglish = String(i18n.language || localStorage.getItem('language') || '').toLowerCase().startsWith('en')
     const copy = CONTRAST_COPY[isEnglish ? 'en' : 'zh']
     const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
+    const pressureUnit = useEquipStore(s => s.pressureUnit)
     const metricDisplay = useMemo(
-        () => getPressureMetricDisplay(pressureMetricMode, null, i18n.language),
-        [pressureMetricMode, i18n.language],
+        () => getPressureMetricDisplay(pressureMetricMode, null, i18n.language, pressureUnit),
+        [pressureMetricMode, i18n.language, pressureUnit],
     )
     const gradientUnit = useEquipStore(s => s.gradientUnit)
     const baseMetrics = useMemo(() => METRIC_KEYS.map((key) => {
-        if (key === 'aver') return { key, label: `${metricDisplay.labels.average} (${metricDisplay.unit})` }
-        if (key === 'max') return { key, label: `${metricDisplay.labels.max} (${metricDisplay.unit})` }
+        if (key === 'aver') return { key, label: `${metricDisplay.labels.average} (${metricDisplay.unit})`, format: metricDisplay.formatValue }
+        if (key === 'max') return { key, label: `${metricDisplay.labels.max} (${metricDisplay.unit})`, format: metricDisplay.formatValue }
         if (key === 'press') return { key, label: isEnglish ? 'Total Force (N)' : '压力总和 (N)' }
         return { key, label: copy.metrics[key] }
     }), [copy, isEnglish, metricDisplay])
@@ -973,7 +974,8 @@ export default function NumThresContrast() {
                 : 'pressure'
         const buildExportMetricValues = (metricA, metricB) => ({
             metric_mode: pressureMetricMode,
-            metric_unit: metricDisplay.unit,
+            // 导出结果的数值仍是原始 kPa，单位标签跟着原单位走，不受界面单位切换影响
+            metric_unit: getPressureMetricDisplay(pressureMetricMode, null, i18n.language).unit,
             [`a_${exportMetricKey}_sum`]: getMetricValue(metricA, 'metricTotal'),
             [`b_${exportMetricKey}_sum`]: getMetricValue(metricB, 'metricTotal'),
             [`diff_${exportMetricKey}_sum`]: calcDisplayDiff(metricA.metricTotal, metricB.metricTotal),

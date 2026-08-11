@@ -212,6 +212,48 @@ export function normalizePressureMetricMode(mode) {
   return PRESSURE_METRIC_MODE_SEQUENCE.includes(mode) ? mode : PRESSURE_METRIC_MODE
 }
 
+// ─── 压强显示单位（内部一律 kPa，只在显示/导出层换算）──────────
+// 1 kPa = 1000 N/m² = 0.1 N/cm²
+export const PRESSURE_UNIT_N_CM2 = 'N/cm²'
+export const PRESSURE_UNIT_KPA = 'kPa'
+export const PRESSURE_UNIT_SEQUENCE = [PRESSURE_UNIT_N_CM2, PRESSURE_UNIT_KPA]
+export const N_CM2_PER_KPA = 0.1
+
+export function normalizePressureUnit(unit) {
+  const lower = String(unit || '').trim().toLowerCase()
+  if (lower === 'kpa') return PRESSURE_UNIT_KPA
+  return PRESSURE_UNIT_N_CM2
+}
+
+export function getNextPressureUnit(unit) {
+  const index = PRESSURE_UNIT_SEQUENCE.indexOf(normalizePressureUnit(unit))
+  return PRESSURE_UNIT_SEQUENCE[(index + 1) % PRESSURE_UNIT_SEQUENCE.length]
+}
+
+/** kPa → 目标单位的换算系数 */
+export function getPressureUnitScale(unit) {
+  return normalizePressureUnit(unit) === PRESSURE_UNIT_N_CM2 ? N_CM2_PER_KPA : 1
+}
+
+/** N/cm² 数值是 kPa 的 1/10，多留一位小数保持精度等价 */
+export function getPressureUnitDigits(unit) {
+  return normalizePressureUnit(unit) === PRESSURE_UNIT_N_CM2 ? 2 : 1
+}
+
+export function convertPressureValue(kpaValue, unit) {
+  // null / undefined / '' 被 Number() 转成 0，会把空值显示成 0.00，这里先挡掉
+  if (kpaValue === null || kpaValue === undefined || kpaValue === '') return null
+  const numeric = Number(kpaValue)
+  if (!Number.isFinite(numeric)) return null
+  return numeric * getPressureUnitScale(unit)
+}
+
+export function formatPressureValue(kpaValue, unit) {
+  const converted = convertPressureValue(kpaValue, unit)
+  if (converted === null) return '-'
+  return converted.toFixed(getPressureUnitDigits(unit))
+}
+
 export function getPressureMetricMeta(mode) {
   const normalizedMode = normalizePressureMetricMode(mode)
   if (normalizedMode === ADC_METRIC_MODE) {
@@ -315,15 +357,29 @@ const PRESSURE_METRIC_DISPLAY = {
   },
 }
 
-export function getPressureMetricDisplay(mode, _t, language = 'zh') {
+// pressureUnit 只作用于压强指标：adc / 压力(N) 模式下恒为原单位、系数 1，
+// 所以不传第 4 个参数的老调用点行为完全不变。
+export function getPressureMetricDisplay(mode, _t, language = 'zh', pressureUnit) {
   const normalizedMode = normalizePressureMetricMode(mode)
   const config = PRESSURE_METRIC_DISPLAY[normalizedMode]
   const labels = String(language || '').toLowerCase().startsWith('en') ? config.en : config.zh
   const currentIndex = PRESSURE_METRIC_MODE_SEQUENCE.indexOf(normalizedMode)
+  const usePressureUnit = normalizedMode === PRESSURE_METRIC_MODE && pressureUnit !== undefined
+  const unit = usePressureUnit ? normalizePressureUnit(pressureUnit) : config.unit
+  const valueScale = usePressureUnit ? getPressureUnitScale(pressureUnit) : 1
+  const valueDigits = usePressureUnit ? getPressureUnitDigits(pressureUnit) : 1
   return {
     mode: normalizedMode,
     nextMode: PRESSURE_METRIC_MODE_SEQUENCE[(currentIndex + 1) % PRESSURE_METRIC_MODE_SEQUENCE.length],
-    unit: config.unit,
+    unit,
+    valueScale,
+    valueDigits,
+    /** kPa 原始值 → 当前单位下的显示文本 */
+    formatValue: (value) => {
+      const numeric = Number(value)
+      if (!Number.isFinite(numeric)) return '-'
+      return (numeric * valueScale).toFixed(valueDigits)
+    },
     name: labels.name,
     curveLabel: labels.curve,
     axisLabel: labels.axis,

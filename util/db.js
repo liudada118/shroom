@@ -24,6 +24,13 @@ const {
   supportsPressureGradient,
   supportsSymmetryCoefficient,
 } = require("./gradientMetrics");
+const {
+  PRESSURE_UNIT_KPA,
+  PRESSURE_UNIT_N_CM2,
+  getPressureUnitDigits,
+  getPressureUnitScale,
+  normalizePressureUnit,
+} = require("./pressureUnits");
 
 // ─── 传感器点位配置 ──────────────────────────────────────
 const pointConfig = DEVICE_MATRIX_CONFIG
@@ -979,12 +986,13 @@ function getExportKeyFieldId(key, field) {
   return `${key}_${field}`
 }
 
+// withPressureUnit 的字段标题按导出时选的压强单位拼后缀（kPa / N/cm²），id 不变
 const EXPORT_BASE_FIELDS = [
-  { id: 'max_pressure', title: '最大压强(kPa)' },
+  { id: 'max_pressure', title: '最大压强', withPressureUnit: true },
   { id: 'max_pressure_coord', title: '最大压强坐标' },
-  { id: 'avg_pressure', title: '平均压强(kPa)' },
+  { id: 'avg_pressure', title: '平均压强', withPressureUnit: true },
   { id: 'contact_area', title: '受力面积(cm²)' },
-  { id: 'real_data', title: '压强数据(kPa)' },
+  { id: 'real_data', title: '压强数据', withPressureUnit: true },
   { id: 'point_count', title: '点数' },
   { id: 'total_pressure_n', title: '压力总和(N)' },
 ]
@@ -1016,10 +1024,18 @@ function getShapeExportFields(key, gradientUnit = GRADIENT_UNIT_PA_CM) {
     .map((field) => ({ id: field.id, title: buildShapeFieldTitle(field, gradientUnit) }))
 }
 
-function getExportBaseFields(metricMode, key = '', gradientUnit = GRADIENT_UNIT_PA_CM) {
+function buildPressureFieldTitle(field, pressureUnit) {
+  return field.withPressureUnit ? `${field.title}(${normalizePressureUnit(pressureUnit)})` : field.title
+}
+
+function getExportBaseFields(metricMode, key = '', gradientUnit = GRADIENT_UNIT_PA_CM, pressureUnit = PRESSURE_UNIT_KPA) {
   void metricMode
-  if (!key) return EXPORT_BASE_FIELDS
-  return [...EXPORT_BASE_FIELDS, ...getShapeExportFields(key, gradientUnit)]
+  const baseFields = EXPORT_BASE_FIELDS.map((field) => ({
+    id: field.id,
+    title: buildPressureFieldTitle(field, pressureUnit),
+  }))
+  if (!key) return baseFields
+  return [...baseFields, ...getShapeExportFields(key, gradientUnit)]
 }
 
 function isEndiMatrixKey(key) {
@@ -1043,23 +1059,29 @@ function formatExportDecimal(value, digits = 1) {
 }
 
 function buildSingleKeyExportHeaders(key, options = {}) {
-  const { suffix = '', labelSuffix = '', metricMode = 'pressure', gradientUnit = GRADIENT_UNIT_PA_CM } = options
+  const {
+    suffix = '',
+    labelSuffix = '',
+    metricMode = 'pressure',
+    gradientUnit = GRADIENT_UNIT_PA_CM,
+    pressureUnit = PRESSURE_UNIT_KPA,
+  } = options
   const label = `${getExportKeyLabel(key)}${labelSuffix}`
   const idPrefix = suffix ? `${key}_${suffix}` : key
   // 形态指标只随整块部位输出，框选列沿用原有字段
   const fields = suffix
-    ? getExportBaseFields(metricMode)
-    : getExportBaseFields(metricMode, key, gradientUnit)
+    ? getExportBaseFields(metricMode, '', gradientUnit, pressureUnit)
+    : getExportBaseFields(metricMode, key, gradientUnit, pressureUnit)
   return fields.map((field) => ({
     id: getExportKeyFieldId(idPrefix, field.id),
     title: `${label}${field.title}`,
   }))
 }
 
-function buildExportHeadersForKeys(keys, selectionMap = {}, metricMode = 'pressure', gradientUnit = GRADIENT_UNIT_PA_CM) {
+function buildExportHeadersForKeys(keys, selectionMap = {}, metricMode = 'pressure', gradientUnit = GRADIENT_UNIT_PA_CM, pressureUnit = PRESSURE_UNIT_KPA) {
   const headers = [...EXPORT_FIXED_FIELDS]
   sortExportKeys(keys).forEach((key) => {
-    headers.push(...buildSingleKeyExportHeaders(key, { metricMode, gradientUnit }))
+    headers.push(...buildSingleKeyExportHeaders(key, { metricMode, gradientUnit, pressureUnit }))
     const selectionCount = Math.min(4, Math.max(0, Number(selectionMap[key] || 0)))
     for (let index = 1; index <= selectionCount; index++) {
       headers.push(...buildSingleKeyExportHeaders(key, {
@@ -1067,6 +1089,7 @@ function buildExportHeadersForKeys(keys, selectionMap = {}, metricMode = 'pressu
         labelSuffix: `框选${index}`,
         metricMode,
         gradientUnit,
+        pressureUnit,
       }))
     }
   })
@@ -1084,6 +1107,7 @@ function normalizeExportOptions(options = {}) {
     fields,
     metricMode: normalizePressureMetricMode(options.metricMode),
     gradientUnit: normalizeGradientUnit(options.gradientUnit),
+    pressureUnit: normalizePressureUnit(options.pressureUnit),
   }
 }
 
@@ -1127,10 +1151,10 @@ async function writeXlsxFile(filePath, headers, records) {
 async function getExportFieldOptions({ db, params, exportOptions = {} }) {
   void db
   void params
-  const { metricMode, gradientUnit } = normalizeExportOptions(exportOptions)
+  const { metricMode, gradientUnit, pressureUnit } = normalizeExportOptions(exportOptions)
   const headers = [
     ...EXPORT_FIXED_FIELDS,
-    ...getExportBaseFields(metricMode),
+    ...getExportBaseFields(metricMode, '', gradientUnit, pressureUnit),
     ...EXPORT_SHAPE_FIELDS.map((field) => ({
       id: field.id,
       title: buildShapeFieldTitle(field, gradientUnit),
@@ -1270,6 +1294,20 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       const normalizedExportOptions = normalizeExportOptions(exportOptions)
       const metricMode = normalizedExportOptions.metricMode
       const gradientUnit = normalizedExportOptions.gradientUnit
+      // 只有压强指标随显示单位换算，adc / 压力(N) 导出保持原样
+      const pressureUnit = normalizedExportOptions.pressureUnit
+      const isPressureExport = metricMode === 'pressure'
+      const exportPressureScale = isPressureExport ? getPressureUnitScale(pressureUnit) : 1
+      const exportPressureDigits = isPressureExport ? getPressureUnitDigits(pressureUnit) : 1
+      const formatExportPressure = (value) => formatExportDecimal(Number(value) * exportPressureScale, exportPressureDigits)
+      // 矩阵列多留两位，保证导入时 ×10 还原不掉精度
+      const scaleExportPressureData = (values) => {
+        if (exportPressureScale === 1 || !Array.isArray(values)) return values
+        return values.map((value) => {
+          const numeric = Number(value)
+          return Number.isFinite(numeric) ? Number((numeric * exportPressureScale).toFixed(4)) : value
+        })
+      }
 
       // 根据前几帧 timestamp 自动推算帧率
       let detectedHz = 12 // 默认帧率
@@ -1442,11 +1480,11 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.total_pressure_n = pointInfo ? rowEntry[`${key}pressTotal`] : press
           rowEntry.remark = remarkText
 
-          frameEntry[getExportKeyFieldId(key, 'max_pressure')] = formatExportDecimal(exportMetricStats.max)
+          frameEntry[getExportKeyFieldId(key, 'max_pressure')] = formatExportPressure(exportMetricStats.max)
           frameEntry[getExportKeyFieldId(key, 'max_pressure_coord')] = rowEntry[`${key}maxCoord`]
-          frameEntry[getExportKeyFieldId(key, 'avg_pressure')] = formatExportDecimal(exportMetricStats.aver)
+          frameEntry[getExportKeyFieldId(key, 'avg_pressure')] = formatExportPressure(exportMetricStats.aver)
           frameEntry[getExportKeyFieldId(key, 'contact_area')] = rowEntry[`${key}pressureArea`]
-          frameEntry[getExportKeyFieldId(key, 'real_data')] = JSON.stringify(exportMetricData)
+          frameEntry[getExportKeyFieldId(key, 'real_data')] = JSON.stringify(scaleExportPressureData(exportMetricData))
           frameEntry[getExportKeyFieldId(key, 'point_count')] = activePointCount
           frameEntry[getExportKeyFieldId(key, 'total_pressure_n')] = formatExportDecimal(rowEntry.total_pressure_n)
 
@@ -1489,11 +1527,11 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             })
             const regionTotalPressure = regionMetricStats.total
             const regionPrefix = `${key}_selection_${regionIndex + 1}`
-            frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure')] = formatExportDecimal(regionMax)
+            frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure')] = formatExportPressure(regionMax)
             frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure_coord')] = regionCoord
-            frameEntry[getExportKeyFieldId(regionPrefix, 'avg_pressure')] = formatExportDecimal(regionAver)
+            frameEntry[getExportKeyFieldId(regionPrefix, 'avg_pressure')] = formatExportPressure(regionAver)
             frameEntry[getExportKeyFieldId(regionPrefix, 'contact_area')] = regionAreaValue
-            frameEntry[getExportKeyFieldId(regionPrefix, 'real_data')] = JSON.stringify(regionMetricData)
+            frameEntry[getExportKeyFieldId(regionPrefix, 'real_data')] = JSON.stringify(scaleExportPressureData(regionMetricData))
             frameEntry[getExportKeyFieldId(regionPrefix, 'point_count')] = regionActiveStats.count
             frameEntry[getExportKeyFieldId(regionPrefix, 'total_pressure_n')] = formatExportDecimal(regionTotalPressure)
           })
@@ -1521,11 +1559,11 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
 
       // 单个 key 的 CSV 表头（保留 ld 分支的中文表头）
       function buildSingleKeyHeaders(key) {
-        return buildSingleKeyExportHeaders(key, { metricMode, gradientUnit })
+        return buildSingleKeyExportHeaders(key, { metricMode, gradientUnit, pressureUnit })
       }
 
       function buildCombinedHeaders(keys, selections = {}) {
-        return buildExportHeadersForKeys(keys, selections, metricMode, gradientUnit)
+        return buildExportHeadersForKeys(keys, selections, metricMode, gradientUnit, pressureUnit)
       }
 
       // 写入单个 CSV 文件的辅助函数
@@ -1821,7 +1859,8 @@ function hasImportMetricHeaders(headers, realDataHeader) {
   ].every(matches)
 }
 
-const CSV_UNIT_SUFFIX_PATTERN = /[（(]\s*(?:adc|kpa|n|cm²|cm2)\s*[）)]\s*$/i
+// n/cm² 是压强的新单位后缀，必须排在裸 n 前面，否则 (N/cm²) 会被当成 (N) 剥不干净
+const CSV_UNIT_SUFFIX_PATTERN = /[（(]\s*(?:adc|kpa|n\s*\/\s*cm²|n\s*\/\s*cm2|n|cm²|cm2)\s*[）)]\s*$/i
 const CSV_METRIC_WORD_PATTERN = /(?:原始adc|adc|压强|压力|pressure|force)\s*$/i
 
 function stripCsvUnitSuffix(header) {
@@ -1855,12 +1894,13 @@ function hasImportMetricHeaders(headers, realDataHeader) {
   const normalizedHeaders = headers.map(normalizeCsvHeader)
   const prefix = getMetricPrefix(realDataHeader)
   if (!prefix) {
+    // 压强列的单位后缀可能是 (kPa) 也可能是 (N/cm²)，两种老/新文件都要认
     return normalizedHeaders.includes('数据') && [
-      '最大压强(kPa)',
-      '最大压强坐标',
-      '平均压强(kPa)',
-      '受力面积(cm²)',
-    ].every((header) => normalizedHeaders.includes(header))
+      ['最大压强(kPa)', `最大压强(${PRESSURE_UNIT_N_CM2})`],
+      ['最大压强坐标'],
+      ['平均压强(kPa)', `平均压强(${PRESSURE_UNIT_N_CM2})`],
+      ['受力面积(cm²)'],
+    ].every((variants) => variants.some((header) => normalizedHeaders.includes(header)))
   }
 
   if (/realData$/i.test(realDataHeader)) {
@@ -2143,12 +2183,22 @@ function isSelectionImportRow(row = {}) {
   return /框选|selection/i.test(getImportDataTarget(row))
 }
 
+const CSV_N_CM2_HEADER_PATTERN = /n\s*\/\s*cm(?:²|2)/
+
 function getImportMetricModeFromHeader(header) {
   const value = normalizeCsvHeader(header).toLowerCase()
   if (value.includes('adc')) return 'adc'
-  if ((value.includes('压强') && value.includes('kpa')) || /pressure.*kpa/.test(value)) return 'pressure'
+  if ((value.includes('压强') || /pressure/.test(value))
+    && (value.includes('kpa') || CSV_N_CM2_HEADER_PATTERN.test(value))) return 'pressure'
   if ((value.includes('压力') && (/\(n\)|（n）/.test(value))) || value.includes('force')) return 'force'
   return ''
+}
+
+/** 表头写的是 N/cm² 时，矩阵值要 ×10 还原成内部使用的 kPa */
+function getImportMetricValueScale(header) {
+  const value = normalizeCsvHeader(header).toLowerCase()
+  if (!CSV_N_CM2_HEADER_PATTERN.test(value)) return 1
+  return 1 / getPressureUnitScale(PRESSURE_UNIT_N_CM2)
 }
 
 function getImportDeviceMac(row = {}, matrixKey = '') {
@@ -2202,7 +2252,12 @@ function getCsvRowMatrixEntries(row) {
     if (!arr) return
     const key = fallbackKey || normalizeCsvMatrixKey(header) || inferImportMatrixKey(arr)
     if (!key || entries.some((entry) => entry.key === key)) return
-    entries.push({ key, arr, metricMode: getImportMetricModeFromHeader(header) })
+    entries.push({
+      key,
+      arr,
+      metricMode: getImportMetricModeFromHeader(header),
+      metricValueScale: getImportMetricValueScale(header),
+    })
   })
 
   return entries
@@ -2246,7 +2301,7 @@ function buildCsvPlaybackData(csvRows) {
     }
 
     const frame = groups.get(groupKey)
-    entries.forEach(({ key, arr, metricMode }) => {
+    entries.forEach(({ key, arr, metricMode, metricValueScale }) => {
       const numericArr = arr.map((value) => Number(value))
       const matrixKey = resolveImportMatrixKey(key, numericArr, frame.data)
       if (!matrixKey) return
@@ -2275,7 +2330,9 @@ function buildCsvPlaybackData(csvRows) {
           ? pointInfo.pointWidthDistance * pointInfo.pointHeightDistance / 100
           : 1
         const forceScale = pointAreaCm2 * 0.1
-        const metricValues = numericArr.map((value) => Number((Math.max(0, value || 0)).toFixed(1)))
+        // 表头是 (N/cm²) 的文件先 ×10 还原成 kPa，再按原有逻辑保留 1 位
+        const importScale = Number(metricValueScale) > 0 ? Number(metricValueScale) : 1
+        const metricValues = numericArr.map((value) => Number((Math.max(0, value || 0) * importScale).toFixed(1)))
         if (metricMode === 'adc') {
           matrixItem.arr = metricValues.map((value) => Math.round(value))
           matrixItem.rawAdcArr = [...matrixItem.arr]

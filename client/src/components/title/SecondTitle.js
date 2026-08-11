@@ -36,8 +36,9 @@ function SecondTitle(props) {
     const activeDisplayType = pageInfo.displayType || currentDisplayType;
     const displayStatus = useEquipStore(s => s.displayStatus, shallow);
     const collecting = useEquipStore(s => s.collecting);
-    const pressureMetricDisplay = getPressureMetricDisplay(PRESSURE_METRIC_MODE, t, i18n?.language);
-    const pressureFilterDisplay = getPressureMetricDisplay(PRESSURE_METRIC_MODE, t, i18n?.language);
+    const pressureUnit = useEquipStore(s => s.pressureUnit);
+    const pressureMetricDisplay = getPressureMetricDisplay(PRESSURE_METRIC_MODE, t, i18n?.language, pressureUnit);
+    const pressureFilterDisplay = pressureMetricDisplay;
 
     const setSettingValue = useEquipStore.getState().setSettingValue
 
@@ -81,7 +82,13 @@ function SecondTitle(props) {
     const getSliderMin = (a) => a.sliderScale ? a.min * a.sliderScale : a.min
     const getSliderMax = (a) => a.sliderScale ? a.max * a.sliderScale : a.max
     const getSliderStep = (a) => a.sliderScale ? a.step * a.sliderScale : a.step
-    const getSettingValueFromSlider = (value, a) => a.sliderScale ? Number(value) / a.sliderScale : value
+    // 除法会带出 3.5000000000000004 之类的浮点尾巴，定点四舍五入后再存回设置
+    const getSettingValueFromSlider = (value, a) => {
+        if (!a.sliderScale || value === null || value === undefined || value === '') return value
+        const numeric = Number(value)
+        if (!Number.isFinite(numeric)) return value
+        return Number((numeric / a.sliderScale).toFixed(4))
+    }
 
     const currentDataMax = useMemo(() => {
         const getMax = (arr) => Array.isArray(arr)
@@ -116,11 +123,13 @@ function SecondTitle(props) {
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoUniform')}</div>
         },
         {
+            // 色彩调节 / 降噪 两项都是压强阈值：存的是 kPa，按当前压强单位显示
             title: t('colorAdj'),
             type: 'color',
             max: 60,
             min: 0.01,
             step: 0.01,
+            sliderScale: pressureMetricDisplay.valueScale,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoRedBlue')}</div>
         },
         {
@@ -129,6 +138,7 @@ function SecondTitle(props) {
             max: 60,
             min: 0,
             step: 0.1,
+            sliderScale: pressureMetricDisplay.valueScale,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('filterNoise')}</div>
         },
         {
@@ -413,7 +423,7 @@ function SecondTitle(props) {
                                         <div className="setItemLabel">
                                             <span>{a.title}</span>
                                             {a.type === 'color' ? (
-                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : `${Number(currentDataMax).toFixed(1)} ${pressureMetricDisplay.unit}`}</em>
+                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : `${pressureMetricDisplay.formatValue(currentDataMax)} ${pressureMetricDisplay.unit}`}</em>
                                             ) : a.type === 'filter' ? <em>{pressureFilterDisplay.unit}</em> : null}
                                         </div>
                                     </Popover>
@@ -444,15 +454,15 @@ function SecondTitle(props) {
                                         }}>
 
                                         <InputNumber
-                                            min={a.min}
-                                            max={a.max}
-                                            step={a.step}
+                                            min={getSliderMin(a)}
+                                            max={getSliderMax(a)}
+                                            step={getSliderStep(a)}
                                             style={{ margin: '0 16px' }}
                                             className='setItemInput'
-                                            value={getRowValue(a)}
+                                            value={getSliderValue(a)}
                                             disabled={processingSettingLocked}
                                             onChange={(value) => {
-                                                onChange(value, a)
+                                                onChange(getSettingValueFromSlider(value, a), a)
                                             }}
 
                                         />
