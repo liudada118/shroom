@@ -1,6 +1,9 @@
 import {
   GAMMA,
   MIN_RANGE_MAX,
+  PRESSURE_GAMMA,
+  PRESSURE_MIN_RANGE_MAX,
+  PRESSURE_RANGE_MIN,
   RANGE_MIN,
   SMOOTH_ALPHA,
 } from './colorMap_dynamic_gamma';
@@ -10,14 +13,38 @@ const DEFAULT_DYNAMIC_COLOR_SCOPE = 'default';
 let dynamicGammaEnabled = false;
 let dynamicGammaScope = DEFAULT_DYNAMIC_COLOR_SCOPE;
 const dynamicColorRangeMap = new Map();
+// 每个 scope 画的是 ADC 还是压强：两者量级差一个数量级，量程下限/保护值/gamma 都得分开。
+// 没声明过的按 ADC 处理，保持老视图（车/床的 3D 点云）原样
+const dynamicColorAdcScaleMap = new Map();
 
 function getDynamicColorScope(scope) {
   return scope == null || scope === '' ? DEFAULT_DYNAMIC_COLOR_SCOPE : String(scope);
 }
 
+function isAdcScaleScope(scope) {
+  return dynamicColorAdcScaleMap.get(getDynamicColorScope(scope)) !== false;
+}
+
+function getScopedRangeMin(scope) {
+  return isAdcScaleScope(scope) ? RANGE_MIN : PRESSURE_RANGE_MIN;
+}
+
+function getScopedMinRangeMax(scope) {
+  return isAdcScaleScope(scope) ? MIN_RANGE_MAX : PRESSURE_MIN_RANGE_MAX;
+}
+
+function getScopedGamma(scope) {
+  return isAdcScaleScope(scope) ? GAMMA : PRESSURE_GAMMA;
+}
+
+/** 声明该 scope 的数值量纲：true = ADC(0~255)，false = 压强(kPa) */
+export function setDynamicColorValueScale(isAdcScale, scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
+  dynamicColorAdcScaleMap.set(getDynamicColorScope(scope), Boolean(isAdcScale));
+}
+
 function getScopedDynamicRangeMax(scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
   const key = getDynamicColorScope(scope);
-  return dynamicColorRangeMap.get(key) || MIN_RANGE_MAX;
+  return dynamicColorRangeMap.get(key) || getScopedMinRangeMax(key);
 }
 
 function updateScopedFrameMax(frameMax, scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
@@ -27,7 +54,7 @@ function updateScopedFrameMax(frameMax, scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
   const currentMax = getScopedDynamicRangeMax(key);
   const nextMax = Math.max(
     SMOOTH_ALPHA * safeFrameMax + (1 - SMOOTH_ALPHA) * currentMax,
-    MIN_RANGE_MAX
+    getScopedMinRangeMax(key)
   );
   dynamicColorRangeMap.set(key, nextMax);
   return nextMax;
@@ -190,7 +217,7 @@ export function resetPressureColorRange(scope) {
     dynamicColorRangeMap.clear();
     return;
   }
-  dynamicColorRangeMap.set(getDynamicColorScope(scope), MIN_RANGE_MAX);
+  dynamicColorRangeMap.set(getDynamicColorScope(scope), getScopedMinRangeMax(scope));
 }
 
 export function getPressureColorGradient() {
@@ -204,10 +231,11 @@ export function getPressureColorGradient() {
 
 export function getPressureColorLegendTicks() {
   const rangeMax = getDynamicColorRangeMax();
+  const rangeMin = getScopedRangeMin(DEFAULT_DYNAMIC_COLOR_SCOPE);
   const tickCount = 6;
   return Array.from({ length: tickCount + 1 }, (_, index) => {
     const ratio = index / tickCount;
-    const value = quantizeValue(RANGE_MIN + ratio * (rangeMax - RANGE_MIN), 0.01);
+    const value = quantizeValue(rangeMin + ratio * (rangeMax - rangeMin), 0.01);
     return {
       adc: value,
       t: ratio,
@@ -227,10 +255,15 @@ function jetFromPalette(palette, min, max, x) {
   }
 
   if (dynamicGammaEnabled) {
-    const rangeMax = Math.max(Number(getScopedDynamicRangeMax(dynamicGammaScope)) || 0, RANGE_MIN + 1);
-    let ratio = (value - RANGE_MIN) / (rangeMax - RANGE_MIN);
+    const rangeMin = getScopedRangeMin(dynamicGammaScope);
+    // 保护值一定大于量程下限（ADC 80 > 15、压强 5 > 0），分母不会退化成 0
+    const rangeMax = Math.max(
+      Number(getScopedDynamicRangeMax(dynamicGammaScope)) || 0,
+      getScopedMinRangeMax(dynamicGammaScope)
+    );
+    let ratio = (value - rangeMin) / (rangeMax - rangeMin);
     ratio = Math.max(0, Math.min(1, ratio));
-    ratio = Math.pow(ratio, GAMMA);
+    ratio = Math.pow(ratio, getScopedGamma(dynamicGammaScope));
     const index = Math.round((1 - ratio) * (palette.length - 1));
     return palette[index];
   }

@@ -18,6 +18,7 @@ const {
 const {
   GRADIENT_UNIT_PA_CM,
   calcPartShapeMetrics,
+  calcRegionShapeMetrics,
   formatGradientValue,
   formatSymmetryPercent,
   normalizeGradientUnit,
@@ -1007,7 +1008,7 @@ const EXPORT_FIXED_FIELDS = [
 
 const EXPORT_TRAILING_FIELDS = []
 
-// 对称系数 / 压力梯度：接在各部位「压力总和(N)」之后，按部位能力决定是否输出
+// 对称系数 / 压力梯度：接在各部位（含每个框选列）「压力总和(N)」之后，按部位能力决定是否输出
 // 上身 / 下身 → 对称系数 + 平均梯度 + 最大梯度；左臂 / 右臂 → 仅两项梯度
 const EXPORT_SHAPE_FIELDS = [
   { id: 'symmetry', title: '对称系数', scope: 'symmetry', withUnit: false },
@@ -1071,10 +1072,8 @@ function buildSingleKeyExportHeaders(key, options = {}) {
   } = options
   const label = `${getExportKeyLabel(key)}${labelSuffix}`
   const idPrefix = suffix ? `${key}_${suffix}` : key
-  // 形态指标只随整块部位输出，框选列沿用原有字段
-  const fields = suffix
-    ? getExportBaseFields(metricMode, '', gradientUnit, pressureUnit)
-    : getExportBaseFields(metricMode, key, gradientUnit, pressureUnit)
+  // 形态指标按部位能力输出，整块部位和每个框选列都带（上身/下身含对称系数，四个部位都含梯度）
+  const fields = getExportBaseFields(metricMode, key, gradientUnit, pressureUnit)
   return fields.map((field) => ({
     id: getExportKeyFieldId(idPrefix, field.id),
     title: `${label}${field.title}`,
@@ -1537,6 +1536,23 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             frameEntry[getExportKeyFieldId(regionPrefix, 'real_data')] = JSON.stringify(scaleExportPressureData(regionMetricData))
             frameEntry[getExportKeyFieldId(regionPrefix, 'point_count')] = regionActiveStats.count
             frameEntry[getExportKeyFieldId(regionPrefix, 'total_pressure_n')] = formatExportDecimal(regionTotalPressure)
+
+            // 框选区域的对称系数 / 压力梯度：口径与整块部位一致，只是范围收到框内
+            // 行宽用 region.width，与 sliceSelectionData 取点的口径保持一致
+            const regionShapeMetrics = calcRegionShapeMetrics(
+              canonicalStats.pressureValues,
+              region.width,
+              region.height,
+              region,
+              key,
+            )
+            if (supportsSymmetryCoefficient(key)) {
+              frameEntry[getExportKeyFieldId(regionPrefix, 'symmetry')] = formatSymmetryPercent(regionShapeMetrics.symmetry)
+            }
+            if (supportsPressureGradient(key)) {
+              frameEntry[getExportKeyFieldId(regionPrefix, 'avg_gradient')] = formatGradientValue(regionShapeMetrics.avgGradient, gradientUnit)
+              frameEntry[getExportKeyFieldId(regionPrefix, 'max_gradient')] = formatGradientValue(regionShapeMetrics.maxGradient, gradientUnit)
+            }
           })
           hasFrameMatrixData = true
         }

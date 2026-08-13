@@ -26,6 +26,20 @@ export const SMOOTH_ALPHA = 0.08;
 /** Gamma 校正指数（>1 压缩低压区颜色，拉伸高压区颜色） */
 export const GAMMA = 2.0;
 
+// ── 压强(kPa) 量纲的对应参数 ──────────────────────────────────────────────
+// 上面三个常量都是按 ADC（0~255）定的。2D 数值视图改成显示压强之后量级差了一个数量级，
+// 直接套用会把所有压强值都压到 RANGE_MIN=15 以下、RANGE_MAX 又被 80 顶住，
+// 结果整张图只剩最低档颜色，要 60kPa 以上才见绿色。压强单独用下面这一套。
+
+/** 压强量程下限：压强本身 <=0 已经按无接触处理，不需要再截一刀 */
+export const PRESSURE_RANGE_MIN = 0;
+
+/** 压强 RANGE_MAX 的最低保护值，取「色彩调节」的默认满量程 5kPa（防止轻触变红） */
+export const PRESSURE_MIN_RANGE_MAX = 5;
+
+/** ADC→压强 的标定公式本身就是平方关系，已经起到了 gamma 的作用，这里不再二次拉伸 */
+export const PRESSURE_GAMMA = 1.0;
+
 /** 背景色（无接触区域） */
 const BG_COLOR = [0, 0, 20];
 

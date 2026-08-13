@@ -399,7 +399,7 @@ const ViewSetting = (props) => {
     }
 
     // 工具条只在启动时量一次左侧那块曲线面板（压强/面积/对称系数/压力梯度已合成一块），
-    // 贴到它正下方并与它同宽。定完位就不再跟随：之后拖动面板不会带着工具条走，两者各自独立。
+    // 贴到屏幕左下角、面板右侧，宽度与面板一致。定完位就不再跟随：之后拖动面板不会带着工具条走，两者各自独立。
     useEffect(() => {
         let raf = 0
         let timer = 0
@@ -432,13 +432,14 @@ const ViewSetting = (props) => {
                 retry()
                 return
             }
+            // 贴屏幕底部，左边紧挨着面板右侧，正好落在面板下方那片空地上
             const next = {
-                left: Math.round(Math.max(TOOLBAR_VIEWPORT_MARGIN, panelRect.left)),
-                top: Math.round(Math.min(
-                    panelRect.bottom + TOOLBAR_PANEL_GAP,
+                left: Math.round(Math.max(TOOLBAR_VIEWPORT_MARGIN, panelRect.right + TOOLBAR_PANEL_GAP)),
+                top: Math.round(Math.max(
+                    TOOLBAR_VIEWPORT_MARGIN,
                     window.innerHeight - barRect.height - TOOLBAR_VIEWPORT_MARGIN,
                 )),
-                // 整条工具条按比例缩放，使可见宽度正好等于面板宽度
+                // 整条工具条按比例缩放，可见长度与面板同宽，按钮不会被挤变形
                 scale: Math.round((panelRect.width / naturalWidth) * 1e4) / 1e4,
             }
             if (last && last.left === next.left && last.top === next.top && last.scale === next.scale) {

@@ -627,6 +627,10 @@ function ChartsAside(props) {
                                     pressMax: Number(box.data.pressMax || 0).toFixed(1),
                                     pressTotal: box.data.pressTotal || 0,
                                     total: Number(box.data.pressTotal ?? bPreciseArea * Number(box.data.pressAver || 0)).toFixed(1),
+                                    // 每个框自己的对称系数 / 压力梯度（梯度原始值单位 pa/cm）
+                                    symmetry: box.shape?.symmetry ?? null,
+                                    avgGradient: box.shape?.avgGradient ?? null,
+                                    maxGradient: box.shape?.maxGradient ?? null,
                                     pressureCenter: getCenterValues(box.center) || ['-', '-'],
                                     normalDis: box.normalDis,
                                     μ: box.normalDis?.['\u03bc'],
@@ -706,10 +710,14 @@ function ChartsAside(props) {
 
     // 当前视图对应的部位（「整体」视图取不到具体部位）
     const displayPart = getMatrixPartFromDisplayType(storeDisplayType)
-    // 图例整块面板只出现一次，纯粹起「哪个颜色对应哪个位置」的标注作用，
-    // 所以按设备自身的部位配置把部位全列出来，不看当前接了几块传感器、data 里有没有值。
-    // 配置以外的部位（比如插错板子接上来的靠背）一律不显示
-    const legendKeys = getSystemMatrixParts(systemType).map((part) => part.key)
+    const dataKeys = Object.keys(data).filter((a) => a !== 't')
+    /** 部位短名 → data 里的实际 key，没有这块传感器时返回 undefined */
+    const findDataKey = (part) => dataKeys.find((a) => getMatrixPartFromDisplayType(a) === part)
+    // 图例只标注当前真正接上的传感器：插了哪块显示哪块，没插的不占位。
+    // 顺序按设备自身的部位配置走，配置以外的部位（比如插错板子的靠背）不会进 data
+    const legendKeys = getSystemMatrixParts(systemType)
+        .map((part) => findDataKey(part.key))
+        .filter(Boolean)
 
     /**
      * 渲染图表图例 — 多框选时显示框颜色，否则显示设备颜色
@@ -822,51 +830,85 @@ function ChartsAside(props) {
     }
 
     // ─── 对称系数 / 压力梯度 ───────────────────────────────
-    // 「整体」视图：上身/左臂/右臂/下身全部列出，无值的位置显示「-」；
+    // 「整体」视图：接了哪几块传感器就列哪几个部位；
     // 单部位视图（选中某一个部位）：只列出该部位。
     const shapeIsSinglePart = supportsPressureGradient(displayPart)
 
-    /** 部位短名 → data 里的实际 key（如 jacket → endi-jacket），没有数据时返回短名本身 */
-    const shapeDataKey = (part) => (
-        Object.keys(data).find((a) => a !== 't' && getMatrixPartFromDisplayType(a) === part) || part
-    )
-
     const shapeKeys = SHAPE_PART_ORDER
         .filter((part) => !shapeIsSinglePart || part === displayPart)
-        .map(shapeDataKey)
+        .map(findDataKey)
+        .filter(Boolean)
     const symmetryKeys = shapeKeys.filter((a) => supportsSymmetryCoefficient(a))
-    // 只有假人这类带上身/四肢的系统才有这两项。
-    // 按设备自身的部位配置判断，不看有没有数据：没连串口时 data 是空的，
-    // 这块一样要出来，数值显示「-」，和上面几块保持一致
+    // 只有假人这类带上身/四肢的系统才有这两项。按设备自身的部位配置判断：
+    // 没连传感器时这两块一样要出来（和压强块、面积块一致），只是里面一个色点都没有
     const deviceSupportsShape = getSystemMatrixParts(systemType).some((part) => supportsPressureGradient(part.key))
-    const shapeVisible = deviceSupportsShape && shapeKeys.length > 0
-    const shapeTitle = `${t('symmetryCoefficient')} / ${t('pressureGradient')}`
-    // 压强、面积、对称系数、压力梯度合成一块面板，标题把四项都列上（放不下时省略号）
-    const panelTitle = [metricDisplay.curveLabel, t('areaCurve')]
-        .concat(shapeVisible ? [shapeTitle] : [])
-        .join(' / ')
+    const shapeVisible = deviceSupportsShape
+    // 左臂/右臂这类单部位视图没有对称系数，整块不显示
+    const symmetryVisible = shapeVisible && (!shapeIsSinglePart || supportsSymmetryCoefficient(displayPart))
+    /**
+     * 形态指标一行的取值来源，与上面压强 / 面积几行保持一致：
+     * 无框选时按部位（色点 = 部位色），框选时按框（色点 = 框色，框了几个就几个值）
+     */
+    const getShapeEntries = (keys) => {
+        if (hasSelectionStats) {
+            const entries = []
+            keys.forEach((key) => {
+                (data[key]?.boxStats || []).forEach((box, idx) => {
+                    entries.push({
+                        id: `${key}-box-${box.colorIndex ?? idx}`,
+                        color: box.bgc || SELECT_COLORS[box.colorIndex] || SELECT_COLORS[idx],
+                        source: box,
+                    })
+                })
+            })
+            return entries
+        }
+        return keys.map((key) => ({
+            id: key,
+            color: getDeviceChartColor(key, pressColorArr),
+            source: data[key],
+        }))
+    }
 
-    /** 一行指标：每个部位一个「色点 + 数值 + 单位」，色点颜色与最上面那行图例一致 */
-    const renderShapeRow = (keys, format, unit) => keys.map((key) => (
-        <div className='chartTypeItem' key={`shape-${key}-${unit || 'percent'}`}>
-            <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(key, pressColorArr) }}></div>
+    /** 一行指标：每个部位（或每个框）一个「色点 + 数值 + 单位」，色点颜色与图例一致 */
+    const renderShapeRow = (keys, format, unit) => getShapeEntries(keys).map((entry) => (
+        <div className='chartTypeItem' key={`shape-${entry.id}-${unit || 'percent'}`}>
+            <div className='cirlce' style={{ backgroundColor: entry.color }}></div>
             <div className='chartMetricValueGroup'>
-                <span className='chartMetricValue'>{format(key)}</span>
+                <span className='chartMetricValue'>{format(entry.source)}</span>
                 {unit ? <span className='chartMetricUnit'>{unit}</span> : null}
             </div>
         </div>
     ))
 
     /**
-     * 对称系数 / 压力梯度：和压强、面积合在同一块面板里，
+     * 对称系数：单独一小块，标题下面一行数值。
      * 部位色点对应哪个位置只看最上面「压强总和曲线」那一行图例，这里不再重复标注
      */
-    const renderShapeSection = () => {
+    const renderSymmetrySection = () => {
+        if (!symmetryVisible) return null
+        return (
+            <div className='chartAndDataContent'>
+                <div className="chartTitle">
+                    <div className="chartName">{t('symmetryCoefficient')}</div>
+                </div>
+                <div className='chartData'>
+                    <span className="chartDataLabel">{t('symmetryCoefficient')}</span>
+                    <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>
+                        {renderShapeRow(symmetryKeys, (source) => formatSymmetryPercent(source?.symmetry), '')}
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    /** 压力梯度：单独一小块，单位切换只在这块的标题里 */
+    const renderGradientSection = () => {
         if (!shapeVisible) return null
         return (
             <div className='chartAndDataContent'>
                 <div className="chartTitle">
-                    <div className="chartName">{shapeTitle}</div>
+                    <div className="chartName">{t('pressureGradient')}</div>
                     <div className='shapeUnitBar'>
                         <span className='shapeUnitLabel'>{t('unit')}：</span>
                         <span className='shapeUnitValue'>{gradientUnit}</span>
@@ -880,24 +922,16 @@ function ChartsAside(props) {
                         </button>
                     </div>
                 </div>
-                {symmetryKeys.length ? (
-                    <div className='chartData'>
-                        <span className="chartDataLabel">{t('symmetryCoefficient')}</span>
-                        <div className='chartTypeContent'>
-                            {renderShapeRow(symmetryKeys, (key) => formatSymmetryPercent(data[key]?.symmetry), '')}
-                        </div>
-                    </div>
-                ) : null}
                 <div className='chartData'>
                     <span className="chartDataLabel">{t('avgGradient')}</span>
-                    <div className='chartTypeContent'>
-                        {renderShapeRow(shapeKeys, (key) => formatGradientValue(data[key]?.avgGradient, gradientUnit), gradientUnit)}
+                    <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>
+                        {renderShapeRow(shapeKeys, (source) => formatGradientValue(source?.avgGradient, gradientUnit), gradientUnit)}
                     </div>
                 </div>
                 <div className='chartData'>
                     <span className="chartDataLabel">{t('maxGradient')}</span>
-                    <div className='chartTypeContent'>
-                        {renderShapeRow(shapeKeys, (key) => formatGradientValue(data[key]?.maxGradient, gradientUnit), gradientUnit)}
+                    <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>
+                        {renderShapeRow(shapeKeys, (source) => formatGradientValue(source?.maxGradient, gradientUnit), gradientUnit)}
                     </div>
                 </div>
             </div>
@@ -907,9 +941,10 @@ function ChartsAside(props) {
     return (
         <>
             <DraggablePanel
-                title={panelTitle}
+                title={t('realtimeStats')}
                 defaultPosition={{ x: 20, y: PANEL_TOP }}
                 className={`charts-panel${hasSelectionStats ? ' charts-panel--expanded' : ''}`}
+                fitToViewport
             >
                 {/* 图例（哪个颜色对应哪个部位）整块面板只在这里出现一次，下面几块共用 */}
                 <div className='chartAndDataContent'>
@@ -939,7 +974,8 @@ function ChartsAside(props) {
                     ))}
                 </div>
 
-                {renderShapeSection()}
+                {renderSymmetrySection()}
+                {renderGradientSection()}
             </DraggablePanel>
 
             <DraggablePanel

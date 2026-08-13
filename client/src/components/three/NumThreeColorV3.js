@@ -5,7 +5,7 @@ import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
 import { getDisplayType, getPressureUnit, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
-import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
+import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicColorValueScale, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
 import { getMatrixPartFromDisplayType } from '../../util/constant';
 import { ADC_METRIC_MODE, formatPressureValue } from '../../util/pressureMetrics';
 
@@ -87,7 +87,9 @@ const DIGIT_ATLAS_GRID = 32;
 const DIGIT_ATLAS_CELL = 64;
 const DIGIT_ATLAS_SIZE = DIGIT_ATLAS_GRID * DIGIT_ATLAS_CELL;
 const DIGIT_TILE_INSET = 4;
-const COLOR_VALUE_STEP = 0.01;
+// 自动配色时色阶上限每帧都在动，纹理重建的判定步长取 0.1kPa
+// （相对精度和 ADC 时代的 1/255 差不多），免得 1024 格的图集每帧重画
+const PRESSURE_TEXTURE_MAX_STEP = 0.1;
 const ENDI_JACKET_WIDTH = 24;
 const ENDI_JACKET_HEIGHT = 54;
 const ENDI_JACKET_HEAD_HEIGHT = 10;
@@ -473,6 +475,8 @@ export default function NumThree(props) {
       const rawAdcMode = currentMetricMode === ADC_METRIC_MODE;
       rawAdcModeRef.current = rawAdcMode;
       setDynamicGammaColorEnabled(Boolean(autoColor));
+      // 这里画的是压强(kPa)，动态配色的量程下限/保护值要按压强那一套走
+      setDynamicColorValueScale(rawAdcMode);
       data = prepareDisplayData(data, gridSize1, gridSize2, rawAdcMode);
       data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}-g${gauss}-f${filter}-${currentMetricMode}`, rawAdcMode);
       const nullMask = createEndiNullMask(systemType, displayType, gridSize1, gridSize2);
@@ -502,7 +506,7 @@ export default function NumThree(props) {
 
       const currentPressureUnit = getPressureUnit();
       pressureUnitRef.current = currentPressureUnit;
-      const colorValueStep = rawAdcMode ? 1 : COLOR_VALUE_STEP;
+      const colorValueStep = rawAdcMode ? 1 : PRESSURE_TEXTURE_MAX_STEP;
       const nextMax = Math.round((beginDynamicColorFrame(data, color) || getTextureColorMax(color)) / colorValueStep) * colorValueStep;
       if (
         currentTextureMode !== currentMetricMode

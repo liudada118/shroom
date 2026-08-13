@@ -1,26 +1,51 @@
 .charts-panel {
-    width: min(22rem, calc(100vw - 2rem));
+    // 一行要放得下四个部位的「色点 + 数值 + 单位」，不然会折成两行。
+    // 里面的留白全部收紧过（内边距 2.5rem + 列间距 3 × 0.375rem），
+    // 面板比原来窄了 3rem，每列反而只少了 2px，还是 4 列一行
+    width: min(26rem, calc(100vw - 2rem));
 
+    // 框选时每行只放 3 个值（六个框刚好两行），比原来一行五个窄不少。
+    // 数据行数翻倍，纵向再压一压，尽量不靠面板整体缩放就能把六个框都显示全
     &.charts-panel--expanded {
-        width: min(31rem, calc(100vw - 2rem));
+        width: min(28rem, calc(100vw - 2rem));
 
-        .chartCanvas {
-            width: 18.35rem;
-            max-width: 100%;
-            align-self: flex-start;
+        .chartAndDataContent {
+            padding: 0.4rem 0.35rem 0.3rem;
+            gap: 0.25rem;
+            margin-bottom: 0.3rem;
+
+            .chartName {
+                font-size: 0.9rem;
+            }
+
+            .chartCanvas {
+                height: 5.5rem;
+                flex: 0 0 5.5rem;
+            }
+
+            .chartData {
+                padding: 0.3rem 0.35rem;
+                gap: 0.25rem;
+                font-size: 0.8rem;
+            }
+
+            .chartDataLabel {
+                font-size: 0.8rem;
+            }
         }
     }
 
     .draggable-panel-body {
         box-sizing: border-box;
+        padding: 0.5rem 0.4rem;
     }
 
     // 压强 / 面积 / 对称系数 / 压力梯度四块内容合在这一块面板里，纵向压紧一些，
     // 整块面板才不至于顶出屏幕（面板已经不带滚动条了）。右侧面板不受影响
     .chartAndDataContent {
-        padding: 0.625rem 0.5rem 0.5rem;
-        gap: 0.375rem;
-        margin-bottom: 0.5rem;
+        padding: 0.5rem 0.375rem 0.375rem;
+        gap: 0.3rem;
+        margin-bottom: 0.4rem;
 
         &:last-child {
             margin-bottom: 0;
@@ -36,8 +61,29 @@
         }
 
         .chartData {
-            padding: 0.5rem 0.625rem;
-            gap: 0.35rem;
+            padding: 0.4rem 0.375rem;
+            gap: 0.3rem;
+        }
+
+        // 四个部位挤在一行，列宽和列间距都比默认小一号
+        .chartTypeContent {
+            grid-template-columns: repeat(auto-fit, minmax(4.8rem, 1fr));
+            gap: 0.3rem 0.375rem;
+        }
+
+        // 框选：固定一行 3 个，六个框折成两行
+        .chartTypeContent--selection {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.3rem 0.375rem;
+        }
+
+        // 单项内部也收一收：色点离数值近一点，数值和单位之间的空隙小一点
+        .cirlce {
+            margin-right: 4px;
+        }
+
+        .chartMetricValueGroup {
+            gap: 0.25rem;
         }
     }
 }
@@ -101,9 +147,10 @@
         min-width: 0;
     }
 
+    // 框选统计：一行 3 个，最多 6 个框正好两行
     .chartTypeContent--selection {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         align-items: center;
         gap: 0.35rem;
         flex: 1 1 auto;

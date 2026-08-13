@@ -14,7 +14,7 @@ import {
   normalizePressureMetricMode,
   summarizeMetricValues,
 } from '../util/pressureMetrics'
-import { calcPartShapeMetrics } from '../util/gradientMetrics'
+import { calcPartShapeMetrics, calcRegionShapeMetrics } from '../util/gradientMetrics'
 
 /**
  * 矩阵数据处理 Hook
@@ -528,6 +528,16 @@ export function useMatrixData() {
           xData: boxXData,
           yData: boxXData.map(x => normalPDF(x, boxMu, boxSigma)),
         }
+
+        // 框选区域的对称系数 / 压力梯度：口径与整块部位一致，只是范围收到框内
+        // （上身/下身才有对称系数，四个部位都有梯度，由部位 key 决定）
+        boxStat.shape = calcRegionShapeMetrics(
+          metricData.pressureValues,
+          width,
+          height,
+          box.matrix,
+          fullKey || key,
+        )
 
         setTrendValue(boxStat.pressArr, Number(boxSummary.forceSummary.total.toFixed(1)), options)
         setTrendValue(boxStat.adcArr, Number(boxSummary.adcSummary.total.toFixed(1)), options)

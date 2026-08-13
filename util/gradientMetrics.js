@@ -177,6 +177,83 @@ function calcPartShapeMetrics(pressureKpaValues, width, height, key) {
   }
 }
 
+/** 框选区域按行优先取出子矩阵（xEnd / yEnd 为开区间） */
+function sliceRegionValues(values, width, region) {
+  const cols = Math.floor(Number(width) || 0)
+  const result = []
+  if (!Array.isArray(values) || !region || cols <= 0) return result
+  for (let y = Math.floor(Number(region.yStart) || 0); y < Math.ceil(Number(region.yEnd) || 0); y++) {
+    for (let x = Math.floor(Number(region.xStart) || 0); x < Math.ceil(Number(region.xEnd) || 0); x++) {
+      const value = Number(values[y * cols + x])
+      result.push(Number.isFinite(value) ? value : 0)
+    }
+  }
+  return result
+}
+
+/**
+ * 框选区域的压力梯度，单位 pa/cm
+ * 与整块部位的区别：只统计框内的点，但中心差分的邻居仍取自整块矩阵，
+ * 否则小框去掉最外一圈后就没有可用点了。
+ * @param {object} region 框选区域 { xStart, xEnd, yStart, yEnd }，End 为开区间
+ */
+function calcRegionPressureGradientStats(pressureKpaValues, width, height, region, spacingCm = GRADIENT_POINT_SPACING_CM) {
+  const cols = Math.floor(Number(width) || 0)
+  const rows = Math.floor(Number(height) || 0)
+  const distance = Number(spacingCm) > 0 ? Number(spacingCm) : GRADIENT_POINT_SPACING_CM
+  const empty = { average: null, max: null, count: 0 }
+  if (!Array.isArray(pressureKpaValues) || cols < 3 || rows < 3 || !region) return empty
+
+  // 框内点 ∩ 整块矩阵的内部点（最外一圈没有邻居，取不到中心差分）
+  const xFrom = Math.max(1, Math.floor(Number(region.xStart) || 0))
+  const xTo = Math.min(cols - 1, Math.ceil(Number(region.xEnd) || 0))
+  const yFrom = Math.max(1, Math.floor(Number(region.yStart) || 0))
+  const yTo = Math.min(rows - 1, Math.ceil(Number(region.yEnd) || 0))
+
+  const pa = (index) => toNumber(pressureKpaValues[index]) * PA_PER_KPA
+  let total = 0
+  let max = 0
+  let count = 0
+
+  for (let y = yFrom; y < yTo; y++) {
+    for (let x = xFrom; x < xTo; x++) {
+      const index = y * cols + x
+      if (pa(index) <= 0) continue
+      const dx = (pa(index + 1) - pa(index - 1)) / (2 * distance)
+      const dy = (pa(index + cols) - pa(index - cols)) / (2 * distance)
+      const gradient = Math.sqrt(dx * dx + dy * dy)
+      total += gradient
+      if (gradient > max) max = gradient
+      count += 1
+    }
+  }
+
+  if (!count) return empty
+  return { average: total / count, max, count }
+}
+
+/**
+ * 一个框选区域一帧的完整指标，部位能力判定与整块部位一致
+ * 上身 / 下身 → 对称系数 + 平均梯度 + 最大梯度；左臂 / 右臂 → 仅两项梯度
+ * 对称系数按框内自身中线对折（框只覆盖半边时，对折的仍是框自己的左右两半）
+ * @param {number[]} pressureKpaValues 整块部位行优先展开的压强矩阵（kPa）
+ */
+function calcRegionShapeMetrics(pressureKpaValues, width, height, region, key) {
+  const regionWidth = Math.max(0, Math.ceil(Number(region?.xEnd) || 0) - Math.floor(Number(region?.xStart) || 0))
+  const regionHeight = Math.max(0, Math.ceil(Number(region?.yEnd) || 0) - Math.floor(Number(region?.yStart) || 0))
+  const gradient = supportsPressureGradient(key)
+    ? calcRegionPressureGradientStats(pressureKpaValues, width, height, region)
+    : { average: null, max: null, count: 0 }
+  return {
+    symmetry: supportsSymmetryCoefficient(key)
+      ? calcSymmetryCoefficient(sliceRegionValues(pressureKpaValues, width, region), regionWidth, regionHeight)
+      : null,
+    avgGradient: gradient.average,
+    maxGradient: gradient.max,
+    gradientPoints: gradient.count,
+  }
+}
+
 module.exports = {
   GRADIENT_UNIT_PA_CM,
   GRADIENT_UNIT_N_CM3,
@@ -193,4 +270,6 @@ module.exports = {
   formatSymmetryPercent,
   calcPressureGradientStats,
   calcPartShapeMetrics,
+  calcRegionPressureGradientStats,
+  calcRegionShapeMetrics,
 }

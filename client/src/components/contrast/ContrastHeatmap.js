@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicGammaColorEnabled } from '../../assets/util/line'
+import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicColorValueScale, setDynamicGammaColorEnabled } from '../../assets/util/line'
 import { useEquipStore } from '../../store/equipStore'
 import { isEndiBackVisibleCell } from '../../util/endiBackVisibleMask'
 import { ADC_METRIC_MODE } from '../../util/pressureMetrics'
@@ -93,6 +93,8 @@ export default function ContrastHeatmap(props) {
         const draw = () => {
             const autoColor = Boolean(useEquipStore.getState().settingValue?.autoColor)
             setDynamicGammaColorEnabled(autoColor)
+            // 对比热力图和 2D 一样画的是压强(kPa)，量程参数跟着走压强那一套
+            setDynamicColorValueScale(rawAdcMode)
             if (mode !== 'diff') {
                 beginDynamicColorFrame(arr, colorMax)
             }

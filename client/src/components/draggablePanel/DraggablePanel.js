@@ -23,7 +23,12 @@ function nextPanelZIndex() {
  * - 可放大/缩小
  * - 在浮窗层内置顶，但保持低于历史/调节抽屉
  */
-export default function DraggablePanel({ children, defaultPosition, title, className = '', innerRef, maxBodyHeight = null }) {
+// 自动收缩的下限：再小就看不清数值了，剩下的交给用户自己拖/缩放
+const MIN_FIT_SCALE = 0.6
+// 面板底部离视口留的余量
+const FIT_VIEWPORT_MARGIN = 16
+
+export default function DraggablePanel({ children, defaultPosition, title, className = '', innerRef, maxBodyHeight = null, fitToViewport = false }) {
     const { t } = useTranslation()
     const localRef = useRef(null)
     const panelRef = innerRef || localRef
@@ -32,6 +37,9 @@ export default function DraggablePanel({ children, defaultPosition, title, class
         y: defaultPosition?.y || 0,
     }))
     const [zoomPercent, setZoomPercent] = useState(100)
+    // 内容比视口高时整体等比缩小，保证框选后每个框的数值都能看全
+    const [fitScale, setFitScale] = useState(1)
+    const [manualZoom, setManualZoom] = useState(false)
     const [zIndex, setZIndex] = useState(nextPanelZIndex)
     const [isDragging, setIsDragging] = useState(false)
     const dragOffset = useRef({ x: 0, y: 0 })
@@ -102,6 +110,36 @@ export default function DraggablePanel({ children, defaultPosition, title, class
         }
     }, [isDragging])
 
+    /**
+     * 自动适配视口高度：面板本身的布局高度（offsetHeight，不受 transform 影响）
+     * 超过「视口高度 − 面板顶部」时按比例缩小；用户手动调过缩放后就不再自动干预
+     */
+    useEffect(() => {
+        if (!fitToViewport) {
+            setFitScale(1)
+            return undefined
+        }
+        if (manualZoom) return undefined
+        const element = panelRef.current
+        if (!element) return undefined
+
+        const update = () => {
+            const natural = element.offsetHeight
+            const available = window.innerHeight - position.y - FIT_VIEWPORT_MARGIN
+            if (!natural || available <= 0) return
+            setFitScale(Math.max(MIN_FIT_SCALE, Math.min(1, available / natural)))
+        }
+
+        update()
+        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null
+        observer?.observe(element)
+        window.addEventListener('resize', update)
+        return () => {
+            observer?.disconnect()
+            window.removeEventListener('resize', update)
+        }
+    }, [fitToViewport, manualZoom, position.y])
+
     // 缩放（10%~1000%），固定 10% 步长，只保留 10 的倍数
     const ZOOM_MIN = 50
     const ZOOM_MAX = 150
@@ -109,20 +147,24 @@ export default function DraggablePanel({ children, defaultPosition, title, class
 
     const zoomIn = useCallback((e) => {
         e.stopPropagation()
+        setManualZoom(true)
         setZoomPercent(percent => Math.min(percent + ZOOM_STEP, ZOOM_MAX))
     }, [])
 
     const zoomOut = useCallback((e) => {
         e.stopPropagation()
+        setManualZoom(true)
         setZoomPercent(percent => Math.max(percent - ZOOM_STEP, ZOOM_MIN))
     }, [])
 
+    // 重置：回到 100% 并把「自动适配」交还给面板
     const resetZoom = useCallback((e) => {
         e.stopPropagation()
+        setManualZoom(false)
         setZoomPercent(100)
     }, [])
 
-    const scale = zoomPercent / 100
+    const scale = (zoomPercent / 100) * fitScale
 
     return (
         <div
@@ -146,7 +188,7 @@ export default function DraggablePanel({ children, defaultPosition, title, class
                 <span className='draggable-panel-title'>{title}</span>
                 <div className='draggable-panel-controls'>
                     <span className='panel-ctrl-btn' onClick={zoomOut} title={t('zoomOut')}>-</span>
-                    <span className='panel-zoom-value'>{zoomPercent}%</span>
+                    <span className='panel-zoom-value'>{Math.round(scale * 100)}%</span>
                     <span className='panel-ctrl-btn' onClick={resetZoom} title={t('resetZoom')}>
                         <ReloadOutlined />
                     </span>
