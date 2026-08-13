@@ -4,7 +4,7 @@ import echarts from '../../util/echarts';
 import { Scheduler } from '../../scheduler/scheduler';
 import './index.scss'
 import { useTranslation, withTranslation } from 'react-i18next';
-import { getMatrixDisplayLabel, getMatrixPartFromDisplayType, pointConfig } from '../../util/constant';
+import { getMatrixDisplayLabel, getMatrixPartFromDisplayType, getSystemMatrixParts, pointConfig } from '../../util/constant';
 import { getDisplayType, getSelectArr, getSysType, useEquipStore } from '../../store/equipStore';
 import { BrushManager, SELECT_COLORS } from '../selectBox/newSelecttBox';
 import { calMatrixArea } from '../../assets/util/selectMatrix';
@@ -68,6 +68,7 @@ function ChartsAside(props) {
     const pressureUnit = useEquipStore(s => s.pressureUnit)
     const setPressureUnit = useEquipStore(s => s.setPressureUnit)
     const storeDisplayType = useEquipStore(s => s.displayType)
+    const systemType = useEquipStore(s => s.systemType)
     // 左侧上下两块面板：重叠时把上面那块压成可滚动区，拖开后恢复原始长度
     const mainPanelRef = useRef(null)
     const shapePanelRef = useRef(null)
@@ -861,9 +862,11 @@ function ChartsAside(props) {
         .filter((part) => !shapeIsSinglePart || part === shapePart)
         .map(shapeDataKey)
     const symmetryKeys = shapeKeys.filter((a) => supportsSymmetryCoefficient(a))
-    // 只有假人这类带上身/四肢的系统才有这块面板
-    const hasShapeData = Object.keys(data).some((a) => a !== 't' && supportsPressureGradient(a))
-    const shapePanelVisible = hasShapeData && shapeKeys.length > 0
+    // 只有假人这类带上身/四肢的系统才有这块面板。
+    // 按设备自身的部位配置判断，不看有没有数据：没连串口时 data 是空的，
+    // 面板一样要出来，数值显示「-」，和上面几块面板保持一致
+    const deviceSupportsShape = getSystemMatrixParts(systemType).some((part) => supportsPressureGradient(part.key))
+    const shapePanelVisible = deviceSupportsShape && shapeKeys.length > 0
 
     /** 部位图例（带名称，用于标注下方色点对应哪个部位） */
     const renderShapeLegend = (keys) => keys.map((key) => (
