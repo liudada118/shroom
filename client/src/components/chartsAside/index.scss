@@ -2,12 +2,14 @@
     // 一行要放得下四个部位的「色点 + 数值 + 单位」，不然会折成两行。
     // 里面的留白全部收紧过（内边距 2.5rem + 列间距 3 × 0.375rem），
     // 面板比原来窄了 3rem，每列反而只少了 2px，还是 4 列一行
-    width: min(26rem, calc(100vw - 2rem));
+    // 压力梯度的数值最长（四位数 + pa/cm），四个部位一行时原来的宽度挨得太紧，
+    // 整块面板加宽 3rem 换出列宽，梯度那两行的列间距再单独放宽（见下面 --gradient）
+    width: min(29rem, calc(100vw - 2rem));
 
     // 框选时每行只放 3 个值（六个框刚好两行），比原来一行五个窄不少。
     // 数据行数翻倍，纵向再压一压，尽量不靠面板整体缩放就能把六个框都显示全
     &.charts-panel--expanded {
-        width: min(28rem, calc(100vw - 2rem));
+        width: min(30rem, calc(100vw - 2rem));
 
         .chartAndDataContent {
             padding: 0.4rem 0.35rem 0.3rem;
@@ -75,6 +77,12 @@
         .chartTypeContent--selection {
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 0.3rem 0.375rem;
+        }
+
+        // 压力梯度：数值 + 单位最长，列间距比压强/面积那几行大一点，
+        // 写在 --selection 之后，首页和框选两种排布都用这个间距
+        .chartTypeContent--gradient {
+            gap: 0.3rem 0.7rem;
         }
 
         // 单项内部也收一收：色点离数值近一点，数值和单位之间的空隙小一点

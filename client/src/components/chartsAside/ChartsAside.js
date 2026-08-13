@@ -58,7 +58,6 @@ function ChartsAside(props) {
     const gradientUnit = useEquipStore(s => s.gradientUnit)
     const setGradientUnit = useEquipStore(s => s.setGradientUnit)
     const pressureUnit = useEquipStore(s => s.pressureUnit)
-    const storeDisplayType = useEquipStore(s => s.displayType)
     const systemType = useEquipStore(s => s.systemType)
     const historyChartRef = useRef(historyChart)
     const pressureMetricModeRef = useRef(pressureMetricMode)
@@ -708,8 +707,6 @@ function ChartsAside(props) {
 
     const hasSelectionStats = hasBoxStats()
 
-    // 当前视图对应的部位（「整体」视图取不到具体部位）
-    const displayPart = getMatrixPartFromDisplayType(storeDisplayType)
     const dataKeys = Object.keys(data).filter((a) => a !== 't')
     /** 部位短名 → data 里的实际 key，没有这块传感器时返回 undefined */
     const findDataKey = (part) => dataKeys.find((a) => getMatrixPartFromDisplayType(a) === part)
@@ -830,21 +827,17 @@ function ChartsAside(props) {
     }
 
     // ─── 对称系数 / 压力梯度 ───────────────────────────────
-    // 「整体」视图：接了哪几块传感器就列哪几个部位；
-    // 单部位视图（选中某一个部位）：只列出该部位。
-    const shapeIsSinglePart = supportsPressureGradient(displayPart)
-
+    // 和上面压强总和曲线 / 面积曲线两块一致：不跟着 2D 里选中的部位变，
+    // 接了哪几块传感器就把有值的都列出来（对称系数仍然只有上身/下身有）
     const shapeKeys = SHAPE_PART_ORDER
-        .filter((part) => !shapeIsSinglePart || part === displayPart)
         .map(findDataKey)
         .filter(Boolean)
     const symmetryKeys = shapeKeys.filter((a) => supportsSymmetryCoefficient(a))
     // 只有假人这类带上身/四肢的系统才有这两项。按设备自身的部位配置判断：
     // 没连传感器时这两块一样要出来（和压强块、面积块一致），只是里面一个色点都没有
-    const deviceSupportsShape = getSystemMatrixParts(systemType).some((part) => supportsPressureGradient(part.key))
-    const shapeVisible = deviceSupportsShape
-    // 左臂/右臂这类单部位视图没有对称系数，整块不显示
-    const symmetryVisible = shapeVisible && (!shapeIsSinglePart || supportsSymmetryCoefficient(displayPart))
+    const deviceParts = getSystemMatrixParts(systemType)
+    const shapeVisible = deviceParts.some((part) => supportsPressureGradient(part.key))
+    const symmetryVisible = deviceParts.some((part) => supportsSymmetryCoefficient(part.key))
     /**
      * 形态指标一行的取值来源，与上面压强 / 面积几行保持一致：
      * 无框选时按部位（色点 = 部位色），框选时按框（色点 = 框色，框了几个就几个值）
@@ -924,13 +917,13 @@ function ChartsAside(props) {
                 </div>
                 <div className='chartData'>
                     <span className="chartDataLabel">{t('avgGradient')}</span>
-                    <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>
+                    <div className={`chartTypeContent chartTypeContent--gradient ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>
                         {renderShapeRow(shapeKeys, (source) => formatGradientValue(source?.avgGradient, gradientUnit), gradientUnit)}
                     </div>
                 </div>
                 <div className='chartData'>
                     <span className="chartDataLabel">{t('maxGradient')}</span>
-                    <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>
+                    <div className={`chartTypeContent chartTypeContent--gradient ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>
                         {renderShapeRow(shapeKeys, (source) => formatGradientValue(source?.maxGradient, gradientUnit), gradientUnit)}
                     </div>
                 </div>
