@@ -214,7 +214,9 @@ function startStaticServer() {
       return
     }
 
-    const portInjectionScript = `<script>window.__PORTS__=${JSON.stringify({
+    // 端口是接口子进程真正起来之后才确定的（默认端口被占用时会顺延），
+    // 所以每次请求现取一次 PORTS，不能在这里先算好存起来
+    const getPortInjectionScript = () => `<script>window.__PORTS__=${JSON.stringify({
       api: PORTS.api,
       ws: PORTS.ws
     })};</script>`
@@ -232,7 +234,7 @@ function startStaticServer() {
               res.writeHead(404, { 'Content-Type': 'text/plain', ...noCacheHeaders })
               res.end('Not Found')
             } else {
-              const html = indexData.toString().replace('<head>', `<head>${portInjectionScript}`)
+              const html = indexData.toString().replace('<head>', `<head>${getPortInjectionScript()}`)
               res.writeHead(200, { 'Content-Type': 'text/html', ...noCacheHeaders })
               res.end(html)
             }
@@ -241,7 +243,7 @@ function startStaticServer() {
           const ext = path.extname(fullPath).toLowerCase()
           const contentType = MIME_TYPES[ext] || 'application/octet-stream'
           if (ext === '.html') {
-            const html = data.toString().replace('<head>', `<head>${portInjectionScript}`)
+            const html = data.toString().replace('<head>', `<head>${getPortInjectionScript()}`)
             res.writeHead(200, { 'Content-Type': contentType, ...noCacheHeaders })
             res.end(html)
           } else {

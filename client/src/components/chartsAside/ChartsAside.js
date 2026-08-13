@@ -73,6 +73,21 @@ function ChartsAside(props) {
     const getMetricTrendField = () => getMetricDisplay().trendField
     const getMetricAreaTrendField = () => `${getMetricDisplay().valuePrefix}AreaArr`
 
+    /**
+     * 只保留设备自身配置里的部位（假人就是上身/左臂/右臂/下身）。
+     * 插错板子多出来的部位（比如靠背）在这里丢掉，图例、数值、曲线都当它不存在
+     */
+    const pickDeviceParts = (dataMap) => {
+        if (!dataMap) return {}
+        const allow = getSystemMatrixParts(getSysType()).map((part) => part.key)
+        if (!allow.length) return dataMap
+        const res = {}
+        Object.keys(dataMap).forEach((key) => {
+            if (allow.includes(getMatrixPartFromDisplayType(key))) res[key] = dataMap[key]
+        })
+        return res
+    }
+
     useEffect(() => {
         historyChartRef.current = historyChart
         if (historyChart) {
@@ -113,7 +128,7 @@ function ChartsAside(props) {
         const keyArr = Object.keys(dataMap)
         const colorMap = type === 'press' ? pressColorArr : areaColorArr
         const dataField = type === 'press' ? getMetricTrendField() : getMetricAreaTrendField()
-        const onlyBoxStats = !isHistory && useBoxStats && getBoxStats(props.chartData.current).length > 0
+        const onlyBoxStats = !isHistory && useBoxStats && getBoxStats().length > 0
         // 压强曲线按当前显示单位换算（非压强指标 valueScale 恒为 1）
         const valueScale = type === 'press' ? getMetricDisplay().valueScale : 1
         const scaleLine = (line) => {
@@ -299,7 +314,7 @@ function ChartsAside(props) {
         });
     }
 
-    const getBoxStats = (chartData = props.chartData.current) => {
+    const getBoxStats = (chartData = pickDeviceParts(props.chartData.current)) => {
         const boxes = []
         Object.keys(chartData || {}).forEach((key) => {
             const list = chartData[key]?.boxStats
@@ -325,10 +340,10 @@ function ChartsAside(props) {
             historyData[`${getMetricDisplay().valuePrefix}Arr`] || historyData.pressArr
         )
         const pressArr = Array.isArray(pressArrRaw) ? { back: pressArrRaw } : pressArrRaw
-        const hasCurrentBoxStats = getBoxStats(props.chartData.current).length > 0
+        const hasCurrentBoxStats = getBoxStats().length > 0
         const useHistory = pressArr && Object.keys(pressArr).length && !hasCurrentBoxStats
 
-        const chartData = useHistory ? pressArr : props.chartData.current
+        const chartData = useHistory ? pressArr : pickDeviceParts(props.chartData.current)
         const keyArr = Object.keys(chartData)
         const onlyBoxStats = !useHistory && getBoxStats(chartData).length > 0
         let areaObj = {}
@@ -365,10 +380,10 @@ function ChartsAside(props) {
             historyData[getMetricAreaTrendField()] || historyData.areaArr
         )
         const areaArr = Array.isArray(areaArrRaw) ? { back: areaArrRaw } : areaArrRaw
-        const hasCurrentBoxStats = getBoxStats(props.chartData.current).length > 0
+        const hasCurrentBoxStats = getBoxStats().length > 0
         const useHistory = areaArr && Object.keys(areaArr).length && !hasCurrentBoxStats
 
-        const chartData = useHistory ? areaArr : props.chartData.current
+        const chartData = useHistory ? areaArr : pickDeviceParts(props.chartData.current)
         const keyArr = Object.keys(chartData)
         const onlyBoxStats = !useHistory && getBoxStats(chartData).length > 0
         let areaObj = {}
@@ -400,7 +415,7 @@ function ChartsAside(props) {
     }
 
     const renderCenter = () => {
-        const chartData = props.chartData.current
+        const chartData = pickDeviceParts(props.chartData.current)
         const keys = Object.keys(chartData)
         if (!keys.length) {
             trackRef.current?.canvasInit?.()
@@ -433,7 +448,7 @@ function ChartsAside(props) {
 
     const renderNormal = () => {
         if (!chart.current) return
-        const chartData = props.chartData.current
+        const chartData = pickDeviceParts(props.chartData.current)
         const keys = Object.keys(chartData)
         if (!keys.length) {
             chart.current.clear()
@@ -558,7 +573,7 @@ function ChartsAside(props) {
 
         const offUI = Scheduler.onUI(() => setData(() => {
             const system = getSysType()
-            const chartData = props.chartData.current
+            const chartData = pickDeviceParts(props.chartData.current)
 
             const select = getSelectArr()
             const displayType = getDisplayType()
@@ -567,7 +582,6 @@ function ChartsAside(props) {
             const keyArr = Object.keys(chartData)
             let dataObj = {}
             if (keyArr.length) {
-                const chartData = props.chartData.current
                 for (let i = 0; i < keyArr.length; i++) {
                     const key = keyArr[i]
                     if (!dataObj[key]) dataObj[key] = {}
@@ -692,13 +706,10 @@ function ChartsAside(props) {
 
     // 当前视图对应的部位（「整体」视图取不到具体部位）
     const displayPart = getMatrixPartFromDisplayType(storeDisplayType)
-    const devicePartKeys = getSystemMatrixParts(systemType).map((part) => part.key)
     // 图例整块面板只出现一次，纯粹起「哪个颜色对应哪个位置」的标注作用，
     // 所以按设备自身的部位配置把部位全列出来，不看当前接了几块传感器、data 里有没有值。
-    // 万一 data 里出现配置外的部位（老设备），补在后面，免得有条曲线没标注
-    const legendKeys = devicePartKeys.concat(
-        Object.keys(data).filter((a) => a !== 't' && !devicePartKeys.includes(getMatrixPartFromDisplayType(a))),
-    )
+    // 配置以外的部位（比如插错板子接上来的靠背）一律不显示
+    const legendKeys = getSystemMatrixParts(systemType).map((part) => part.key)
 
     /**
      * 渲染图表图例 — 多框选时显示框颜色，否则显示设备颜色
