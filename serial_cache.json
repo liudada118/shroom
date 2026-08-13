@@ -93,15 +93,15 @@
     "344637301550321301": {
       "type": "endi-leftFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-03T05:57:12.247Z",
+      "lastSeen": "2026-08-13T01:52:06.380Z",
       "alias": ""
     },
     "504330390250435E45": {
       "type": "endi-jacket",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-11T07:46:47.374Z",
+      "lastSeen": "2026-08-13T01:51:47.086Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-08-11T07:46:47.374Z"
+  "updatedAt": "2026-08-13T01:52:06.380Z"
 }

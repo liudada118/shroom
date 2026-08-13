@@ -14,7 +14,7 @@ import FootTrack from '../chart/Chart';
 import { graCenter } from '../../util/util';
 import DraggablePanel from '../draggablePanel/DraggablePanel';
 import { formatSelectionName } from '../../util/selectionName';
-import { getNextPressureUnit, getPressureMetricDisplay } from '../../util/pressureMetrics';
+import { getPressureMetricDisplay } from '../../util/pressureMetrics';
 import usePanelLayoutSync from '../../hooks/usePanelLayoutSync';
 import {
     formatGradientValue,
@@ -66,7 +66,6 @@ function ChartsAside(props) {
     const gradientUnit = useEquipStore(s => s.gradientUnit)
     const setGradientUnit = useEquipStore(s => s.setGradientUnit)
     const pressureUnit = useEquipStore(s => s.pressureUnit)
-    const setPressureUnit = useEquipStore(s => s.setPressureUnit)
     const storeDisplayType = useEquipStore(s => s.displayType)
     const systemType = useEquipStore(s => s.systemType)
     // 左侧上下两块面板：重叠时把上面那块压成可滚动区，拖开后恢复原始长度
@@ -957,18 +956,6 @@ function ChartsAside(props) {
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{metricDisplay.curveLabel}</div>
-                        <div className='shapeUnitBar'>
-                            <span className='shapeUnitLabel'>{t('unit')}：</span>
-                            <span className='shapeUnitValue'>{metricDisplay.unit}</span>
-                            <button
-                                type='button'
-                                className='shapeUnitButton'
-                                title={t('switchUnit')}
-                                onClick={() => setPressureUnit(getNextPressureUnit(pressureUnit))}
-                            >
-                                ⇌
-                            </button>
-                        </div>
                         <div className="chartType">{renderLegend(pressColorArr)}</div>
                     </div>
                     <div ref={myChart1Dom} id="myChart1" className="chartCanvas" style={{ opacity: '0.8' }}></div>

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { maxObj } from '../assets/util/constant'
 import { loadVisualSettingValue, normalizeVisualSettingMax } from '../util/visualSettingStorage'
-import { PRESSURE_METRIC_MODE, PRESSURE_UNIT_N_CM2, normalizePressureUnit } from '../util/pressureMetrics'
+import { PRESSURE_METRIC_MODE, PRESSURE_UNIT_N_CM2 } from '../util/pressureMetrics'
 import { GRADIENT_UNIT_PA_CM, normalizeGradientUnit } from '../util/gradientMetrics'
 
 // ─── 持久化设置值 ────────────────────────────────────────
@@ -23,10 +23,13 @@ function loadGradientUnit() {
   return normalizeGradientUnit(localStorage.getItem(GRADIENT_UNIT_STORAGE_KEY))
 }
 
-// 压强显示单位默认 N/cm²（与 3D / 2D 视图无关），用户切换后保持到下次启动
+// 压强显示单位固定 N/cm²，界面上不提供切换。
+// 早期版本存过 kPa，这里直接覆盖掉，避免老机器升级后还按 kPa 显示
 function loadPressureUnit() {
-  if (typeof localStorage === 'undefined') return PRESSURE_UNIT_N_CM2
-  return normalizePressureUnit(localStorage.getItem(PRESSURE_UNIT_STORAGE_KEY))
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(PRESSURE_UNIT_STORAGE_KEY, PRESSURE_UNIT_N_CM2)
+  }
+  return PRESSURE_UNIT_N_CM2
 }
 
 function loadSettingValue() {
@@ -124,13 +127,6 @@ export const useEquipStore = create((set) => ({
       localStorage.setItem(GRADIENT_UNIT_STORAGE_KEY, unit)
     }
     set({ gradientUnit: unit })
-  },
-  setPressureUnit: (s) => {
-    const unit = normalizePressureUnit(s)
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(PRESSURE_UNIT_STORAGE_KEY, unit)
-    }
-    set({ pressureUnit: unit })
   },
 
   setSelectArr: (s) => set({ selectArr: s }),
