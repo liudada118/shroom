@@ -398,14 +398,13 @@ const ViewSetting = (props) => {
         setOnRuler(false)
     }
 
-    // 工具条只在启动时量一次左下角的「对称系数/压力梯度」面板，贴到它正下方并与它同宽。
-    // 定完位就不再跟随：之后拖动那块面板不会带着工具条走，两者各自独立。
+    // 工具条只在启动时量一次左侧那块曲线面板（压强/面积/对称系数/压力梯度已合成一块），
+    // 贴到它正下方并与它同宽。定完位就不再跟随：之后拖动面板不会带着工具条走，两者各自独立。
     useEffect(() => {
         let raf = 0
         let timer = 0
         let last = null
         let stable = 0
-        let attempts = 0
 
         const schedule = () => {
             if (!raf) raf = requestAnimationFrame(measure)
@@ -417,13 +416,10 @@ const ViewSetting = (props) => {
 
         function measure() {
             raf = 0
-            attempts += 1
             // 用户已经自己拖过工具条，就不要再去改它的位置
             if (toolbarMovedRef.current) return
             const bar = toolbarRef.current
-            // 对称系数面板要等有数据才出现，还没出现时先贴在上面那块曲线面板下方
-            const shapePanel = document.querySelector('.shape-panel')
-            const panel = shapePanel || document.querySelector('.charts-panel')
+            const panel = document.querySelector('.charts-panel')
             if (!bar || !panel) {
                 retry()
                 return
@@ -452,10 +448,8 @@ const ViewSetting = (props) => {
                 last = next
                 setToolbarPos(next)
             }
-            // 面板里的图表首帧之后还会把高度撑开，量到连续两次不变才收手；
-            // 还没锚到对称系数面板就继续等它出现（约 30s 后放弃，非假人系统没有这块面板）
-            const settled = shapePanel ? stable >= 2 : attempts > 100
-            if (!settled) retry()
+            // 面板里的图表首帧之后还会把高度撑开，量到连续两次不变才收手
+            if (stable < 2) retry()
         }
 
         schedule()

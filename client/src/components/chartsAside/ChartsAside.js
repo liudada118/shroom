@@ -15,7 +15,6 @@ import { graCenter } from '../../util/util';
 import DraggablePanel from '../draggablePanel/DraggablePanel';
 import { formatSelectionName } from '../../util/selectionName';
 import { getPressureMetricDisplay } from '../../util/pressureMetrics';
-import usePanelLayoutSync from '../../hooks/usePanelLayoutSync';
 import {
     formatGradientValue,
     formatSymmetryPercent,
@@ -24,15 +23,8 @@ import {
     supportsSymmetryCoefficient,
 } from '../../util/gradientMetrics';
 
-// 对称系数 / 压力梯度面板中部位的固定排序
+// 对称系数 / 压力梯度中部位的固定排序
 const SHAPE_PART_ORDER = ['jacket', 'leftHand', 'rightHand', 'foot']
-
-// 左侧上下两块面板将要重叠时的最小间距，以及上面那块被压缩后的最小高度
-const PANEL_STACK_GAP = 12
-const PANEL_MIN_BODY_HEIGHT = 160
-
-// 左下角要给「重置视图/视图切换」工具条留出的高度（越小 = 对称系数面板越靠下）
-const SHAPE_PANEL_BOTTOM = 80
 
 // 左右两块面板离顶部的距离保持一致
 const PANEL_TOP = 80
@@ -68,10 +60,6 @@ function ChartsAside(props) {
     const pressureUnit = useEquipStore(s => s.pressureUnit)
     const storeDisplayType = useEquipStore(s => s.displayType)
     const systemType = useEquipStore(s => s.systemType)
-    // 左侧上下两块面板：重叠时把上面那块压成可滚动区，拖开后恢复原始长度
-    const mainPanelRef = useRef(null)
-    const shapePanelRef = useRef(null)
-    const [mainPanelMaxBodyHeight, setMainPanelMaxBodyHeight] = useState(null)
     const historyChartRef = useRef(historyChart)
     const pressureMetricModeRef = useRef(pressureMetricMode)
     // 图表在 Scheduler 回调里重绘，取不到最新的 state，统一走 ref
@@ -193,12 +181,13 @@ function ChartsAside(props) {
         const yAxisTitle = props.yName || '数值'
         let option = {
             animation: false,
-            grid: { left: 42, right: 36, top: 30, bottom: 34, containLabel: false },
+            // 四块内容合到一块面板里，画布压矮了，上下留白也跟着收一点
+            grid: { left: 42, right: 36, top: 24, bottom: 30, containLabel: false },
             graphic: [
                 {
                     type: 'text',
                     left: 42,
-                    top: 6,
+                    top: 4,
                     silent: true,
                     style: {
                         text: yAxisTitle,
@@ -658,38 +647,6 @@ function ChartsAside(props) {
 
     }, [])
 
-    usePanelLayoutSync(() => {
-        const main = mainPanelRef.current
-        const shape = shapePanelRef.current
-        const body = main?.querySelector('.draggable-panel-body')
-        if (!main || !shape || !body) {
-            setMainPanelMaxBodyHeight(null)
-            return
-        }
-        const mainRect = main.getBoundingClientRect()
-        const shapeRect = shape.getBoundingClientRect()
-        // 横向错开、或对称系数面板被拖到上方 → 两块互不干扰，保持原始长度
-        const apart = shapeRect.right <= mainRect.left
-            || mainRect.right <= shapeRect.left
-            || shapeRect.top <= mainRect.top
-        if (apart) {
-            setMainPanelMaxBodyHeight(null)
-            return
-        }
-        // 面板带 scale 变换，可用高度要换回未缩放的 CSS 像素
-        const scale = main.offsetWidth ? mainRect.width / main.offsetWidth : 1
-        const bodyTop = body.getBoundingClientRect().top
-        const available = (shapeRect.top - PANEL_STACK_GAP - bodyTop) / (scale || 1)
-        // 内容本来就放得下就不加滚动条
-        setMainPanelMaxBodyHeight(
-            available >= body.scrollHeight ? null : Math.max(PANEL_MIN_BODY_HEIGHT, available),
-        )
-    }, () => [
-        mainPanelRef.current,
-        shapePanelRef.current,
-        mainPanelRef.current?.querySelector('.draggable-panel-body'),
-    ])
-
     const { t, i18n } = useTranslation()
     const metricDisplay = getPressureMetricDisplay(pressureMetricMode, t, i18n.language, pressureUnit)
 
@@ -733,6 +690,16 @@ function ChartsAside(props) {
 
     const hasSelectionStats = hasBoxStats()
 
+    // 当前视图对应的部位（「整体」视图取不到具体部位）
+    const displayPart = getMatrixPartFromDisplayType(storeDisplayType)
+    const devicePartKeys = getSystemMatrixParts(systemType).map((part) => part.key)
+    // 图例整块面板只出现一次，纯粹起「哪个颜色对应哪个位置」的标注作用，
+    // 所以按设备自身的部位配置把部位全列出来，不看当前接了几块传感器、data 里有没有值。
+    // 万一 data 里出现配置外的部位（老设备），补在后面，免得有条曲线没标注
+    const legendKeys = devicePartKeys.concat(
+        Object.keys(data).filter((a) => a !== 't' && !devicePartKeys.includes(getMatrixPartFromDisplayType(a))),
+    )
+
     /**
      * 渲染图表图例 — 多框选时显示框颜色，否则显示设备颜色
      */
@@ -757,14 +724,11 @@ function ChartsAside(props) {
             ))
         }
         // 设备模式
-        return Object.keys(data).map((a) => {
-            if (a !== 't') {
-                return <div className='chartTypeItem' key={a}>
-                    <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, colorArr) }}></div> {getDeviceChartLabel(a)}
-                </div>
-            }
-            return null
-        })
+        return legendKeys.map((a) => (
+            <div className='chartTypeItem' key={a}>
+                <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, colorArr) }}></div> {getDeviceChartLabel(a)}
+            </div>
+        ))
     }
 
     /**
@@ -849,8 +813,7 @@ function ChartsAside(props) {
     // ─── 对称系数 / 压力梯度 ───────────────────────────────
     // 「整体」视图：上身/左臂/右臂/下身全部列出，无值的位置显示「-」；
     // 单部位视图（选中某一个部位）：只列出该部位。
-    const shapePart = getMatrixPartFromDisplayType(storeDisplayType)
-    const shapeIsSinglePart = supportsPressureGradient(shapePart)
+    const shapeIsSinglePart = supportsPressureGradient(displayPart)
 
     /** 部位短名 → data 里的实际 key（如 jacket → endi-jacket），没有数据时返回短名本身 */
     const shapeDataKey = (part) => (
@@ -858,24 +821,21 @@ function ChartsAside(props) {
     )
 
     const shapeKeys = SHAPE_PART_ORDER
-        .filter((part) => !shapeIsSinglePart || part === shapePart)
+        .filter((part) => !shapeIsSinglePart || part === displayPart)
         .map(shapeDataKey)
     const symmetryKeys = shapeKeys.filter((a) => supportsSymmetryCoefficient(a))
-    // 只有假人这类带上身/四肢的系统才有这块面板。
+    // 只有假人这类带上身/四肢的系统才有这两项。
     // 按设备自身的部位配置判断，不看有没有数据：没连串口时 data 是空的，
-    // 面板一样要出来，数值显示「-」，和上面几块面板保持一致
+    // 这块一样要出来，数值显示「-」，和上面几块保持一致
     const deviceSupportsShape = getSystemMatrixParts(systemType).some((part) => supportsPressureGradient(part.key))
-    const shapePanelVisible = deviceSupportsShape && shapeKeys.length > 0
+    const shapeVisible = deviceSupportsShape && shapeKeys.length > 0
+    const shapeTitle = `${t('symmetryCoefficient')} / ${t('pressureGradient')}`
+    // 压强、面积、对称系数、压力梯度合成一块面板，标题把四项都列上（放不下时省略号）
+    const panelTitle = [metricDisplay.curveLabel, t('areaCurve')]
+        .concat(shapeVisible ? [shapeTitle] : [])
+        .join(' / ')
 
-    /** 部位图例（带名称，用于标注下方色点对应哪个部位） */
-    const renderShapeLegend = (keys) => keys.map((key) => (
-        <div className='chartTypeItem' key={`shape-legend-${key}`}>
-            <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(key, pressColorArr) }}></div>
-            {getDeviceChartLabel(key)}
-        </div>
-    ))
-
-    /** 一行指标：每个部位一个「色点 + 数值 + 单位」，色点颜色与图例一致 */
+    /** 一行指标：每个部位一个「色点 + 数值 + 单位」，色点颜色与最上面那行图例一致 */
     const renderShapeRow = (keys, format, unit) => keys.map((key) => (
         <div className='chartTypeItem' key={`shape-${key}-${unit || 'percent'}`}>
             <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(key, pressColorArr) }}></div>
@@ -886,73 +846,61 @@ function ChartsAside(props) {
         </div>
     ))
 
-    const renderShapePanel = () => {
-        if (!shapePanelVisible) return null
+    /**
+     * 对称系数 / 压力梯度：和压强、面积合在同一块面板里，
+     * 部位色点对应哪个位置只看最上面「压强总和曲线」那一行图例，这里不再重复标注
+     */
+    const renderShapeSection = () => {
+        if (!shapeVisible) return null
         return (
-            <DraggablePanel
-                title={t('symmetryCoefficient') + ' / ' + t('pressureGradient')}
-                defaultPosition={{ x: 20, bottom: SHAPE_PANEL_BOTTOM }}
-                className='charts-panel shape-panel'
-                innerRef={shapePanelRef}
-            >
+            <div className='chartAndDataContent'>
+                <div className="chartTitle">
+                    <div className="chartName">{shapeTitle}</div>
+                    <div className='shapeUnitBar'>
+                        <span className='shapeUnitLabel'>{t('unit')}：</span>
+                        <span className='shapeUnitValue'>{gradientUnit}</span>
+                        <button
+                            type='button'
+                            className='shapeUnitButton'
+                            title={t('switchUnit')}
+                            onClick={() => setGradientUnit(getNextGradientUnit(gradientUnit))}
+                        >
+                            ⇌
+                        </button>
+                    </div>
+                </div>
                 {symmetryKeys.length ? (
-                    <div className='chartAndDataContent'>
-                        <div className="chartTitle">
-                            <div className="chartName">{t('symmetryCoefficient')}</div>
-                            <div className="chartType">{renderShapeLegend(symmetryKeys)}</div>
-                        </div>
-                        <div className='chartData'>
-                            <span className="chartDataLabel">{t('symmetryCoefficient')}</span>
-                            <div className='chartTypeContent'>
-                                {renderShapeRow(symmetryKeys, (key) => formatSymmetryPercent(data[key]?.symmetry), '')}
-                            </div>
+                    <div className='chartData'>
+                        <span className="chartDataLabel">{t('symmetryCoefficient')}</span>
+                        <div className='chartTypeContent'>
+                            {renderShapeRow(symmetryKeys, (key) => formatSymmetryPercent(data[key]?.symmetry), '')}
                         </div>
                     </div>
                 ) : null}
-
-                <div className='chartAndDataContent'>
-                    <div className="chartTitle">
-                        <div className="chartName">{t('pressureGradient')}</div>
-                        <div className='shapeUnitBar'>
-                            <span className='shapeUnitLabel'>{t('unit')}：</span>
-                            <span className='shapeUnitValue'>{gradientUnit}</span>
-                            <button
-                                type='button'
-                                className='shapeUnitButton'
-                                title={t('switchUnit')}
-                                onClick={() => setGradientUnit(getNextGradientUnit(gradientUnit))}
-                            >
-                                ⇌
-                            </button>
-                        </div>
-                    </div>
-                    <div className="chartType shapeLegendRow">{renderShapeLegend(shapeKeys)}</div>
-                    <div className='chartData'>
-                        <span className="chartDataLabel">{t('avgGradient')}</span>
-                        <div className='chartTypeContent'>
-                            {renderShapeRow(shapeKeys, (key) => formatGradientValue(data[key]?.avgGradient, gradientUnit), gradientUnit)}
-                        </div>
-                    </div>
-                    <div className='chartData'>
-                        <span className="chartDataLabel">{t('maxGradient')}</span>
-                        <div className='chartTypeContent'>
-                            {renderShapeRow(shapeKeys, (key) => formatGradientValue(data[key]?.maxGradient, gradientUnit), gradientUnit)}
-                        </div>
+                <div className='chartData'>
+                    <span className="chartDataLabel">{t('avgGradient')}</span>
+                    <div className='chartTypeContent'>
+                        {renderShapeRow(shapeKeys, (key) => formatGradientValue(data[key]?.avgGradient, gradientUnit), gradientUnit)}
                     </div>
                 </div>
-            </DraggablePanel>
+                <div className='chartData'>
+                    <span className="chartDataLabel">{t('maxGradient')}</span>
+                    <div className='chartTypeContent'>
+                        {renderShapeRow(shapeKeys, (key) => formatGradientValue(data[key]?.maxGradient, gradientUnit), gradientUnit)}
+                    </div>
+                </div>
+            </div>
         )
     }
 
     return (
         <>
             <DraggablePanel
-                title={metricDisplay.curveLabel + ' / ' + t('areaCurve')}
+                title={panelTitle}
                 defaultPosition={{ x: 20, y: PANEL_TOP }}
                 className={`charts-panel${hasSelectionStats ? ' charts-panel--expanded' : ''}`}
-                innerRef={mainPanelRef}
-                maxBodyHeight={mainPanelMaxBodyHeight}
             >
+                {/* 图例（哪个颜色对应哪个部位）整块面板只在这里出现一次，下面几块共用 */}
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{metricDisplay.curveLabel}</div>
@@ -970,7 +918,6 @@ function ChartsAside(props) {
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
                         <div className="chartName">{t('areaCurve')}</div>
-                        <div className="chartType">{renderLegend(pressColorArr)}</div>
                     </div>
                     <div ref={myChart2Dom} id="myChart2" className="chartCanvas" style={{ opacity: '0.8' }}></div>
                     {areaDataArr.map((item) => (
@@ -980,6 +927,8 @@ function ChartsAside(props) {
                         </div>
                     ))}
                 </div>
+
+                {renderShapeSection()}
             </DraggablePanel>
 
             <DraggablePanel
@@ -1013,8 +962,6 @@ function ChartsAside(props) {
                     </div>
                 </div>
             </DraggablePanel>
-
-            {renderShapePanel()}
         </>
     )
 }
