@@ -3,7 +3,7 @@
     "504330390250435E45": {
       "type": "endi-jacket",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-13T10:02:39.659Z",
+      "lastSeen": "2026-08-13T10:04:01.453Z",
       "alias": ""
     },
     "464134391150431A9A": {
@@ -15,15 +15,15 @@
     "46413439115043190B": {
       "type": "endi-leftHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-13T10:02:43.174Z",
+      "lastSeen": "2026-08-13T10:04:04.975Z",
       "alias": ""
     },
     "344637301550321301": {
       "type": "endi-leftFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-13T10:02:38.620Z",
+      "lastSeen": "2026-08-13T10:04:00.943Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-08-13T10:02:43.174Z"
+  "updatedAt": "2026-08-13T10:04:04.975Z"
 }
