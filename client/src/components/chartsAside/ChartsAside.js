@@ -195,12 +195,14 @@ function ChartsAside(props) {
         const yAxisTitle = props.yName || '数值'
         let option = {
             animation: false,
-            // 四块内容合到一块面板里，画布压矮了，上下留白也跟着收一点
-            grid: { left: 42, right: 36, top: 24, bottom: 30, containLabel: false },
+            // 四块内容合到一块面板里，画布压矮了，上下留白也跟着收一点。
+            // 左右也收窄：left 只需容纳 y 轴刻度文字（最宽 4 位数 ≈ 20px + margin 4），
+            // right 原来留 36px 是给「时间(帧)」那行字，实际它是右对齐的 graphic，跟着一起改小
+            grid: { left: 32, right: 12, top: 18, bottom: 30, containLabel: false },
             graphic: [
                 {
                     type: 'text',
-                    left: 42,
+                    left: 32,
                     top: 4,
                     silent: true,
                     style: {
@@ -213,7 +215,7 @@ function ChartsAside(props) {
                 },
                 {
                     type: 'text',
-                    right: 36,
+                    right: 12,
                     bottom: 0,
                     silent: true,
                     style: {
@@ -489,12 +491,13 @@ function ChartsAside(props) {
         const pressureValueLabel = metricDisplay.labels.data
         const probabilityDensityLabel = props.t('probabilityDensity') || '概率密度'
         chart.current.setOption({
-            grid: { left: 42, right: 36, top: 30, bottom: 34, containLabel: false },
+            // 和上面两条曲线一样把左右留白收窄，绘图区宽一点
+            grid: { left: 32, right: 12, top: 30, bottom: 34, containLabel: false },
             title: { left: 'center' },
             graphic: [
                 {
                     type: 'text',
-                    left: 42,
+                    left: 32,
                     top: 6,
                     silent: true,
                     style: {
@@ -507,7 +510,7 @@ function ChartsAside(props) {
                 },
                 {
                     type: 'text',
-                    right: 36,
+                    right: 12,
                     bottom: 0,
                     silent: true,
                     style: {
