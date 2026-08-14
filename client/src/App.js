@@ -502,7 +502,7 @@ i18next.init({
         pointsAxis: '点数(个)',
         pressureCurve: '压力总和曲线',
         areaCurve: '面积曲线',
-        realtimeStats: '实时统计数据',
+        realtimeStats: '实时数据统计',
         speed: '倍速',
         dataCollect: '数据采集',
         pressureCenterCurve: '压力重心点',
