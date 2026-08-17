@@ -893,9 +893,11 @@ export function useMatrixData() {
     const dataQualityObj = {}
     for (const fullKey of keyArr) {
       if (fullKey === 'endi-foot') {
+        // 合并后的 endi-foot 状态是「左右任一 online 就算 online」，不能拿它兜底：
+        // 某一侧的串口条目被清掉时 sourceStatuses 里没有这一项，兜底会让没插的那条腿也亮绿灯
         const sourceStatuses = sitData[fullKey]?.sourceStatuses || {}
-        newObj['endi-leftFoot'] = sourceStatuses['endi-leftFoot'] || sitData[fullKey]?.status
-        newObj['endi-rightFoot'] = sourceStatuses['endi-rightFoot'] || sitData[fullKey]?.status
+        newObj['endi-leftFoot'] = sourceStatuses['endi-leftFoot'] || 'offline'
+        newObj['endi-rightFoot'] = sourceStatuses['endi-rightFoot'] || 'offline'
       } else {
         newObj[fullKey] = sitData[fullKey]?.status
       }
