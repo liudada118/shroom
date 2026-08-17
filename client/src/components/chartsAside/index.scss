@@ -20,9 +20,10 @@
                 font-size: 0.9rem;
             }
 
+            // 六个框时数值折成两行、这块本来就矮，曲线还是太扁，再加高一点
             .chartCanvas {
-                height: 6.5rem;
-                flex: 0 0 6.5rem;
+                height: 7.5rem;
+                flex: 0 0 7.5rem;
             }
 
             .chartData {
