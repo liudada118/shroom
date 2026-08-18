@@ -328,18 +328,27 @@ function buildTopAveragePointPressures(values, validIndexes, stats) {
   return result
 }
 
+/**
+ * ADC 矩阵按压强公式换算成 kPa 矩阵。
+ * 传实际点网格（sourceWidth × sourceHeight）或插值后的显示网格（displayWidth × displayHeight）都可以，
+ * 按数组长度自动认网格并选对应的遮罩。现在调用方传的是插值后的显示网格：
+ * 公式统计的点数（150 阈值、Top50）和屏幕上画的格子是同一批，面板数值不再和公式内部口径打架
+ */
 function convertPhysicalPressureMatrix(key, adcValues) {
   const config = DUMMY_MATRIX_CONFIG[key]
   if (!config || !adcValues.length) return []
   const formula = loadDummyPressureFormula()
   const validThreshold = Number(formula.DUMMY_VALID_ADC_THRESHOLD) || 10
+  const isDisplayGrid = adcValues.length === config.displayWidth * config.displayHeight
+  const gridWidth = isDisplayGrid ? config.displayWidth : config.sourceWidth
+  const isCellValid = isDisplayGrid ? isDisplayCellValid : isPhysicalCellValid
   const validIndexes = []
   const validValues = []
 
   adcValues.forEach((value, index) => {
-    const row = Math.floor(index / config.sourceWidth)
-    const col = index % config.sourceWidth
-    if (isPhysicalCellValid(key, row, col) && Number(value) > validThreshold) {
+    const row = Math.floor(index / gridWidth)
+    const col = index % gridWidth
+    if (isCellValid(key, row, col) && Number(value) > validThreshold) {
       validIndexes.push(index)
       validValues.push(Number(value))
     }
@@ -388,9 +397,10 @@ function processSingleDummyMatrix(key, sourceValues, processingConfig) {
   if (!physicalSource.length) return null
   const rawAdcArr = normalizeRawAdcMatrix(key, sourceValues)
   const physicalAdc = processPhysicalAdcMatrix(key, physicalSource, config)
-  const physicalPressure = convertPhysicalPressureMatrix(key, physicalAdc)
   const displayAdcRaw = interpolatePhysicalMatrix(key, physicalAdc)
-  const displayPressureRaw = interpolatePhysicalMatrix(key, physicalPressure)
+  // 先插值再换算：公式和屏幕显示走同一批点（原来是在实际点上换算完再插值，
+  // 插值出来的中间格是「压强的线性插值」，公式统计的点数也和屏幕上的格子数不一致）
+  const displayPressureRaw = convertPhysicalPressureMatrix(key, displayAdcRaw)
   const filtered = applyDisplayMetricFilter(displayAdcRaw, displayPressureRaw, config)
   const displayAdc = filtered.adc.map((value) => roundValue(value, 2))
   const pressureArr = filtered.pressure.map((value) => roundValue(value))
