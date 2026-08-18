@@ -23,12 +23,6 @@ import { colSelectMatrix } from '../../util/util'
 import { formatSelectionName } from '../../util/selectionName'
 
 const CSV_STORAGE_KEY = 'csvArr'
-const COP_REPORT_SELECTION_PREFIX = 'copReportSelection:'
-// 生成报告时首页的框会被清掉（框挂在 document.body 上，不清会飘到报告页上），
-// 而 /copReport 和 / 是同级路由，跳过去首页整个卸载、组件里的 ref 也没了，
-// 所以框选快照存 sessionStorage：之后每次生成报告都带同样的框选区域。
-// 故意不用 COP_REPORT_SELECTION_PREFIX 开头，免得被报告页清理遗留键时删掉
-const COP_REPORT_LAST_SELECTION_KEY = 'copReportLastSelection'
 const DRAWER_RENDER_CHUNK = 24
 const HISTORY_PREFETCH_DELAY = 800
 const HISTORY_CACHE_MAX_AGE = 30000
@@ -625,76 +619,14 @@ const ColAndHistory = memo((props) => {
             reportParams.set('source', 'csv')
             reportParams.set('fileName', reportDate)
         }
-        // 框选还在就用当前的并存档；已经被上一次生成报告清掉了就沿用存档
-        const currentSelectJson = buildCurrentReportSelectJson() || readLastReportSelectJson()
-        if (currentSelectJson) {
-            saveLastReportSelectJson(currentSelectJson)
-            const selectionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-            sessionStorage.setItem(`${COP_REPORT_SELECTION_PREFIX}${selectionId}`, JSON.stringify(currentSelectJson))
-            reportParams.set('selectionId', selectionId)
-        }
+        // 报告里的死框由服务端按这条记录读「开始采集」那一刻存下来的框，
+        // 这里不再把当前画面上的活框传过去，报告才不会跟着随手画的框变
         window.dispatchEvent(new CustomEvent('force-clear-selection-mode'))
         removeHistoryBox()
         useEquipStore.getState().setSelectArr([])
         window.location.hash = `#/copReport?${reportParams.toString()}`
         resetOperateState()
         sethistoryDrawer(false)
-    }
-
-    const readLastReportSelectJson = () => {
-        try {
-            const parsed = JSON.parse(sessionStorage.getItem(COP_REPORT_LAST_SELECTION_KEY) || 'null')
-            return parsed && typeof parsed === 'object' && Object.keys(parsed).length ? parsed : null
-        } catch (err) {
-            return null
-        }
-    }
-
-    const saveLastReportSelectJson = (selectJson) => {
-        try {
-            sessionStorage.setItem(COP_REPORT_LAST_SELECTION_KEY, JSON.stringify(selectJson))
-        } catch (err) {
-            console.error('[Report] save selection snapshot failed:', err)
-        }
-    }
-
-    const buildCurrentReportSelectJson = () => {
-        const ranges = Array.isArray(pageInfo?.brushInstance?.rangeArr)
-            ? pageInfo.brushInstance.rangeArr
-            : []
-        if (!ranges.length) return null
-
-        const systemType = getSysType()
-        const displayType = getDisplayType()
-        const selectJson = {}
-        ranges.forEach((range, index) => {
-            if (!range) return
-            let typeKey = range.matrixKey || systemType
-            if (isMoreMatrix(systemType)) {
-                const part = String(displayType || '').includes('sit') ? 'sit' : 'back'
-                typeKey = range.matrixKey || `${systemType}-${part}`
-            }
-            const config = systemPointConfig[typeKey]
-            if (!config) return
-            const matrix = range.matrixRect || colSelectMatrix('canvasThree', range, config)
-            if (!matrix) return
-
-            if (!selectJson[typeKey]) selectJson[typeKey] = { regions: [] }
-            selectJson[typeKey].regions.push({
-                xStart: matrix.xStart,
-                xEnd: matrix.xEnd,
-                yStart: matrix.yStart,
-                yEnd: matrix.yEnd,
-                width: matrix.width || config.width,
-                height: matrix.height || config.height,
-                name: formatSelectionName(range.name, index + 1, t),
-                color: range.bgc,
-                colorIndex: range.colorIndex != null ? range.colorIndex : index,
-                templateId: range.templateId,
-            })
-        })
-
-        return Object.keys(selectJson).length ? selectJson : null
     }
 
     const confirmDownload = async () => {

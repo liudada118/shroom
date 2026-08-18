@@ -664,25 +664,18 @@ function CopReport() {
   const date = query.get('date') || query.get('time') || ''
   const source = query.get('source') || ''
   const fileName = query.get('fileName') || ''
-  const selectionId = query.get('selectionId') || ''
 
   useEffect(() => {
     if (!date && !fileName) {
       setLoading(false)
       return
     }
+    // 死框由服务端按这条记录读「开始采集」那一刻存下来的框，前端不再传框选，
+    // 顺手把老版本残留在 sessionStorage 里的框选快照清掉
     const requestPayload = { date, source, fileName }
-    if (selectionId) {
-      const selectionKey = `${COP_REPORT_SELECTION_PREFIX}${selectionId}`
-      const selectJson = parseMaybeJson(sessionStorage.getItem(selectionKey))
-      if (selectJson && Object.keys(selectJson).length) {
-        requestPayload.selectJson = selectJson
-      }
-      // 本次的那条留着，刷新报告页还要用；只清掉之前遗留的
-      Object.keys(sessionStorage)
-        .filter((key) => key.startsWith(COP_REPORT_SELECTION_PREFIX) && key !== selectionKey)
-        .forEach((key) => sessionStorage.removeItem(key))
-    }
+    Object.keys(sessionStorage)
+      .filter((key) => key.startsWith(COP_REPORT_SELECTION_PREFIX))
+      .forEach((key) => sessionStorage.removeItem(key))
     setLoading(true)
     axios({
       method: 'post',
@@ -700,7 +693,7 @@ function CopReport() {
       message.error(err.message || '报告数据读取失败')
       setPayload(null)
     }).finally(() => setLoading(false))
-  }, [date, source, fileName, selectionId])
+  }, [date, source, fileName])
 
   const analysis = useMemo(
     () => buildAnalysis(payload, pressureMetricMode),

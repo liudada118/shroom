@@ -134,10 +134,12 @@ export default function Col(props) {
                     currentCollectDateRef.current = String(startStamp)
                     useEquipStore.getState().setCollecting(true)
 
-                    // 始终调用 upsertRemark 保存框选数据（即使没有 alias 和 remark）
+                    // 始终调用 upsertRemark 保存框选数据（即使没有 alias 和 remark）。
+                    // forceSelect：这一刻没框也要写成空的，报告里就是没有框——
+                    // 这条记录的框到此定死，采集过程中再画的框不算数
                     const alias = currentColName ? currentColName.trim() : ''
                     const remarkText = currentRemark ? currentRemark.trim().slice(0, 400) : ''
-                    persistCollectionRemark(startStamp, { alias, remarkText })
+                    persistCollectionRemark(startStamp, { alias, remarkText, forceSelect: true })
 
                 }
 
@@ -157,15 +159,12 @@ export default function Col(props) {
             startCollect()
         } else {
             const collectDate = currentCollectDateRef.current
-            const persistStopSelection = collectDate
-                ? persistCollectionRemark(collectDate, { forceSelect: true }).finally(() => {
-                    currentCollectDateRef.current = ''
-                })
-                : Promise.resolve()
-            persistStopSelection.then(() => axios({
+            currentCollectDateRef.current = ''
+            // 结束采集时不再回写框选：这条记录的框以「开始采集」那一刻为准
+            axios({
                 method: 'get',
                 url: `${localAddress}/endCol`,
-            })).then((res) => {
+            }).then((res) => {
                 if (res.data.message == 'error') {
                     message.error(res.data.data)
                 } else {

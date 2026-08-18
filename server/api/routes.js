@@ -1423,9 +1423,12 @@ router.post('/copReportData', asyncHandler(async (req, res) => {
     return size.width * size.height === arr.length
   })
   const remark = isImportSource ? null : await getRemark({ db, params: [time] }).catch(() => null)
-  const requestSelectJson = tryParseRequestJson(resolveRequestValue(req, ['selectJson', 'select']))
-  const reportSelectJson = requestSelectJson && typeof requestSelectJson === 'object'
-    ? requestSelectJson
+  // 报告里的死框只认这条记录在「开始采集」那一刻存下来的框（remarks.select_json），
+  // 不看请求里带来的当前画面上的活框，报告生成出来就固定不变。
+  // 导入的 csv 里没有框选信息，所以导入数据的报告永远没有框
+  const storedSelectJson = tryParseRequestJson(remark?.select)
+  const reportSelectJson = storedSelectJson && typeof storedSelectJson === 'object'
+    ? storedSelectJson
     : {}
   const frames = rows.map((row) => normalizeReportFrame(row, keys))
   const timestamps = rows.map((row) => Number(row.timestamp)).filter(Number.isFinite)
@@ -1923,7 +1926,9 @@ const handleDownload = asyncHandler(async (req, res) => {
     res.json(new HttpResult(1, {}, 'Database not initialized'))
     return
   }
-  const selectOverride = selectJson && typeof selectJson === 'object' ? selectJson : state.historySelectCache
+  // 不再用 state.historySelectCache（那是首页画面上的活框）兜底：
+  // 没显式传框选时，dbload 会按每条记录读它自己「开始采集」时存下来的框
+  const selectOverride = selectJson && typeof selectJson === 'object' ? selectJson : null
   const resolvedDownloadPath = resolveWritableDownloadDir({
     customDownloadPath: state.downloadPath || state._defaultDownloadPath,
     dataPath: state._dataPath,

@@ -439,6 +439,17 @@ function Test() {
     const [onSelect, setOnSelect] = useState(false)
     const [onMagnifier, setOnMagnifier] = useState(false)
 
+    // 进对比页一律清掉手画的活框。框是挂在 document.body 上的 DOM，
+    // 而 SecondTitle 在对比页是被卸载的，它自己那套关闭逻辑跑不到，
+    // 框就会留在屏幕上盖住对比界面（切到上身看不见只是因为框是按部位分的）
+    useEffect(() => {
+        if (display !== 'contrast') return
+        brushInstance.stopBrush()
+        brushInstance.deleteAll()
+        setSelectArr([])
+        setOnSelect(false)
+    }, [display])
+
     return (
         <div className=''>
             <pageContext.Provider value={{
