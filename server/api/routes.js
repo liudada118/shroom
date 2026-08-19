@@ -1425,8 +1425,8 @@ router.post('/copReportData', asyncHandler(async (req, res) => {
   const remark = isImportSource ? null : await getRemark({ db, params: [time] }).catch(() => null)
   // 报告里的死框只认这条记录在「开始采集」那一刻存下来的框（remarks.select_json），
   // 不看请求里带来的当前画面上的活框，报告生成出来就固定不变。
-  // 导入的 csv 里没有框选信息，所以导入数据的报告永远没有框
-  const storedSelectJson = tryParseRequestJson(remark?.select)
+  // 导入的数据没有 remarks，框来自文件里的框选坐标列（导出时写进去的那一份）
+  const storedSelectJson = tryParseRequestJson(isImportSource ? loaded.select : remark?.select)
   const reportSelectJson = storedSelectJson && typeof storedSelectJson === 'object'
     ? storedSelectJson
     : {}

@@ -1006,7 +1006,16 @@ const EXPORT_FIXED_FIELDS = [
   { id: 'elapsed_seconds', title: '秒数(s)' },
 ]
 
-const EXPORT_TRAILING_FIELDS = []
+// 框选坐标：把这条记录「开始采集」那一刻存下来的框原样写进文件，导入时再还原成同样的死框。
+// 只写在第一行数据上（单独占一行会被 validateImportedCsv 判成「数据有误」），
+// 标题带「框选」二字，会被 isOriginalDataColumn 自动排除在矩阵数据列之外，老版本读新文件不受影响
+// csv：整份框选写在第一行这一列里。
+// xlsx：第一个 sheet 不带这列，改成每个框选一个 sheet，坐标写在各自 sheet 的这一列里
+const EXPORT_SELECTION_FIELD = { id: 'selection_coords', title: '框选坐标(JSON)' }
+const EXPORT_TRAILING_FIELDS = [EXPORT_SELECTION_FIELD]
+// 这列固定输出，不进导出字段勾选弹窗，也不受勾选结果影响
+const ALWAYS_EXPORT_FIELD_IDS = new Set(EXPORT_TRAILING_FIELDS.map((field) => field.id))
+const SELECTION_HEADER_ID_PATTERN = /^(.+)_selection_(\d+)_(.+)$/
 
 // 对称系数 / 压力梯度：接在各部位（含每个框选列）「压力总和(N)」之后，按部位能力决定是否输出
 // 上身 / 下身 → 对称系数 + 平均梯度 + 最大梯度；左臂 / 右臂 → 仅两项梯度
@@ -1117,12 +1126,14 @@ function filterExportHeaders(headers, fields) {
   if (!Array.isArray(fields) || !fields.length) return headers
   const selected = new Set(fields)
   const filtered = headers.filter((header) => {
+    if (ALWAYS_EXPORT_FIELD_IDS.has(header.id)) return true
     if (selected.has(header.id)) return true
     return [...EXPORT_BASE_FIELDS, ...EXPORT_SHAPE_FIELDS].some((field) => {
       return selected.has(field.id) && header.id.endsWith(`_${field.id}`)
     })
   })
-  return filtered.length ? filtered : headers
+  // 只剩固定输出的框选坐标列，说明勾选没命中任何数据列，按原来的规则回落到全量表头
+  return filtered.some((header) => !ALWAYS_EXPORT_FIELD_IDS.has(header.id)) ? filtered : headers
 }
 
 function recordsForHeaders(records, headers) {
@@ -1137,16 +1148,87 @@ function recordsForHeaders(records, headers) {
   })
 }
 
-async function writeXlsxFile(filePath, headers, records) {
+function appendXlsxSheet(workbook, sheetName, headers, records) {
   const rows = recordsForHeaders(records, headers)
   const sheetRows = [
     headers.map((header) => header.title),
     ...rows.map((row) => headers.map((header) => row[header.id])),
   ]
-  const workbook = XLSX.utils.book_new()
   const worksheet = XLSX.utils.aoa_to_sheet(sheetRows)
   worksheet['!cols'] = headers.map((header) => ({ wch: Math.min(60, Math.max(10, String(header.title).length + 2)) }))
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'data')
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
+}
+
+// 把表头拆成「整块部位」和「每个框选」两拨：xlsx 第一个 sheet 只放前者，
+// 每个框选各自成一个 sheet（框选列的 id 形如 endi-jacket_selection_1_max_pressure）
+function splitExportSelectionHeaders(headers) {
+  const mainHeaders = []
+  const groupMap = new Map()
+  headers.forEach((header) => {
+    // 坐标列在 xlsx 里不放第一个 sheet，跟着各自的框选 sheet 走
+    if (ALWAYS_EXPORT_FIELD_IDS.has(header.id)) return
+    const matched = SELECTION_HEADER_ID_PATTERN.exec(header.id)
+    if (!matched) {
+      mainHeaders.push(header)
+      return
+    }
+    const groupId = `${matched[1]}_selection_${matched[2]}`
+    if (!groupMap.has(groupId)) {
+      groupMap.set(groupId, { matrixKey: matched[1], index: Number(matched[2]), headers: [] })
+    }
+    groupMap.get(groupId).headers.push(header)
+  })
+  return { mainHeaders, selectionGroups: Array.from(groupMap.values()) }
+}
+
+function buildSelectionSheetName(group, usedNames) {
+  const base = `${getPublicMatrixName(group.matrixKey)}框选${group.index}`
+    .replace(/[[\]:*?/\\]/g, '')
+    .slice(0, 28)
+  let name = base
+  let suffix = 2
+  while (usedNames.includes(name)) {
+    name = `${base}_${suffix}`
+    suffix += 1
+  }
+  return name
+}
+
+// 一个框选的坐标写成一段 JSON，带上部位 key，导入时照这段还原成同一个框
+function buildSelectionRegionJson(matrixKey, region) {
+  if (!region || typeof region !== 'object') return ''
+  try {
+    return JSON.stringify({ key: matrixKey, ...region })
+  } catch {
+    return ''
+  }
+}
+
+async function writeXlsxFile(filePath, headers, records, selectionRegionMap = {}) {
+  const { mainHeaders, selectionGroups } = splitExportSelectionHeaders(headers)
+  const workbook = XLSX.utils.book_new()
+  appendXlsxSheet(workbook, 'data', mainHeaders, records)
+
+  // 时间戳/秒数跟着每张框选表一起走，行和第一个 sheet 一一对应
+  const fixedHeaders = mainHeaders.filter((header) => EXPORT_FIXED_FIELDS.some((field) => field.id === header.id))
+  selectionGroups.forEach((group) => {
+    const region = selectionRegionMap?.[group.matrixKey]?.[group.index - 1]
+    const regionJson = buildSelectionRegionJson(group.matrixKey, region)
+    // 坐标只写第一行，其余行留空
+    const sheetRecords = records.map((record, rowIndex) => ({
+      ...record,
+      [EXPORT_SELECTION_FIELD.id]: rowIndex === 0 ? regionJson : '',
+    }))
+    appendXlsxSheet(
+      workbook,
+      buildSelectionSheetName(group, workbook.SheetNames),
+      // 坐标列放在指标列前面：这串 JSON 很长，右边有数据挡着才会像「压强数据」那样被裁掉，
+      // 放最后一列右边是空的，整串会一路铺出去很难看
+      [...fixedHeaders, EXPORT_SELECTION_FIELD, ...group.headers],
+      sheetRecords,
+    )
+  })
+
   XLSX.writeFile(workbook, filePath, { bookType: 'xlsx' })
 }
 
@@ -1161,7 +1243,7 @@ async function getExportFieldOptions({ db, params, exportOptions = {} }) {
       id: field.id,
       title: buildShapeFieldTitle(field, gradientUnit),
     })),
-    ...EXPORT_TRAILING_FIELDS,
+    // EXPORT_TRAILING_FIELDS（框选坐标）不列进来：它固定输出，不给用户勾选
   ]
   return {
     fields: headers.map((header) => ({ value: header.id, label: header.title })),
@@ -1227,6 +1309,18 @@ function getExportSelectionRegions(selectOverride, key, data, item = {}) {
     .slice(0, MAX_EXPORT_SELECTIONS)
 }
 
+// 导出时把框选原样序列化成一段 JSON，写在第一行数据的「框选坐标(JSON)」列里。
+// 原样搬运（保留 name / colorIndex / width / height），导入端 JSON.parse 回来就是同一份框
+function buildSelectionExportJson(selectOverride) {
+  if (!selectOverride || typeof selectOverride !== 'object') return ''
+  if (!collectExportSelectionRegions(selectOverride).length) return ''
+  try {
+    return JSON.stringify(selectOverride)
+  } catch {
+    return ''
+  }
+}
+
 function sliceSelectionData(data, region) {
   const result = []
   if (!Array.isArray(data) || !region) return result
@@ -1239,12 +1333,21 @@ function sliceSelectionData(data, region) {
   return result
 }
 
-function getSelectionCountMap(selectOverride, keys, firstData) {
+function getSelectionRegionMap(selectOverride, keys, firstData) {
   const map = {}
   if (!selectOverride || typeof selectOverride !== 'object') return map
   keys.forEach((key) => {
     const data = firstData?.[key]?.arr || []
-    map[key] = getExportSelectionRegions(selectOverride, key, data, firstData?.[key]).length
+    map[key] = getExportSelectionRegions(selectOverride, key, data, firstData?.[key])
+  })
+  return map
+}
+
+function getSelectionCountMap(selectOverride, keys, firstData) {
+  const regionMap = getSelectionRegionMap(selectOverride, keys, firstData)
+  const map = {}
+  Object.entries(regionMap).forEach(([key, regions]) => {
+    map[key] = regions.length
   })
   return map
 }
@@ -1292,7 +1395,11 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           // remarks 表可能不存在，忽略错误
         }
       }
-      const selectionCountMap = getSelectionCountMap(selectOverride, keyArr, firstData)
+      const selectionRegionMap = getSelectionRegionMap(selectOverride, keyArr, firstData)
+      const selectionCountMap = {}
+      Object.entries(selectionRegionMap).forEach(([key, regions]) => {
+        selectionCountMap[key] = regions.length
+      })
       const normalizedExportOptions = normalizeExportOptions(exportOptions)
       const metricMode = normalizedExportOptions.metricMode
       const gradientUnit = normalizedExportOptions.gradientUnit
@@ -1605,8 +1712,15 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         const headers = filterExportHeaders(buildCombinedHeaders(keyArr, selectionCountMap), normalizedExportOptions.fields)
         const records = [...csvDataRows]
         if (normalizedExportOptions.format === 'xlsx') {
-          await writeXlsxFile(exportFilePath, headers, records)
+          // xlsx：坐标跟着每张框选 sheet 走，第一个 sheet 不带坐标列
+          await writeXlsxFile(exportFilePath, headers, records, selectionRegionMap)
         } else {
+          // csv 只有一张表，整份框选写在第一行的坐标列里
+          // （单独插一行会被导入端的校验当成「数据有误」）
+          const selectionExportJson = buildSelectionExportJson(selectOverride)
+          if (selectionExportJson && records.length) {
+            records[0] = { ...records[0], [EXPORT_SELECTION_FIELD.id]: selectionExportJson }
+          }
           await writeSingleCsv(exportFilePath, headers, records)
         }
         resolve({ [param]: 'success', filePath: exportFilePath, filePaths: [exportFilePath], format: normalizedExportOptions.format })
@@ -1827,13 +1941,46 @@ function normalizeImportedRow(row = {}, file = '') {
   return { ...normalized, file }
 }
 
+// 从第一个 sheet 之后的每张框选表里读回坐标（每张表第一行数据的坐标列里放着这个框的 JSON），
+// 合并成和 remarks.select_json 一样的结构。老文件没有这些表，返回空
+function readXlsxSelectionJson(workbook) {
+  const selectJson = {}
+  workbook.SheetNames.slice(1).forEach((sheetName) => {
+    const worksheet = workbook.Sheets[sheetName]
+    if (!worksheet) return
+    const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: true })
+    for (const row of rows) {
+      const column = Object.keys(row || {}).find((header) => normalizeCsvHeader(header).includes('框选坐标'))
+      if (!column || isEmptyCsvValue(row[column])) continue
+      try {
+        const { key, ...region } = JSON.parse(String(row[column]))
+        const matrixKey = String(key || '').trim()
+        if (matrixKey && isExportSelectionRegion(region)) {
+          if (!selectJson[matrixKey]) selectJson[matrixKey] = { regions: [] }
+          selectJson[matrixKey].regions.push(region)
+        }
+      } catch {
+        // 这张表的坐标被改坏了就跳过，不影响其它框和数据导入
+      }
+      break
+    }
+  })
+  return Object.keys(selectJson).length ? JSON.stringify(selectJson) : ''
+}
+
 function readXlsxRows(file) {
   const workbook = XLSX.readFile(file, { cellDates: false })
   const sheetName = workbook.SheetNames[0]
   if (!sheetName) return []
   const worksheet = workbook.Sheets[sheetName]
-  return XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: true })
+  const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: true })
     .map((row) => normalizeImportedRow(row, file))
+  // 把各张框选表的坐标并到第一行的坐标列上，后面 csv / xlsx 就走同一套解析
+  const selectionJson = readXlsxSelectionJson(workbook)
+  if (selectionJson && rows.length) {
+    rows[0][EXPORT_SELECTION_FIELD.title] = selectionJson
+  }
+  return rows
 }
 
 function isEmptyCsvValue(value) {
@@ -2303,8 +2450,32 @@ function getCsvFrameTimestamp(row, rowIndex) {
   return Date.now() + rowIndex
 }
 
+// 从导入文件里把「框选坐标(JSON)」列读回来（只写在第一行，所以扫到第一个非空就用）。
+// 老文件没有这列，返回 '{}'，报告里就是没有框，跟改动前一样
+function parseImportedSelectionJson(csvRows) {
+  if (!Array.isArray(csvRows)) return '{}'
+  for (const row of csvRows) {
+    if (!row || typeof row !== 'object') continue
+    const key = Object.keys(row).find((header) => {
+      const normalized = normalizeCsvHeader(header)
+      return normalized.includes('框选坐标') || /^selection_coords$/i.test(normalized)
+    })
+    if (!key || isEmptyCsvValue(row[key])) continue
+    try {
+      const parsed = JSON.parse(String(row[key]))
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return JSON.stringify(parsed)
+      }
+    } catch {
+      // 列被改坏了就当没有框，不影响其它数据导入
+    }
+  }
+  return '{}'
+}
+
 function buildCsvPlaybackData(csvRows) {
   const groups = new Map()
+  const importedSelectJson = parseImportedSelectionJson(csvRows)
 
   csvRows.forEach((row, rowIndex) => {
     const entries = getCsvRowMatrixEntries(row)
@@ -2389,7 +2560,7 @@ function buildCsvPlaybackData(csvRows) {
       data: JSON.stringify(frame.data),
       timestamp: frame.timestamp,
       date: 'csv-import',
-      select: '{}',
+      select: importedSelectJson,
     }))
 
   if (!rows.length) {
@@ -2404,6 +2575,7 @@ function buildCsvPlaybackData(csvRows) {
       pressureAreaArr: {},
       forceAreaArr: {},
       rows: [],
+      select: importedSelectJson,
     }
   }
 
@@ -2518,6 +2690,7 @@ function buildCsvPlaybackData(csvRows) {
     pressureAreaArr,
     forceAreaArr,
     rows,
+    select: importedSelectJson,
   }
 }
 
