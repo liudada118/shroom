@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useRef, useState } from 'react'
-import Drawer from '../Drawer/Drawer'
+import { Drawer } from '../../ui'
 import { pageContext } from '../../page/test/Test';
 import SelectChart from './selectChart/SelectChart';
 import './index.scss'

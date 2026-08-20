@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-07-22
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-08-11
 
 ## 1. 项目概述
 
@@ -81,15 +81,27 @@ shroom/
 │   │   ├── store/
 │   │   │   └── equipStore.js   # zustand 状态仓库（含 macInfo/rescanning 状态）
 │   │   ├── components/
-│   │   │   ├── three/          # Three.js 3D 可视化组件（14 个）
-│   │   │   ├── chartsAside/    # ECharts 图表侧边栏
-│   │   │   ├── ColAndHistory/  # 采集历史组件
-│   │   │   ├── viewSetting/    # 视图设置
-│   │   │   ├── title/          # 标题栏组件
-│   │   │   ├── aside/          # 侧边栏
-│   │   │   ├── Drawer/         # 抽屉组件
-│   │   │   ├── num/            # 数值显示组件
+│   │   │   ├── three/          # Three.js 3D 业务可视化组件（14 个）
+│   │   │   ├── chartsAside/    # ECharts 图表业务组合层
+│   │   │   ├── ColAndHistory/  # 采集、历史与导出业务组件
+│   │   │   ├── viewSetting/    # 视图设置业务组件
+│   │   │   ├── title/          # 标题栏业务组合层
+│   │   │   ├── aside/          # 侧边栏业务组合层
+│   │   │   ├── num/            # 数值显示业务组件
 │   │   │   └── EquipStatus/    # 设备状态组件
+│   │   ├── ui/                 # 纯展示 UI 组件库
+│   │   │   ├── index.js        # 公共组件统一出口
+│   │   │   ├── README.md       # 组件清单与依赖边界
+│   │   │   ├── Drawer/         # Portal 侧边抽屉
+│   │   │   ├── DraggablePanel/ # 可拖动、缩放浮动面板
+│   │   │   ├── ChartPanel/     # 图表面板结构
+│   │   │   ├── MetricValue/    # 数值、色点和单位布局
+│   │   │   ├── SettingControlRow/ # 滑块与数字输入设置行
+│   │   │   ├── ExportDialog/   # 导出配置及进度弹窗
+│   │   │   ├── AsyncState/     # 加载与空状态
+│   │   │   ├── ToolbarAction/  # 工具栏图标操作
+│   │   │   ├── Select/         # Portal 选择器
+│   │   │   └── Playback/       # 纯回放按钮与倍速菜单
 │   │   ├── util/
 │   │   │   ├── echarts.js      # ECharts 按需引入入口
 │   │   │   ├── pressureMetrics.js # 压强公式、单点面积及压强/压力统一计量口径
@@ -133,7 +145,8 @@ shroom/
 | 目录 | 主要功能 |
 | :--- | :--- |
 | `/server` | 后端核心服务，模块化拆分为 api、websocket、serial、services |
-| `/client/src/components` | 可复用的 UI 组件，包含 14 个 Three.js 3D 可视化组件 |
+| `/client/src/components` | 设备状态、接口请求和页面流程相关的业务组合组件，包含 14 个 Three.js 3D 可视化组件 |
+| `/client/src/ui` | 可复用纯展示组件库；通过 `index.js` 统一导出，不读取设备 Store、不发起业务请求 |
 | `/client/src/page` | 页面级组件：test（主页）、data（数据）、equip（设备管理） |
 | `/client/src/hooks` | 自定义 React Hook，封装 WebSocket、矩阵数据等核心逻辑 |
 | `/client/src/store` | zustand 状态管理 |
@@ -168,12 +181,15 @@ graph TD
     C --> C3[equipStore<br/>zustand + shallow]
     C --> C4[Three.js 组件<br/>14个 + disposeThree]
     C --> C5[ECharts 图表<br/>按需引入]
+    C --> C6[UI 组件库<br/>client/src/ui]
 
     B3 -->|MessagePack/JSON| C1
     C1 -->|消息分发| C2
     C2 -->|状态更新| C3
     C3 -->|shallow 比较| C4
     C3 -->|shallow 比较| C5
+    C4 -->|组合纯展示组件| C6
+    C5 -->|组合纯展示组件| C6
 
     A -->|portFinder| D[端口管理<br/>allocatePorts + listenWithRetry]
     D -->|env vars| B
@@ -547,6 +563,7 @@ graph TD
 | 2026-07-20 | 自动颜色改用渲染值 | 自动调节按完成压强/压力换算、过滤和平滑后的当前渲染矩阵最大值确定色阶；手动颜色默认值调整为 `5.00` |
 | 2026-07-21 | 左侧统计与 2D 数字矩阵统一 | 压力/压强曲线、平均值、最大值、压力总和、点数、面积及框选统计统一基于 2D 实际显示的一位小数矩阵计算 |
 | 2026-07-22 | 后端统一单帧处理 | 阈值、单层空间高斯和压强/压力换算统一由后端完成，实时显示、入库、历史、报告和导出复用 `pressureArr/forceArr`，采集期间锁定处理参数 |
+| 2026-08-11 | 前端 UI 组件库抽离 | 新建 `client/src/ui` 及统一出口，迁移抽屉、浮动面板、选择器、工具按钮和纯回放控件，并抽出图表面板、指标值、设置行、异步状态、导出配置和导出进度组件 |
 
 ## 9. 更新日志
 
@@ -702,6 +719,7 @@ graph TD
 | 2026-05-19 | 修复缺陷 | 数据对比播放栏放大 icon 从纯展示改为可点击按钮，增加 hover/active 反馈，并打开放大的播放控制弹窗；弹窗与主播放栏共用同一套播放/进度/时间点状态 |
 | 2026-05-19 | 优化重构 | 数据对比播放栏放大弹窗从单独控制条改为“3 张热力数字图 + 播放进度条”的整体放大视图，A/B/B-A 热力图在弹窗内随当前进度或时间点同步刷新 |
 | 2026-06-10 | 优化重构 | 将 SDK 从请求型 API client 重构为独立 Core SDK，主入口导出可直接复用的底层能力，新增 `sdk/node/serial.js` 直连串口，API client 保留在 `sdk/api-client.js` |
+| 2026-08-11 | 优化重构 | 建立 `client/src/ui` 前端组件库边界和统一导出，业务组件改为通过 props 组合通用 UI；历史导出、对比导出、实时图表、可视化设置及 COP 状态页完成首批迁移 |
 
 *变更类型：`新增功能` / `优化重构` / `修复缺陷` / `配置变更` / `文档更新` / `依赖升级` / `初始化`*
 
@@ -1723,3 +1741,12 @@ graph TD
 - Existing histories without canonical arrays are processed once on the backend. New frames and imported metric CSV rows carry `processing.version`, preventing duplicate filtering or formula conversion.
 - Verification: backend syntax checks pass, `node --test test/pressureMetric.test.mjs test/pressureFrameProcessor.test.js` passes 15 tests, and the Vite production build succeeds with only the existing Sass, ASI, and chunk-size warnings.
 | 2026-07-22 | Refactor | Make stateless backend frame processing the single source for realtime display, collection storage, history analysis, reports, and export |
+
+## 2026-08-11 Frontend UI component library
+
+- `client/src/ui/index.js` is the only public import surface for reusable presentation components. `Drawer`, `DraggablePanel`, `Select`, `ToolbarAction`, and the pure playback controls were moved from scattered component/library directories into this folder.
+- `ChartPanel`, `MetricValue`, `SettingControlRow`, `AsyncState`, `ExportDialog`, and `ExportProgressDialog` centralize repeated chart, metric, setting, loading, and export layouts.
+- Business orchestration stays in `components/` and `page/`: API calls, equipment Store reads, collection state, path persistence, report analysis, and export execution are passed into UI components through props.
+- Realtime chart panels and metric rows, visualization settings, history and comparison export dialogs, toolbar actions, drawers, selectors, playback controls, and COP report states now consume the shared UI entry point.
+- Verification: `npm run build` in `client/` succeeds with the existing Sass legacy API, ASI, and bundle-size warnings.
+| 2026-08-11 | Refactor | Establish a single reusable UI component directory and migrate the first shared presentation surfaces without moving business state into the UI layer |

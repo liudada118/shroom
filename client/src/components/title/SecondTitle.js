@@ -1,9 +1,8 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
-import IconAndText from '../iconAndText/IconAndText'
 import IconAndTextAndSelect from '../iconAndTextAndSelect/IconAndTextAndSelect'
-import Drawer from '../Drawer/Drawer'
-import { Button, Col, ConfigProvider, Input, InputNumber, message, Modal, Popover, Row, Slider, Switch } from 'antd'
+import { Drawer, SettingControlRow, ToolbarAction } from '../../ui'
+import { Button, Input, message, Modal, Popover } from 'antd'
 import { pageContext } from '../../page/test/Test'
 import { SelectionHelper } from '../selectBox/SelectBox'
 import { withTranslation } from 'react-i18next'
@@ -473,101 +472,31 @@ function SecondTitle(props) {
         <>
             <Drawer zindex={3} show={setshow} title={t('adjust')} setShow={setSetshow}>
                 <div className="setContent">
-                    {/* <div className="setItem">
-                        <Row align='middle'>
-                            <Col span={4} >高斯模糊</Col>
-                            <Col span={12}>
-                                <Slider
-                                    min={1}
-                                    max={20}
-                                    onChange={(value) => {
-                                        onChange(value, 'gauss')
-                                    }}
-                                    value={typeof settingValue.gauss === 'number' ? settingValue.gauss : 0}
-                                />
-                            </Col>
-                            <Col span={4}>
-                                <InputNumber
-                                    min={1}
-                                    max={20}
-                                    style={{ margin: '0 16px' }}
-                                    value={typeof settingValue.gauss === 'number' ? settingValue.gauss : 0}
-                                    onChange={(value) => {
-                                        onChange(value, 'gauss')
-                                    }}
-                                />
-                            </Col>
-                        </Row>
-                    </div> */}
-                    {
-                        setType.map((a, index) => {
-                            return (
-                                <div key={a.type} className={`setItem ${a.type === 'color' ? 'setItemColor' : ''}`}>
-                                    <Popover color='#32373E' className='set-popover' placement="bottomLeft" content={a.content} >
-                                        <div className="setItemLabel">
-                                            <span>{a.title}</span>
-                                            {a.type === 'color' ? (
-                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : `${Number(currentDataMax).toFixed(2)} ${currentDataMaxDisplay.unit}`}</em>
-                                            ) : null}
-                                        </div>
-                                    </Popover>
-
-                                    <Slider
-                                        min={getSliderMin(a)}
-                                        max={getSliderMax(a)}
-                                        step={getSliderStep(a)}
-                                        disabled={collecting && isCollectionLockedSetting(a.type)}
-                                        onChange={(value) => {
-                                            onChange(getSettingValueFromSlider(value, a), a)
-                                        }}
-                                        className='setItemSlide'
-                                        value={getSliderValue(a)}
-                                    />
-
-                                    <ConfigProvider
-                                        theme={{
-                                            components: {
-                                                InputNumber: {
-                                                    token: {
-                                                        // Seed Token，影响范围大
-                                                        hoverBg: '#000'
-                                                    },
-                                                }
-                                            }
-
-                                        }}>
-
-                                        <InputNumber
-                                            min={a.min}
-                                            max={a.max}
-                                            step={a.step}
-                                            precision={a.type === 'color' ? 2 : undefined}
-                                            style={{ margin: '0 16px' }}
-                                            className='setItemInput'
-                                            disabled={collecting && isCollectionLockedSetting(a.type)}
-                                            value={getRowValue(a)}
-                                            onChange={(value) => {
-                                                onChange(value, a)
-                                            }}
-
-                                        />
-                                    </ConfigProvider>
-
-                                    {a.type === 'color' ? (
-                                        <div className="autoColorSwitchRow">
-                                            <Switch
-                                                size="small"
-                                                checked={Boolean(settingValue.autoColor)}
-                                                onChange={onToggleAutoColor}
-                                            />
-                                            <span>{t('autoColorAdj')}</span>
-                                        </div>
-                                    ) : null}
-
-                                </div>
-                            )
-                        })
-                    }
+                    {setType.map((a) => (
+                        <SettingControlRow
+                            key={a.type}
+                            label={a.title}
+                            description={a.content}
+                            meta={a.type === 'color'
+                                ? `${t('currentDataMax')}: ${currentDataMax === null ? '--' : `${Number(currentDataMax).toFixed(2)} ${currentDataMaxDisplay.unit}`}`
+                                : null}
+                            min={a.min}
+                            max={a.max}
+                            step={a.step}
+                            precision={a.type === 'color' ? 2 : undefined}
+                            value={getRowValue(a)}
+                            sliderMin={getSliderMin(a)}
+                            sliderMax={getSliderMax(a)}
+                            sliderStep={getSliderStep(a)}
+                            sliderValue={getSliderValue(a)}
+                            disabled={collecting && isCollectionLockedSetting(a.type)}
+                            onChange={(value) => onChange(value, a)}
+                            onSliderChange={(value) => onChange(getSettingValueFromSlider(value, a), a)}
+                            switchLabel={a.type === 'color' ? t('autoColorAdj') : undefined}
+                            switchChecked={a.type === 'color' ? Boolean(settingValue.autoColor) : undefined}
+                            onSwitchChange={a.type === 'color' ? onToggleAutoColor : undefined}
+                        />
+                    ))}
 
                     <div style={{ display: 'flex', justifyContent: 'end' }}>
                         <div onClick={() => {
@@ -617,21 +546,21 @@ function SecondTitle(props) {
                         lockCollecting={false}
                         icon={<div className='iconContentBox'><i style={{ color: onZero ? '#fff' : '#D1D9E1' }} className='iconfont fs18'>&#xe604;</i></div>}
                     />
-                    <IconAndText onClickStatus={onSelect} text={t('select')} onClick={() => {
+                    <ToolbarAction onClickStatus={onSelect} text={t('select')} onClick={() => {
                         if (onRuler) {
                             message.info(t('noSimultaneousUse'))
                         } else {
                             selectClick()
                         }
                     }} show={show} icon={<div className='iconContentBox'> <i style={{ color: onSelect ? '#fff' : '#D1D9E1' }} className='iconfont fs18'>&#xe60e;</i> </div>} />
-                    <IconAndText onClickStatus={onRuler} onClick={() => {
+                    <ToolbarAction onClickStatus={onRuler} onClick={() => {
                         if (onSelect) {
                             message.info(t('noSimultaneousUse'))
                         } else {
                             rulerClick()
                         }
                     }} text={t('ruler')} show={show} icon={<div className='iconContentBox'> <i style={{ color: onRuler ? '#fff' : '#D1D9E1' }} className='iconfont fs16'>&#xe610;</i></div>} />
-                    <IconAndText onClickStatus={onMagnifier} onClick={() => {
+                    <ToolbarAction onClickStatus={onMagnifier} onClick={() => {
                         if (onSelect) {
                             message.info(t('noSimultaneousUse'))
                             return
@@ -642,7 +571,7 @@ function SecondTitle(props) {
                             message.info(t('use2DMode'))
                         }
                     }} text={t('magnifier')} show={show} icon={<div className='iconContentBox'> <i style={{ color: onMagnifier ? '#fff' : '#D1D9E1' }} className='iconfont fs16'>&#xe61f;</i></div>} />
-                    <IconAndText onClickStatus={setshow} onClick={() => { setSetshow(!setshow) }} text={t('adjust')} show={show} icon={<div className='iconContentBox'><i style={{ color: setshow ? '#fff' : '#D1D9E1' }} className='iconfont fs16'>&#xe60d;</i></div>} />
+                    <ToolbarAction onClickStatus={setshow} onClick={() => { setSetshow(!setshow) }} text={t('adjust')} show={show} icon={<div className='iconContentBox'><i style={{ color: setshow ? '#fff' : '#D1D9E1' }} className='iconfont fs16'>&#xe60d;</i></div>} />
                 </div>
                 {/* {onSelect ? <div className='selectInputContent'>
                     <div className="selectInputTitle"> <div className="selectInputTitleInfo">框选区域</div>  

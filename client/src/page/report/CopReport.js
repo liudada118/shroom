@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Empty, message, Spin } from 'antd'
+import { Button, message } from 'antd'
 import { ArrowLeftOutlined, DownloadOutlined, FilePdfOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import * as echarts from 'echarts'
@@ -9,6 +9,7 @@ import { buildFallbackParams } from '../../util/request'
 import { FORCE_METRIC_MODE, getPressureMetricDisplay, getPressurePointAreaCm2 } from '../../util/pressureMetrics'
 import { useEquipStore } from '../../store/equipStore'
 import { jetWhite3NoWhite } from '../../assets/util/line'
+import { AsyncState } from '../../ui'
 import './CopReport.scss'
 
 const COP_REPORT_SELECTION_PREFIX = 'copReportSelection:'
@@ -710,7 +711,7 @@ function CopReport() {
   }
 
   if (loading) {
-    return <div className="cop-report-loading"><Spin tip="正在生成报告数据..." /></div>
+    return <AsyncState status="loading" message="正在生成报告数据..." className="cop-report-loading" />
   }
   if (!analysis) {
     return (
@@ -718,7 +719,7 @@ function CopReport() {
         <div className="report-toolbar">
           <Button icon={<ArrowLeftOutlined />} onClick={backToHome}>返回</Button>
         </div>
-        <Empty description="未找到可生成报告的历史数据" />
+        <AsyncState status="empty" message="未找到可生成报告的历史数据" />
       </div>
     )
   }

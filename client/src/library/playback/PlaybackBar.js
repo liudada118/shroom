@@ -6,8 +6,7 @@ import { shallow } from 'zustand/shallow';
 import { useEquipStore } from '../../store/equipStore';
 import { localAddress } from '../../util/constant';
 import { buildFallbackParams } from '../../util/request';
-import PlaybackSpeedMenu from './PlaybackSpeedMenu';
-import PlaybackPlayToggle from './PlaybackPlayToggle';
+import { PlaybackPlayToggle, PlaybackSpeedMenu } from '../../ui';
 import { useTranslation } from 'react-i18next';
 
 export default function PlaybackBar(props) {

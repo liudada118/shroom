@@ -1,11 +1,12 @@
 .iconContent {
-    // display: flex;
+    display: flex;
     flex-direction: column;
-    // justify-content: center;
+    justify-content: center;
     align-items: center;
     width: 5.2rem;
     border-radius: 8px;
-    /* 蔡司灰20 */
+    box-sizing: border-box;
+    outline: none;
 
 
     .iconInfo {
@@ -32,4 +33,8 @@
     .iconfont {
         color: #606A76 !important;
     }
+}
+
+.iconContent:focus-visible {
+    box-shadow: 0 0 0 2px #8fc5ff;
 }

@@ -1,8 +1,8 @@
 import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import Col from '../col/Col'
 import './index.scss'
-import Drawer from '../Drawer/Drawer'
-import { Button, Checkbox, Input, message, Modal, Popover, Progress, Radio, Slider, Tabs } from 'antd'
+import { Drawer, ExportDialog, ExportProgressDialog } from '../../ui'
+import { Button, Input, message, Modal, Popover, Slider, Tabs } from 'antd'
 import selected from '../../assets/image/select.png'
 import history from '../../assets/image/history.png'
 import axios from 'axios'
@@ -1140,153 +1140,68 @@ const ColAndHistory = memo((props) => {
                 </div>
             </Modal>
 
-            {/* ─── 下载路径选择对话框 ─── */}
-            <Modal
+            <ExportDialog
                 title={t('downloadPathSelect') || '下载路径选择'}
                 open={showDownloadPathModal}
-                onOk={confirmDownload}
+                onConfirm={confirmDownload}
                 onCancel={() => setShowDownloadPathModal(false)}
-                okText={t('startDownload') || '开始下载'}
+                confirmText={t('startDownload') || '开始下载'}
                 cancelText={t('cancel')}
                 width={720}
-            >
-                <div style={{ marginBottom: '12px', color: '#666', fontSize: '0.85rem' }}>
-                    {t('downloadPathHint') || '请确认或修改下载保存路径：'}
-                </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <Input
-                        value={editPathValue}
-                        onChange={(e) => setEditPathValue(e.target.value)}
-                        onBlur={async (e) => {
-                            const val = e.target.value.trim()
-                            if (val) {
-                                try {
-                                    await persistDownloadPath(val)
-                                } catch (err) {
-                                    message.error(err.message || t('downloadFailed'))
-                                }
-                            }
-                        }}
-                        style={{ flex: 1 }}
-                        placeholder={t('inputPath')}
-                    />
-                    <Button onClick={handleSelectFolder}>{t('browse')}</Button>
-                    <Button onClick={() => handleOpenFolder(editPathValue || downloadPath)}>{t('open')}</Button>
-                </div>
-                <div style={{ marginTop: '16px' }}>
-                    <div style={{ marginBottom: '8px', fontWeight: 600 }}>{t('exportFormat') || '导出格式'}</div>
-                    <Radio.Group
-                        value={exportFormat}
-                        onChange={(e) => setExportFormat(e.target.value)}
-                        options={[
-                            { label: 'CSV', value: 'csv' },
-                            { label: 'XLSX', value: 'xlsx' },
-                        ]}
-                    />
-                </div>
-                <div style={{ marginTop: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <div style={{ fontWeight: 600 }}>
-                            {t('exportFields') || '导出字段'}
-                            <span style={{ marginLeft: 8, color: '#999', fontWeight: 400 }}>
-                                {exportFields.length}/{exportFieldOptions.length || 0}
-                            </span>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <Button size="small" onClick={() => setExportFields(exportFieldOptions.map((item) => item.value))} disabled={exportFieldLoading || !exportFieldOptions.length}>
-                                {t('selectAll') || '全选'}
-                            </Button>
-                            <Button size="small" onClick={() => setExportFields([])} disabled={exportFieldLoading || !exportFieldOptions.length}>
-                                {t('clear') || '清空'}
-                            </Button>
-                        </div>
-                    </div>
-                    <div style={{ minHeight: 120, maxHeight: 220, overflow: 'auto', padding: '8px 10px', border: '1px solid #d9d9d9', borderRadius: 6 }}>
-                        {exportFieldLoading ? (
-                            <div style={{ color: '#999' }}>{t('loading') || '加载中...'}</div>
-                        ) : exportFieldOptions.length ? (
-                            <Checkbox.Group
-                                value={exportFields}
-                                onChange={setExportFields}
-                                style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px 12px' }}
-                            >
-                                {exportFieldOptions.map((field) => (
-                                    <Checkbox key={field.value} value={field.value} style={{ minWidth: 0 }}>
-                                        <span title={field.label} style={{ display: 'inline-block', maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
-                                            {field.label}
-                                        </span>
-                                    </Checkbox>
-                                ))}
-                            </Checkbox.Group>
-                        ) : (
-                            <div style={{ color: '#999' }}>{t('noData') || '暂无数据'}</div>
-                        )}
-                    </div>
-                </div>
-                <div style={{ marginTop: '12px', color: '#999', fontSize: '0.8rem' }}>
-                    {t('selectedCount') || '已选择'}: {selectArr.length} {t('items') || '项'}
-                </div>
-            </Modal>
+                path={editPathValue}
+                pathHint={t('downloadPathHint') || '请确认或修改下载保存路径：'}
+                inputPlaceholder={t('inputPath')}
+                browseLabel={t('browse')}
+                openLabel={t('open')}
+                onPathChange={setEditPathValue}
+                onPathBlur={async (event) => {
+                    const value = event.target.value.trim()
+                    if (!value) return
+                    try {
+                        await persistDownloadPath(value)
+                    } catch (err) {
+                        message.error(err.message || t('downloadFailed'))
+                    }
+                }}
+                onBrowse={handleSelectFolder}
+                onOpenFolder={() => handleOpenFolder(editPathValue || downloadPath)}
+                format={exportFormat}
+                formatLabel={t('exportFormat') || '导出格式'}
+                onFormatChange={setExportFormat}
+                fieldOptions={exportFieldOptions}
+                selectedFields={exportFields}
+                onFieldsChange={setExportFields}
+                fieldsLabel={t('exportFields') || '导出字段'}
+                fieldsLoading={exportFieldLoading}
+                selectAllLabel={t('selectAll') || '全选'}
+                clearLabel={t('clear') || '清空'}
+                loadingLabel={t('loading') || '加载中...'}
+                emptyLabel={t('noData') || '暂无数据'}
+                footerNote={`${t('selectedCount') || '已选择'}: ${selectArr.length} ${t('items') || '项'}`}
+            />
 
-            {/* ─── 下载进度弹窗 ─── */}
-            <Modal
+            <ExportProgressDialog
                 title={downloadProgress?.status === 'done' ? (t('downloadSuccess') || '下载完成') : downloadProgress?.status === 'error' ? (t('downloadFailed') || '下载失败') : (t('downloading') || '正在下载...')}
                 open={!!downloadProgress}
-                footer={downloadProgress?.status === 'done' ? [
-                    <Button key="openFolder" type="primary" onClick={() => {
-                        handleOpenFolder()
-                        setDownloadProgress(null)
-                        resetOperateState()
-                    }}>{t('openFolder')}</Button>,
-                    <Button key="close" onClick={() => {
-                        setDownloadProgress(null)
-                        resetOperateState()
-                    }}>{t('close')}</Button>
-                ] : downloadProgress?.status === 'error' ? [
-                    <Button key="close" onClick={() => setDownloadProgress(null)}>{t('close')}</Button>
-                ] : []}
-                closable={downloadProgress?.status !== 'downloading'}
-                onCancel={() => {
+                status={downloadProgress?.status}
+                percent={downloadProgress?.percent || 0}
+                hint={downloadProgress?.status === 'downloading' ? (t('downloadingHint') || '正在导出数据，请稍候...') : null}
+                files={downloadProgress?.files || []}
+                filesLabel={t('downloadedFiles') || '已下载文件：'}
+                openFileLabel={t('clickToOpen') || '点击打开'}
+                openFolderLabel={t('openFolder')}
+                closeLabel={t('close')}
+                onOpenFile={handleOpenFile}
+                onOpenFolder={downloadProgress?.status === 'done' ? () => {
+                    handleOpenFolder()
                     setDownloadProgress(null)
                     resetOperateState()
+                } : undefined}
+                onClose={() => {
+                    setDownloadProgress(null)
+                    if (downloadProgress?.status !== 'error') resetOperateState()
                 }}
-                maskClosable={false}
-                width={480}
-            >
-                <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                    <Progress
-                        percent={downloadProgress?.percent || 0}
-                        status={downloadProgress?.status === 'error' ? 'exception' : downloadProgress?.status === 'done' ? 'success' : 'active'}
-                        strokeColor={downloadProgress?.status === 'done' ? '#52c41a' : '#1890ff'}
-                    />
-                    {downloadProgress?.status === 'downloading' && (
-                        <div style={{ marginTop: '12px', color: '#666', fontSize: '0.85rem' }}>
-                            {t('downloadingHint') || '正在导出数据，请稍候...'}
-                        </div>
-                    )}
-                    {downloadProgress?.status === 'done' && downloadProgress.files.length > 0 && (
-                        <div style={{ marginTop: '16px', textAlign: 'left' }}>
-                            <div style={{ fontSize: '0.85rem', color: '#333', marginBottom: '8px', fontWeight: 'bold' }}>
-                                {t('downloadedFiles') || '已下载文件：'}
-                            </div>
-                            {downloadProgress.files.map((f, idx) => (
-                                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', padding: '6px 8px', backgroundColor: '#f6ffed', borderRadius: '4px', border: '1px solid #b7eb8f' }}>
-                                    <span style={{ flex: 1, fontSize: '0.8rem', color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {f.fileName}
-                                    </span>
-                                    <span
-                                        className="cursor"
-                                        style={{ color: '#1890ff', fontSize: '0.8rem', whiteSpace: 'nowrap', textDecoration: 'underline' }}
-                                        onClick={() => handleOpenFile(f.filePath)}
-                                    >
-                                        {t('clickToOpen') || '点击打开'}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </Modal>
+            />
 
             <Drawer zindex={2} title={t('history')} show={historyDrawer} setShow={sethistoryDrawer} close={close} >
                 <Input

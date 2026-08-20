@@ -1,10 +1,11 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
-import { Button, Input, Modal, Progress, Radio, Select, Slider, message } from 'antd'
+import { Button, Select, Slider, message } from 'antd'
 import dayjs from 'dayjs'
 import { shallow } from 'zustand/shallow'
 import { pageContext } from '../../page/test/Test'
 import { useEquipStore } from '../../store/equipStore'
+import { ExportDialog, ExportProgressDialog } from '../../ui'
 import { localAddress } from '../../util/constant'
 import { FORCE_METRIC_MODE, getPressureMetricDisplay, getPressurePointAreaCm2 } from '../../util/pressureMetrics'
 import { calcCentroidRatio } from '../../util/util'
@@ -1360,81 +1361,44 @@ export default function NumThresContrast() {
                 <span />
                 {copy.timeB}: {(rightFrame?._timestamp || contrast.frame?.rightTimestamp) ? dayjs(rightFrame?._timestamp || contrast.frame.rightTimestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}
             </div>
-            <Modal
+            <ExportDialog
                 title={copy.downloadPathSelect}
                 open={exportModalOpen}
-                onOk={saveContrastExport}
+                onConfirm={saveContrastExport}
                 onCancel={() => setExportModalOpen(false)}
-                okText={copy.startExport}
+                confirmText={copy.startExport}
                 cancelText={copy.cancel}
                 confirmLoading={exporting}
                 width={640}
-            >
-                <div style={{ marginBottom: 12, color: '#666', fontSize: '0.85rem' }}>
-                    {copy.downloadPathHint}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Input
-                        value={exportPath}
-                        onChange={(event) => setExportPath(event.target.value)}
-                        placeholder={copy.inputPath}
-                        style={{ flex: 1 }}
-                    />
-                    <Button onClick={handleSelectExportFolder}>{copy.browse}</Button>
-                    <Button onClick={() => handleOpenExportFolder()}>{copy.open}</Button>
-                </div>
-                <div style={{ marginTop: 16 }}>
-                    <div style={{ marginBottom: 8, fontWeight: 600 }}>{copy.exportFormat}</div>
-                    <Radio.Group
-                        value={exportFormat}
-                        onChange={(event) => setExportFormat(event.target.value)}
-                        options={[
-                            { label: 'CSV', value: 'csv' },
-                            { label: 'XLSX', value: 'xlsx' },
-                        ]}
-                    />
-                </div>
-            </Modal>
-            <Modal
+                path={exportPath}
+                pathHint={copy.downloadPathHint}
+                inputPlaceholder={copy.inputPath}
+                browseLabel={copy.browse}
+                openLabel={copy.open}
+                onPathChange={setExportPath}
+                onBrowse={handleSelectExportFolder}
+                onOpenFolder={() => handleOpenExportFolder()}
+                format={exportFormat}
+                formatLabel={copy.exportFormat}
+                onFormatChange={setExportFormat}
+            />
+            <ExportProgressDialog
                 title={copy.exportSuccess}
                 open={!!exportResult}
-                footer={[
-                    exportResult?.directory ? (
-                        <Button key="openFolder" type="primary" onClick={() => {
-                            handleOpenExportFolder(exportResult.directory)
-                            setExportResult(null)
-                        }}>{copy.openFolder}</Button>
-                    ) : null,
-                    <Button key="close" type="primary" onClick={() => setExportResult(null)}>{copy.close}</Button>,
-                ].filter(Boolean)}
-                onCancel={() => setExportResult(null)}
-                width={480}
-            >
-                <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                    <Progress
-                        percent={exportResult?.percent || 0}
-                        status={exportResult?.status === 'done' ? 'success' : 'active'}
-                        strokeColor="#52c41a"
-                    />
-                    <div style={{ fontSize: '0.85rem', color: '#333', marginBottom: 8, fontWeight: 'bold' }}>
-                        {copy.downloadedFiles}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', backgroundColor: '#f6ffed', borderRadius: 4, border: '1px solid #b7eb8f' }}>
-                        <span style={{ flex: 1, fontSize: '0.8rem', color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {exportResult?.fileName}
-                        </span>
-                        {exportResult?.filePath && window.electronAPI?.openPath ? (
-                            <span
-                                className="cursor"
-                                style={{ color: '#1890ff', fontSize: '0.8rem', whiteSpace: 'nowrap', textDecoration: 'underline' }}
-                                onClick={() => window.electronAPI.openPath(exportResult.filePath)}
-                            >
-                                {copy.clickToOpen}
-                            </span>
-                        ) : null}
-                    </div>
-                </div>
-            </Modal>
+                status={exportResult?.status || 'done'}
+                percent={exportResult?.percent || 0}
+                files={exportResult ? [{ fileName: exportResult.fileName, filePath: exportResult.filePath }] : []}
+                filesLabel={copy.downloadedFiles}
+                openFileLabel={copy.clickToOpen}
+                openFolderLabel={copy.openFolder}
+                closeLabel={copy.close}
+                onOpenFile={window.electronAPI?.openPath ? (filePath) => window.electronAPI.openPath(filePath) : undefined}
+                onOpenFolder={exportResult?.directory ? () => {
+                    handleOpenExportFolder(exportResult.directory)
+                    setExportResult(null)
+                } : undefined}
+                onClose={() => setExportResult(null)}
+            />
         </div>
     )
 }

@@ -1,5 +1,5 @@
 import React, { useContext, useState } from 'react'
-import IconAndText from '../iconAndText/IconAndText'
+import { ToolbarAction } from '../../ui'
 import './index.scss'
 import { pageContext } from '../../page/test/Test'
 import axios from 'axios'
@@ -37,7 +37,7 @@ export default function IconAndTextAndSelect(props) {
                 setSelectShow(false)
             }}
         >
-            <IconAndText show={show} text={text} icon={icon} onClickStatus={onClickStatus} />
+            <ToolbarAction show={show} text={text} icon={icon} onClickStatus={onClickStatus} />
             <div className={`dropDown ${selectShow ? 'dropDownVisible' : ''}`}>
                 {options.map((a, index) => {
                     return (

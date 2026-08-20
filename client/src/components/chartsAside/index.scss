@@ -17,36 +17,6 @@
 }
 
 .chartAndDataContent {
-    background: #1A1C20;
-    box-shadow: 0px 4px 10px 0px rgba(0, 0, 0, 0.4);
-    border-radius: 1rem;
-    padding: 0.875rem 0.625rem 0.625rem;
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-
-    .chartTitle {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 0.75rem;
-    }
-
-    .chartName {
-        font-size: 1.125rem;
-        font-weight: 600;
-        line-height: normal;
-        color: #FFFFFF;
-    }
-
-    .chartNameWithAction {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        min-width: 0;
-    }
-
     .pressureMetricSwap.ant-btn {
         width: 1.75rem;
         height: 1.75rem;
@@ -58,24 +28,6 @@
     .pressureMetricSwap.ant-btn:hover {
         color: #ffffff;
         background: #1677ff;
-    }
-
-    .chartType {
-        font-size: 0.75rem;
-        font-weight: normal;
-        line-height: normal;
-        color: #E6EBF0;
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: flex-end;
-        gap: 0.25rem 0.5rem;
-        min-width: 0;
-
-        .chartTypeItem {
-            display: flex;
-            align-items: center;
-            white-space: nowrap;
-        }
     }
 
     .cirlce {
@@ -140,47 +92,6 @@
         white-space: nowrap;
 
     }
-
-    .chartMetricValueGroup {
-        display: flex;
-        justify-content: flex-end;
-        min-width: 0;
-        width: auto;
-        white-space: nowrap;
-    }
-
-    .chartMetricValue {
-        font-variant-numeric: tabular-nums;
-        min-width: 2.8rem;
-        text-align: right;
-        display: inline-block;
-        white-space: nowrap;
-    }
-
-    .chartMetricUnit {
-        width: 1.6rem;
-        text-align: left;
-        flex-shrink: 0;
-        white-space: nowrap;
-    }
-
-    .chartType {
-
-
-        .chartTypeItem {
-
-            width: auto;
-        }
-    }
-
-    .chartData {
-        .chartTypeItem {
-
-            // width: 4rem;
-            // text-align: right;
-        }
-    }
-
 
     margin-bottom: 1.25rem;
 }

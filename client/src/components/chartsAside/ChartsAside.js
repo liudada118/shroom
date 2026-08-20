@@ -12,7 +12,7 @@ import { pageContext } from '../../page/test/Test';
 import { shallow } from 'zustand/shallow';
 import FootTrack from '../chart/Chart';
 import { graCenter } from '../../util/util';
-import DraggablePanel from '../draggablePanel/DraggablePanel';
+import { ChartPanel, DraggablePanel, MetricValue } from '../../ui';
 import { formatSelectionName } from '../../util/selectionName';
 import { Button, Tooltip } from 'antd';
 import { SwapOutlined } from '@ant-design/icons';
@@ -728,15 +728,13 @@ function ChartsAside(props) {
                         const color = box.bgc || SELECT_COLORS[box.colorIndex]
                         const value = getDisplayValue(box) ?? '-'
                         allBoxRows.push(
-                            <div className='chartTypeItem' key={`${key}-box-${box.colorIndex}-${item}`}>
-                                <div className='cirlce' style={{ backgroundColor: color }}></div>
-                                <div className='chartMetricValueGroup'>
-                                    <span className='chartMetricValue'>{value}</span>
-                                    <span className='chartMetricUnit'>
-                                        {getDisplayUnit()}
-                                    </span>
-                                </div>
-                            </div>
+                            <MetricValue
+                                className="chartTypeItem"
+                                key={`${key}-box-${box.colorIndex}-${item}`}
+                                indicatorColor={color}
+                                value={value}
+                                unit={getDisplayUnit()}
+                            />
                         )
                     })
                 }
@@ -747,15 +745,13 @@ function ChartsAside(props) {
         // 设备模式
         return Object.keys(data).map((a) => {
             if (a !== 't') {
-                return <div className='chartTypeItem' key={`${a}-${item}`}>
-                    <div className='cirlce' style={{ backgroundColor: colorArr[a] }}></div>
-                    <div className='chartMetricValueGroup'>
-                        <span className='chartMetricValue'>{getDisplayValue(data[a]) ?? '-'}</span>
-                        <span className='chartMetricUnit'>
-                            {getDisplayUnit()}
-                        </span>
-                    </div>
-                </div>
+                return <MetricValue
+                    className="chartTypeItem"
+                    key={`${a}-${item}`}
+                    indicatorColor={colorArr[a]}
+                    value={getDisplayValue(data[a]) ?? '-'}
+                    unit={getDisplayUnit()}
+                />
             }
             return null
         })
@@ -801,23 +797,23 @@ function ChartsAside(props) {
                 defaultPosition={{ x: 20, y: 80 }}
                 className={`charts-panel${hasSelectionStats ? ' charts-panel--expanded' : ''}`}
             >
-                <div className='chartAndDataContent'>
-                    <div className="chartTitle">
-                        <div className="chartName chartNameWithAction">
-                            <span>{metricDisplay.curveLabel}</span>
-                            <Tooltip title={t('switchPressureMetric')}>
-                                <Button
-                                    className="pressureMetricSwap"
-                                    type="text"
-                                    size="small"
-                                    icon={<SwapOutlined />}
-                                    aria-label={t('switchPressureMetric')}
-                                    onClick={() => useEquipStore.getState().setPressureMetricMode(metricDisplay.nextMode)}
-                                />
-                            </Tooltip>
-                        </div>
-                        <div className="chartType">{renderLegend(pressColorArr)}</div>
-                    </div>
+                <ChartPanel
+                    className="chartAndDataContent"
+                    title={metricDisplay.curveLabel}
+                    actions={(
+                        <Tooltip title={t('switchPressureMetric')}>
+                            <Button
+                                className="pressureMetricSwap"
+                                type="text"
+                                size="small"
+                                icon={<SwapOutlined />}
+                                aria-label={t('switchPressureMetric')}
+                                onClick={() => useEquipStore.getState().setPressureMetricMode(metricDisplay.nextMode)}
+                            />
+                        </Tooltip>
+                    )}
+                    legend={renderLegend(pressColorArr)}
+                >
                     <div ref={myChart1Dom} id="myChart1" className="chartCanvas" style={{ opacity: '0.8' }}></div>
                     {pressDataArr.map((item) => (
                         <div className='chartData' key={item}>
@@ -825,13 +821,13 @@ function ChartsAside(props) {
                             <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>{renderDataRow(item, pressColorArr)}</div>
                         </div>
                     ))}
-                </div>
+                </ChartPanel>
 
-                <div className='chartAndDataContent'>
-                    <div className="chartTitle">
-                        <div className="chartName">{t('areaCurve')}</div>
-                        <div className="chartType">{renderLegend(pressColorArr)}</div>
-                    </div>
+                <ChartPanel
+                    className="chartAndDataContent"
+                    title={t('areaCurve')}
+                    legend={renderLegend(pressColorArr)}
+                >
                     <div ref={myChart2Dom} id="myChart2" className="chartCanvas" style={{ opacity: '0.8' }}></div>
                     {areaDataArr.map((item) => (
                         <div className='chartData' key={item}>
@@ -839,15 +835,15 @@ function ChartsAside(props) {
                             <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>{renderDataRow(item, areaColorArr)}</div>
                         </div>
                     ))}
-                </div>
+                </ChartPanel>
             </DraggablePanel>
 
             <DraggablePanel title={t('pressureCenterCurve') + ' / ' + normalDistTitle} defaultPosition={{ right: 20, y: 80 }}>
-                <div className='chartAndDataContent'>
-                    <div className="chartTitle">
-                        <div className="chartName">{t('pressureCenterCurve')}</div>
-                        <div className="chartType">{renderLegend(areaColorArr)}</div>
-                    </div>
+                <ChartPanel
+                    className="chartAndDataContent"
+                    title={t('pressureCenterCurve')}
+                    legend={renderLegend(areaColorArr)}
+                >
                     <FootTrack ref={trackRef} />
                     <div style={{ marginBottom: '6px', color: '#E6EBF0', fontSize: '0.875rem' }}>{t('pressureCenter')}{`(X,Y)`}</div>
                     {centerDataArr.map((item) => (
@@ -857,17 +853,17 @@ function ChartsAside(props) {
                             </div>
                         </div>
                     ))}
-                </div>
+                </ChartPanel>
 
-                <div className='chartAndDataContent'>
-                    <div className="chartTitle">
-                        <div className="chartName">{normalDistTitle}</div>
-                        <div className="chartType">{renderLegend(areaColorArr)}</div>
-                    </div>
+                <ChartPanel
+                    className="chartAndDataContent"
+                    title={normalDistTitle}
+                    legend={renderLegend(areaColorArr)}
+                >
                     <div className="normalChartWrap">
                         <div ref={normalChartDom} id="chart" className="normalChartCanvas"></div>
                     </div>
-                </div>
+                </ChartPanel>
             </DraggablePanel>
         </>
     )
