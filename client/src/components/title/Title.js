@@ -109,6 +109,13 @@ const Title = memo((props) => {
     }
 
     useEquipStore.getState().setConnectState('rescanning')
+    // 后端 rescan 会把所有串口清干净再重连，前端这边也要跟着清：
+    // 不清的话拔掉的部位会带着最后一帧的数据留在面板里
+    pageInfo.clearVisualizationData?.()
+    useEquipStore.getState().setEquipStatus({})
+    useEquipStore.getState().setDataQuality({})
+    useEquipStore.getState().setDisplayStatus({})
+    useEquipStore.getState().setEquipCop({})
 
     axios.get(`${localAddress}/rescanPort`, { timeout: CONNECT_TIMEOUT_MS }).then((res) => {
       console.log('[Rescan] result:', res.data)

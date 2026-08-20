@@ -13,8 +13,9 @@
     flex-direction: column;
     align-items: stretch;
     gap: 0.375rem;
-    // 首帧测量前的兜底位置，随后由 JS 贴到左下角「对称系数/压力梯度」面板正下方
-    bottom: 2%;
+    // 固定停在视口左下角（和「实时数据统计」面板左边缘对齐），不随屏幕大小换算，
+    // 只有用户手动拖过之后才由 JS 覆盖成 left/top
+    bottom: 12px;
     left: 20px;
 
     color: #B4C0CA;

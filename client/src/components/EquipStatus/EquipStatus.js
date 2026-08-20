@@ -3,7 +3,11 @@ import './index.scss'
 import { withTranslation } from 'react-i18next';
 import { useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
-import { getMatrixDisplayLabel } from '../../util/constant';
+import { getMatrixDisplayLabel, getSystemMatrixParts } from '../../util/constant';
+
+// 假人只有这五块传感器。下身在后端是一条 endi-foot，到前端会拆成左右腿两条
+const expandStatusParts = (system) => getSystemMatrixParts(system)
+    .flatMap((part) => (part.key === 'foot' ? ['leftFoot', 'rightFoot'] : [part.key]))
 
 const EquipStatus = React.memo(function EquipStatus(props) {
 
@@ -34,7 +38,19 @@ const EquipStatus = React.memo(function EquipStatus(props) {
         status,
     }))
 
-    const items = ['car', 'endi', 'carY'].includes(fileName) && chairItems.length > 0 ? chairItems : fallbackItems
+    // 假人：只列设备自身配置里的五个部位（上身 / 左臂 / 右臂 / 左腿 / 右腿）。
+    // 不再拿 equipStatus 的 key 反推，免得混进坐垫、靠背这种假人根本没有的部位
+    const dummyItems = fileName === 'endi'
+        ? expandStatusParts(fileName).map((part) => ({
+            key: `${fileName}-${part}`,
+            label: getMatrixDisplayLabel(`${fileName}-${part}`, i18n?.language),
+            status: equipStatus?.[`${fileName}-${part}`],
+        }))
+        : []
+
+    const items = fileName === 'endi'
+        ? (Object.keys(equipStatus || {}).length ? dummyItems : [])
+        : (['car', 'carY'].includes(fileName) && chairItems.length > 0 ? chairItems : fallbackItems)
 
     return (
         <div className='equipsStatusContent'>

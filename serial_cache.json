@@ -3,27 +3,27 @@
     "504330390250435E45": {
       "type": "endi-jacket",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-18T10:17:21.919Z",
+      "lastSeen": "2026-08-20T06:47:01.725Z",
       "alias": ""
     },
     "464134391150431A9A": {
       "type": "endi-rightHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-18T10:17:21.395Z",
+      "lastSeen": "2026-08-20T06:46:58.209Z",
       "alias": ""
     },
     "46413439115043190B": {
       "type": "endi-leftHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-18T05:36:16.430Z",
+      "lastSeen": "2026-08-20T06:46:21.885Z",
       "alias": ""
     },
     "344637301550321301": {
       "type": "endi-leftFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-18T10:17:22.431Z",
+      "lastSeen": "2026-08-20T06:46:57.696Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-08-18T10:17:22.431Z"
+  "updatedAt": "2026-08-20T06:47:01.725Z"
 }

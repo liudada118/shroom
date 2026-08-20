@@ -10,8 +10,7 @@ import { getMatrixPartFromDisplayType, getMatrixPartLabelKey, getSystemMatrixPar
 import { APP_VERSION } from '../../util/version';
 import { HolderOutlined } from '@ant-design/icons';
 
-// 工具条初始位置贴在左下角「对称系数/压力梯度」面板正下方时的间距与视口留白
-const TOOLBAR_PANEL_GAP = 14
+// 工具条停在视口左下角时离边的留白，拖动时也用这个值做边界
 const TOOLBAR_VIEWPORT_MARGIN = 12
 
 const normalizeAngleIndex = (value) => {
@@ -398,65 +397,26 @@ const ViewSetting = (props) => {
         setOnRuler(false)
     }
 
-    // 工具条只在启动时量一次左侧那块曲线面板（压强/面积/对称系数/压力梯度已合成一块），
-    // 贴到屏幕左下角、面板右侧，宽度与面板一致。定完位就不再跟随：之后拖动面板不会带着工具条走，两者各自独立。
+    // 工具条固定停在视口左下角，不再去量「实时数据统计」面板的位置和宽度：
+    // 之前按面板右边缘定位又整条缩放，笔记本和外接显示器上看着位置、大小都不一样。
+    // 现在只认视口左下角这一个锚点，所有屏幕一致；面板那边会按工具条高度让出底部空间（见 DraggablePanel 的 bottomReserve）
     useEffect(() => {
-        let raf = 0
-        let timer = 0
-        let last = null
-        let stable = 0
+        const bar = toolbarRef.current
+        if (!bar) return undefined
 
-        const schedule = () => {
-            if (!raf) raf = requestAnimationFrame(measure)
-        }
+        // 尺寸一变就吱一声，面板那边收到后自己去量工具条的上边缘（见 ChartsAside 的 toolbarReserve）
+        const notify = () => window.dispatchEvent(new CustomEvent('view-toolbar-resize'))
 
-        const retry = () => {
-            timer = setTimeout(schedule, 300)
-        }
-
-        function measure() {
-            raf = 0
-            // 用户已经自己拖过工具条，就不要再去改它的位置
-            if (toolbarMovedRef.current) return
-            const bar = toolbarRef.current
-            const panel = document.querySelector('.charts-panel')
-            if (!bar || !panel) {
-                retry()
-                return
-            }
-            const panelRect = panel.getBoundingClientRect()
-            const barRect = bar.getBoundingClientRect()
-            // offsetWidth 是未经 transform 的布局宽度，缩放后再量也不会漂
-            const naturalWidth = rowRef.current?.offsetWidth || 0
-            if (!naturalWidth) {
-                retry()
-                return
-            }
-            // 贴屏幕底部，左边紧挨着面板右侧，正好落在面板下方那片空地上
-            const next = {
-                left: Math.round(Math.max(TOOLBAR_VIEWPORT_MARGIN, panelRect.right + TOOLBAR_PANEL_GAP)),
-                top: Math.round(Math.max(
-                    TOOLBAR_VIEWPORT_MARGIN,
-                    window.innerHeight - barRect.height - TOOLBAR_VIEWPORT_MARGIN,
-                )),
-                // 整条工具条按比例缩放，可见长度与面板同宽，按钮不会被挤变形
-                scale: Math.round((panelRect.width / naturalWidth) * 1e4) / 1e4,
-            }
-            if (last && last.left === next.left && last.top === next.top && last.scale === next.scale) {
-                stable += 1
-            } else {
-                stable = 0
-                last = next
-                setToolbarPos(next)
-            }
-            // 面板里的图表首帧之后还会把高度撑开，量到连续两次不变才收手
-            if (stable < 2) retry()
-        }
-
-        schedule()
+        notify()
+        // 首帧 rem/字体还没落定，量出来会偏小，下一帧再补一次
+        const raf = window.requestAnimationFrame(notify)
+        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(notify) : null
+        observer?.observe(bar)
+        window.addEventListener('resize', notify)
         return () => {
-            if (raf) cancelAnimationFrame(raf)
-            clearTimeout(timer)
+            window.cancelAnimationFrame(raf)
+            observer?.disconnect()
+            window.removeEventListener('resize', notify)
         }
     }, [])
 
@@ -483,6 +443,8 @@ const ViewSetting = (props) => {
             setToolbarDragging(false)
             window.removeEventListener('mousemove', onMouseMove)
             window.removeEventListener('mouseup', onMouseUp)
+            // 位置变了但尺寸没变，ResizeObserver 不会响，这里手动通知面板重算底部预留
+            window.dispatchEvent(new CustomEvent('view-toolbar-resize'))
         }
 
         window.addEventListener('mousemove', onMouseMove)
@@ -496,11 +458,9 @@ const ViewSetting = (props) => {
                 ref={toolbarRef}
                 style={toolbarPos
                     ? {
+                        // 只有用户自己拖过之后才走内联定位，否则一律用样式里的左下角
                         left: `${toolbarPos.left}px`,
                         top: `${toolbarPos.top}px`,
-                        // 缩放而不是撑宽：可见长度与「压力重心点」面板严格一致，按钮不会被挤变形
-                        transform: toolbarPos.scale ? `scale(${toolbarPos.scale})` : undefined,
-                        transformOrigin: 'top left',
                         right: 'auto',
                         bottom: 'auto',
                     }

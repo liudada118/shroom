@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { Button, Input, Modal } from 'antd'
 import Col from '../col/Col'
+import ColTime from './ColTime'
 import { withTranslation } from 'react-i18next'
 
 const COL_NAME_MAX_LENGTH = 50
@@ -72,9 +73,8 @@ function ColControl(props) {
                 onCollectEnd={onCollectEnd}
             >
                 <span className="collectTopButtonText">
-                    {/* 采集中只显示「结束采集」：原来这里放计时，某个部位没连上时会被
-                        「XX已断开」顶掉，反而看不出再点一下就是结束 */}
-                    {!col ? text('开始采集', 'Start') : text('结束采集', 'Stop')}
+                    {/* 采集中显示走时（ColTime 只按本机时钟算，不再被「XX已断开」顶掉） */}
+                    {!col ? text('开始采集', 'Start') : startTime === 0 ? '00:00:00' : <ColTime startTime={startTime} />}
                 </span>
             </Col>
             <div className="collectTopButton historyTopButton" onClick={() => {

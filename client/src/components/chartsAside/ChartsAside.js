@@ -53,6 +53,8 @@ function ChartsAside(props) {
     const trackRef = useRef()
 
     const [data, setData] = useState({})
+    // 左下角那条工具条要占的高度，面板自动缩放时把这块空间让出来，别压到「重置视图」
+    const [toolbarReserve, setToolbarReserve] = useState(0)
     const historyChart = useEquipStore(s => s.historyChart, shallow)
     const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
     const gradientUnit = useEquipStore(s => s.gradientUnit)
@@ -73,16 +75,41 @@ function ChartsAside(props) {
     const getMetricAreaTrendField = () => `${getMetricDisplay().valuePrefix}AreaArr`
 
     /**
-     * 只保留设备自身配置里的部位（假人就是上身/左臂/右臂/下身）。
-     * 插错板子多出来的部位（比如靠背）在这里丢掉，图例、数值、曲线都当它不存在
+     * 当前还连着的部位。回放/对比历史数据时返回 null，表示不按设备状态过滤。
+     * 在 Scheduler 回调里也会调到，所以直接读 store 而不是组件里的 state
+     */
+    const getOnlinePartSet = () => {
+        const store = useEquipStore.getState()
+        if (store.dataStatus !== 'realtime') return null
+        const set = new Set()
+        Object.entries(store.equipStatus || {}).forEach(([key, status]) => {
+            if (!status || status === 'offline') return
+            const part = key.includes('-') ? key.split('-').pop() : key
+            set.add(part)
+            // 左右腿在面板里合成一条「下身」，任意一侧还连着就算在
+            if (part === 'leftFoot' || part === 'rightFoot') set.add('foot')
+        })
+        return set
+    }
+
+    /**
+     * 只保留设备自身配置里、且当前还连着的部位（假人就是上身/左臂/右臂/下身）。
+     * 插错板子多出来的部位（比如靠背）在这里丢掉；拔掉/断开的部位也一并丢掉，
+     * 图例、数值、曲线都当它不存在，不再留一行 0。
+     * 返回时按设备自身的部位配置排序 —— 面板里所有「色点 + 数值」行的顺序都以此为准
      */
     const pickDeviceParts = (dataMap) => {
         if (!dataMap) return {}
         const allow = getSystemMatrixParts(getSysType()).map((part) => part.key)
         if (!allow.length) return dataMap
+        const online = getOnlinePartSet()
+        const keys = Object.keys(dataMap)
         const res = {}
-        Object.keys(dataMap).forEach((key) => {
-            if (allow.includes(getMatrixPartFromDisplayType(key))) res[key] = dataMap[key]
+        allow.forEach((part) => {
+            if (online && !online.has(part)) return
+            keys.forEach((key) => {
+                if (getMatrixPartFromDisplayType(key) === part) res[key] = dataMap[key]
+            })
         })
         return res
     }
@@ -108,6 +135,28 @@ function ChartsAside(props) {
         renderNormal()
         setData((current) => ({ ...current, t: Date.now() }))
     }, [pressureMetricMode, pressureUnit])
+
+    // 底部要让出多少 = 工具条上边缘往上再留 12px 间距。
+    // 直接量 DOM（rem 会随窗口宽度变，写死不准；工具条被拖走之后这么算也照样对）
+    useEffect(() => {
+        const sync = () => {
+            const bar = document.querySelector('.viewSetContent')
+            if (!bar) { setToolbarReserve(0); return }
+            const top = bar.getBoundingClientRect().top
+            const reserve = Math.max(0, Math.round(window.innerHeight - top + 12))
+            // 工具条要是被拖到很上面，别把面板挤没了，最多让出小半屏
+            setToolbarReserve(Math.min(reserve, Math.round(window.innerHeight * 0.45)))
+        }
+        sync()
+        const raf = window.requestAnimationFrame(sync)
+        window.addEventListener('view-toolbar-resize', sync)
+        window.addEventListener('resize', sync)
+        return () => {
+            window.cancelAnimationFrame(raf)
+            window.removeEventListener('view-toolbar-resize', sync)
+            window.removeEventListener('resize', sync)
+        }
+    }, [])
 
     const clearChartViews = () => {
         myChart1.current?.clear()
@@ -779,21 +828,18 @@ function ChartsAside(props) {
             return allBoxRows
         }
 
-        // 设备模式
-        return Object.keys(data).map((a) => {
-            if (a !== 't') {
-                return <div className='chartTypeItem' key={`${a}-${item}`}>
-                    <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, colorArr) }}></div>
-                    <div className='chartMetricValueGroup'>
-                        <span className='chartMetricValue'>{formatMetricValue(item, data[a][item])}</span>
-                        <span className='chartMetricUnit'>
-                            {system === 'carY' ? '' : getMetricUnit(item)}
-                        </span>
-                    </div>
+        // 设备模式：顺序、有哪几个色点，一律跟着右上角图例走
+        return legendKeys.map((a) => (
+            <div className='chartTypeItem' key={`${a}-${item}`}>
+                <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, colorArr) }}></div>
+                <div className='chartMetricValueGroup'>
+                    <span className='chartMetricValue'>{formatMetricValue(item, data[a]?.[item])}</span>
+                    <span className='chartMetricUnit'>
+                        {system === 'carY' ? '' : getMetricUnit(item)}
+                    </span>
                 </div>
-            }
-            return null
-        })
+            </div>
+        ))
     }
 
     const renderCenterRows = () => {
@@ -816,16 +862,15 @@ function ChartsAside(props) {
             return rows
         }
 
-        return Object.keys(data).map((a) => {
-            if (a !== 't') {
-                return <div className='chartTypeItem' key={a}>
-                    <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, areaColorArr) }}></div>
-                    <div className="chartCenterValue">
-                        {`(${data[a].pressureCenter[0]} , ${data[a].pressureCenter[1]})`}
-                    </div>
+        // 同上：顺序和色点跟右上角图例一致
+        return legendKeys.map((a) => {
+            const center = Array.isArray(data[a]?.pressureCenter) ? data[a].pressureCenter : ['-', '-']
+            return <div className='chartTypeItem' key={a}>
+                <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, areaColorArr) }}></div>
+                <div className="chartCenterValue">
+                    {`(${center[0]} , ${center[1]})`}
                 </div>
-            }
-            return null
+            </div>
         })
     }
 
@@ -941,6 +986,7 @@ function ChartsAside(props) {
                 defaultPosition={{ x: 20, y: PANEL_TOP }}
                 className={`charts-panel${hasSelectionStats ? ' charts-panel--expanded' : ''}`}
                 fitToViewport
+                bottomReserve={toolbarReserve}
             >
                 {/* 图例（哪个颜色对应哪个部位）整块面板只在这里出现一次，下面几块共用 */}
                 <div className='chartAndDataContent'>
