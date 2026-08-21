@@ -12,6 +12,8 @@ import { HolderOutlined } from '@ant-design/icons';
 
 // 工具条停在视口左下角时离边的留白，拖动时也用这个值做边界
 const TOOLBAR_VIEWPORT_MARGIN = 12
+// 工具条整体缩放的下限：面板缩得太狠时也别把按钮字缩到看不清
+const TOOLBAR_MIN_SCALE = 0.8
 
 const normalizeAngleIndex = (value) => {
     const index = Number(value)
@@ -37,6 +39,8 @@ const ViewSetting = (props) => {
     const toolbarMovedRef = useRef(false)
     const [toolbarPos, setToolbarPos] = useState(null)
     const [toolbarDragging, setToolbarDragging] = useState(false)
+    // 工具条要对齐的宽度：{ width（未缩放的布局宽，px）, scale }
+    const [toolbarFit, setToolbarFit] = useState(null)
     const pageInfo = useContext(pageContext);
     console.log('ViewSetting')
     const { setDisplay, display, setDisplayType, setOnRuler, onSelect } = pageInfo
@@ -420,6 +424,44 @@ const ViewSetting = (props) => {
         }
     }, [])
 
+    // 开屏时把工具条对齐到「实时数据统计」面板当时在屏幕上的实际宽度。
+    // 只在启动和窗口尺寸变化时量一次：面板之后自己放大缩小（缩放按钮、自动适配）都不再牵动工具条。
+    // 面板量的是 getBoundingClientRect，带上了它的整体缩放，所以看上去就是一样长
+    useEffect(() => {
+        const sync = () => {
+            const bar = toolbarRef.current
+            const row = rowRef.current
+            const panel = document.querySelector('.charts-panel')
+            if (!bar || !row || !panel) return
+            const target = panel.getBoundingClientRect().width
+            if (!target) return
+            // 量工具条不受约束时的自然宽度：先把上一次算出来的宽度和缩放摘掉，量完原样放回去
+            // （不能置空，宽度没变时 React 不会重渲染，置空就等于把已生效的宽度丢了）
+            const keepWidth = bar.style.width
+            const keepTransform = bar.style.transform
+            bar.style.width = 'auto'
+            bar.style.transform = 'none'
+            const natural = row.scrollWidth
+            bar.style.width = keepWidth
+            bar.style.transform = keepTransform
+            if (!natural) return
+            // 面板比工具条还窄时整条等比缩一点（有下限，别缩到看不清）
+            const scale = target >= natural ? 1 : Math.max(TOOLBAR_MIN_SCALE, target / natural)
+            const width = Math.round(Math.max(natural, target / scale))
+            setToolbarFit((prev) => (prev && prev.width === width && prev.scale === scale ? prev : { width, scale }))
+        }
+
+        // 图表、字体、面板的自动缩放都要几帧才落定，多补几次
+        const raf = window.requestAnimationFrame(sync)
+        const timers = [200, 600, 1200].map((delay) => window.setTimeout(sync, delay))
+        window.addEventListener('resize', sync)
+        return () => {
+            window.cancelAnimationFrame(raf)
+            timers.forEach(window.clearTimeout)
+            window.removeEventListener('resize', sync)
+        }
+    }, [])
+
     // 按住左侧手柄拖动工具条，位置限制在视口内
     const onToolbarDragStart = (e) => {
         const bar = toolbarRef.current
@@ -456,15 +498,24 @@ const ViewSetting = (props) => {
             <div
                 className='viewSetContent'
                 ref={toolbarRef}
-                style={toolbarPos
-                    ? {
+                style={{
+                    ...(toolbarFit
+                        ? {
+                            width: `${toolbarFit.width}px`,
+                            transform: toolbarFit.scale === 1 ? undefined : `scale(${toolbarFit.scale})`,
+                            transformOrigin: 'bottom left',
+                        }
+                        : null),
+                    ...(toolbarPos
                         // 只有用户自己拖过之后才走内联定位，否则一律用样式里的左下角
-                        left: `${toolbarPos.left}px`,
-                        top: `${toolbarPos.top}px`,
-                        right: 'auto',
-                        bottom: 'auto',
-                    }
-                    : undefined}
+                        ? {
+                            left: `${toolbarPos.left}px`,
+                            top: `${toolbarPos.top}px`,
+                            right: 'auto',
+                            bottom: 'auto',
+                        }
+                        : null),
+                }}
             >
                 <div className='viewSetRow' ref={rowRef}>
                 <div

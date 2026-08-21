@@ -143,6 +143,18 @@ function Test() {
         return () => window.removeEventListener('report-return-realtime', handleReportReturnRealtime)
     }, [clearVisualizationData])
 
+    // 点开一条历史/导入数据：把上一次实时采集攒下来的部位和数值清干净，
+    // 面板只按这条记录里的部位显示。这里不能用 clearVisualizationData —— 它会把
+    // 紧接着要写进去的 historyChart 一起清空，曲线就没了
+    useEffect(() => {
+        const handlePlaybackRecordLoaded = () => {
+            persistentDataRef.current = {}
+            clearMatrixData()
+        }
+        window.addEventListener('playback-record-loaded', handlePlaybackRecordLoaded)
+        return () => window.removeEventListener('playback-record-loaded', handlePlaybackRecordLoaded)
+    }, [clearMatrixData])
+
     // ─── WebSocket 连接 ──────────────────────────────────
     useWebSocket({
         onSitData: (sitData) => {

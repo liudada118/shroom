@@ -29,6 +29,41 @@ const SHAPE_PART_ORDER = ['jacket', 'leftHand', 'rightHand', 'foot']
 // 左右两块面板离顶部的距离保持一致
 const PANEL_TOP = 80
 
+// historyChart 里按部位分的那几张表，其余字段（比如 selection）不是部位表，别扫
+const HISTORY_PART_FIELDS = [
+    'pressArr', 'areaArr',
+    'adcArr', 'adcAreaArr',
+    'pressureArr', 'pressureAreaArr',
+    'forceArr', 'forceAreaArr',
+]
+
+/** 数据 key → 部位短名：实时是 jacket，历史/回放是 endi-jacket，统一取后半段 */
+const getPartKey = (key = '') => {
+    const value = String(key || '')
+    if (value.includes('-')) return value.split('-').pop()
+    return getMatrixPartFromDisplayType(value)
+}
+
+/** 这条回放记录当初连了哪几个部位；没有历史数据（比如实时、对比）时返回 null，表示不过滤 */
+const collectHistoryParts = (historyChart) => {
+    const set = new Set()
+    HISTORY_PART_FIELDS.forEach((field) => {
+        const map = historyChart?.[field]
+        if (!map) return
+        // 老数据这几张表是一维数组，按靠背算（和 renderCharts1 里的兜底一致）
+        if (Array.isArray(map)) {
+            if (map.length) set.add('back')
+            return
+        }
+        if (typeof map !== 'object') return
+        Object.keys(map).forEach((key) => {
+            const part = getPartKey(key)
+            if (part) set.add(part)
+        })
+    })
+    return set.size ? set : null
+}
+
 function ChartsAside(props) {
 
     // 设备颜色（无框选时使用）
@@ -56,6 +91,7 @@ function ChartsAside(props) {
     // 左下角那条工具条要占的高度，面板自动缩放时把这块空间让出来，别压到「重置视图」
     const [toolbarReserve, setToolbarReserve] = useState(0)
     const historyChart = useEquipStore(s => s.historyChart, shallow)
+    const dataStatus = useEquipStore(s => s.dataStatus)
     const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
     const gradientUnit = useEquipStore(s => s.gradientUnit)
     const setGradientUnit = useEquipStore(s => s.setGradientUnit)
@@ -92,10 +128,18 @@ function ChartsAside(props) {
         return set
     }
 
+    /** 回放/对比时这条记录里有的部位；实时时返回 null。同样在 Scheduler 回调里调，直接读 store */
+    const getRecordedPartSet = () => {
+        const store = useEquipStore.getState()
+        if (store.dataStatus === 'realtime') return null
+        return collectHistoryParts(store.historyChart)
+    }
+
     /**
      * 只保留设备自身配置里、且当前还连着的部位（假人就是上身/左臂/右臂/下身）。
      * 插错板子多出来的部位（比如靠背）在这里丢掉；拔掉/断开的部位也一并丢掉，
      * 图例、数值、曲线都当它不存在，不再留一行 0。
+     * 回放历史/导入数据时不看现在插着什么，只看这条记录当初连了哪几个部位。
      * 返回时按设备自身的部位配置排序 —— 面板里所有「色点 + 数值」行的顺序都以此为准
      */
     const pickDeviceParts = (dataMap) => {
@@ -103,12 +147,14 @@ function ChartsAside(props) {
         const allow = getSystemMatrixParts(getSysType()).map((part) => part.key)
         if (!allow.length) return dataMap
         const online = getOnlinePartSet()
+        const recorded = getRecordedPartSet()
         const keys = Object.keys(dataMap)
         const res = {}
         allow.forEach((part) => {
             if (online && !online.has(part)) return
+            if (recorded && !recorded.has(part)) return
             keys.forEach((key) => {
-                if (getMatrixPartFromDisplayType(key) === part) res[key] = dataMap[key]
+                if (getPartKey(key) === part) res[key] = dataMap[key]
             })
         })
         return res
@@ -230,8 +276,9 @@ function ChartsAside(props) {
         return series
     }
 
+    // 颜色只认部位：回放曲线的 key 是 endi-jacket 这种，也要取到和左边色点一样的颜色
     const getDeviceChartColor = (key, colorMap, index = 0) => {
-        const colorKey = getMatrixPartFromDisplayType(key)
+        const colorKey = getPartKey(key)
         return colorMap[colorKey] || Object.values(colorMap)[index]
     }
 
@@ -760,8 +807,12 @@ function ChartsAside(props) {
     const hasSelectionStats = hasBoxStats()
 
     const dataKeys = Object.keys(data).filter((a) => a !== 't')
+    // 回放时这条记录里有哪几个部位：刚点开还没点播放，一帧数据都还没来，
+    // 也要按记录里的部位把色点列出来（数值先是 -）
+    const recordedParts = dataStatus === 'realtime' ? null : collectHistoryParts(historyChart)
     /** 部位短名 → data 里的实际 key，没有这块传感器时返回 undefined */
-    const findDataKey = (part) => dataKeys.find((a) => getMatrixPartFromDisplayType(a) === part)
+    const findDataKey = (part) => dataKeys.find((a) => getPartKey(a) === part)
+        || (recordedParts?.has(part) ? part : undefined)
     // 图例只标注当前真正接上的传感器：插了哪块显示哪块，没插的不占位。
     // 顺序按设备自身的部位配置走，配置以外的部位（比如插错板子的靠背）不会进 data
     const legendKeys = getSystemMatrixParts(systemType)
@@ -800,6 +851,16 @@ function ChartsAside(props) {
     }
 
     /**
+     * 一个部位都没接上时给这行放个空占位：行高和有数值时一样，
+     * 面板整体高度就不随「连没连设备」变，自动适配算出来的缩放（也就是面板在屏幕上的宽度）才不会跳
+     */
+    const withRowPlaceholder = (items, key) => (items && items.length ? items : [
+        <div className='chartTypeItem' key={`placeholder-${key}`} aria-hidden='true'>
+            <span className='chartMetricValue'>&nbsp;</span>
+        </div>
+    ])
+
+    /**
      * 渲染数据行 — 多框选时每个框一行数据（颜色对应），否则按设备
      */
     const renderDataRow = (item, colorArr) => {
@@ -825,11 +886,11 @@ function ChartsAside(props) {
                     })
                 }
             })
-            return allBoxRows
+            return withRowPlaceholder(allBoxRows, item)
         }
 
         // 设备模式：顺序、有哪几个色点，一律跟着右上角图例走
-        return legendKeys.map((a) => (
+        return withRowPlaceholder(legendKeys.map((a) => (
             <div className='chartTypeItem' key={`${a}-${item}`}>
                 <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, colorArr) }}></div>
                 <div className='chartMetricValueGroup'>
@@ -839,7 +900,7 @@ function ChartsAside(props) {
                     </span>
                 </div>
             </div>
-        ))
+        )), item)
     }
 
     const renderCenterRows = () => {
@@ -859,11 +920,11 @@ function ChartsAside(props) {
                     )
                 })
             })
-            return rows
+            return withRowPlaceholder(rows, 'center')
         }
 
         // 同上：顺序和色点跟右上角图例一致
-        return legendKeys.map((a) => {
+        return withRowPlaceholder(legendKeys.map((a) => {
             const center = Array.isArray(data[a]?.pressureCenter) ? data[a].pressureCenter : ['-', '-']
             return <div className='chartTypeItem' key={a}>
                 <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, areaColorArr) }}></div>
@@ -871,7 +932,7 @@ function ChartsAside(props) {
                     {`(${center[0]} , ${center[1]})`}
                 </div>
             </div>
-        })
+        }), 'center')
     }
 
     // ─── 对称系数 / 压力梯度 ───────────────────────────────
@@ -912,7 +973,7 @@ function ChartsAside(props) {
     }
 
     /** 一行指标：每个部位（或每个框）一个「色点 + 数值 + 单位」，色点颜色与图例一致 */
-    const renderShapeRow = (keys, format, unit) => getShapeEntries(keys).map((entry) => (
+    const renderShapeRow = (keys, format, unit) => withRowPlaceholder(getShapeEntries(keys).map((entry) => (
         <div className='chartTypeItem' key={`shape-${entry.id}-${unit || 'percent'}`}>
             <div className='cirlce' style={{ backgroundColor: entry.color }}></div>
             <div className='chartMetricValueGroup'>
@@ -920,7 +981,7 @@ function ChartsAside(props) {
                 {unit ? <span className='chartMetricUnit'>{unit}</span> : null}
             </div>
         </div>
-    ))
+    )), `shape-${unit || 'percent'}`)
 
     /**
      * 对称系数：单独一小块，标题下面一行数值。

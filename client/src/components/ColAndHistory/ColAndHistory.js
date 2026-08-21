@@ -134,6 +134,11 @@ const getImportedDataName = (item) => {
     return normalizeCsvItem(item).split(/[\\/]/).pop().toLowerCase()
 }
 
+// 界面上只显示文件名：存的是完整路径，整条铺出来又长又看不出是哪个文件
+const getImportedDisplayName = (item) => {
+    return normalizeCsvItem(item).split(/[\\/]/).pop()
+}
+
 const scheduleIdleTask = (callback, timeout = 800) => {
     if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
         const id = window.requestIdleCallback(callback, { timeout })
@@ -164,7 +169,7 @@ const ColAndHistory = memo((props) => {
     const [downloadToast, setDownloadToast] = useState(null) // { fileName, filePath }
     const [showDownloadPathModal, setShowDownloadPathModal] = useState(false) // 下载前路径选择对话框
     const [downloadProgress, setDownloadProgress] = useState(null) // { percent, status: 'downloading'|'done'|'error', files: [] }
-    const [exportFormat, setExportFormat] = useState('csv')
+    const [exportFormat, setExportFormat] = useState('xlsx')
     const [exportFieldOptions, setExportFieldOptions] = useState([])
     const [exportFields, setExportFields] = useState([])
     const [exportFieldLoading, setExportFieldLoading] = useState(false)
@@ -307,7 +312,8 @@ const ColAndHistory = memo((props) => {
             if (res.data?.code === 0) {
                 const { fileName, filePath } = res.data.data
                 const uploadedItem = filePath || fileName
-                setLocalArr((prev) => normalizeCsvList([...(Array.isArray(prev) ? prev : []), uploadedItem]))
+                // 新导入的排最前面，和左边「本地数据」一个顺序
+                setLocalArr((prev) => normalizeCsvList([uploadedItem, ...(Array.isArray(prev) ? prev : [])]))
                 resetOperateState()
                 message.success(t('uploadSuccess') || 'Upload success')
                 setUploadFileShow(false)
@@ -1148,8 +1154,8 @@ const ColAndHistory = memo((props) => {
                         value={exportFormat}
                         onChange={(e) => setExportFormat(e.target.value)}
                         options={[
-                            { label: 'CSV', value: 'csv' },
                             { label: 'XLSX', value: 'xlsx' },
+                            { label: 'CSV', value: 'csv' },
                         ]}
                     />
                 </div>
@@ -1543,6 +1549,8 @@ const ColAndHistory = memo((props) => {
                                                             return
                                                         }
 
+                                                        // 先把上一次留下的累积数据清掉，面板只按这条记录里的部位显示
+                                                        window.dispatchEvent(new CustomEvent('playback-record-loaded'))
                                                         setCurrentName(dbInfo.name)
                                                         setCurrentPlaybackKey(historyItemKey)
                                                         useEquipStore.getState().setDataStatus('replay')
@@ -1681,7 +1689,9 @@ const ColAndHistory = memo((props) => {
                                                         return
                                                     }
 
-                                                    setCurrentName(a)
+                                                    // 同上：换一条记录就把上一次的累积数据清掉
+                                                    window.dispatchEvent(new CustomEvent('playback-record-loaded'))
+                                                    setCurrentName(getImportedDisplayName(a))
                                                     setCurrentPlaybackKey(localItemKey)
                                                     setDataLength(length)
                                                     useEquipStore.getState().setDataStatus('replay')
@@ -1722,8 +1732,8 @@ const ColAndHistory = memo((props) => {
                                                 </div> : ''}
                                                 {operateStatus === 'contrast' && localContrastRole ? <div className="contrastRoleBadge">{localContrastRole}</div> : ''}
                                             </div>
-                                            <div className='playbackItemInfo'>
-                                                {a}
+                                            <div className='playbackItemInfo' title={a}>
+                                                {getImportedDisplayName(a)}
                                             </div>
                                         </div>
                                     )

@@ -1009,9 +1009,10 @@ const EXPORT_FIXED_FIELDS = [
 // 框选坐标：把这条记录「开始采集」那一刻存下来的框原样写进文件，导入时再还原成同样的死框。
 // 只写在第一行数据上（单独占一行会被 validateImportedCsv 判成「数据有误」），
 // 标题带「框选」二字，会被 isOriginalDataColumn 自动排除在矩阵数据列之外，老版本读新文件不受影响
-// csv：整份框选写在第一行这一列里。
+// csv：整份框选写在这一列里，每行都是同一份。
 // xlsx：第一个 sheet 不带这列，改成每个框选一个 sheet，坐标写在各自 sheet 的这一列里
-const EXPORT_SELECTION_FIELD = { id: 'selection_coords', title: '框选坐标(JSON)' }
+// 内容只有四个角的坐标（写法见 buildSelectionCoordText），不再是一段 JSON
+const EXPORT_SELECTION_FIELD = { id: 'selection_coords', title: '框选坐标' }
 const EXPORT_TRAILING_FIELDS = [EXPORT_SELECTION_FIELD]
 // 这列固定输出，不进导出字段勾选弹窗，也不受勾选结果影响
 const ALWAYS_EXPORT_FIELD_IDS = new Set(EXPORT_TRAILING_FIELDS.map((field) => field.id))
@@ -1109,7 +1110,8 @@ function buildExportHeadersForKeys(keys, selectionMap = {}, metricMode = 'pressu
 }
 
 function normalizeExportOptions(options = {}) {
-  const format = String(options.format || 'csv').toLowerCase() === 'xlsx' ? 'xlsx' : 'csv'
+  // 默认 xlsx，和界面上的默认选项保持一致；只有明确要 csv 才走 csv
+  const format = String(options.format || 'xlsx').toLowerCase() === 'csv' ? 'csv' : 'xlsx'
   const fields = Array.isArray(options.fields)
     ? options.fields.map((field) => String(field || '').trim()).filter(Boolean)
     : []
@@ -1194,14 +1196,106 @@ function buildSelectionSheetName(group, usedNames) {
   return name
 }
 
-// 一个框选的坐标写成一段 JSON，带上部位 key，导入时照这段还原成同一个框
-function buildSelectionRegionJson(matrixKey, region) {
-  if (!region || typeof region !== 'object') return ''
-  try {
-    return JSON.stringify({ key: matrixKey, ...region })
-  } catch {
+// ─── 框选坐标列：只写四个角的坐标 ──────────────────
+// 格子里长这样（一个框四个角，多个框之间用 ； 隔开），别的什么都不写：
+//   (5, 6) (5, 11) (9, 11) (9, 6)；(16, 1) (16, 5) (19, 5) (19, 1)
+// 坐标写法和「最大压强坐标」列一致：(行, 列)，从 0 起算，四个角按左上→右上→右下→左下。
+// 是哪个部位的第几个框，靠同一张表里「上身框选1最大压强」这类表头认回来（见 readSelectionSlotsFromHeaders），
+// 所以坐标的先后必须和表头里框选列的先后严格一致。整列每行都写同一份，随便看哪行都有。
+// 旧文件那列是一整段 JSON，导入时照旧能读（见 parseSelectionCellValue）
+const SELECTION_TEXT_REGION_SEPARATOR = '；'
+const SELECTION_TEXT_COORD_PATTERN = /[（(]\s*(-?\d+)\s*[,，]\s*(-?\d+)\s*[)）]/g
+// 表头形如「上身框选1最大压强(kPa)」：前面是部位，框选后面的数字是第几个框
+const SELECTION_COLUMN_HEADER_PATTERN = /^(.*?)框选\s*(\d+)/
+
+// 四个角：左上 → 右上 → 右下 → 左下。xEnd / yEnd 是开区间，减 1 才是框里最后一格
+function buildSelectionCornerText(region) {
+  const x1 = Math.round(Number(region.xStart))
+  const y1 = Math.round(Number(region.yStart))
+  const x2 = Math.round(Number(region.xEnd)) - 1
+  const y2 = Math.round(Number(region.yEnd)) - 1
+  return `(${y1}, ${x1}) (${y1}, ${x2}) (${y2}, ${x2}) (${y2}, ${x1})`
+}
+
+function buildSelectionCoordText(regions) {
+  return (regions || [])
+    .filter((region) => isExportSelectionRegion(region))
+    .map((region) => buildSelectionCornerText(region))
+    .join(SELECTION_TEXT_REGION_SEPARATOR)
+}
+
+// 从表头里按出现顺序认出「上身框选1…」这些列 →（部位, 第几个框），同一个框的多列只算一次
+function readSelectionSlotsFromHeaders(headers) {
+  const slots = []
+  const seen = new Set()
+  ;(headers || []).forEach((header) => {
+    const matched = SELECTION_COLUMN_HEADER_PATTERN.exec(stripCsvUnitSuffix(normalizeCsvHeader(header)))
+    if (!matched) return
+    const matrixKey = normalizeCsvMatrixKey(matched[1])
+    if (!matrixKey) return
+    const id = `${matrixKey}#${matched[2]}`
+    if (seen.has(id)) return
+    seen.add(id)
+    slots.push({ matrixKey, index: Number(matched[2]) })
+  })
+  return slots
+}
+
+// 一段「(行, 列)」×4 还原成一个框。xEnd / yEnd 是开区间，所以最大值要 +1；
+// 名字和颜色不写进文件，按第几个框补回来（和当初导出时的默认值一致）
+function parseSelectionCornerText(text, index) {
+  const rows = []
+  const cols = []
+  String(text || '').replace(SELECTION_TEXT_COORD_PATTERN, (_all, row, col) => {
+    rows.push(Number(row))
+    cols.push(Number(col))
     return ''
+  })
+  if (rows.length < 2) return null
+  const order = Number.isFinite(Number(index)) && Number(index) > 0 ? Number(index) : 1
+  const region = {
+    xStart: Math.min(...cols),
+    xEnd: Math.max(...cols) + 1,
+    yStart: Math.min(...rows),
+    yEnd: Math.max(...rows) + 1,
+    name: `框选${order}`,
+    colorIndex: order - 1,
   }
+  return isExportSelectionRegion(region) ? region : null
+}
+
+// 一格坐标 + 表头认出来的框选列，按顺序配成 { 部位key: { regions: [...] } }
+function parseSelectionCoordText(text, slots = []) {
+  const raw = String(text || '').trim()
+  if (!raw || !slots.length) return null
+  const result = {}
+  raw.split(/\s*[；;｜|]\s*/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .forEach((chunk, order) => {
+      const slot = slots[order]
+      if (!slot) return
+      const region = parseSelectionCornerText(chunk, slot.index)
+      if (!region) return
+      if (!result[slot.matrixKey]) result[slot.matrixKey] = { regions: [] }
+      result[slot.matrixKey].regions.push(region)
+    })
+  return Object.keys(result).length ? result : null
+}
+
+// 老文件里这列是一整段 JSON，新文件是四角坐标，两种都要能读
+function parseSelectionCellValue(value, slots = []) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+  if (raw.startsWith('{') || raw.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
+    } catch {
+      // 不是合法 JSON 就按坐标再试一次
+    }
+  }
+  return parseSelectionCoordText(raw, slots)
 }
 
 async function writeXlsxFile(filePath, headers, records, selectionRegionMap = {}) {
@@ -1213,16 +1307,16 @@ async function writeXlsxFile(filePath, headers, records, selectionRegionMap = {}
   const fixedHeaders = mainHeaders.filter((header) => EXPORT_FIXED_FIELDS.some((field) => field.id === header.id))
   selectionGroups.forEach((group) => {
     const region = selectionRegionMap?.[group.matrixKey]?.[group.index - 1]
-    const regionJson = buildSelectionRegionJson(group.matrixKey, region)
-    // 坐标只写第一行，其余行留空
-    const sheetRecords = records.map((record, rowIndex) => ({
+    const regionText = buildSelectionCoordText([region])
+    // 每行都写同一份坐标，随便看哪一行都有
+    const sheetRecords = records.map((record) => ({
       ...record,
-      [EXPORT_SELECTION_FIELD.id]: rowIndex === 0 ? regionJson : '',
+      [EXPORT_SELECTION_FIELD.id]: regionText,
     }))
     appendXlsxSheet(
       workbook,
       buildSelectionSheetName(group, workbook.SheetNames),
-      // 坐标列放在指标列前面：这串 JSON 很长，右边有数据挡着才会像「压强数据」那样被裁掉，
+      // 坐标列放在指标列前面：这串坐标很长，右边有数据挡着才会像「压强数据」那样被裁掉，
       // 放最后一列右边是空的，整串会一路铺出去很难看
       [...fixedHeaders, EXPORT_SELECTION_FIELD, ...group.headers],
       sheetRecords,
@@ -1309,16 +1403,22 @@ function getExportSelectionRegions(selectOverride, key, data, item = {}) {
     .slice(0, MAX_EXPORT_SELECTIONS)
 }
 
-// 导出时把框选原样序列化成一段 JSON，写在第一行数据的「框选坐标(JSON)」列里。
-// 原样搬运（保留 name / colorIndex / width / height），导入端 JSON.parse 回来就是同一份框
-function buildSelectionExportJson(selectOverride) {
-  if (!selectOverride || typeof selectOverride !== 'object') return ''
-  if (!collectExportSelectionRegions(selectOverride).length) return ''
-  try {
-    return JSON.stringify(selectOverride)
-  } catch {
-    return ''
-  }
+// csv 只有一张表，所有框的坐标写在同一格里。
+// 顺序照着表头里框选列的顺序来（导入端就是靠这个顺序把坐标认回是哪个部位的第几个框）
+function buildSelectionCsvCoordText(headers, selectionRegionMap) {
+  const seen = new Set()
+  const texts = []
+  ;(headers || []).forEach((header) => {
+    const matched = SELECTION_HEADER_ID_PATTERN.exec(header.id)
+    if (!matched) return
+    const groupId = `${matched[1]}_selection_${matched[2]}`
+    if (seen.has(groupId)) return
+    seen.add(groupId)
+    const region = selectionRegionMap?.[matched[1]]?.[Number(matched[2]) - 1]
+    const text = buildSelectionCoordText([region])
+    if (text) texts.push(text)
+  })
+  return texts.join(SELECTION_TEXT_REGION_SEPARATOR)
 }
 
 function sliceSelectionData(data, region) {
@@ -1715,11 +1815,13 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           // xlsx：坐标跟着每张框选 sheet 走，第一个 sheet 不带坐标列
           await writeXlsxFile(exportFilePath, headers, records, selectionRegionMap)
         } else {
-          // csv 只有一张表，整份框选写在第一行的坐标列里
+          // csv 只有一张表，整份框选写在坐标列里，每行都写同一份
           // （单独插一行会被导入端的校验当成「数据有误」）
-          const selectionExportJson = buildSelectionExportJson(selectOverride)
-          if (selectionExportJson && records.length) {
-            records[0] = { ...records[0], [EXPORT_SELECTION_FIELD.id]: selectionExportJson }
+          const selectionCoordText = buildSelectionCsvCoordText(headers, selectionRegionMap)
+          if (selectionCoordText) {
+            for (let i = 0; i < records.length; i++) {
+              records[i] = { ...records[i], [EXPORT_SELECTION_FIELD.id]: selectionCoordText }
+            }
           }
           await writeSingleCsv(exportFilePath, headers, records)
         }
@@ -1941,7 +2043,7 @@ function normalizeImportedRow(row = {}, file = '') {
   return { ...normalized, file }
 }
 
-// 从第一个 sheet 之后的每张框选表里读回坐标（每张表第一行数据的坐标列里放着这个框的 JSON），
+// 从第一个 sheet 之后的每张框选表里读回坐标（每张表第一行数据的坐标列里放着这个框），
 // 合并成和 remarks.select_json 一样的结构。老文件没有这些表，返回空
 function readXlsxSelectionJson(workbook) {
   const selectJson = {}
@@ -1952,15 +2054,25 @@ function readXlsxSelectionJson(workbook) {
     for (const row of rows) {
       const column = Object.keys(row || {}).find((header) => normalizeCsvHeader(header).includes('框选坐标'))
       if (!column || isEmptyCsvValue(row[column])) continue
-      try {
-        const { key, ...region } = JSON.parse(String(row[column]))
-        const matrixKey = String(key || '').trim()
-        if (matrixKey && isExportSelectionRegion(region)) {
-          if (!selectJson[matrixKey]) selectJson[matrixKey] = { regions: [] }
-          selectJson[matrixKey].regions.push(region)
+      // 一张表就一个框：部位和序号先看表头，表头不带就退回表名（表名就是「上身框选1」）
+      const slots = readSelectionSlotsFromHeaders([...Object.keys(row), sheetName])
+      // 新文件是四角坐标，老文件是 { key, ...region } 那段 JSON，两种都收
+      const parsed = parseSelectionCellValue(row[column], slots)
+      if (parsed) {
+        const legacyKey = String(parsed.key || '').trim()
+        if (legacyKey && isExportSelectionRegion(parsed)) {
+          const { key, ...region } = parsed
+          void key
+          if (!selectJson[legacyKey]) selectJson[legacyKey] = { regions: [] }
+          selectJson[legacyKey].regions.push(region)
+        } else {
+          Object.entries(parsed).forEach(([matrixKey, value]) => {
+            const regions = collectExportSelectionRegions(value)
+            if (!regions.length) return
+            if (!selectJson[matrixKey]) selectJson[matrixKey] = { regions: [] }
+            selectJson[matrixKey].regions.push(...regions)
+          })
         }
-      } catch {
-        // 这张表的坐标被改坏了就跳过，不影响其它框和数据导入
       }
       break
     }
@@ -2450,25 +2562,22 @@ function getCsvFrameTimestamp(row, rowIndex) {
   return Date.now() + rowIndex
 }
 
-// 从导入文件里把「框选坐标(JSON)」列读回来（只写在第一行，所以扫到第一个非空就用）。
-// 老文件没有这列，返回 '{}'，报告里就是没有框，跟改动前一样
+// 从导入文件里把「框选坐标」列读回来（整列都一样，扫到第一个非空就用）。
+// 新文件只有四角坐标，是哪个部位的第几个框靠同一行的表头顺序还原；老文件是一段 JSON，两种都认。
+// 没有这列（更老的文件）就返回 '{}'，报告里就是没有框，跟改动前一样
 function parseImportedSelectionJson(csvRows) {
   if (!Array.isArray(csvRows)) return '{}'
   for (const row of csvRows) {
     if (!row || typeof row !== 'object') continue
-    const key = Object.keys(row).find((header) => {
+    const headers = Object.keys(row)
+    const key = headers.find((header) => {
       const normalized = normalizeCsvHeader(header)
       return normalized.includes('框选坐标') || /^selection_coords$/i.test(normalized)
     })
     if (!key || isEmptyCsvValue(row[key])) continue
-    try {
-      const parsed = JSON.parse(String(row[key]))
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return JSON.stringify(parsed)
-      }
-    } catch {
-      // 列被改坏了就当没有框，不影响其它数据导入
-    }
+    // 列被改坏了就当没有框，不影响其它数据导入
+    const parsed = parseSelectionCellValue(row[key], readSelectionSlotsFromHeaders(headers))
+    if (parsed) return JSON.stringify(parsed)
   }
   return '{}'
 }

@@ -1,3 +1,9 @@
+:root {
+  /* 「实时数据统计」面板 100%（未缩放）时的宽度，左下角工具条按它对齐。
+     rem 会随窗口宽度换算（见 hooks/useWindowsize.js），所以任何屏幕上两者都一样长 */
+  --stats-panel-width: min(29rem, calc(100vw - 2rem));
+}
+
 html, body, #root {
   margin: 0;
   padding: 0;
