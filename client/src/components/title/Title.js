@@ -8,9 +8,6 @@ import axios from 'axios'
 import { withTranslation } from "react-i18next";
 import { pageContext } from '../../page/test/Test'
 import { systemConfig, localAddress } from '../../util/constant'
-import { buildFallbackParams } from '../../util/request'
-import { normalizeVisualSettingMax } from '../../util/visualSettingStorage'
-import { loadVisualSettingValue } from '../../util/visualSettingStorage'
 import { useEquipStore } from '../../store/equipStore'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import { shallow } from 'zustand/shallow'
@@ -150,32 +147,6 @@ const Title = memo((props) => {
   }
 
   const systemType = useEquipStore(s => s.systemType, shallow);
-  const systemTypeArr = useEquipStore(s => s.systemTypeArr, shallow);
-
-  const changeSystemType = (e) => {
-    const payload = {
-      system: e,
-    }
-
-    axios({
-      method: 'post',
-      url: `${localAddress}/changeSystemType`,
-      params: buildFallbackParams(payload),
-      data: payload,
-    }).then((res) => {
-      console.log(res)
-      const optimalObj = res.data.data.optimalObj
-      const maxObj = normalizeVisualSettingMax(res.data.data.maxObj)
-      useEquipStore.getState().setSystemType(e)
-      useEquipStore.getState().setStatus(new Array(4096).fill(0))
-      useEquipStore.getState().setDisplayStatus(new Array(4096).fill(0))
-      useEquipStore.getState().setDisplayType('all')
-      useEquipStore.getState().setSettingValue(loadVisualSettingValue(e, optimalObj, maxObj))
-      useEquipStore.getState().setSettingValueMax(maxObj)
-      useEquipStore.getState().setSettingValueOptimal(optimalObj)
-    }).catch((err) => {
-    })
-  }
 
   const equipStatus = useEquipStore(s => s.equipStatus, shallow);
   const hasDeviceOffline = equipStatus
@@ -238,10 +209,6 @@ const Title = memo((props) => {
           <div className="logo fs24">
             <img src={logo} style={{ height: '1.2rem' }} alt="" />
           </div>
-          <Select options={systemTypeArr}
-            defaultValue={t(systemType)}
-            onChange={changeSystemType}
-          />
           {/* 一键连接按钮 */}
           <div className={`${getButtonClass()} cursor connectButton oneKeyConnectButton`} style={{ marginRight: '0.5rem' }} onClick={() => { connent() }}>
             <LinkOutlined className="connectButtonIcon" />

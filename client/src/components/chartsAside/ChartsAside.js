@@ -149,6 +149,35 @@ function ChartsAside(props) {
         return colorMap[colorKey] || Object.values(colorMap)[index]
     }
 
+    /** grid.top(30) + grid.bottom(34)，即 Y 轴刻度不可用的垂直空间 */
+    const CHART_VERTICAL_PADDING = 64
+
+    /** 单个 Y 轴刻度所需的最小垂直间距（px），小于它标签就会挤在一起 */
+    const AXIS_LABEL_MIN_GAP = 26
+
+    /**
+     * 按图表实际像素高度反推 Y 轴等分数
+     * 小分辨率下面板被压扁，固定等分会让刻度全糊在一起，这里按可用高度动态降档
+     */
+    const getAxisSplitNumber = (chartInstance, maxSplit = 5) => {
+        const height = Number(chartInstance?.getHeight?.())
+        if (!Number.isFinite(height) || height <= 0) return maxSplit
+        const plotHeight = height - CHART_VERTICAL_PADDING
+        if (plotHeight <= 0) return 1
+        return Math.max(1, Math.min(maxSplit, Math.floor(plotHeight / AXIS_LABEL_MIN_GAP)))
+    }
+
+    /**
+     * 概率密度刻度格式化
+     * 固定两位小数会把 "90.00%" 这类标签撑得很宽，按精度需要裁掉多余的 0
+     */
+    const formatPercentTick = (value) => {
+        const percent = Math.round(Number(value) * 10000) / 100
+        if (!Number.isFinite(percent)) return value
+        if (Number.isInteger(percent)) return `${percent}%`
+        return `${percent.toFixed(Math.abs(percent) >= 1 ? 1 : 2)}%`
+    }
+
     const initCharts1 = (props) => {
         const xLength = props.xData?.length || 20
         const xLabelInterval = Math.max(0, Math.ceil(xLength / 5) - 1)
@@ -216,11 +245,13 @@ function ChartsAside(props) {
                 axisTick: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
                 splitLine: { show: true, lineStyle: { width: 0.5, color: '#32373E' } },
                 max: props.yMax,
+                splitNumber: getAxisSplitNumber(props.myChart),
                 axisLabel: {
                     show: true,
                     color: '#AEB8C4',
                     fontSize: 9,
                     margin: 4,
+                    hideOverlap: true,
                     formatter: (value) => {
                         const num = Number(value)
                         if (!Number.isFinite(num)) return value
@@ -505,9 +536,15 @@ function ChartsAside(props) {
                 splitLine: { show: false }
             },
             yAxis: {
-                type: 'value', name: '', splitNumber: 3,
+                type: 'value', name: '', splitNumber: getAxisSplitNumber(chart.current, 3),
                 axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
-                axisLabel: { color: '#AEB8C4', fontSize: 9, margin: 4, formatter: (value) => `${(Number(value) * 100).toFixed(2)}%` },
+                axisLabel: {
+                    color: '#AEB8C4',
+                    fontSize: 9,
+                    margin: 4,
+                    hideOverlap: true,
+                    formatter: (value) => formatPercentTick(value),
+                },
                 axisTick: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
                 splitLine: { lineStyle: { width: 0.5, color: '#32373E' } },
                 scale: false,
@@ -525,6 +562,10 @@ function ChartsAside(props) {
             myChart1.current?.resize()
             myChart2.current?.resize()
             chart.current?.resize()
+            // Y 轴等分数依赖图表像素高度，resize 后必须重新出图才能生效
+            renderCharts1()
+            renderCharts2()
+            renderNormal()
         }
         const resizeObserver = chartPanel && typeof ResizeObserver !== 'undefined'
             ? new ResizeObserver(resizeCharts)
