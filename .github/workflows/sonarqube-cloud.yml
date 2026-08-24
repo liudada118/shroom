@@ -1,0 +1,51 @@
+# SonarQube Cloud 自动扫描
+#
+# 组织已建好：chiyusiguyuanya1（Free plan）
+# 还差两步，都在浏览器里点：
+#
+#   1. 打开 https://sonarcloud.io/organizations/chiyusiguyuanya1/projects
+#      点「Analyze a new project」，选中 shroom 仓库导入。
+#      导入后确认页面上的 Project Key —— 通常是 chiyusiguyuanya1_shroom，
+#      如果不是，改下面 args 里的 sonar.projectKey。
+#
+#   2. 在 SonarQube Cloud 生成令牌（右上头像 - My Account - Security - Generate Token），
+#      然后到 GitHub 仓库 Settings - Secrets and variables - Actions - New repository secret，
+#      名字必须叫 SONAR_TOKEN，值填该令牌。
+#
+# 配好之后，push 到 main 或开 PR 会自动扫描，结果页面任何人都能打开：
+#   https://sonarcloud.io/project/overview?id=chiyusiguyuanya1_shroom
+
+name: SonarQube Cloud
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # 允许在 Actions 页面手动点按钮触发
+  workflow_dispatch:
+
+jobs:
+  sonarqube:
+    name: Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # 关闭浅克隆，否则 SonarQube 无法准确归属代码行的作者和时间
+          fetch-depth: 0
+
+      - name: SonarQube Cloud Scan
+        uses: SonarSource/sonarqube-scan-action@v8.2.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          # 注意：扫 Cloud 时不要设置 SONAR_HOST_URL，
+          # 设了反而会让 action 以为目标是自建 Server。
+        with:
+          # sonar-project.properties 里的 projectKey 是给本地服务器用的，
+          # Cloud 上的 key 不一样，所以在这里覆盖掉。
+          # organization 只有 Cloud 需要，本地服务器不认，所以也放这里。
+          args: >
+            -Dsonar.organization=chiyusiguyuanya1
+            -Dsonar.projectKey=chiyusiguyuanya1_shroom

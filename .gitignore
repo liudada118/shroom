@@ -42,3 +42,7 @@ Desktop.ini
 /dist-serial-cache-fix
 /resources
 /locales
+
+# SonarQube
+/.scannerwork
+/.sonar-token
