@@ -437,10 +437,13 @@ function ChartsAside(props) {
             historyData[`${getMetricDisplay().valuePrefix}Arr`] || historyData.pressArr
         )
         const pressArr = Array.isArray(pressArrRaw) ? { back: pressArrRaw } : pressArrRaw
-        const hasCurrentBoxStats = getBoxStats().length > 0
+        // 回放时曲线一律画整条记录（框选时是整条框选曲线），不跟着播放到第几秒逐帧长；
+        // 万一这条记录没有曲线数据，也是留空，不拿实时那份逐帧累积的数据顶上
+        const isReplay = useEquipStore.getState().dataStatus === 'replay'
+        const hasCurrentBoxStats = !isReplay && getBoxStats().length > 0
         const useHistory = pressArr && Object.keys(pressArr).length && !hasCurrentBoxStats
 
-        const chartData = useHistory ? pressArr : pickDeviceParts(props.chartData.current)
+        const chartData = useHistory ? pressArr : (isReplay ? {} : pickDeviceParts(props.chartData.current))
         const keyArr = Object.keys(chartData)
         const onlyBoxStats = !useHistory && getBoxStats(chartData).length > 0
         let areaObj = {}
@@ -477,10 +480,12 @@ function ChartsAside(props) {
             historyData[getMetricAreaTrendField()] || historyData.areaArr
         )
         const areaArr = Array.isArray(areaArrRaw) ? { back: areaArrRaw } : areaArrRaw
-        const hasCurrentBoxStats = getBoxStats().length > 0
+        // 同 renderCharts1：回放只画整条记录的曲线
+        const isReplay = useEquipStore.getState().dataStatus === 'replay'
+        const hasCurrentBoxStats = !isReplay && getBoxStats().length > 0
         const useHistory = areaArr && Object.keys(areaArr).length && !hasCurrentBoxStats
 
-        const chartData = useHistory ? areaArr : pickDeviceParts(props.chartData.current)
+        const chartData = useHistory ? areaArr : (isReplay ? {} : pickDeviceParts(props.chartData.current))
         const keyArr = Object.keys(chartData)
         const onlyBoxStats = !useHistory && getBoxStats(chartData).length > 0
         let areaObj = {}

@@ -113,6 +113,16 @@ function Test() {
 
     // 持久化的数据对象（跨帧累积）
     const persistentDataRef = useRef({})
+    // 当前这条回放记录「整条」的曲线数据。框选之后 historyChart 会被换成框内的曲线，
+    // 取消框选时拿这份把整条曲线放回去（不然面板没数据，只能退回去画实时那条会跟着播放长的曲线）
+    const fullHistoryChartRef = useRef(null)
+
+    useEffect(() => useEquipStore.subscribe((state, prev) => {
+        const chart = state.historyChart
+        if (!chart || chart === prev?.historyChart || chart.selection?.active) return
+        const hasData = Object.keys(chart).some((field) => field !== 'selection' && Object.keys(chart[field] || {}).length)
+        if (hasData) fullHistoryChartRef.current = chart
+    }), [])
 
     const clearVisualizationData = useCallback((options = {}) => {
         const { preservePlaybackStatus = false } = options
@@ -243,7 +253,11 @@ function Test() {
             if (status !== 'replay') return
             if (safeArr.length === 0) {
                 useEquipStore.getState().setPlaybackHasSelection(false)
-                useEquipStore.getState().setHistoryChart({ pressArr: {}, areaArr: {} })
+                // 取消框选：把整条记录的曲线放回去
+                const { selection, ...fullChart } = fullHistoryChartRef.current || {}
+                useEquipStore.getState().setHistoryChart(
+                    Object.keys(fullChart).length ? fullChart : { pressArr: {}, areaArr: {} }
+                )
                 removeHistoryBox()
                 window.setTimeout(() => {
                     if (brushInstance.rangeArr?.length) return
