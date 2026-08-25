@@ -46,3 +46,4 @@ Desktop.ini
 # SonarQube
 /.scannerwork
 /.sonar-token
+/.sonar-cloud-token

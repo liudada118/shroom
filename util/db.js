@@ -1001,8 +1001,10 @@ const EXPORT_BASE_FIELDS = [
   { id: 'total_pressure_n', title: '压力总和(N)' },
 ]
 
+// 第一列是帧号：一行就是一帧，从 1 开始依次往下数。
+// 老文件这里是「时间戳」，导入端两种表头都认（见 analyzeImportHeaders / getCsvFrameTimestamp）
 const EXPORT_FIXED_FIELDS = [
-  { id: 'timestamp', title: '时间戳' },
+  { id: 'frame_no', title: '帧数' },
   { id: 'elapsed_seconds', title: '秒数(s)' },
 ]
 
@@ -1539,6 +1541,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
         const rowData = parseMatrixFrameData(rows[i].data)
         const elapsedMs = Number(rows[i].timestamp) - Number(rows[0].timestamp)
         const frameEntry = {
+          frame_no: i + 1,
           timestamp: rows[i].timestamp,
           elapsed_seconds: Number.isFinite(elapsedMs)
             ? Math.max(0, elapsedMs / 1000).toFixed(3)
@@ -2250,7 +2253,15 @@ function analyzeImportHeaders(headers) {
     || header === 'elapsed_seconds'
     || header === '秒数(s)'
   ))
-  const timeHeader = normalizedHeaders.find((header) => header === 'time' || header === '时间' || header === 'timestamp' || header === '时间戳')
+  // 认帧的那一列：新文件是「帧数」，老文件是「时间戳 / 时间」，都收
+  const timeHeader = normalizedHeaders.find((header) => (
+    header === 'time'
+    || header === '时间'
+    || header === 'timestamp'
+    || header === '时间戳'
+    || header === 'frame_no'
+    || header === '帧数'
+  ))
   const realDataColumns = normalizedHeaders
     .filter(isOriginalDataColumn)
     .filter((header) => hasImportMetricHeaders(normalizedHeaders, header))
@@ -2541,9 +2552,19 @@ function getCsvRowMatrixEntries(row) {
   return entries
 }
 
+// 新文件的「帧数」列（1、2、3…），没有就返回 NaN
+function getCsvFrameNo(row) {
+  const value = getImportCell(row, ['frame_no', '帧数'])
+  if (isEmptyCsvValue(value)) return NaN
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : NaN
+}
+
 function getCsvFrameGroupKey(row, rowIndex) {
   const frameIndex = normalizeCsvHeader(row.frame_index)
   if (frameIndex) return `frame:${frameIndex}`
+  const frameNo = getCsvFrameNo(row)
+  if (Number.isFinite(frameNo)) return `frame:${frameNo}`
   const timestampValue = getImportCell(row, ['timestamp', '时间戳'])
   if (isScientificTimestamp(timestampValue)) return `row:${rowIndex}`
   const timestamp = normalizeCsvHeader(timestampValue)
@@ -2551,15 +2572,43 @@ function getCsvFrameGroupKey(row, rowIndex) {
   return `row:${rowIndex}`
 }
 
-function getCsvFrameTimestamp(row, rowIndex) {
+// 新文件不再写时间戳，帧的时间用「秒数(s)」还原：基准时间 + 秒数×1000。
+// 帧与帧之间的间隔和当初采集时一致，回放速度（colMaxHZ 就是按前两帧的间隔算的）不受影响
+function getCsvFrameTimestamp(row, rowIndex, baseTimestamp = 0) {
   const timestampValue = getImportCell(row, ['timestamp', '时间戳'])
   const rawTimestamp = Number(timestampValue)
-  if (Number.isFinite(rawTimestamp)) return rawTimestamp
+  if (!isEmptyCsvValue(timestampValue) && Number.isFinite(rawTimestamp)) return rawTimestamp
 
   const parsedTime = Date.parse(getImportCell(row, ['time', '时间']))
   if (Number.isFinite(parsedTime)) return parsedTime + rowIndex
 
-  return Date.now() + rowIndex
+  const secondsValue = getImportCell(row, ['elapsed_seconds', '秒数(s)', 'sec(s)', 'sec'])
+  const seconds = Number(secondsValue)
+  if (!isEmptyCsvValue(secondsValue) && Number.isFinite(seconds)) {
+    return baseTimestamp + Math.round(seconds * 1000)
+  }
+
+  return baseTimestamp + rowIndex
+}
+
+// 没有时间戳列的文件，绝对时间从文件名里那串记录号还原（导出文件名就带着它），
+// 认不出来就退回文件自己的修改时间，实在不行才用当前时间。只影响回放条上显示的那个时刻
+function resolveImportBaseTimestamp(csvRows) {
+  const file = String((csvRows || []).find((row) => row && row.file)?.file || '')
+  if (file) {
+    const matched = /(\d{13})/.exec(path.basename(file))
+    if (matched) {
+      const value = Number(matched[1])
+      if (Number.isFinite(value) && value > 0) return value
+    }
+    try {
+      const mtime = fs.statSync(file).mtimeMs
+      if (Number.isFinite(mtime) && mtime > 0) return Math.round(mtime)
+    } catch {
+      // 文件读不到就退回当前时间
+    }
+  }
+  return Date.now()
 }
 
 // 从导入文件里把「框选坐标」列读回来（整列都一样，扫到第一个非空就用）。
@@ -2585,6 +2634,7 @@ function parseImportedSelectionJson(csvRows) {
 function buildCsvPlaybackData(csvRows) {
   const groups = new Map()
   const importedSelectJson = parseImportedSelectionJson(csvRows)
+  const baseTimestamp = resolveImportBaseTimestamp(csvRows)
 
   csvRows.forEach((row, rowIndex) => {
     const entries = getCsvRowMatrixEntries(row)
@@ -2592,9 +2642,13 @@ function buildCsvPlaybackData(csvRows) {
 
     const groupKey = getCsvFrameGroupKey(row, rowIndex)
     if (!groups.has(groupKey)) {
+      const frameNo = getCsvFrameNo(row)
       groups.set(groupKey, {
-        frameIndex: Number(row.frame_index),
-        timestamp: getCsvFrameTimestamp(row, rowIndex),
+        // 新文件的「帧数」从 1 起，减 1 对齐老文件的 frame_index（从 0 起），只用来排序
+        frameIndex: Number.isFinite(Number(row.frame_index)) && normalizeCsvHeader(row.frame_index) !== ''
+          ? Number(row.frame_index)
+          : (Number.isFinite(frameNo) ? frameNo - 1 : NaN),
+        timestamp: getCsvFrameTimestamp(row, rowIndex, baseTimestamp),
         data: {},
       })
     }
