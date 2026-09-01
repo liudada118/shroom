@@ -13,6 +13,12 @@ assert.strictEqual(matrix.type, 'car-sit')
 assert.strictEqual(matrix.arr.length, 1024)
 assert.strictEqual(matrix.validation.valid, true)
 
+const backInput = new Array(1024).fill(1)
+const backWithoutLegacyConfig = protocol.transformMatrixByType(backInput, 'endi-back')
+const backWithLegacyConfig = protocol.transformMatrixByType(backInput, 'endi-back', { backValueMultiplier: 3 })
+assert.deepStrictEqual(backWithLegacyConfig, backWithoutLegacyConfig)
+assert.deepStrictEqual(protocol.applyBackMultiplier([106.24], 'endi-back', 3), [106.24])
+
 const mac = protocol.parseSerialFrame(Buffer.from('Unique ID: AABBCCDDEE\nVersion: 1.2.3\n'))
 assert.strictEqual(mac.kind, 'mac')
 assert.strictEqual(mac.uniqueId, 'AABBCCDDEE')

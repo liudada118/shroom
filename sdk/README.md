@@ -120,6 +120,12 @@ const pressure = computePressureMetrics(zeroed, 'hand')
 console.log(selection.hand.press, pressure.pressAver)
 ```
 
+默认压强标定为座椅 V2.7.46 / 靠背 V2.7.52，不执行空间高斯或时序滤波。插值与置零后，有限且 `ADC >= 30` 的点为标定有效点，低于 30 的值置为 0。有效点数 `<=300` 时，坐垫以降序第 5-70 位均值、靠背以 TOP46 均值计算目标平均压强 `Pbar=F(X)`，再按 `Pi=F(ADCi)*Pbar/AVG(F(ADCi))` 生成归一化逐点矩阵；有效点数 `>300` 时逐点使用 `Pi=F(ADCi)*2.2`。
+
+Node 配置加载器要求原生标定模块导出 `adcMatrixToPressureMatrix(matrix, sensor, humanCoefficient)`；主程序对插值后的坐垫/靠背二维矩阵分别传入 `seat` 和 `backrest`，系数为 `2.2`。
+
+`pressureValues` 与 `forceValues` 分别返回用于热力图和格点业务的 kPa、N 矩阵。`pressMax/matrixPressMax` 取最终逐点矩阵最大值；`pressAver/matrixPressAver` 用最终矩阵总和除以门槛后 `ADC >= 30` 的有效点数，因此砝码段平均值严格保持为 `Pbar`。点数与接触面积仍按最终矩阵中大于 0 的格点计算。
+
 ## 配置和设备缓存
 
 ```js
@@ -146,4 +152,3 @@ const device = await auth.resolveDeviceType('AABBCCDDEE', {
 - 历史 SQLite：`sqlite3`
 - XLSX 导出：`xlsx`
 - API WebSocket：`ws`
-

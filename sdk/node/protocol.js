@@ -36,25 +36,20 @@ function normalizeBytes(input) {
   return Array.from(input).map((value) => Number(value) & 0xff)
 }
 
-function applyBackMultiplier(arr, type, multiplier = 1) {
-  if (!Array.isArray(arr)) return arr
-  if (!String(type || '').endsWith('-back')) return arr
-  const safeMultiplier = Number(multiplier)
-  if (!Number.isFinite(safeMultiplier) || safeMultiplier === 1) return arr
-  return arr.map((value) => Number(((Number(value) || 0) * safeMultiplier).toFixed(4)))
+function applyBackMultiplier(arr) {
+  return Array.isArray(arr) ? [...arr] : arr
 }
 
-function transformMatrixByType(rawArr, type, options = {}) {
+function transformMatrixByType(rawArr, type) {
   const arr = Array.isArray(rawArr) ? rawArr : []
-  const multiplier = options.backValueMultiplier ?? 1
   if (type === 'hand') return line.hand(arr)
   if (type === 'bed') return line.jqbed(arr)
-  if (type === 'car-back') return applyBackMultiplier(line.jqbed(arr), type, multiplier)
+  if (type === 'car-back') return line.jqbed(arr)
   if (type === 'car-sit') return line.jqbed(arr)
   if (type === 'endi-sit') return arr.length === 1024 ? line.endiSit1024(arr) : line.endiSit(arr)
-  if (type === 'endi-back') return applyBackMultiplier(arr.length === 1024 ? line.endiBack1024(arr) : line.endiBack(arr), type, multiplier)
+  if (type === 'endi-back') return arr.length === 1024 ? line.endiBack1024(arr) : line.endiBack(arr)
   if (type === 'carY-sit') return line.carYSitLine(arr)
-  if (type === 'carY-back') return applyBackMultiplier(line.carYBackLine(arr), type, multiplier)
+  if (type === 'carY-back') return line.carYBackLine(arr)
   return [...arr]
 }
 

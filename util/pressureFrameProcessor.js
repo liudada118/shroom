@@ -1,8 +1,20 @@
 const { loadPressureConfig, loadPressureFormula } = require('../server/services/PressureConfig')
+const { distributeWeightPointPressures } = require('./weightPointPressureNormalization')
+const {
+  isCalibrationFormula,
+  calculateCalibrationPressureDistribution,
+} = require('./calibrationPressureAdapter')
 
-const PROCESSING_VERSION = 'backend-spatial-v1'
+const PROCESSING_VERSION = 'backend-zero-native-v15-matrix-calibration-min30'
+const ADC_PREPROCESSING_MODE = 'zero-baseline-native-min30'
+const NATIVE_CALIBRATION_DISTRIBUTION = 'native-adc-matrix-to-pressure-matrix-v2746-v2752'
+const CURVE_PRESSURE_DISTRIBUTION = 'curve-response-mean-normalized-v1'
+const POINT_PRESSURE_DISTRIBUTION = 'point-formula-v1'
 const DISPLAY_DIGITS = 1
 const GAUSSIAN_SIGMA_FACTOR = 0.5
+const AVERAGE_FORMULA_MIN_ADC = 30
+const NATIVE_CALIBRATION_MIN_ADC = 30
+const NATIVE_BACKREST_CALIBRATION_MIN_ADC = NATIVE_CALIBRATION_MIN_ADC
 
 const DEFAULT_FRAME_PROCESSING_CONFIG = Object.freeze({
   filter: 30,
@@ -39,7 +51,7 @@ function normalizeFrameProcessingConfig(config = {}, fallback = DEFAULT_FRAME_PR
 
 function roundDisplayValue(value) {
   const numeric = Number(value)
-  if (!Number.isFinite(numeric) || numeric <= 0) return 0
+  if (!Number.isFinite(numeric)) return 0
   const scale = 10 ** DISPLAY_DIGITS
   return Math.round(numeric * scale) / scale
 }
@@ -98,29 +110,17 @@ function gaussianBlur(values, width, height, sigma) {
   return result
 }
 
-function processAdcMatrix(values, key, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG) {
-  const config = normalizeFrameProcessingConfig(processingConfig)
+function normalizeCalibrationAdcMatrix(values, key) {
   const matrixConfig = getMatrixConfig(key, values)
   const count = matrixConfig.width * matrixConfig.height
   if (!count || !Array.isArray(values) || values.length !== count) return []
 
-  let result = values.map((value) => {
-    const numeric = Number(value)
-    return Number.isFinite(numeric) ? Math.max(0, numeric) : 0
-  })
+  return applyCalibrationInputGate(values, key)
+}
 
-  if (config.filter > 0) {
-    result = result.map((value) => (value < config.filter ? 0 : value))
-  }
-
-  const sigma = config.gauss * GAUSSIAN_SIGMA_FACTOR
-  result = gaussianBlur(result, matrixConfig.width, matrixConfig.height, sigma)
-
-  if (config.filter > 0) {
-    result = result.map((value) => (value < config.filter ? 0 : value))
-  }
-
-  return result
+// Compatibility export for callers that still use the old function name.
+function processAdcMatrix(values, key) {
+  return normalizeCalibrationAdcMatrix(values, key)
 }
 
 function getPressureSensor(key) {
@@ -128,6 +128,20 @@ function getPressureSensor(key) {
   if (value.includes('back')) return 'backrest'
   if (value.includes('sit') || value.includes('seat')) return 'seat'
   return ''
+}
+
+function getCalibrationInputMinAdc(key, formula = loadPressureFormula()) {
+  if (!isNativeCalibrationFormula(formula)) return 0
+  return getPressureSensor(key) ? NATIVE_CALIBRATION_MIN_ADC : 0
+}
+
+function applyCalibrationInputGate(values, key, formula = loadPressureFormula()) {
+  const minAdc = getCalibrationInputMinAdc(key, formula)
+  return (Array.isArray(values) ? values : []).map((value) => {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric) || numeric <= 0) return 0
+    return minAdc > 0 && numeric < minAdc ? 0 : numeric
+  })
 }
 
 function getPressureCalibrationMeta(sensor) {
@@ -147,19 +161,118 @@ function getPressureCalibrationMeta(sensor) {
   return null
 }
 
-function getCalibrationAverage(positiveValues, sensor) {
-  const meta = getPressureCalibrationMeta(sensor)
-  if (!meta || !positiveValues.length) return 0
-  const useHumanAverage = meta.humanThresholdMode === 'gt'
-    ? positiveValues.length > meta.humanThreshold
-    : positiveValues.length >= meta.humanThreshold
-  if (useHumanAverage) {
-    return positiveValues.reduce((sum, value) => sum + value, 0) / positiveValues.length
+function usesHumanCalibrationAverage(meta, validCount) {
+  if (!meta) return false
+  return meta.humanThresholdMode === 'gt'
+    ? validCount > meta.humanThreshold
+    : validCount >= meta.humanThreshold
+}
+
+function isNativeCalibrationFormula(formula) {
+  return isCalibrationFormula(formula)
+}
+
+function calcNativeCalibrationPressureValues(values, key, formula) {
+  const sensor = getPressureSensor(key)
+  if (!sensor) {
+    throw new RangeError(`Calibration formula has no sensor mapping for ${key}`)
   }
-  const topValues = [...positiveValues]
-    .sort((left, right) => right - left)
-    .slice(0, Math.min(meta.topCount, positiveValues.length))
-  return topValues.reduce((sum, value) => sum + value, 0) / topValues.length
+  const calibrationAdcValues = applyCalibrationInputGate(values, key, formula)
+  const { width, height } = getMatrixConfig(key, calibrationAdcValues)
+  const hasConfiguredShape = width > 0
+    && height > 0
+    && width * height === calibrationAdcValues.length
+  const calibrationAdcMatrix = hasConfiguredShape
+    ? Array.from(
+        { length: height },
+        (_, row) => calibrationAdcValues.slice(row * width, (row + 1) * width),
+      )
+    : [calibrationAdcValues]
+  const distribution = calculateCalibrationPressureDistribution(formula, calibrationAdcMatrix, sensor)
+  const matrix = Array.isArray(distribution.pressureMatrixKPa?.[0])
+    ? distribution.pressureMatrixKPa.flat()
+    : distribution.pressureMatrixKPa
+  if (!Array.isArray(matrix) || matrix.length !== calibrationAdcValues.length) {
+    throw new RangeError(`Calibration pressure matrix length mismatch for ${key}`)
+  }
+  const calibratedPressureValues = Array.from({ length: calibrationAdcValues.length }, (_, index) => {
+    const value = Number(matrix?.[index])
+    if (!Number.isFinite(value)) {
+      throw new TypeError(`Calibration pressure matrix contains a non-finite value at ${key}[${index}]`)
+    }
+    return value
+  })
+  const pressureValues = calibratedPressureValues
+  if (pressureValues.length !== values.length) {
+    throw new RangeError(`Rendered pressure matrix length mismatch for ${key}`)
+  }
+  return {
+    pressureValues,
+    calibrationAdcValues,
+    adcAvg: Number(distribution.mean) || 0,
+    targetAveragePressureKPa: distribution.targetAveragePressureKPa,
+    summaryAveragePressureKPa: distribution.summaryAveragePressureKPa,
+    summaryMaxPressureKPa: distribution.summaryMaxPressureKPa,
+    normalizationScale: distribution.normalizationScale,
+    meanConservationErrorKPa: distribution.meanConservationErrorKPa,
+    fallbackMode: distribution.fallbackMode,
+    branch: distribution.branch,
+    humanValidPointThreshold: distribution.humanValidPointThreshold,
+    humanCoefficient: distribution.humanCoefficient,
+    pointPressureScale: distribution.pointPressureScale,
+    matrixConversion: distribution.matrixConversion,
+    validCount: Number(distribution.validCount) || 0,
+    selectedCount: Number(distribution.selectedCount) || 0,
+    maxAdc: Number(distribution.maxAdc) || 0,
+  }
+}
+
+function calcAverageFormulaPressureValues(values, key, formula) {
+  const sensor = getPressureSensor(key)
+  const filteredValues = values.map((value) => (
+    Number.isFinite(value) && value > AVERAGE_FORMULA_MIN_ADC ? value : 0
+  ))
+  const validValues = filteredValues.filter((value) => value > 0)
+  if (!sensor) {
+    return {
+      pressureValues: values.map((value) => (value > 0 ? value : 0)),
+      adcAvg: 0,
+      targetAveragePressureKPa: null,
+      normalizationScale: null,
+      meanConservationErrorKPa: null,
+      fallbackMode: 'unsupported-sensor',
+    }
+  }
+  if (!validValues.length) {
+    return {
+      pressureValues: filteredValues,
+      adcAvg: 0,
+      targetAveragePressureKPa: 0,
+      normalizationScale: null,
+      meanConservationErrorKPa: null,
+      fallbackMode: 'no-valid-points',
+    }
+  }
+
+  const meta = getPressureCalibrationMeta(sensor)
+  const useHumanAverage = usesHumanCalibrationAverage(meta, validValues.length)
+  const endRank = useHumanAverage
+    ? validValues.length
+    : Math.min(meta.topCount, validValues.length)
+  const distribution = distributeWeightPointPressures(filteredValues, {
+    curve: (adc) => formula.estimatePressure(adc, validValues.length, sensor),
+    startRank: 1,
+    endRank,
+  })
+
+  return {
+    pressureValues: distribution.pressureMatrixKPa[0],
+    adcAvg: distribution.referenceAdcMean,
+    targetAveragePressureKPa: distribution.targetAveragePressureKPa,
+    normalizationScale: distribution.normalizationScale,
+    meanConservationErrorKPa: distribution.meanConservationErrorKPa,
+    fallbackMode: distribution.fallbackMode,
+  }
 }
 
 function calcPointFormulaPressureValues(values, key, formula) {
@@ -176,8 +289,9 @@ function calcPointFormulaPressureValues(values, key, formula) {
 }
 
 function calcPressureFormulaStats(arr, key, pointAreaCm2 = getPressurePointAreaCm2(key)) {
-  const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
   const formula = loadPressureFormula()
+  const sourceValues = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
+  const values = applyCalibrationInputGate(sourceValues, key, formula)
   const rawPress = values.reduce((sum, value) => sum + value, 0)
   const rawMax = values.length ? Math.max(...values) : 0
   const pointArea = Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1
@@ -185,8 +299,44 @@ function calcPressureFormulaStats(arr, key, pointAreaCm2 = getPressurePointAreaC
   let pressureValues
   let rawAvg = 0
   let adcAvg = 0
+  let targetAveragePressureKPa = null
+  let summaryAveragePressureKPa = null
+  let summaryMaxPressureKPa = null
+  let normalizationScale = null
+  let meanConservationErrorKPa = null
+  let pressureDistribution = POINT_PRESSURE_DISTRIBUTION
+  let pressureDistributionFallback = 'none'
+  let pressureCalibrationBranch = 'point'
+  let calibrationValidCount = values.filter((value) => value > 0).length
+  let calibrationSelectedCount = calibrationValidCount
+  let humanValidPointThreshold = null
+  let humanCoefficient = null
+  let pointPressureScale = 1
+  let matrixConversion = null
 
-  if (typeof formula.master === 'function') {
+  if (isNativeCalibrationFormula(formula)) {
+    const positiveValues = values.filter((value) => Number.isFinite(value) && value > 0)
+    rawAvg = positiveValues.length
+      ? positiveValues.reduce((sum, value) => sum + value, 0) / positiveValues.length
+      : 0
+    const distribution = calcNativeCalibrationPressureValues(values, key, formula)
+    pressureValues = distribution.pressureValues
+    adcAvg = distribution.adcAvg
+    targetAveragePressureKPa = distribution.targetAveragePressureKPa
+    summaryAveragePressureKPa = distribution.summaryAveragePressureKPa
+    summaryMaxPressureKPa = distribution.summaryMaxPressureKPa
+    normalizationScale = distribution.normalizationScale
+    meanConservationErrorKPa = distribution.meanConservationErrorKPa
+    pressureDistribution = NATIVE_CALIBRATION_DISTRIBUTION
+    pressureDistributionFallback = distribution.fallbackMode
+    pressureCalibrationBranch = distribution.branch
+    humanValidPointThreshold = distribution.humanValidPointThreshold
+    humanCoefficient = distribution.humanCoefficient
+    pointPressureScale = distribution.pointPressureScale
+    matrixConversion = distribution.matrixConversion
+    calibrationValidCount = distribution.validCount
+    calibrationSelectedCount = distribution.selectedCount
+  } else if (typeof formula.master === 'function') {
     pressureValues = calcPointFormulaPressureValues(values, key, formula)
     const minAdc = Number.isFinite(Number(formula.MIN_ADC)) ? Number(formula.MIN_ADC) : 30
     const rawActiveValues = values.filter((value) => Number.isFinite(value) && value > minAdc)
@@ -195,19 +345,19 @@ function calcPressureFormulaStats(arr, key, pointAreaCm2 = getPressurePointAreaC
       : 0
     adcAvg = rawAvg
   } else {
-    const positiveValues = values.filter((value) => Number.isFinite(value) && value > 30)
+    const positiveValues = values.filter((value) => Number.isFinite(value) && value > AVERAGE_FORMULA_MIN_ADC)
     rawAvg = positiveValues.length
       ? positiveValues.reduce((sum, value) => sum + value, 0) / positiveValues.length
       : 0
-    const sensor = getPressureSensor(key)
-    adcAvg = getCalibrationAverage(positiveValues, sensor)
-    const calibrationPressure = sensor && positiveValues.length
-      ? formula.estimatePressure(adcAvg, positiveValues.length, sensor) || 0
-      : 0
-    const pressureScale = adcAvg > 0 ? calibrationPressure / adcAvg : 0
-    pressureValues = sensor
-      ? values.map((value) => (value > 30 ? value * pressureScale : 0))
-      : values.map((value) => (value > 0 ? value : 0))
+    const distribution = calcAverageFormulaPressureValues(values, key, formula)
+    pressureValues = distribution.pressureValues
+    adcAvg = distribution.adcAvg
+    targetAveragePressureKPa = distribution.targetAveragePressureKPa
+    normalizationScale = distribution.normalizationScale
+    meanConservationErrorKPa = distribution.meanConservationErrorKPa
+    pressureDistribution = CURVE_PRESSURE_DISTRIBUTION
+    pressureDistributionFallback = distribution.fallbackMode
+    pressureCalibrationBranch = 'average-formula'
   }
 
   const activePressureValues = pressureValues.filter((value) => Number.isFinite(value) && value > 0)
@@ -215,90 +365,179 @@ function calcPressureFormulaStats(arr, key, pointAreaCm2 = getPressurePointAreaC
   const pressureTotal = pressureValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
   const forceValues = pressureValues.map((value) => value * pointArea * 0.1)
   const total = forceValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
+  const matrixMaxPressureKPa = activeCount ? Math.max(...activePressureValues) : 0
+  const averagePointCount = isNativeCalibrationFormula(formula)
+    ? calibrationValidCount
+    : activeCount
+  const matrixAveragePressureKPa = averagePointCount ? pressureTotal / averagePointCount : 0
+  const resolvedAveragePressureKPa = matrixAveragePressureKPa
+  const resolvedMaxPressureKPa = matrixMaxPressureKPa
 
   return {
-    max: activeCount ? Math.max(...activePressureValues) : 0,
-    aver: activeCount ? pressureTotal / activeCount : 0,
+    max: resolvedMaxPressureKPa,
+    aver: resolvedAveragePressureKPa,
+    matrixMaxPressureKPa,
+    matrixAveragePressureKPa,
     total,
     pressureTotal,
     pressureValues,
     forceValues,
     effectiveArea: activeCount * pointArea,
     activeCount,
+    averagePointCount,
     rawPress,
     rawAvg,
     adcAvg,
     rawMax,
+    targetAveragePressureKPa,
+    summaryAveragePressureKPa: resolvedAveragePressureKPa,
+    summaryMaxPressureKPa: resolvedMaxPressureKPa,
+    normalizationScale,
+    meanConservationErrorKPa,
+    pressureDistribution,
+    pressureDistributionFallback,
+    pressureCalibrationBranch,
+    humanValidPointThreshold,
+    humanCoefficient,
+    pointPressureScale,
+    matrixConversion,
+    calibrationInputMinAdc: getCalibrationInputMinAdc(key, formula),
+    calibrationValidCount,
+    calibrationSelectedCount,
   }
 }
 
-function isVisibleMetricIndex(key, index, width, height) {
-  if (key !== 'endi-back' || width !== 50 || height !== 64) return true
-  const row = Math.floor(index / width)
-  const col = index % width
-  return row >= 18 || (col >= 14 && col <= 34)
-}
-
-function buildCanonicalMetricArrays(adcValues, key) {
+function buildCanonicalMetricArrays(adcValues, key, preGateValues = adcValues) {
   const matrixConfig = getMatrixConfig(key, adcValues)
-  const visibleAdcValues = adcValues.map((value, index) => (
-    isVisibleMetricIndex(key, index, matrixConfig.width, matrixConfig.height) ? value : 0
+  const stats = calcPressureFormulaStats(adcValues, key, matrixConfig.pointAreaCm2)
+  const source = Array.isArray(preGateValues) ? preGateValues : []
+  const pressureArr = stats.pressureValues.map((value) => {
+    const numeric = Number(value)
+    return Number.isFinite(numeric) ? Math.max(0, numeric) : 0
+  })
+  const forceArr = pressureArr.map((value) => value * matrixConfig.pointAreaCm2 * 0.1)
+  const calibrationValidMask = adcValues.map((value) => (
+    Number.isFinite(Number(value)) && Number(value) > 0 ? 1 : 0
   ))
-  const stats = calcPressureFormulaStats(visibleAdcValues, key, matrixConfig.pointAreaCm2)
+  const activePressureValues = pressureArr.filter((value) => Number.isFinite(value) && value > 0)
+  const validPressureTotal = pressureArr.reduce((sum, value, index) => (
+    calibrationValidMask[index] ? sum + value : sum
+  ), 0)
+  const validPointCount = calibrationValidMask.reduce((sum, value) => sum + value, 0)
+  const matrixAveragePressureKPa = validPointCount
+    ? validPressureTotal / validPointCount
+    : 0
+  const matrixMaxPressureKPa = activePressureValues.length
+    ? Math.max(...activePressureValues)
+    : 0
   return {
-    pressureArr: stats.pressureValues.map(roundDisplayValue),
-    forceArr: stats.forceValues.map(roundDisplayValue),
+    pressureArr,
+    forceArr,
+    calibrationValidMask,
+    calibrationDiagnostics: {
+      inputMinAdc: stats.calibrationInputMinAdc,
+      preGatePositiveCount: source.filter((value) => Number(value) > 0).length,
+      validCount: stats.calibrationValidCount,
+      selectedCount: stats.calibrationSelectedCount,
+      inputMeanAdc: stats.adcAvg,
+      inputMaxAdc: stats.rawMax,
+      branch: stats.pressureCalibrationBranch,
+      humanValidPointThreshold: stats.humanValidPointThreshold,
+      humanCoefficient: stats.humanCoefficient,
+      pointPressureScale: stats.pointPressureScale,
+      matrixConversion: stats.matrixConversion,
+      activePressureCount: activePressureValues.length,
+      averagePressureKPa: matrixAveragePressureKPa,
+      maxPressureKPa: matrixMaxPressureKPa,
+      matrixAveragePressureKPa,
+      matrixMaxPressureKPa,
+      targetAveragePressureKPa: stats.targetAveragePressureKPa,
+      statisticsSource: 'pressureArr+calibrationValidMask',
+    },
   }
 }
 
-function buildProcessingMetadata(config) {
+function getPressureDistributionMode(formula = loadPressureFormula()) {
+  if (isNativeCalibrationFormula(formula)) return NATIVE_CALIBRATION_DISTRIBUTION
+  return typeof formula.master === 'function'
+    ? POINT_PRESSURE_DISTRIBUTION
+    : CURVE_PRESSURE_DISTRIBUTION
+}
+
+function buildProcessingMetadata(config, key) {
   const pressureConfig = loadPressureConfig()
   return {
     version: PROCESSING_VERSION,
+    adcPreprocessing: ADC_PREPROCESSING_MODE,
     filter: config.filter,
     gauss: config.gauss,
     coherent: config.coherent,
-    gaussianSigma: Number((config.gauss * GAUSSIAN_SIGMA_FACTOR).toFixed(3)),
+    filterApplied: false,
+    gaussianApplied: false,
+    gaussianSigma: 0,
     temporal: false,
     outputDigits: DISPLAY_DIGITS,
     formulaFile: pressureConfig.pressureFormulaFile,
     formulaProfile: pressureConfig.pressureFormulaProfile,
+    pressureDistribution: getPressureDistributionMode(),
+    calibrationInputGrid: 'display-matrix-post-interpolation',
+    calibrationInputMinAdc: getCalibrationInputMinAdc(key),
+    calibrationMethod: 'formula-weight-normalization-or-human-x2.2-gt300',
+    statisticsSource: 'pressureArr+calibrationValidMask',
   }
 }
 
 function processMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG) {
   const source = Array.isArray(item.arr) ? item.arr : []
   const config = normalizeFrameProcessingConfig(processingConfig)
-  const arr = processAdcMatrix(source, key, config)
+  const arr = normalizeCalibrationAdcMatrix(source, key)
   if (!arr.length && source.length) return { ...item }
-  const metrics = buildCanonicalMetricArrays(arr, key)
+  const metrics = buildCanonicalMetricArrays(arr, key, source)
   return {
     ...item,
     rawAdcArr: Array.isArray(item.rawAdcArr) ? [...item.rawAdcArr] : [...source],
+    calibrationAdcArr: [...arr],
     arr,
     ...metrics,
-    processing: buildProcessingMetadata(config),
+    processing: buildProcessingMetadata(config, key),
   }
 }
 
 function hasCanonicalMetricArrays(item = {}) {
   const length = Array.isArray(item.arr) ? item.arr.length : 0
+  const pressureConfig = loadPressureConfig()
   return item.processing?.version === PROCESSING_VERSION
+    && item.processing?.adcPreprocessing === ADC_PREPROCESSING_MODE
+    && item.processing?.formulaFile === pressureConfig.pressureFormulaFile
+    && item.processing?.formulaProfile === pressureConfig.pressureFormulaProfile
+    && item.processing?.pressureDistribution === getPressureDistributionMode()
     && length > 0
     && Array.isArray(item.pressureArr)
     && item.pressureArr.length === length
     && Array.isArray(item.forceArr)
     && item.forceArr.length === length
+    && Array.isArray(item.calibrationValidMask)
+    && item.calibrationValidMask.length === length
 }
 
 function ensureProcessedMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG) {
   if (hasCanonicalMetricArrays(item)) return { ...item }
-  const source = Array.isArray(item.rawAdcArr) ? item.rawAdcArr : item.arr
+  const source = Array.isArray(item.calibrationAdcArr)
+    ? item.calibrationAdcArr
+    : Array.isArray(item.rawAdcArr)
+      ? item.rawAdcArr
+      : item.arr
   return processMatrixItem(key, { ...item, arr: source }, item.processing || processingConfig)
 }
 
 module.exports = {
   PROCESSING_VERSION,
+  ADC_PREPROCESSING_MODE,
+  NATIVE_CALIBRATION_DISTRIBUTION,
+  NATIVE_CALIBRATION_MIN_ADC,
+  NATIVE_BACKREST_CALIBRATION_MIN_ADC,
+  CURVE_PRESSURE_DISTRIBUTION,
+  POINT_PRESSURE_DISTRIBUTION,
   DISPLAY_DIGITS,
   GAUSSIAN_SIGMA_FACTOR,
   DEFAULT_FRAME_PROCESSING_CONFIG,
@@ -307,9 +546,16 @@ module.exports = {
   getMatrixConfig,
   getPressurePointAreaCm2,
   gaussianBlur,
+  normalizeCalibrationAdcMatrix,
+  getCalibrationInputMinAdc,
+  applyCalibrationInputGate,
   processAdcMatrix,
+  isNativeCalibrationFormula,
+  calcNativeCalibrationPressureValues,
+  calcAverageFormulaPressureValues,
   calcPressureFormulaStats,
   buildCanonicalMetricArrays,
+  getPressureDistributionMode,
   processMatrixItem,
   hasCanonicalMetricArrays,
   ensureProcessedMatrixItem,

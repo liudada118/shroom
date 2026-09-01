@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-08-11
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-08-30
 
 ## 1. 项目概述
 
@@ -49,12 +49,16 @@ shroom/
 │   │   └── SerialManager.js    # 串口管理（含 rescanPort/僵尸检测/帧验证）
 │   ├── services/
 │   │   └── DataService.js      # 数据采集/回放/导出（~201 行）
+│   ├── kpa/
+│   │   └── point_pressure_calibration.js # 座椅 V2.7.46 / 靠背 V2.7.52 原生标定公式
 │   ├── equipMap.js             # 设备映射配置
 │   └── HttpResult.js           # HTTP 响应封装
 ├── util/                       # 通用工具模块
 │   ├── portFinder.js           # 端口检测与动态分配
 │   ├── db.js                   # SQLite 数据库操作
+│   ├── calibrationPressureAdapter.js # 原样标定模块到完整逐点矩阵的无规则适配层
 │   ├── pressureFrameProcessor.js # 后端单帧滤波及 ADC→kPa/N 标准矩阵生成
+│   ├── weightPointPressureNormalization.js # 逐点曲线响应归一化与平均压强守恒
 │   ├── logger.js               # 统一日志模块
 │   ├── config.js               # 加密配置读写
 │   ├── serialCache.js          # MAC→设备类型本地缓存（serial_cache.json）
@@ -105,6 +109,7 @@ shroom/
 │   │   ├── util/
 │   │   │   ├── echarts.js      # ECharts 按需引入入口
 │   │   │   ├── pressureMetrics.js # 压强公式、单点面积及压强/压力统一计量口径
+│   │   │   ├── weightPointPressureNormalization.js # 浏览器端逐点压强归一化兼容实现
 │   │   │   ├── portConfig.js   # 端口配置
 │   │   │   ├── constant.js     # 常量定义
 │   │   │   ├── util.js         # 工具函数
@@ -126,10 +131,13 @@ shroom/
 │   └── portFinder.test.js      # 端口分配单元测试
 │   └── pressureMetric.test.mjs # 压强/压力换算与默认模式单元测试
 │   └── pressureFrameProcessor.test.js # 后端空间滤波、无时序与标准矩阵测试
+│   └── weightPointPressureNormalization.test.js # 逐点分配、守恒及异常输入测试
+│   └── calibrationV2746V2752.test.js # 新标定节点、选点和 300/301 分支测试
 ├── sdk/                        # 独立 Core SDK（无后端服务依赖）
 │   ├── package.json            # SDK 独立包配置
 │   ├── index.js                # 底层函数聚合入口
 │   ├── index.d.ts              # TypeScript 类型声明
+│   ├── core/weightPointPressureNormalization.js # SDK 逐点压强归一化实现
 │   ├── api-client.js           # 可选 HTTP/WebSocket client
 │   ├── core/                   # 矩阵、框选、回放、压强纯函数
 │   ├── node/serial.js          # Node 直连串口 adapter
@@ -355,16 +363,18 @@ graph TD
 
 28. **压强/压力统一计量模式**
     - `equipStore.pressureMetricMode` 是全局显示口径，值为 `pressure`（压强，kPa）或 `force`（压力，N），默认沿用原压力总和曲线的 `force` 口径，并持久化到 `localStorage.pressureMetricMode`。
-    - `util/pressureFrameProcessor.js` 是实时、采集、回放与导出的标准数据入口。每个传感器帧按“方向修正 → 置零 → ADC 阈值 → 单层空间高斯 → 阈值复核 → V2.7.38 中英文 logo 公式 → 1 位小数矩阵”生成 `arr`、`pressureArr` 和 `forceArr`。
-    - 后端高斯采用横向、纵向两次可分离卷积，只读取当前帧，不保留上一帧状态。`coherent` 随采集配置快照保留以兼容旧配置，但不再参与跨帧平滑；帧元数据明确写入 `processing.temporal=false`。
-    - 单点压力按 `压力(N) = 压强(kPa) × 单点面积(cm²) × 0.1` 换算。点数、面积、最大值、平均值、正态分布和曲线都从后端已量化的 `pressureArr/forceArr` 聚合，确保与 2D 数字矩阵逐点一致；“压力总和”固定为 `forceArr` 求和后的真实压力 `N`。
+    - `util/pressureFrameProcessor.js` 是实时、采集、回放与导出的标准数据入口。Endi 1024 点先在线序映射阶段完成插值：坐垫 `23×23 → 46×46`，靠背 `25×32 → 50×64`；其后每个传感器帧按“方向修正 → 置零 → 整理二维 ADC 矩阵 → 标定文件整帧换算 → N 换算”生成 `arr`、`calibrationAdcArr`、`calibrationValidMask`、`pressureArr` 和 `forceArr`。
+    - 后端直接加载 `server/kpa/point_pressure_calibration.js`，不增加或修改标定规则。处理器对坐垫直接调用 `adcMatrixToPressureMatrix(seatAdcMatrix, "seat", 2.2)`，对靠背直接调用 `adcMatrixToPressureMatrix(backrestAdcMatrix, "backrest", 2.2)`；砝码段归一化、真人段系数和逐点结果全部由标定文件内部决定，应用只校验并展开其返回矩阵。
+    - 串口矩阵在线序转换和 Endi 插值后保持 ADC 原值，靠背不再应用专属乘数。`pressure_config.json` 仅保留公式文件及 profile，旧 `backValueMultiplier` 在后端、前端和 SDK 配置归一化时被丢弃，不能影响实时、采集、回放或导出结果。
+    - 置零后执行固定的原生标定门槛：座椅和靠背均将有限且 `ADC>=30` 的点作为标定有效点，低于 30 的值置为 0；不执行用户可调阈值、空间高斯或跨帧平滑。`filter/gauss/coherent` 仍只作为兼容配置保存，帧元数据写入 `filterApplied=false`、`gaussianApplied=false`、`gaussianSigma=0`、`temporal=false`。
+    - 单点压力按 `压力(N) = 压强(kPa) × 单点面积(cm²) × 0.1` 换算。热力图、2D 数字、平均值、最大值、点数、面积、正态分布、框选和总压力都从同一份 `pressureArr/forceArr` 聚合；平均压强为 `SUM(Pi)/COUNT(ADC_i>=30)`，最大压强为最终逐点矩阵 `MAX(Pi)`，点数和面积仍按 `Pi>0` 统计。“压力总和”固定为 `forceArr` 求和后的真实压力 `N`。
     - `pressureMetrics.js` 进一步集中维护 `getPressureMetricDisplay()` 展示定义，统一返回当前口径的单位、曲线名、坐标轴标题、统计项文案、趋势数组字段和数据前缀；左侧图表、数据对比页和 COP 报告不再各自硬编码 `N/kPa` 与“压力/压强”文案。
-    - `DataService.sendData()` 只处理一次帧对象，并把同一个结果用于 WebSocket 广播和 `storageData()` 入库，避免实时 2D 与下载 CSV 分别滤波。旧历史记录缺少标准矩阵时由后端补算一次；带 `processing.version` 的新记录不会重复处理。
+    - `DataService.sendData()` 只处理一次帧对象，并把同一个结果用于 WebSocket 广播和 `storageData()` 入库。当前处理水印为 `backend-zero-native-v15-matrix-calibration-min30`，ADC 预处理口径为 `zero-baseline-native-min30`，分配标识为 `native-adc-matrix-to-pressure-matrix-v2746-v2752`；水印变化时优先用 `calibrationAdcArr`，其次用 `rawAdcArr` 重算标准矩阵。
     - 左侧曲线旁的交换按钮只修改全局显示模式；`useMatrixData`、3D 点图、2D 数字图、框选统计、数据对比和 COP 报告直接消费后端 `pressureArr/forceArr`，前端不再执行阈值、高斯、压力公式或时序平滑。Three.js 仍可做不改变传感器格点语义的几何插值。
-    - 开始采集时 `/startCol` 把 `filter/gauss/coherent` 保存为 `collectionProcessingConfig` 并锁定；采集期间可视化面板禁用这三个控件，`/setFrameProcessingConfig` 也会拒绝修改，直至 `/endCol` 解锁。
+    - 开始采集时 `/startCol` 仍把 `filter/gauss/coherent` 保存为 `collectionProcessingConfig` 并锁定，采集结束后解锁。该行为用于兼容旧界面和历史配置，三个参数不再改变标准矩阵计算结果。
     - 2D 数字矩阵的贴图图集统一按 `显示值 × 10` 选择格子，压强 kPa 与压力 N 都以 1 位小数展示；V3/V4 使用 64x64 图集，避免高压强小数索引被 16x16 图集截断。
     - 可视化调节面板里的“当前最大值”使用同一套压强/压力点矩阵计算，并随当前模式显示 `kPa` 或 `N`，不再显示原始 ADC 最大值。
-    - 历史导出直接读取入库帧的标准矩阵，不再根据 ADC 二次调用公式。`/download` 按当前口径导出整体及最多四个框选区域的最大值、平均值和格点数据；`total_pressure_n` 始终取 `forceArr` 总和，不提供“压强总和”概念。
+    - 历史导出直接读取入库帧的标准矩阵，不再根据 ADC 二次调用公式。`/download` 的整面及框选最大值/平均值都按对应范围内的 `pressureArr` 计算；`total_pressure_n` 始终取 `forceArr` 总和，不提供“压强总和”概念。
     - 固定导出字段 `elapsed_seconds`（表头“秒数(s)”）优先按当前帧时间戳减首帧时间戳计算，首帧为 `0.000`，统一保留三位小数；时间戳不可用时才回退为帧号除以检测采样率。
 
 ## 5. API 端点 (Endpoints)
@@ -564,6 +574,20 @@ graph TD
 | 2026-07-21 | 左侧统计与 2D 数字矩阵统一 | 压力/压强曲线、平均值、最大值、压力总和、点数、面积及框选统计统一基于 2D 实际显示的一位小数矩阵计算 |
 | 2026-07-22 | 后端统一单帧处理 | 阈值、单层空间高斯和压强/压力换算统一由后端完成，实时显示、入库、历史、报告和导出复用 `pressureArr/forceArr`，采集期间锁定处理参数 |
 | 2026-08-11 | 前端 UI 组件库抽离 | 新建 `client/src/ui` 及统一出口，迁移抽屉、浮动面板、选择器、工具按钮和纯回放控件，并抽出图表面板、指标值、设置行、异步状态、导出配置和导出进度组件 |
+| 2026-08-28 | 砝码段逐点压强归一化 | 标定曲线继续计算目标平均压强，逐点压强改为按各点曲线响应比例分配并保持平均值守恒；后端标准矩阵、前端兼容路径与独立 SDK 同步更新 |
+| 2026-08-29 | 座椅 V2.7.46 / 靠背 V2.7.52 标定切换 | 默认标定切换为双传感面原生公式，按有效点数执行砝码归一化或真人逐点系数分支，并同步后端、前端与 SDK |
+| 2026-08-29 | 置零后直达标定 | 标准帧移除置零与标定之间的 ADC 阈值、高斯及时序处理，保留物理掩码与兼容配置字段，并升级处理水印 |
+| 2026-08-29 | 标定文件独占压强规则 | 标定文件新增完整逐点 kPa 矩阵接口，处理器移除位置掩码和双分支复刻，只做结果序列化与 N 换算 |
+| 2026-08-29 | 插值后标定顺序校正 | 坐垫 `23×23 → 46×46`、靠背 `25×32 → 50×64` 后再对完整显示矩阵标定；标定文件保持附件原样，调用层仅补齐保形逐点矩阵 |
+| 2026-08-29 | 移除靠背 ADC 倍率 | 靠背线序转换和插值结果直接进入标定，删除运行配置与设置页中的靠背乘数，并兼容忽略旧配置字段 |
+| 2026-08-29 | 稳定靠背标定有效点 | 原生靠背标定输入对齐参考软件 `过滤≥50`，消除低 ADC 插值噪声造成的 300 点分支跳变，并增加逐帧标定诊断元数据 |
+| 2026-08-29 | 统一座椅与靠背 ADC 门槛 | 原生座椅和靠背均以 `ADC≥30` 作为标定有效输入，后端、浏览器兜底、SDK 和历史重算使用同一处理水印 |
+| 2026-08-29 | 标定摘要统计口径校正 | 整面平均/最大值改用标定摘要，逐点归一化矩阵保留给热力图、框选、总压力和空间分析，实时、导出、COP 与 SDK 同步 |
+| 2026-08-30 | 标定文件完整逐点分配规则 | 插值后通过固定门槛的 ADC 进入标定；`<=300` 点直接消费标定文件的排名均值与归一化逐点矩阵，`>300` 点按基础曲线逐点乘 2.2 |
+| 2026-08-30 | 标定整帧矩阵 API | 运行时直接加载 `point_pressure_calibration.js`；坐垫和靠背均调用 `adcMatrixToPressureMatrix(..., sensor, 2.2)`，统计与渲染消费同一返回矩阵 |
+| 2026-08-30 | 热力图统计单一数据源 | `pressureArr` 作为热力图、平均压强、最大压强、导出和 COP 的唯一来源；平均分母由同帧 `calibrationValidMask` 提供，最大值直接取最终矩阵 |
+| 2026-08-30 | 标定文件直接加载 | 默认公式路径统一为 `server/kpa/point_pressure_calibration.js`；旧文件名在配置归一化时自动迁移，不再保留同内容的旧文件副本 |
+| 2026-08-30 | 原生标定 ADC 门槛 | 插值与置零后统一将 `ADC<30` 置零，`ADC>=30` 才进入标定文件、有效点计数与 300 点分支判断 |
 
 ## 9. 更新日志
 
@@ -720,6 +744,19 @@ graph TD
 | 2026-05-19 | 优化重构 | 数据对比播放栏放大弹窗从单独控制条改为“3 张热力数字图 + 播放进度条”的整体放大视图，A/B/B-A 热力图在弹窗内随当前进度或时间点同步刷新 |
 | 2026-06-10 | 优化重构 | 将 SDK 从请求型 API client 重构为独立 Core SDK，主入口导出可直接复用的底层能力，新增 `sdk/node/serial.js` 直连串口，API client 保留在 `sdk/api-client.js` |
 | 2026-08-11 | 优化重构 | 建立 `client/src/ui` 前端组件库边界和统一导出，业务组件改为通过 props 组合通用 UI；历史导出、对比导出、实时图表、可视化设置及 COP 状态页完成首批迁移 |
+| 2026-08-28 | 优化重构 | 引入砝码段逐点压强比例归一化公式，统一后端标准矩阵、前端兼容计算与独立 SDK，并升级处理水印以重算旧算法结果 |
+| 2026-08-29 | 配置变更 | 将默认压强标定替换为座椅 V2.7.46 / 靠背 V2.7.52，新增原生公式加载接口与双分支标准矩阵处理 |
+| 2026-08-29 | 优化重构 | 后端标准帧改为置零 ADC 直接进入标定，`filter/gauss/coherent` 仅保留兼容元数据，不再影响压强、压力、点数与面积 |
+| 2026-08-29 | 优化重构 | 原生标定契约新增 `calculatePointPressures`，后端直接消费公式输出的完整 kPa 矩阵并移除额外压强有效区规则 |
+| 2026-08-29 | 修复缺陷 | 校正靠背标定输入顺序为 `25×32` 先插值成 `50×64` 再标定，还原附件标定文件原始导出并将完整矩阵展开移至外部适配层 |
+| 2026-08-29 | 修复缺陷 | 移除靠背 ADC 专属倍率及其配置入口，旧 `backValueMultiplier` 自动失效，坐垫和靠背均以线序/插值后的原值进入各自标定公式 |
+| 2026-08-29 | 修复缺陷 | 靠背原生标定增加固定 `ADC≥50` 有效输入门槛，防止显示仅几十个点时内部低值噪声跨越 300 点边界并导致约 `5↔17 kPa` 跳变 |
+| 2026-08-29 | 配置变更 | 将原生座椅与靠背标定输入门槛统一为 `ADC≥30`，升级标准帧处理水印并同步前端兜底和 SDK |
+| 2026-08-29 | 修复缺陷 | 区分整面标定摘要与热力图逐点矩阵统计，整面平均/最大压强按参考标定口径输出并升级处理水印 |
+| 2026-08-30 | 优化重构 | 默认 V2.7.46/V2.7.52 链路恢复标定文件完整规则：砝码段按排名均值和曲线响应归一化，真人段逐点乘 2.2；后端、浏览器回退与 SDK 同步 |
+| 2026-08-30 | 修复缺陷 | 修复热力图与统计二次计算分叉，实时、框选、历史导出与 COP 均从最终 `pressureArr/forceArr` 和 `calibrationValidMask` 聚合 |
+| 2026-08-30 | 配置变更 | 后端、前端与 SDK 默认直接使用 `point_pressure_calibration.js`，并将旧标定文件名自动映射到新文件名 |
+| 2026-08-30 | 配置变更 | 原生坐垫与靠背标定调用前统一应用固定 `ADC>=30` 门槛，并升级标准帧水印以重算旧矩阵 |
 
 *变更类型：`新增功能` / `优化重构` / `修复缺陷` / `配置变更` / `文档更新` / `依赖升级` / `初始化`*
 
@@ -1541,7 +1578,7 @@ graph TD
 
 ## 2026-06-05 Endi matrix ADC scaling alignment
 - `util/line.js` no longer applies hardcoded opposite scaling in `endiSit1024` and `endiBack1024`. Seat matrix conversion removed the final `* 1.5`, and backrest matrix conversion removed the final `/ 1.5`.
-- Backrest and seat display matrices now keep the same ADC value口径 after line-order conversion; sensor-specific pressure calibration remains handled by pressure formulas and `backValueMultiplier` instead of modifying matrix values inside line conversion.
+- Backrest and seat display matrices now keep the same ADC value口径 after line-order conversion; sensor-specific pressure differences are handled only by the selected calibration formula instead of modifying matrix values inside line conversion.
 | 2026-06-05 | Fix | Remove hardcoded Endi seat/backrest matrix scaling from line conversion |
 
 ## 2026-06-05 Auto color adjustment default
@@ -1718,8 +1755,8 @@ graph TD
 ## 2026-07-21 V2.7.38 logo pressure formula unification
 - `server/services/PressureConfig.js`, `client/src/util/pressureConfig.js`, the system-settings fallback, and `db/pressure_config.json` now default to `pressureFormula_V2.7.38中英文logo.js`. The formula profile is derived from the selected file name, so a stale `V2.8.1` profile cannot make the browser use a different calculation from the backend.
 - `client/src/util/pressureMetrics.js` mirrors the selected logo formula for browser rendering. Values at or below `ADC=30` are invalid; weight mode uses the seat TOP-70 or backrest TOP-46 average, while more than 300 valid points switches to the full valid-point average and the logo human-pressure branch.
-- Because the logo formula exposes frame average/max functions rather than a matrix function, the point matrix is expanded with `P_point = P_formula_avg * ADC_point / ADC_calibration_avg`. This preserves the formula's proportional maximum and gives 2D/3D rendering, realtime/selection statistics, comparison, and COP analysis one shared kPa matrix; force remains `N_point = P_point * point_area_cm2 * 0.1`.
-- `util/db.js` applies the same `ADC > 30` calibration and point expansion before calculating CSV/XLSX average, maximum, force total, active-point count, and matrix cells. Exported aggregate values therefore come from the same converted points instead of the former V2.8.1 `master * scale` path.
+- The logo formula exposes a frame-average target rather than a matrix function. The current point matrix uses the same curve for each effective ADC and normalizes those curve responses to the target average: `P_point = P_formula_avg * F(ADC_point) / AVG(F(ADC_effective))`; force remains `N_point = P_point * point_area_cm2 * 0.1`.
+- `util/db.js` consumes the canonical `pressureArr/forceArr` produced by `pressureFrameProcessor`, so CSV/XLSX aggregates and cells use the same converted points as realtime display, history playback, comparison, and COP analysis.
 - Verification: `node --test test/pressureMetric.test.mjs` passes 10 tests covering stale-profile normalization, seat TOP-70, backrest TOP-46, the strict 300/301 boundary, kPa/N conversion, rendered-matrix statistics, and color range behavior. `npm run build` completes with only the existing Sass, duplicate-key, ASI, and chunk-size warnings.
 | 2026-07-21 | Fix | Use the V2.7.38 Chinese-English-logo formula consistently for frontend matrices, statistics, reports, and history exports |
 
@@ -1750,3 +1787,98 @@ graph TD
 - Realtime chart panels and metric rows, visualization settings, history and comparison export dialogs, toolbar actions, drawers, selectors, playback controls, and COP report states now consume the shared UI entry point.
 - Verification: `npm run build` in `client/` succeeds with the existing Sass legacy API, ASI, and bundle-size warnings.
 | 2026-08-11 | Refactor | Establish a single reusable UI component directory and migrate the first shared presentation surfaces without moving business state into the UI layer |
+
+## 2026-08-28 Weight-segment point-pressure normalization
+
+- `util/weightPointPressureNormalization.js` implements the new distribution rule. `P̄ = F(X)` remains the calibrated frame-average pressure, each effective point receives a non-negative curve response `qᵢ = F(ADCᵢ)`, and `Pᵢ = P̄ × qᵢ / AVG(q)` preserves the target average without a second point cap.
+- `util/pressureFrameProcessor.js` applies the algorithm before creating canonical `pressureArr/forceArr`. Seat frames use TOP-70, backrest frames use TOP-46, and both use the full effective-point mean when the count is greater than 300. Force still derives from normalized point pressure and physical point area.
+- `client/src/util/weightPointPressureNormalization.js` mirrors the pure algorithm for legacy and fallback browser calculations. Current realtime, collection, playback, comparison, COP report, and export paths continue to consume the backend canonical matrices.
+- `sdk/core/pressure.js` uses the same distribution for its standalone `computePressureMetrics()` API. Its existing aggregate fields remain available, while point-pressure, point-force, normalization-scale, and conservation-error fields are added for callers that need traceability.
+- The processing watermark is `backend-spatial-v2-curve-normalized` and is validated together with the formula file, formula profile, and distribution algorithm. Any mismatch recalculates from `rawAdcArr` when available, preventing stale matrices from being reused after a formula change.
+- Verification: `node --test test/weightPointPressureNormalization.test.js test/pressureFrameProcessor.test.js test/pressureMetric.test.mjs` passes 23 tests; the complete SDK test suite and `npm pack --dry-run` pass. The Vite production build succeeds; only the existing Sass legacy API, automatic-semicolon-insertion, and bundle-size warnings remain.
+| 2026-08-28 | Refactor | Distribute calibrated pressure by normalized per-point curve response while preserving the frame-average target across backend canonical and browser fallback calculations |
+
+## 2026-08-29 Seat V2.7.46 / backrest V2.7.52 calibration
+
+- `server/kpa/point_pressure_calibration.js` carries the replacement calibration. Seat uses six local PCHIP cubic segments and the descending ADC ranks 5-70; backrest uses seven linear segments and TOP46. Both base curves clamp their high end to `18.5 kPa`.
+- The native formula contract is `calculateBasePressure`, `getCalibrationInput`, `calculateWeightPointPressures`, `calculatePressureMetrics`, and `adcMatrixToPressureMatrix`. `PressureConfig` accepts this supplied contract while retaining `master` and `estimatePressure/estimateMaxPressure` compatibility for selectable older formula files.
+- The supplied formula remains byte-for-byte unchanged. Counts at or below 300 use its weight branch and preserve `AVG(Pi)=Pbar`; counts above 300 use its human branch and calculate every point as `F(ADCi) * 2.2` without frame normalization. `util/calibrationPressureAdapter.js` materializes the complete point matrix from these exports without adding calibration rules.
+- Backend canonical matrices, the browser fallback in `client/src/util/pressureMetrics.js`, and standalone `sdk/core/pressure.js` implement the same boundary, sensor-specific curves, point-pressure matrix, force matrix, and aggregate semantics. Runtime defaults and persisted pressure configuration use profile `point_pressure_calibration`; the earlier `calibration_v2746_seat_v2752_backrest` profile remains an input alias only.
+- The active processing watermark is `backend-zero-direct-v9-calibration-summary`, with ADC preprocessing mode `zero-baseline-native-min30` and distribution identifier `native-calibration-v2746-v2752`; histories carrying a different formula or processing contract are recalculated from `calibrationAdcArr`, then `rawAdcArr`, when available.
+- Verification covers formula parity with the supplied file, calibration nodes and clamps, seat/backrest rank selection, mean conservation, the 300/301 branch boundary, browser/backend equivalence, the complete SDK suite, SDK package dry-run, and an isolated Vite production build.
+| 2026-08-29 | Config | Replace the active pressure calibration with seat V2.7.46 and backrest V2.7.52 across backend, browser fallback, and standalone SDK |
+
+## 2026-08-29 Zero-to-calibration ADC path
+
+- Serial parsing and device line mapping remain upstream. Endi 1024-point interpolation is completed there before direction normalization and zero-baseline subtraction.
+- `normalizeCalibrationAdcMatrix()` performs matrix-size validation, finite-number conversion, and non-negative clamping. Native seat and backrest profiles share a fixed `ADC >= 30` input contract; values below 30 become zero before the unchanged calibration module is called.
+- `processMatrixItem()` writes the gated zeroed ADC to both `arr` and `calibrationAdcArr`, then passes that exact array to the active calibration formula. `rawAdcArr` preserves the pre-gate matrix for diagnostics.
+- `filter`, `gauss`, and `coherent` remain in settings, collection snapshots, and frame metadata for compatibility. Their requested values are recorded, while `filterApplied=false`, `gaussianApplied=false`, `gaussianSigma=0`, and `temporal=false` make the effective behavior explicit.
+- Canonical reuse now requires watermark `backend-zero-direct-v9-calibration-summary` and preprocessing mode `zero-baseline-native-min30`; stale frames are recalculated from `calibrationAdcArr` first and `rawAdcArr` second.
+- `calibrationDiagnostics` records pre-gate positive count, effective count, selected count, TOP46 mean, maximum ADC, branch, active pressure count, average/max pressure, and target average for every processed frame.
+- Regression coverage verifies that 56 points at ADC 106.24 remain at about 2.986 kPa when low noise changes the pre-gate positive count from 299 to 301; both frames keep 56 effective points and the weight branch.
+| 2026-08-29 | Fix | Match the native backrest calibration input to the reference ADC>=50 gate and expose branch diagnostics |
+
+## 2026-08-29 Supplied calibration contract and post-interpolation input
+
+- `point_pressure_calibration.js` is the supplied calibration file used directly by the runtime. No project-specific export or business rule is added to it.
+- Endi mapping completes the seat `23×23 → 46×46` and backrest `25×32 → 50×64` interpolation before calibration. `rawAdcArr` preserves that post-interpolation source, while `calibrationAdcArr` contains the exact matrix passed to the formula after the shared native ADC>=30 input gate.
+- `calcNativeCalibrationPressureValues()` passes that full matrix to `util/calibrationPressureAdapter.js`. The adapter calls the supplied `adcMatrixToPressureMatrix()` contract with the sensor type and coefficient `2.2`; it does not materialize either branch outside the formula.
+- Sensor keys not supported by the active seat/backrest calibration fail explicitly instead of treating ADC values as kPa.
+- `buildCanonicalMetricArrays()` no longer applies an `endi-back` coordinate mask. Endi topology padding remains an upstream line-mapping concern and enters calibration as zero ADC values.
+- The only operations after calibration are one-decimal serialization for the canonical display matrix and the explicit unit conversion `N = kPa × pointAreaCm² × 0.1`; neither operation changes the calibration's pressure-validity rules.
+- Native formula validation in the backend and Node SDK additionally requires `adcMatrixToPressureMatrix`. The current v14 processing watermark prevents matrices calculated with an earlier input contract from being reused.
+- Regression tests compare backend canonical pressure with the supplied formula behavior, cover both branches, verify that the processor no longer removes positive backrest coordinates, and assert that a 25×32 backrest source is expanded to 50×64 before the valid-count branch is selected.
+| 2026-08-29 | Fix | Restore the supplied calibration file exactly and enforce seat/backrest calibration only after display-matrix interpolation |
+
+## 2026-08-29 Backrest ADC multiplier removal
+
+- `server/serial/SerialManager.js` no longer imports pressure configuration while parsing matrices and no longer scales `car-back`, `endi-back`, or `carY-back` values. Every 1024/1025/4096/4097 path now returns the direct line-mapped or interpolated ADC matrix.
+- `server/services/PressureConfig.js` and `db/pressure_config.json` retain only `pressureFormulaFile` and `pressureFormulaProfile`. Normalization returns this explicit schema, so an old packaged installation containing `backValueMultiplier=1.8`, `2.5`, `3`, or another value cannot apply it after upgrading.
+- The system-settings UI no longer displays or submits a backrest multiplier. Browser runtime configuration also selects only the formula file/profile and does not propagate a legacy field.
+- The standalone SDK maps backrest matrices without scaling. Its legacy `applyBackMultiplier()` export remains as a deprecated identity function for binary compatibility, and SDK pressure configuration drops the old field.
+- The supplied calibration file is unchanged. With 56 active backrest points at `ADC=106.24`, the processor preserves `106.24` as the calibration input; the supplied backrest curve returns `2.986460554 kPa`, serialized as `3.0 kPa` in the one-decimal display matrix.
+- Verification: 27 backend/formula tests pass, including the exact `106.24 ADC` regression; all 10 standalone SDK test scripts pass. The client production build succeeds with only the existing Sass legacy API, ASI, and bundle-size warnings.
+| 2026-08-29 | Fix | Remove the backrest-only ADC multiplier so line-mapped values enter the supplied calibration unchanged, while safely ignoring legacy configuration |
+
+## 2026-08-29 Backrest calibration branch stabilization
+
+- The supplied calibration file remains unchanged. The discrepancy came from its definition of valid input as every ADC greater than zero combined with the reference application's upstream `filter >= 50` setting.
+- With 56 real points at ADC 106.24 plus 243 low-noise points at ADC 1, the ungated weight branch normalizes pressure across 299 positive ADC values and raises the displayed active-point average to 15.95 kPa. Two more noise points switch the formula to its `>300` human branch and lower that average to 6.57 kPa.
+- `util/pressureFrameProcessor.js` now zeros native backrest ADC values below 50 before invoking the unchanged formula. Both examples therefore enter the formula as 56 valid points, remain on the weight branch, and produce 2.986 kPa before one-decimal serialization.
+- Browser fallback and standalone SDK calculations apply the same native-backrest input contract. Seat calibration remains unfiltered and unchanged.
+- Verification: 29 backend/browser calibration tests and all 10 SDK test scripts pass. The production client build and Windows installer packaging complete successfully.
+| 2026-08-29 | Fix | Prevent low backrest ADC noise from inflating normalized pressure or toggling the 300-point calibration branch |
+
+## 2026-08-29 Unified native ADC 30 gate
+
+- `util/pressureFrameProcessor.js` now applies `NATIVE_CALIBRATION_MIN_ADC = 30` to both native seat and backrest inputs after interpolation and zero-baseline subtraction. ADC values below 30 become zero; ADC 30 remains valid.
+- Browser fallback and standalone SDK calculations use the same threshold. `NATIVE_BACKREST_CALIBRATION_MIN_ADC` remains as a deprecated compatibility alias whose value is also 30.
+- The processing watermark is `backend-zero-direct-v9-calibration-summary` and ADC preprocessing mode is `zero-baseline-native-min30`, forcing histories produced under the earlier seat-0/backrest-50 contract to be recalculated.
+- Regression coverage verifies `[29, 30, 31] → [0, 30, 31]` for both sensors and keeps sub-30 interpolation noise out of the 300-point branch decision.
+| 2026-08-29 | Config | Unify native seat and backrest calibration inputs on an inclusive ADC>=30 threshold |
+
+## 2026-08-29 Calibration summary metric alignment
+
+- The supplied calibration JavaScript remains byte-for-byte unchanged. The application adapter now separates frame-level calibration summaries from the normalized point-pressure matrix.
+- For the weight branch, whole-surface average pressure is the supplied calibration target `Pbar = F(X)`. Whole-surface maximum pressure follows the reference summary rule `Pmax = Pbar × ADCmax / X`, where `X` is the sensor-specific ranked ADC mean.
+- For the human branch, whole-surface average and maximum are calculated directly from the supplied per-point result `F(ADCi) × 2.2`.
+- `calibrationDiagnostics.averagePressureKPa/maxPressureKPa` are the business summary fields used by realtime whole-surface cards, CSV/XLSX whole-surface aggregates, standalone SDK aggregates, and whole-surface COP statistics. `matrixAveragePressureKPa/matrixMaxPressureKPa` remain diagnostic values for the rendered point matrix.
+- Heatmaps, 2D numbers, normal distributions, COP weighting, selection statistics, point count, area, and total force continue to use `pressureArr/forceArr`. A selection has no independent ranked-frame calibration input, so its average and maximum remain local point-matrix aggregates.
+- The processing watermark is `backend-zero-direct-v9-calibration-summary`, which forces stored v8 frames to regenerate diagnostics from `calibrationAdcArr` or `rawAdcArr`.
+- Regression coverage includes the supplied backrest sample semantics: a TOP46 mean near `119.67 ADC` and maximum `142 ADC` produce approximately `3.81 kPa` average and `4.52 kPa` summary maximum, while the normalized heatmap matrix keeps its separate point peak.
+| 2026-08-29 | Fix | Separate calibration summary average/maximum from normalized heatmap matrix aggregates across realtime, export, report, and SDK paths |
+
+## 2026-08-30 Formula-owned matrix conversion
+
+- The runtime directly loads `server/kpa/point_pressure_calibration.js`. Its `adcMatrixToPressureMatrix()` output is the authoritative pressure matrix for both weight and human frames; legacy configurations naming `pressureFormula_calibration_v2746_seat_v2752_backrest.js` are normalized to this file before loading.
+- Endi interpolation precedes calibration: seat `23×23 → 46×46`, backrest `25×32 → 50×64`. After direction and zero-baseline handling, the application sets every finite `ADC<30` value to zero before calling the supplied formula; `ADC>=30` participates. There is no Gaussian filter, temporal filter, coordinate mask, or backrest multiplier.
+- The backend calls `adcMatrixToPressureMatrix(seatAdcMatrix, "seat", 2.2)` and `adcMatrixToPressureMatrix(backrestAdcMatrix, "backrest", 2.2)` directly. The application does not reconstruct either branch's point-pressure rule.
+- Weight frames use the supplied complete rule. Seat reference input is descending ranks 5-70, backrest input is TOP46, `Pbar=F(X)`, and each final point is `Pi=F(ADCi)*Pbar/AVG(F(ADCi))`. The denominator includes all valid ADC points, including points whose clamped curve response is zero, so `AVG(Pi)=Pbar` remains exact.
+- Human frames begin only when valid count is greater than 300. Matrix position is preserved while each valid point becomes `Pi=F(ADCi)*2.2`; exactly 300 points remain on the normalized weight branch.
+- `pressureArr` preserves formula precision as the canonical kPa matrix. `forceArr` is derived once with `Fi=Pi*pointAreaCm2*0.1`; one-decimal rounding is a presentation/export concern and is not fed back into calibration.
+- `calibrationValidMask` records post-gate `ADC>=30` eligibility. Whole-surface and selection average pressure are `SUM(Pi)/COUNT(valid ADC)`, maximum pressure is `MAX(Pi)`, while contact point count and area continue to use `COUNT(Pi>0)`.
+- Realtime cards, 2D/3D heatmaps, selections, history playback, CSV/XLSX export, comparison, COP reports, browser fallback, and the standalone SDK use the same matrix and valid mask. No consumer recalculates an alternative average or maximum from raw ADC.
+- Processing watermark `backend-zero-native-v15-matrix-calibration-min30`, preprocessing identifier `zero-baseline-native-min30`, and distribution identifier `native-adc-matrix-to-pressure-matrix-v2746-v2752` invalidate prior matrices that did not use the fixed ADC 30 gate and complete frame API.
+- The direct-file integration was previously verified with calibration-file parity, 33 focused regression tests, and the complete SDK checks. The subsequent fixed ADC 30 gate was not test-run at the user's request; its assertions and documentation were updated, and the production frontend bundle was regenerated successfully during commit preparation.
+| 2026-08-30 | Refactor | Load `point_pressure_calibration.js` directly and consume `adcMatrixToPressureMatrix()` for seat and backrest, with legacy filename migration |

@@ -31,66 +31,121 @@ import {
 } from '../client/src/util/pressureDisplayMatrix.js'
 
 const require = createRequire(import.meta.url)
-const logoFormula = require('../server/kpa/pressureFormula_V2.7.38中英文logo.js')
+const calibrationFormula = require('../server/kpa/point_pressure_calibration.js')
+const { calculateCalibrationPressureDistribution } = require('../util/calibrationPressureAdapter.js')
 const { normalizePressureConfig } = require('../server/services/PressureConfig.js')
-const LOGO_FORMULA_PROFILE = 'V2.7.38中英文logo'
+const { calcPressureFormulaStats } = require('../util/pressureFrameProcessor.js')
+const CALIBRATION_FORMULA_PROFILE = 'point_pressure_calibration'
 
-setPressureFormulaProfile(LOGO_FORMULA_PROFILE)
+setPressureFormulaProfile(CALIBRATION_FORMULA_PROFILE)
 
 function mean(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-function topMean(values, count) {
-  return mean([...values].sort((left, right) => right - left).slice(0, count))
+function getExpectedPointValues(values, sensor) {
+  const gatedValues = values.map((value) => (
+    Number.isFinite(Number(value)) && Number(value) >= 30 ? Number(value) : 0
+  ))
+  return calculateCalibrationPressureDistribution(calibrationFormula, gatedValues, sensor).pressureMatrixKPa
 }
 
 test('formula file name overrides a stale configured profile', () => {
   const normalized = normalizePressureConfig({
-    pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
+    backValueMultiplier: 3,
+    pressureFormulaFile: 'point_pressure_calibration.js',
     pressureFormulaProfile: 'V2.8.1',
   })
 
-  assert.equal(normalized.pressureFormulaProfile, LOGO_FORMULA_PROFILE)
-})
-
-test('seat point matrix expands the V2.7.38 logo TOP-70 pressure formula', () => {
-  const values = [0, 30, ...Array.from({ length: 100 }, (_, index) => index + 31)]
-  const validValues = values.filter((value) => value > 30)
-  const adcAvg = topMean(validValues, 70)
-  const averagePressure = logoFormula.estimatePressure(adcAvg, validValues.length, 'seat')
-  const pointValues = getPressureMetricPointValues(values, 'endi-sit', PRESSURE_METRIC_MODE)
-
-  assert.equal(getPressureFormulaProfile(), LOGO_FORMULA_PROFILE)
-  assert.equal(pointValues[0], 0)
-  assert.equal(pointValues[1], 0)
-  pointValues.slice(2).forEach((value, index) => {
-    assert.ok(Math.abs(value - averagePressure * validValues[index] / adcAvg) < 1e-9)
-  })
+  assert.equal(normalized.pressureFormulaProfile, CALIBRATION_FORMULA_PROFILE)
+  assert.equal(Object.hasOwn(normalized, 'backValueMultiplier'), false)
   assert.equal(
-    Number(Math.max(...pointValues).toFixed(2)),
-    logoFormula.estimateMaxPressure(Math.max(...validValues), validValues.length, 'seat', adcAvg),
+    setPressureFormulaProfile('calibration_v2746_seat_v2752_backrest'),
+    CALIBRATION_FORMULA_PROFILE,
   )
 })
 
-test('backrest uses TOP-46 and more than 300 points switches to full-frame average', () => {
-  const backValues = Array.from({ length: 80 }, (_, index) => index + 41)
-  const backAdcAvg = topMean(backValues, 46)
-  const backPressure = logoFormula.estimatePressure(backAdcAvg, backValues.length, 'backrest')
+test('seat point matrix applies the V2.7.46 base curve to every point', () => {
+  const values = [0, ...Array.from({ length: 100 }, (_, index) => index + 70)]
+  const pointValues = getPressureMetricPointValues(values, 'endi-sit', PRESSURE_METRIC_MODE)
+  const expectedValues = getExpectedPointValues(values, 'seat')
+  const activeExpectedValues = expectedValues.filter((value) => value > 0)
+
+  assert.equal(getPressureFormulaProfile(), CALIBRATION_FORMULA_PROFILE)
+  assert.equal(pointValues[0], 0)
+  pointValues.forEach((value, index) => {
+    assert.ok(Math.abs(value - expectedValues[index]) < 1e-9)
+  })
+  assert.ok(Math.abs(mean(pointValues.filter((value) => value > 0)) - mean(activeExpectedValues)) < 1e-9)
+  assert.ok(Math.abs(Math.max(...pointValues) - Math.max(...expectedValues)) < 1e-9)
+})
+
+test('browser fallback applies weight normalization through 300 points and 2.2 above 300', () => {
+  const backValues = Array.from({ length: 80 }, (_, index) => index + 100)
   const backPointValues = getPressureMetricPointValues(backValues, 'endi-back', PRESSURE_METRIC_MODE)
-  assert.ok(Math.abs(backPointValues[0] - backPressure * backValues[0] / backAdcAvg) < 1e-9)
+  const backExpectedValues = getExpectedPointValues(backValues, 'backrest')
+  const activeBackExpectedValues = backExpectedValues.filter((value) => value > 0)
+  assert.ok(Math.abs(backPointValues[0] - backExpectedValues[0]) < 1e-9)
+  assert.ok(Math.abs(mean(backPointValues) - mean(activeBackExpectedValues)) < 1e-9)
 
-  const boundaryValues = Array.from({ length: 300 }, (_, index) => 31 + (index % 120))
-  const boundaryAdcAvg = topMean(boundaryValues, 70)
-  const boundaryPressure = logoFormula.estimatePressure(boundaryAdcAvg, boundaryValues.length, 'seat')
+  const backSummary = getPressureMetricSummary(backValues, 'endi-back', PRESSURE_METRIC_MODE)
+  assert.ok(Math.abs(backSummary.average - mean(activeBackExpectedValues)) < 1e-9)
+  assert.ok(Math.abs(backSummary.max - Math.max(...activeBackExpectedValues)) < 1e-9)
+  assert.equal(backSummary.metrics.matrixPressMax, backSummary.max)
+  assert.equal(backSummary.metrics.matrixPressAver, backSummary.average)
+
+  const boundaryValues = Array.from({ length: 300 }, (_, index) => 70 + (index % 120))
   const boundaryPointValues = getPressureMetricPointValues(boundaryValues, 'endi-sit', PRESSURE_METRIC_MODE)
-  assert.ok(Math.abs(boundaryPointValues[0] - boundaryPressure * boundaryValues[0] / boundaryAdcAvg) < 1e-9)
+  const boundaryExpectedValues = getExpectedPointValues(boundaryValues, 'seat')
+  const boundaryBasePressure = calibrationFormula.calculateBasePressure(boundaryValues[0], 'seat')
+  assert.ok(Math.abs(boundaryPointValues[0] - boundaryExpectedValues[0]) < 1e-9)
+  assert.ok(Math.abs(mean(boundaryPointValues) - mean(boundaryExpectedValues)) < 1e-9)
 
-  const humanValues = Array.from({ length: 301 }, (_, index) => 31 + (index % 120))
-  const humanAdcAvg = mean(humanValues)
-  const humanPressure = logoFormula.estimatePressure(humanAdcAvg, humanValues.length, 'seat')
+  const humanValues = Array.from({ length: 301 }, (_, index) => 70 + (index % 120))
   const humanPointValues = getPressureMetricPointValues(humanValues, 'endi-sit', PRESSURE_METRIC_MODE)
-  assert.ok(Math.abs(mean(humanPointValues) - humanPressure) < 1e-9)
+  const humanExpectedValues = getExpectedPointValues(humanValues, 'seat')
+  assert.ok(Math.abs(humanPointValues[0] - humanExpectedValues[0]) < 1e-9)
+  assert.ok(Math.abs(humanPointValues[0] - boundaryBasePressure * 2.2) < 1e-9)
+  assert.ok(Math.abs(mean(humanPointValues) - mean(humanExpectedValues)) < 1e-9)
+})
+
+test('browser native fallback filters ADC values below 30 before branch counting', () => {
+  const seatValues = getPressureMetricPointValues([29, 30, 31], 'endi-sit', PRESSURE_METRIC_MODE)
+  assert.equal(seatValues[0], 0)
+  assert.ok(seatValues[1] > 0)
+  assert.ok(seatValues[2] > 0)
+
+  const buildValues = (noiseCount) => [
+    ...new Array(56).fill(106.24),
+    ...new Array(noiseCount).fill(29),
+    ...new Array(50 * 64 - 56 - noiseCount).fill(0),
+  ]
+  const belowBoundary = getPressureMetricPointValues(buildValues(243), 'endi-back', PRESSURE_METRIC_MODE)
+  const aboveBoundary = getPressureMetricPointValues(buildValues(245), 'endi-back', PRESSURE_METRIC_MODE)
+  const activeBelow = belowBoundary.filter((value) => value > 0)
+  const activeAbove = aboveBoundary.filter((value) => value > 0)
+  const expectedBelow = getExpectedPointValues(buildValues(243), 'backrest')
+  const expectedAbove = getExpectedPointValues(buildValues(245), 'backrest')
+
+  assert.equal(activeBelow.length, 56)
+  assert.equal(activeAbove.length, 56)
+  belowBoundary.forEach((value, index) => {
+    assert.ok(Math.abs(value - expectedBelow[index]) < 1e-9)
+  })
+  aboveBoundary.forEach((value, index) => {
+    assert.ok(Math.abs(value - expectedAbove[index]) < 1e-9)
+  })
+})
+
+test('browser fallback and backend canonical calculation produce the same point pressures', () => {
+  const values = [0, 30, ...Array.from({ length: 100 }, (_, index) => index + 31)]
+  const browserValues = getPressureMetricPointValues(values, 'endi-sit', PRESSURE_METRIC_MODE)
+  const backendValues = calcPressureFormulaStats(values, 'endi-sit').pressureValues
+
+  assert.equal(browserValues.length, backendValues.length)
+  browserValues.forEach((value, index) => {
+    assert.ok(Math.abs(value - backendValues[index]) < 1e-9)
+  })
 })
 
 test('pressure and force summaries use the same point area conversion', () => {
@@ -124,7 +179,7 @@ test('unknown modes keep the existing force display as the default', () => {
   assert.equal(normalizePressureMetricMode('invalid'), FORCE_METRIC_MODE)
 })
 
-test('left-side totals and point counts use the exact rounded 2D number matrix', () => {
+test('left-side totals use the heatmap matrix while average uses the ADC valid-point mask', () => {
   const adcValues = [31, 0]
   const matrixKey = 'endi-sit'
   const settings = { filter: 30, gauss: 0 }
@@ -147,13 +202,23 @@ test('left-side totals and point counts use the exact rounded 2D number matrix',
   const pressureSummary = summarizePressureDisplayMatrix(pressureMatrix, matrixKey, PRESSURE_METRIC_MODE)
   const forceSummary = summarizePressureDisplayMatrix(forceMatrix, matrixKey, FORCE_METRIC_MODE)
 
-  assert.deepEqual(pressureMatrix, [0.8, 0])
+  assert.deepEqual(pressureMatrix, [0.9, 0])
   assert.deepEqual(forceMatrix, [0.1, 0])
   assert.equal(pressureSummary.activeCount, pressureMatrix.filter((value) => value > 0).length)
   assert.equal(forceSummary.activeCount, forceMatrix.filter((value) => value > 0).length)
   assert.equal(forceSummary.total, forceMatrix.reduce((sum, value) => sum + value, 0))
   assert.equal(forceSummary.forceTotal, forceSummary.total)
   assert.equal(getPressureMetricPointValues(adcValues, matrixKey, FORCE_METRIC_MODE).filter((value) => value > 0).length, 1)
+
+  const maskedSummary = summarizePressureDisplayMatrix(
+    [2, 0],
+    matrixKey,
+    PRESSURE_METRIC_MODE,
+    [1, 1],
+  )
+  assert.equal(maskedSummary.activeCount, 1)
+  assert.equal(maskedSummary.averagePointCount, 2)
+  assert.equal(maskedSummary.average, 1)
 })
 
 test('normal distribution uses active values from the final displayed kPa or N matrix', () => {

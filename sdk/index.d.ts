@@ -14,6 +14,10 @@ export interface DataDirection {
 
 export interface MatrixItem {
   arr?: number[]
+  calibrationAdcArr?: number[]
+  calibrationValidMask?: number[]
+  pressureArr?: number[]
+  forceArr?: number[]
   [key: string]: any
 }
 
@@ -43,6 +47,7 @@ export interface SelectionRegion {
 
 export interface PressureMetrics {
   activeCount: number
+  averagePointCount?: number
   effectiveArea: number
   rawPress: number
   rawMax: number
@@ -51,7 +56,19 @@ export interface PressureMetrics {
   sensor?: string
   pressMax: number
   pressAver: number
+  matrixPressMax?: number
+  matrixPressAver?: number
+  pressureTotal?: number
+  pressureValues?: number[]
+  forceValues?: number[]
+  forceMax?: number
+  forceAver?: number
   total: number
+  normalizationScale?: number | null
+  meanConservationErrorKPa?: number | null
+  pressureCalibrationBranch?: 'weight' | 'human' | 'average-formula'
+  calibrationInputMinAdc?: number
+  calibrationValidCount?: number
 }
 
 export const DEFAULT_API_PORT: number
@@ -60,6 +77,9 @@ export const DEFAULT_DATA_DIRECTION: DataDirection
 export const DEFAULT_SIT_ROTATE_DEGREE: number
 export const MATRIX_DIMENSIONS: Record<string, MatrixDimensions>
 export const DEFAULT_PRESSURE_FORMULA_PROFILE: string
+export const NATIVE_CALIBRATION_MIN_ADC: number
+/** @deprecated Use NATIVE_CALIBRATION_MIN_ADC. */
+export const NATIVE_BACKREST_CALIBRATION_MIN_ADC: number
 export const PRESSURE_FORMULA_PROFILES: Record<string, any>
 
 export function normalizeRotateDegree(value: unknown): number
@@ -212,6 +232,7 @@ export const HAND_TYPE_MAP: Record<number, string>
 export const TYPE_CONFIG: Record<number, string>
 export const MATRIX_POINT_COUNTS: Record<string, number>
 export function normalizeBytes(input: unknown): number[]
+/** @deprecated Backrest scaling was removed; this function returns an unchanged copy. */
 export function applyBackMultiplier(arr: number[], type: string, multiplier?: number): number[]
 export function transformMatrixByType(rawArr: number[], type: string, options?: any): number[]
 export function validateMatrixPointCount(type: string, arr: number[]): { valid: boolean, reason?: string, expectedLength?: number, actualLength?: number }
@@ -242,7 +263,7 @@ export function resolveDeviceType(uniqueId: string, options?: any): Promise<any>
 export namespace auth {}
 
 export const AES_KEY_TEXT: string
-export const DEFAULT_PRESSURE_CONFIG: { backValueMultiplier: number, pressureFormulaFile: string, pressureFormulaProfile: string }
+export const DEFAULT_PRESSURE_CONFIG: { pressureFormulaFile: string, pressureFormulaProfile: string }
 export function encryptString(src: string, keyText?: string): string
 export function decryptString(encrypted: string, keyText?: string): string
 export function extractFirstJsonObject(text: string): any

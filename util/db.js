@@ -82,11 +82,22 @@ function normalizeMetricValues(values, length) {
   })
 }
 
-function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1) {
-  const processedItem = ensureProcessedMatrixItem(key, item)
+function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1, options = {}) {
+  const processedItem = options.precomputed ? item : ensureProcessedMatrixItem(key, item)
   const length = Array.isArray(processedItem.arr) ? processedItem.arr.length : 0
   const pressureValues = normalizeMetricValues(processedItem.pressureArr, length)
   const forceValues = normalizeMetricValues(processedItem.forceArr, length)
+  const validMaskSource = Array.isArray(processedItem.calibrationValidMask)
+    && processedItem.calibrationValidMask.length === length
+    ? processedItem.calibrationValidMask
+    : Array.isArray(processedItem.calibrationAdcArr)
+      && processedItem.calibrationAdcArr.length === length
+      ? processedItem.calibrationAdcArr
+      : processedItem.arr
+  const calibrationValidMask = Array.from({ length }, (_, index) => (
+    Number(validMaskSource?.[index]) > 0 ? 1 : 0
+  ))
+  const calibrationValidCount = calibrationValidMask.reduce((sum, value) => sum + value, 0)
   let pressureActiveCount = 0
   let forceActiveCount = 0
   let pressureTotal = 0
@@ -115,19 +126,30 @@ function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1) {
     if (pressure > 0 && (pressureMin === 0 || pressure < pressureMin)) pressureMin = pressure
   }
 
+  const matrixPressureMax = pressureMax
+  const matrixForceMax = forceMax
+  const matrixPressureAverage = calibrationValidCount ? pressureTotal / calibrationValidCount : 0
+  const matrixForceAverage = calibrationValidCount ? forceTotal / calibrationValidCount : 0
+
   return {
     processedItem,
     pressureValues,
     forceValues,
+    calibrationValidMask,
+    calibrationValidCount,
     pressureTotal,
     forceTotal,
     pressureMax,
     forceMax,
+    matrixPressureMax,
+    matrixForceMax,
     pressureMaxIndex,
     forceMaxIndex,
     pressureMin,
-    pressureAverage: pressureActiveCount ? pressureTotal / pressureActiveCount : 0,
-    forceAverage: forceActiveCount ? forceTotal / forceActiveCount : 0,
+    pressureAverage: matrixPressureAverage,
+    forceAverage: matrixForceAverage,
+    matrixPressureAverage,
+    matrixForceAverage,
     pressureActiveCount,
     forceActiveCount,
     activeCount: forceActiveCount,
@@ -137,13 +159,20 @@ function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1) {
   }
 }
 
-function getMetricStatsFromValues(pressureValues, forceValues, pointAreaCm2 = 1) {
+function getMetricStatsFromValues(pressureValues, forceValues, pointAreaCm2 = 1, calibrationValidMask = null) {
+  const length = Math.max(pressureValues.length, forceValues.length)
+  const resolvedValidMask = Array.isArray(calibrationValidMask) && calibrationValidMask.length === length
+    ? calibrationValidMask
+    : Array.from({ length }, (_, index) => (
+      Number(pressureValues[index]) > 0 || Number(forceValues[index]) > 0 ? 1 : 0
+    ))
   return getCanonicalMetricStats('__selection__', {
-    arr: new Array(Math.max(pressureValues.length, forceValues.length)).fill(0),
+    arr: resolvedValidMask,
     pressureArr: pressureValues,
     forceArr: forceValues,
+    calibrationValidMask: resolvedValidMask,
     processing: { version: PROCESSING_VERSION },
-  }, pointAreaCm2)
+  }, pointAreaCm2, { precomputed: true })
 }
 
 function normalizePressureMetricMode(mode) {
@@ -1019,7 +1048,13 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           const selectArr = obj ? sliceSelectionData(data, obj) : []
           const selectPressureValues = obj ? sliceSelectionData(canonicalStats.pressureValues, obj) : []
           const selectForceValues = obj ? sliceSelectionData(canonicalStats.forceValues, obj) : []
-          const selectCanonicalStats = getMetricStatsFromValues(selectPressureValues, selectForceValues, pointAreaCm2)
+          const selectValidMask = obj ? sliceSelectionData(canonicalStats.calibrationValidMask, obj) : []
+          const selectCanonicalStats = getMetricStatsFromValues(
+            selectPressureValues,
+            selectForceValues,
+            pointAreaCm2,
+            selectValidMask,
+          )
           const selectPressureStats = {
             ...selectCanonicalStats,
             max: selectCanonicalStats.pressureMax,
@@ -1143,10 +1178,12 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           selectionRegions.forEach((region, regionIndex) => {
             const regionPressureValues = sliceSelectionData(canonicalStats.pressureValues, region)
             const regionForceValues = sliceSelectionData(canonicalStats.forceValues, region)
+            const regionValidMask = sliceSelectionData(canonicalStats.calibrationValidMask, region)
             const regionPressureStats = getMetricStatsFromValues(
               regionPressureValues,
               regionForceValues,
               pointAreaCm2,
+              regionValidMask,
             )
             const regionMetricStats = getExportMetricStats(regionPressureStats, metricMode, pointAreaCm2)
             const regionActiveStats = getExportMetricActiveStats(regionPressureStats, metricMode)

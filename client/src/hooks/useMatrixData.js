@@ -148,6 +148,7 @@ export function useMatrixData() {
   const renderedMetricDataRef = useRef({
     [PRESSURE_METRIC_MODE]: {},
     [FORCE_METRIC_MODE]: {},
+    validMask: {},
   })
   const chartRef = useRef({})
   const wsLocalDataRef = useRef({ data: {}, flag: false })
@@ -316,9 +317,19 @@ export function useMatrixData() {
     return { default: [...arr], boxes: [] }
   }
 
-  function computeRenderedStats(pressureValues, forceValues, fullKey, activeMode) {
-    const pressureSummary = summarizePressureDisplayMatrix(pressureValues, fullKey, PRESSURE_METRIC_MODE)
-    const forceSummary = summarizePressureDisplayMatrix(forceValues, fullKey, FORCE_METRIC_MODE)
+  function computeRenderedStats(pressureValues, forceValues, validMask, fullKey, activeMode) {
+    const pressureSummary = summarizePressureDisplayMatrix(
+      pressureValues,
+      fullKey,
+      PRESSURE_METRIC_MODE,
+      validMask,
+    )
+    const forceSummary = summarizePressureDisplayMatrix(
+      forceValues,
+      fullKey,
+      FORCE_METRIC_MODE,
+      validMask,
+    )
     const activeSummary = normalizePressureMetricMode(activeMode) === PRESSURE_METRIC_MODE
       ? pressureSummary
       : forceSummary
@@ -411,6 +422,7 @@ export function useMatrixData() {
 
     const pressureSelectResult = mapSelectionToMatrix(renderedMetrics[PRESSURE_METRIC_MODE], selectResult, width)
     const forceSelectResult = mapSelectionToMatrix(renderedMetrics[FORCE_METRIC_MODE], selectResult, width)
+    const validMaskSelectResult = mapSelectionToMatrix(renderedMetrics.validMask, selectResult, width)
     const activeSelectResult = normalizePressureMetricMode(useEquipStore.getState().pressureMetricMode) === PRESSURE_METRIC_MODE
       ? pressureSelectResult
       : forceSelectResult
@@ -425,6 +437,7 @@ export function useMatrixData() {
     const renderedStats = computeRenderedStats(
       pressureSelectResult.default,
       forceSelectResult.default,
+      validMaskSelectResult.default,
       matrixKey,
       metricMode,
     )
@@ -495,6 +508,7 @@ export function useMatrixData() {
         const boxRenderedStats = computeRenderedStats(
           pressureSelectResult.boxes[i]?.data,
           forceSelectResult.boxes[i]?.data,
+          validMaskSelectResult.boxes[i]?.data,
           matrixKey,
           metricMode,
         )
@@ -673,6 +687,7 @@ export function useMatrixData() {
     const next = {
       [PRESSURE_METRIC_MODE]: {},
       [FORCE_METRIC_MODE]: {},
+      validMask: {},
     }
 
     for (const fullKey of keyArr) {
@@ -696,10 +711,19 @@ export function useMatrixData() {
       }
       next[PRESSURE_METRIC_MODE][shortKey] = readMetric('pressureArr')
       next[FORCE_METRIC_MODE][shortKey] = readMetric('forceArr')
+      const validMaskField = Array.isArray(item.calibrationValidMask)
+        ? 'calibrationValidMask'
+        : Array.isArray(item.calibrationAdcArr)
+          ? 'calibrationAdcArr'
+          : 'arr'
+      next.validMask[shortKey] = readMetric(validMaskField).map((value) => (value > 0 ? 1 : 0))
     }
 
     renderedMetricDataRef.current = next
-    useEquipStore.getState().setMetricStatus(next)
+    useEquipStore.getState().setMetricStatus({
+      [PRESSURE_METRIC_MODE]: next[PRESSURE_METRIC_MODE],
+      [FORCE_METRIC_MODE]: next[FORCE_METRIC_MODE],
+    })
     return next
   }
 
@@ -750,6 +774,7 @@ export function useMatrixData() {
       computeStats(data, resArr[key], selectResult, key, fullKey, {}, {
         [PRESSURE_METRIC_MODE]: renderedMetricData[PRESSURE_METRIC_MODE][key],
         [FORCE_METRIC_MODE]: renderedMetricData[FORCE_METRIC_MODE][key],
+        validMask: renderedMetricData.validMask[key],
       })
     }
 
@@ -951,6 +976,7 @@ export function useMatrixData() {
         computeStats(data, resArr[key], selectResult, key, fullKey, { replaceLast: true }, {
           [PRESSURE_METRIC_MODE]: renderedMetricData[PRESSURE_METRIC_MODE][key],
           [FORCE_METRIC_MODE]: renderedMetricData[FORCE_METRIC_MODE][key],
+          validMask: renderedMetricData.validMask[key],
         })
       }
       chartRef.current = data
@@ -969,6 +995,7 @@ export function useMatrixData() {
     renderedMetricDataRef.current = {
       [PRESSURE_METRIC_MODE]: {},
       [FORCE_METRIC_MODE]: {},
+      validMask: {},
     }
     chartRef.current = {}
     useEquipStore.getState().setStatus({})

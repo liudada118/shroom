@@ -92,9 +92,8 @@ const fallbackConfig = {
 };
 
 const fallbackPressureConfig = {
-    backValueMultiplier: 1,
-    pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
-    pressureFormulaProfile: 'V2.7.38中英文logo',
+    pressureFormulaFile: 'point_pressure_calibration.js',
+    pressureFormulaProfile: 'point_pressure_calibration',
 };
 
 const CheckboxGroup = Checkbox.Group;
@@ -172,11 +171,11 @@ export default function SystemSetting() {
             .then((res) => {
                 if (res.data?.code !== 0) return;
                 const data = res.data?.data || {};
+                const pressureFormulaFile = data.config?.pressureFormulaFile || fallbackPressureConfig.pressureFormulaFile;
                 const nextPressureConfig = {
-                    ...fallbackPressureConfig,
-                    ...(data.config || {}),
+                    pressureFormulaFile,
+                    pressureFormulaProfile: getPressureFormulaProfileFromFile(pressureFormulaFile),
                 };
-                nextPressureConfig.pressureFormulaProfile = getPressureFormulaProfileFromFile(nextPressureConfig.pressureFormulaFile);
                 setPressureConfig(nextPressureConfig);
                 setPressureFormulaFiles(
                     Array.from(new Set([
@@ -215,8 +214,7 @@ export default function SystemSetting() {
     const handleSavePressureConfig = async () => {
         setPressureSaving(true);
         const payload = {
-            ...pressureConfig,
-            backValueMultiplier: Number(pressureConfig.backValueMultiplier),
+            pressureFormulaFile: pressureConfig.pressureFormulaFile,
             pressureFormulaProfile: getPressureFormulaProfileFromFile(pressureConfig.pressureFormulaFile),
         };
         try {
@@ -230,11 +228,11 @@ export default function SystemSetting() {
                 throw new Error(res.data?.message || t('pressureConfigSaveFailed'));
             }
             const data = res.data?.data || {};
+            const pressureFormulaFile = data.config?.pressureFormulaFile || payload.pressureFormulaFile;
             const nextPressureConfig = {
-                ...fallbackPressureConfig,
-                ...(data.config || payload),
+                pressureFormulaFile,
+                pressureFormulaProfile: getPressureFormulaProfileFromFile(pressureFormulaFile),
             };
-            nextPressureConfig.pressureFormulaProfile = getPressureFormulaProfileFromFile(nextPressureConfig.pressureFormulaFile);
             setPressureConfig(nextPressureConfig);
             setPressureFormulaFiles(
                 Array.from(new Set([
@@ -469,17 +467,6 @@ export default function SystemSetting() {
                     className="setting-card"
                 >
                     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                        <div className="setting-row">
-                            <Text className="setting-label">{t('backValueMultiplier') || '靠背乘数'}</Text>
-                            <InputNumber
-                                value={pressureConfig.backValueMultiplier}
-                                min={0}
-                                step={0.1}
-                                precision={4}
-                                style={{ width: 220 }}
-                                onChange={(value) => handlePressureConfigChange('backValueMultiplier', value)}
-                            />
-                        </div>
                         <div className="setting-row">
                             <Text className="setting-label">{t('pressureFormulaFile') || '公式文件'}</Text>
                             <Select

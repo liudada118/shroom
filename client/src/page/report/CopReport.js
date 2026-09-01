@@ -177,6 +177,11 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = FORC
   const pressureValues = getMatrixMetricValues(matrix, 'pressure')
   const forceValues = getMatrixMetricValues(matrix, FORCE_METRIC_MODE)
   const metricValues = metricMode === FORCE_METRIC_MODE ? forceValues : pressureValues
+  const validMaskSource = safeArray(matrix?.calibrationValidMask).length === metricValues.length
+    ? matrix.calibrationValidMask
+    : safeArray(matrix?.calibrationAdcArr).length === metricValues.length
+      ? matrix.calibrationAdcArr
+      : adcValues
   const { width, height } = inferSize(matrix)
   const scope = rect || { xStart: 0, yStart: 0, xEnd: width, yEnd: height }
   let pMax = 0
@@ -184,6 +189,7 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = FORC
   let adcSum = 0
   let adcMax = 0
   let effectivePoints = 0
+  let averagePointCount = 0
   let weightSum = 0
   let xWeighted = 0
   let yWeighted = 0
@@ -197,6 +203,7 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = FORC
       adcMax = Math.max(adcMax, adcValue)
       adcSum += adcValue
       pSum += metricValue
+      if (Number(validMaskSource[index]) > 0) averagePointCount++
       if (metricValue > 0) {
         effectivePoints++
         const weight = metricValue
@@ -216,7 +223,7 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = FORC
       pressureMax = Math.max(pressureMax, Number(pressureValues[index]) || 0)
     }
   }
-  const pAvg = effectivePoints ? pSum / effectivePoints : 0
+  const pAvg = averagePointCount ? pSum / averagePointCount : 0
   const copXIndex = weightSum ? xWeighted / weightSum : width / 2
   const copYIndex = weightSum ? yWeighted / weightSum : height / 2
   return {
@@ -228,6 +235,7 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = FORC
     adcSum,
     adcMax,
     effectivePoints,
+    averagePointCount,
     effectiveArea: effectivePoints * getPressurePointAreaCm2(matrixKey),
     copX: (copXIndex - (width - 1) / 2) * POINT_SPACING_MM,
     copY: ((height - 1) / 2 - copYIndex) * POINT_SPACING_MM,

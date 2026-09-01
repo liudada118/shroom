@@ -28,7 +28,6 @@ const { hand, jqbed, endiSit, endiBack, endiSit1024, endiBack1024, carYLine, car
 const { default: axios } = require('axios')
 const { state } = require('../state')
 const { getTypeFromCache, setTypeToCache } = require('../../util/serialCache')
-const { getBackValueMultiplier } = require('../services/PressureConfig')
 
 // ═══════════════════════════════════════════════════════════
 //  Constants
@@ -730,36 +729,26 @@ async function resolveDeviceType(uniqueId, options = {}) {
 //  Data Frame Processing Helpers
 // ═══════════════════════════════════════════════════════════
 
-function applyBackMultiplier(arr, dataItem) {
-  if (!Array.isArray(arr)) return arr
-  if (!String(dataItem?.type || '').endsWith('-back')) return arr
-  const multiplier = getBackValueMultiplier()
-  return arr.map((value) => {
-    const numeric = Number(value) || 0
-    return Number((numeric * multiplier).toFixed(4))
-  })
-}
-
 function processMatrixData(pointArr, dataItem) {
   const t = dataItem.type
   if (t === 'hand') return hand(pointArr)
   if (t === 'bed') return jqbed(pointArr)
-  if (t === 'car-back') return applyBackMultiplier(jqbed(pointArr), dataItem)
+  if (t === 'car-back') return jqbed(pointArr)
   if (t === 'endi-sit') return endiSit1024(pointArr)
-  if (t === 'endi-back') return applyBackMultiplier(endiBack1024(pointArr), dataItem)
+  if (t === 'endi-back') return endiBack1024(pointArr)
   if (t === 'carY-sit') return carYSitLine(pointArr)
-  if (t === 'carY-back') return applyBackMultiplier(carYBackLine(pointArr), dataItem)
+  if (t === 'carY-back') return carYBackLine(pointArr)
   return pointArr
 }
 
 function processTypedMatrixData(pointArr, dataItem) {
   const t = dataItem.type
-  if (t === 'car-back') return applyBackMultiplier(jqbed(pointArr), dataItem)
+  if (t === 'car-back') return jqbed(pointArr)
   if (t === 'car-sit' || t === 'bed') return jqbed(pointArr)
   if (t === 'endi-sit') return endiSit1024(pointArr)
-  if (t === 'endi-back') return applyBackMultiplier(endiBack1024(pointArr), dataItem)
+  if (t === 'endi-back') return endiBack1024(pointArr)
   if (t === 'carY-sit') return carYSitLine(pointArr)
-  if (t === 'carY-back') return applyBackMultiplier(carYBackLine(pointArr), dataItem)
+  if (t === 'carY-back') return carYBackLine(pointArr)
   return pointArr
 }
 
@@ -929,11 +918,11 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       if (dataItem.type === 'endi-sit') {
         dataItem.arr = endiSit(pointArr)
       } else if (dataItem.type === 'endi-back') {
-        dataItem.arr = applyBackMultiplier(endiBack(pointArr), dataItem)
+        dataItem.arr = endiBack(pointArr)
       } else if (dataItem.type === 'carY-sit') {
         dataItem.arr = carYSitLine(pointArr)
       } else if (dataItem.type === 'carY-back') {
-        dataItem.arr = applyBackMultiplier(carYBackLine(pointArr), dataItem)
+        dataItem.arr = carYBackLine(pointArr)
       } else {
         dataItem.arr = pointArr
       }
@@ -977,11 +966,11 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
       if (dataItem.type === 'endi-sit') {
         dataItem.arr = endiSit(matrixData)
       } else if (dataItem.type === 'endi-back') {
-        dataItem.arr = applyBackMultiplier(endiBack(matrixData), dataItem)
+        dataItem.arr = endiBack(matrixData)
       } else if (dataItem.type === 'carY-sit') {
         dataItem.arr = carYSitLine(matrixData)
       } else if (dataItem.type === 'carY-back') {
-        dataItem.arr = applyBackMultiplier(carYBackLine(matrixData), dataItem)
+        dataItem.arr = carYBackLine(matrixData)
       } else {
         dataItem.arr = matrixData
       }

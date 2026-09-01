@@ -3,9 +3,8 @@ import { localAddress } from './constant'
 import { setPressureFormulaProfile } from './pressureMetrics'
 
 const DEFAULT_PRESSURE_CONFIG = {
-  backValueMultiplier: 1,
-  pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
-  pressureFormulaProfile: 'V2.7.38中英文logo',
+  pressureFormulaFile: 'point_pressure_calibration.js',
+  pressureFormulaProfile: 'point_pressure_calibration',
 }
 
 let pressureConfigCache = DEFAULT_PRESSURE_CONFIG
@@ -28,10 +27,10 @@ export async function loadPressureRuntimeConfig() {
   try {
     const res = await axios.get(`${localAddress}/getPressureConfig`)
     const config = res.data?.data?.config || DEFAULT_PRESSURE_CONFIG
-    const mergedConfig = { ...DEFAULT_PRESSURE_CONFIG, ...config }
+    const pressureFormulaFile = config.pressureFormulaFile || DEFAULT_PRESSURE_CONFIG.pressureFormulaFile
     pressureConfigCache = {
-      ...mergedConfig,
-      pressureFormulaProfile: getPressureFormulaProfileFromFile(mergedConfig.pressureFormulaFile),
+      pressureFormulaFile,
+      pressureFormulaProfile: getPressureFormulaProfileFromFile(pressureFormulaFile),
     }
     setPressureFormulaProfile(pressureConfigCache.pressureFormulaProfile)
     return pressureConfigCache

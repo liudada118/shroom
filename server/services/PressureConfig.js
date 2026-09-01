@@ -1,11 +1,16 @@
 const fs = require('fs')
 const path = require('path')
 const { state } = require('../state')
+const {
+  isCalibrationFormula,
+  REQUIRED_CALIBRATION_EXPORTS,
+} = require('../../util/calibrationPressureAdapter')
 
+const POINT_PRESSURE_CALIBRATION_FILE = 'point_pressure_calibration.js'
+const LEGACY_POINT_PRESSURE_CALIBRATION_FILE = 'pressureFormula_calibration_v2746_seat_v2752_backrest.js'
 const DEFAULT_PRESSURE_CONFIG = {
-  backValueMultiplier: 1,
-  pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
-  pressureFormulaProfile: 'V2.7.38中英文logo',
+  pressureFormulaFile: POINT_PRESSURE_CALIBRATION_FILE,
+  pressureFormulaProfile: 'point_pressure_calibration',
 }
 
 let configCache = null
@@ -24,19 +29,18 @@ function getFormulaDir() {
 
 function normalizeFormulaFile(fileName) {
   const baseName = path.basename(String(fileName || DEFAULT_PRESSURE_CONFIG.pressureFormulaFile))
-  return /^pressureFormula.*\.js$/i.test(baseName)
-    ? baseName
-    : DEFAULT_PRESSURE_CONFIG.pressureFormulaFile
+  if (baseName.toLowerCase() === LEGACY_POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()) {
+    return POINT_PRESSURE_CALIBRATION_FILE
+  }
+  const isSupportedFormula = /^pressureFormula.*\.js$/i.test(baseName)
+    || baseName.toLowerCase() === POINT_PRESSURE_CALIBRATION_FILE
+  return isSupportedFormula ? baseName : DEFAULT_PRESSURE_CONFIG.pressureFormulaFile
 }
 
 function normalizePressureConfig(config = {}) {
-  const multiplier = Number(config.backValueMultiplier)
   const pressureFormulaFile = normalizeFormulaFile(config.pressureFormulaFile)
   const formulaName = path.basename(pressureFormulaFile, '.js').replace(/^pressureFormula_?/i, '')
   return {
-    ...DEFAULT_PRESSURE_CONFIG,
-    ...config,
-    backValueMultiplier: Number.isFinite(multiplier) && multiplier >= 0 ? multiplier : DEFAULT_PRESSURE_CONFIG.backValueMultiplier,
     pressureFormulaFile,
     pressureFormulaProfile: String(formulaName || DEFAULT_PRESSURE_CONFIG.pressureFormulaProfile),
   }
@@ -89,15 +93,14 @@ function savePressureConfig(config = {}) {
 function listPressureFormulaFiles() {
   try {
     return fs.readdirSync(getFormulaDir())
-      .filter((file) => /^pressureFormula.*\.js$/i.test(file))
+      .filter((file) => (
+        /^pressureFormula.*\.js$/i.test(file)
+        || file.toLowerCase() === POINT_PRESSURE_CALIBRATION_FILE
+      ))
       .sort()
   } catch {
     return []
   }
-}
-
-function getBackValueMultiplier() {
-  return loadPressureConfig().backValueMultiplier
 }
 
 function requirePressureFormula(formulaPath, formulaFile) {
@@ -106,8 +109,9 @@ function requirePressureFormula(formulaPath, formulaFile) {
   const moduleValue = require(resolvedPath)
   const hasLegacyAverageFormula = typeof moduleValue.estimatePressure === 'function' && typeof moduleValue.estimateMaxPressure === 'function'
   const hasPointFormula = typeof moduleValue.master === 'function'
-  if (!hasLegacyAverageFormula && !hasPointFormula) {
-    throw new Error(`Pressure formula file must export master or estimatePressure/estimateMaxPressure: ${formulaFile}`)
+  const hasNativeCalibrationFormula = isCalibrationFormula(moduleValue)
+  if (!hasLegacyAverageFormula && !hasPointFormula && !hasNativeCalibrationFormula) {
+    throw new Error(`Pressure formula file must export ${REQUIRED_CALIBRATION_EXPORTS.join('/')}, master, or estimatePressure/estimateMaxPressure: ${formulaFile}`)
   }
   return moduleValue
 }
@@ -135,6 +139,5 @@ module.exports = {
   loadPressureConfig,
   savePressureConfig,
   listPressureFormulaFiles,
-  getBackValueMultiplier,
   loadPressureFormula,
 }

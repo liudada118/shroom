@@ -17,11 +17,18 @@ try {
   const pressureConfig = config.loadPressureConfig(pressurePath)
   assert.strictEqual(pressureConfig.pressureFormulaFile, config.DEFAULT_PRESSURE_CONFIG.pressureFormulaFile)
 
+  const migrated = config.normalizePressureConfig({
+    pressureFormulaFile: 'pressureFormula_calibration_v2746_seat_v2752_backrest.js',
+    pressureFormulaProfile: 'calibration_v2746_seat_v2752_backrest',
+  })
+  assert.strictEqual(migrated.pressureFormulaFile, 'point_pressure_calibration.js')
+  assert.strictEqual(migrated.pressureFormulaProfile, 'point_pressure_calibration')
+
   const saved = config.savePressureConfig(pressurePath, {
     backValueMultiplier: 2,
     pressureFormulaFile: '../bad.txt',
   })
-  assert.strictEqual(saved.backValueMultiplier, 2)
+  assert.strictEqual(Object.hasOwn(saved, 'backValueMultiplier'), false)
   assert.strictEqual(saved.pressureFormulaFile, config.DEFAULT_PRESSURE_CONFIG.pressureFormulaFile)
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true })

@@ -72,21 +72,26 @@ export function convertPreparedPressureDisplayMetricMatrix({
   return stabilizePressureDisplayMetricValues(metricValues, previousState)
 }
 
-export function summarizePressureDisplayMatrix(values, matrixKey, metricMode) {
+export function summarizePressureDisplayMatrix(values, matrixKey, metricMode, validMask = null) {
   const mode = normalizePressureMetricMode(metricMode)
-  const metricValues = Array.from(values || [], normalizePressureDisplayValue)
-  const activeValues = metricValues.filter((value) => value > 0)
+  const sourceValues = Array.from(values || [], toFiniteNonNegative)
+  const metricValues = sourceValues.map(normalizePressureDisplayValue)
+  const activeValues = sourceValues.filter((value) => value > 0)
   const activeCount = activeValues.length
-  const total = activeValues.reduce((sum, value) => sum + value, 0)
+  const hasValidMask = Array.isArray(validMask) && validMask.length === sourceValues.length
+  const averagePointCount = hasValidMask
+    ? validMask.reduce((count, value) => count + (Number(value) > 0 ? 1 : 0), 0)
+    : activeCount
+  const total = sourceValues.reduce((sum, value) => sum + value, 0)
   const max = activeCount ? Math.max(...activeValues) : 0
-  const average = activeCount ? total / activeCount : 0
+  const average = averagePointCount ? total / averagePointCount : 0
   const forceScale = getPressurePointAreaCm2(matrixKey) * 0.1
   const pressureValues = mode === PRESSURE_METRIC_MODE
-    ? metricValues
-    : metricValues.map((value) => (forceScale > 0 ? value / forceScale : 0))
+    ? sourceValues
+    : sourceValues.map((value) => (forceScale > 0 ? value / forceScale : 0))
   const forceValues = mode === FORCE_METRIC_MODE
-    ? metricValues
-    : metricValues.map((value) => value * forceScale)
+    ? sourceValues
+    : sourceValues.map((value) => value * forceScale)
   const pressureTotal = pressureValues.reduce((sum, value) => sum + value, 0)
   const forceTotal = forceValues.reduce((sum, value) => sum + value, 0)
 
@@ -96,6 +101,7 @@ export function summarizePressureDisplayMatrix(values, matrixKey, metricMode) {
     pressureValues,
     forceValues,
     activeCount,
+    averagePointCount,
     effectiveArea: activeCount * getPressurePointAreaCm2(matrixKey),
     max,
     average,

@@ -1,5 +1,4 @@
 {
-  "backValueMultiplier": 1,
-  "pressureFormulaFile": "pressureFormula_V2.7.38中英文logo.js",
-  "pressureFormulaProfile": "V2.7.38中英文logo"
+  "pressureFormulaFile": "point_pressure_calibration.js",
+  "pressureFormulaProfile": "point_pressure_calibration"
 }
