@@ -29,6 +29,9 @@ const SHAPE_PART_ORDER = ['jacket', 'leftHand', 'rightHand', 'foot']
 // 左右两块面板离顶部的距离保持一致
 const PANEL_TOP = 80
 
+// 工具条停在视口左下角时离底边的留白（和 viewSetting/index.scss 里的 bottom 一致）
+const TOOLBAR_DOCK_BOTTOM = 12
+
 // historyChart 里按部位分的那几张表，其余字段（比如 selection）不是部位表，别扫
 const HISTORY_PART_FIELDS = [
     'pressArr', 'areaArr',
@@ -182,15 +185,15 @@ function ChartsAside(props) {
         setData((current) => ({ ...current, t: Date.now() }))
     }, [pressureMetricMode, pressureUnit])
 
-    // 底部要让出多少 = 工具条上边缘往上再留 12px 间距。
-    // 直接量 DOM（rem 会随窗口宽度变，写死不准；工具条被拖走之后这么算也照样对）
+    // 底部要让出多少 = 工具条自身高度 + 它停在左下角时离底边的留白 + 12px 间距。
+    // 只量高度，不看它现在被拖到哪儿：工具条挪到哪是它自己的事，面板不该跟着一起缩。
+    // offsetHeight 是布局高度，不含工具条自己的整体缩放，所以两边不会互相牵着变
     useEffect(() => {
         const sync = () => {
             const bar = document.querySelector('.viewSetContent')
             if (!bar) { setToolbarReserve(0); return }
-            const top = bar.getBoundingClientRect().top
-            const reserve = Math.max(0, Math.round(window.innerHeight - top + 12))
-            // 工具条要是被拖到很上面，别把面板挤没了，最多让出小半屏
+            const reserve = Math.max(0, Math.round(bar.offsetHeight + TOOLBAR_DOCK_BOTTOM + 12))
+            // 兜底：工具条异常地高时别把面板挤没了，最多让出小半屏
             setToolbarReserve(Math.min(reserve, Math.round(window.innerHeight * 0.45)))
         }
         sync()
@@ -946,7 +949,6 @@ function ChartsAside(props) {
     const shapeKeys = SHAPE_PART_ORDER
         .map(findDataKey)
         .filter(Boolean)
-    const symmetryKeys = shapeKeys.filter((a) => supportsSymmetryCoefficient(a))
     // 只有假人这类带上身/四肢的系统才有这两项。按设备自身的部位配置判断：
     // 没连传感器时这两块一样要出来（和压强块、面积块一致），只是里面一个色点都没有
     const deviceParts = getSystemMatrixParts(systemType)
@@ -1002,7 +1004,10 @@ function ChartsAside(props) {
                 <div className='chartData'>
                     <span className="chartDataLabel">{t('symmetryCoefficient')}</span>
                     <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>
-                        {renderShapeRow(symmetryKeys, (source) => formatSymmetryPercent(source?.symmetry), '')}
+                        {/* 色点和压力梯度那两行、和上面的图例完全对齐：
+                            左右臂这种本来就没有对称系数的，也照样列色点，值显示「-」
+                            （和其他行没数据时一个样），不再整行空着 */}
+                        {renderShapeRow(shapeKeys, (source) => formatSymmetryPercent(source?.symmetry), '')}
                     </div>
                 </div>
             </div>

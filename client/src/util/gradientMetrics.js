@@ -14,6 +14,12 @@ export const GRADIENT_UNIT_SEQUENCE = [GRADIENT_UNIT_PA_CM, GRADIENT_UNIT_N_CM3]
 export const PA_CM_PER_N_CM3 = 10000
 // 传感器点间距 12.5 mm = 1.25 cm
 export const GRADIENT_POINT_SPACING_CM = 1.25
+
+/**
+ * 「这个部位/这个框根本没有这项指标」的判定（比如左右臂没有对称系数，算出来就是 null）。
+ * 不能直接丢给 Number：Number(null) 和 Number('') 都是 0，会被当成真值显示成 0.00%
+ */
+const isEmptyMetric = (value) => value === null || value === undefined || value === ''
 // 内部压强以 kPa 存储，梯度公式要求 pa
 const PA_PER_KPA = 1000
 
@@ -32,6 +38,7 @@ export function getNextGradientUnit(unit) {
 
 /** pa/cm 原始值 → 目标单位数值 */
 export function convertGradientValue(paPerCm, unit) {
+  if (isEmptyMetric(paPerCm)) return null
   const numeric = Number(paPerCm)
   if (!Number.isFinite(numeric)) return null
   return normalizeGradientUnit(unit) === GRADIENT_UNIT_N_CM3
@@ -105,6 +112,7 @@ export function calcSymmetryCoefficient(values, width, height) {
 
 /** 对称系数 → 百分比字符串（保留两位小数） */
 export function formatSymmetryPercent(coefficient) {
+  if (isEmptyMetric(coefficient)) return '-'
   const numeric = Number(coefficient)
   if (!Number.isFinite(numeric)) return '-'
   return `${(numeric * 100).toFixed(2)}%`

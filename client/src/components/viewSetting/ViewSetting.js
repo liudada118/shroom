@@ -433,6 +433,8 @@ const ViewSetting = (props) => {
             const row = rowRef.current
             const panel = document.querySelector('.charts-panel')
             if (!bar || !row || !panel) return
+            // 窗口最小化的那一下量出来的都是废数，照着它算只会把工具条缩死，直接跳过
+            if (window.innerWidth < 320 || window.innerHeight < 320) return
             const target = panel.getBoundingClientRect().width
             if (!target) return
             // 量工具条不受约束时的自然宽度：先把上一次算出来的宽度和缩放摘掉，量完原样放回去
@@ -451,14 +453,25 @@ const ViewSetting = (props) => {
             setToolbarFit((prev) => (prev && prev.width === width && prev.scale === scale ? prev : { width, scale }))
         }
 
-        // 图表、字体、面板的自动缩放都要几帧才落定，多补几次
-        const raf = window.requestAnimationFrame(sync)
-        const timers = [200, 600, 1200].map((delay) => window.setTimeout(sync, delay))
-        window.addEventListener('resize', sync)
+        // 图表、字体、面板的自动缩放都要几帧才落定，多补几次。
+        // 窗口尺寸一变也得这么补：面板是在窗口变完之后才重算自己的缩放的，
+        // 这一帧量到的还是它变之前的宽度 —— 只量一次的话，窗口缩小再放大，
+        // 工具条就照着「缩小时的面板宽度」定死，回不去了
+        let raf = 0
+        let timers = []
+        const scheduleSync = () => {
+            window.cancelAnimationFrame(raf)
+            timers.forEach(window.clearTimeout)
+            raf = window.requestAnimationFrame(sync)
+            timers = [200, 600, 1200].map((delay) => window.setTimeout(sync, delay))
+        }
+
+        scheduleSync()
+        window.addEventListener('resize', scheduleSync)
         return () => {
             window.cancelAnimationFrame(raf)
             timers.forEach(window.clearTimeout)
-            window.removeEventListener('resize', sync)
+            window.removeEventListener('resize', scheduleSync)
         }
     }, [])
 

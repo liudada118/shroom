@@ -28,6 +28,12 @@ const GRADIENT_POINT_SPACING_CM = 1.25
 // 内部压强以 kPa 存储，梯度公式要求 pa
 const PA_PER_KPA = 1000
 
+/**
+ * 「这个部位/这个框根本没有这项指标」的判定（比如左右臂没有对称系数，算出来就是 null）。
+ * 不能直接丢给 Number：Number(null) 和 Number('') 都是 0，会被当成真值写成 0.00%
+ */
+const isEmptyMetric = (value) => value === null || value === undefined || value === ''
+
 function normalizeGradientUnit(unit) {
   const value = String(unit || '').trim()
   if (!value) return GRADIENT_UNIT_PA_CM
@@ -43,6 +49,7 @@ function getNextGradientUnit(unit) {
 
 /** pa/cm 原始值 → 目标单位数值 */
 function convertGradientValue(paPerCm, unit) {
+  if (isEmptyMetric(paPerCm)) return null
   const numeric = Number(paPerCm)
   if (!Number.isFinite(numeric)) return null
   return normalizeGradientUnit(unit) === GRADIENT_UNIT_N_CM3
@@ -119,6 +126,7 @@ function calcSymmetryCoefficient(values, width, height) {
 
 /** 对称系数 → 百分比字符串（保留两位小数） */
 function formatSymmetryPercent(coefficient) {
+  if (isEmptyMetric(coefficient)) return ''
   const numeric = Number(coefficient)
   if (!Number.isFinite(numeric)) return ''
   return `${(numeric * 100).toFixed(2)}%`
