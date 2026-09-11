@@ -1,8 +1,9 @@
-﻿import React, { useEffect, useRef, useState } from 'react'
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicColorValueScale, setDynamicGammaColorEnabled } from '../../assets/util/line'
 import { useEquipStore } from '../../store/equipStore'
 import { isEndiBackVisibleCell } from '../../util/endiBackVisibleMask'
+import { expandFootVisualArr, getFootDisplayHeight, getFootDisplayWidth } from '../../util/footDisplayLayout'
 import { ADC_METRIC_MODE } from '../../util/pressureMetrics'
 
 const COLOR_VALUE_STEP = 0.01
@@ -62,7 +63,7 @@ function drawValue(ctx, value, x, y, cellSize) {
 }
 
 export default function ContrastHeatmap(props) {
-    const { title, subtitle, arr = [], width = 32, height = 32, mode = 'normal', className = '', matrixKey = '', colorMax = 1, disableExpand = false } = props
+    const { title, subtitle, arr: canonicalArr = [], width = 32, height = 32, mode = 'normal', className = '', matrixKey = '', colorMax = 1, disableExpand = false } = props
     const { i18n } = useTranslation()
     const rawAdcMode = useEquipStore(s => s.pressureMetricMode) === ADC_METRIC_MODE
     const isEnglish = String(i18n.language || localStorage.getItem('language') || '').toLowerCase().startsWith('en')
@@ -82,6 +83,18 @@ export default function ContrastHeatmap(props) {
     const gridRef = useRef({ offsetX: 0, offsetY: 0, cell: 1, width: 1, height: 1 })
     const [magnifier, setMagnifier] = useState({ visible: false, col: 0, row: 0, left: 0, top: 0 })
     const [expanded, setExpanded] = useState(false)
+    // 下身按「一个格子拆成多格」展开成显示数组（宽高都翻倍），和首页 2D 保持一致；
+    // 没展开时 expandFootVisualArr 返回同一个引用，宽高也照原样用
+    const { arr, drawGridWidth, drawGridHeight } = useMemo(() => {
+        const expanded = expandFootVisualArr(canonicalArr, matrixKey)
+        return expanded === canonicalArr
+            ? { arr: canonicalArr, drawGridWidth: Number(width), drawGridHeight: Number(height) }
+            : {
+                arr: expanded,
+                drawGridWidth: getFootDisplayWidth(matrixKey, width),
+                drawGridHeight: getFootDisplayHeight(matrixKey, height),
+            }
+    }, [canonicalArr, matrixKey, width, height])
     const maxAbs = Math.max(1, ...arr.map((value) => Math.abs(Number(value) || 0)))
 
     useEffect(() => {
@@ -98,8 +111,8 @@ export default function ContrastHeatmap(props) {
             if (mode !== 'diff') {
                 beginDynamicColorFrame(arr, colorMax)
             }
-            const drawWidth = Math.max(1, Number(width) || 1)
-            const drawHeight = Math.max(1, Number(height) || 1)
+            const drawWidth = Math.max(1, drawGridWidth || 1)
+            const drawHeight = Math.max(1, drawGridHeight || 1)
             const rect = wrap.getBoundingClientRect()
             const dpr = window.devicePixelRatio || 1
             const cssWidth = Math.max(1, rect.width)
@@ -150,7 +163,7 @@ export default function ContrastHeatmap(props) {
             cleanup = () => window.removeEventListener('resize', draw)
         }
         return cleanup
-    }, [arr, width, height, mode, maxAbs, matrixKey, colorMax, rawAdcMode])
+    }, [arr, drawGridWidth, drawGridHeight, mode, maxAbs, matrixKey, colorMax, rawAdcMode])
 
     const handleMouseMove = (event) => {
         const wrap = wrapRef.current
@@ -174,8 +187,8 @@ export default function ContrastHeatmap(props) {
     }
 
     const renderMagnifierCells = () => {
-        const drawWidth = Math.max(1, Number(width) || 1)
-        const drawHeight = Math.max(1, Number(height) || 1)
+        const drawWidth = Math.max(1, drawGridWidth || 1)
+        const drawHeight = Math.max(1, drawGridHeight || 1)
         const cells = []
         for (let y = 0; y < 5; y++) {
             for (let x = 0; x < 5; x++) {
@@ -243,10 +256,11 @@ export default function ContrastHeatmap(props) {
                         </div>
                         <button type="button" onClick={() => setExpanded(false)}>×</button>
                     </div>
+                    {/* arr 传规范数组：放大窗自己会展开一次，展开过的不能再喂进去 */}
                     <ContrastHeatmap
                         title={title}
                         subtitle={subtitle}
-                        arr={arr}
+                        arr={canonicalArr}
                         width={width}
                         height={height}
                         mode={mode}

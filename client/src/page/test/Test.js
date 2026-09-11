@@ -15,7 +15,7 @@ import { SelectionHelper } from '../../components/selectBox/SelectBox'
 import Aside from '../../components/aside/Aside'
 import { brushInstance } from '../../components/selectBox/newSelecttBox'
 import { getDisplayType, getSelectArr, getsetDisplayStatus, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore'
-import { getMatrixPartFromDisplayType, pointConfig, systemConfig, systemPointConfig, localAddress, wsAddress } from '../../util/constant'
+import { getDisplayPointConfig, getMatrixPartFromDisplayType, pointConfig, systemConfig, localAddress, wsAddress } from '../../util/constant'
 import CanvasShow from '../../components/canvasShow/CanvasShow'
 import { shallow } from 'zustand/shallow'
 import Endi from '../../components/three/ThreeAndCarPoint'
@@ -283,7 +283,8 @@ function Test() {
                     const matrixPart = getMatrixPartFromDisplayType(displayType) || 'back'
                     typeKey = range.matrixKey || `${systemType}-${matrixPart}`
                 }
-                const config = systemPointConfig[typeKey]
+                // 框存的是显示坐标（下身 width 48），取数时再换回规范坐标
+                const config = getDisplayPointConfig(typeKey)
                 if (!config) return
                 const matrix = colSelectMatrix('canvasThree', range, config)
                 if (!matrix) return

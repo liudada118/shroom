@@ -5,7 +5,7 @@ import NumThree2 from '../../components/three/NumThreeColorV4'
 import { useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 import { pageContext } from '../../page/test/Test';
-import { getMatrixPartFromDisplayType, systemPointConfig } from '../../util/constant';
+import { getDisplayPointConfig, getMatrixPartFromDisplayType } from '../../util/constant';
 
 export default function NumThres(props) {
     const pageInfo = useContext(pageContext);
@@ -20,7 +20,8 @@ export default function NumThres(props) {
     const getMatrixSize = () => {
         if (!isMoreMatrix(systemType)) return { width: 32, height: 32 }
         const configKey = `${systemType}-${matrixPart}`
-        const config = systemPointConfig[configKey]
+        // 用显示配置：下身画出来是 48 列（sitData 里的下身数组已经按显示宽度展开过）
+        const config = getDisplayPointConfig(configKey)
         if (config) return { width: config.width, height: config.height }
         // fallback to endi defaults
         return { width: 32, height: 32 }

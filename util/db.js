@@ -25,6 +25,7 @@ const {
   supportsPressureGradient,
   supportsSymmetryCoefficient,
 } = require("./gradientMetrics");
+const { footVisualRectToCanonicalRect } = require("./footDisplayLayout");
 const {
   PRESSURE_UNIT_KPA,
   PRESSURE_UNIT_N_CM2,
@@ -1577,9 +1578,12 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           // 框选区域计算：导出保留整体靠背/坐垫列，同时按同一字段模板展开最多 MAX_EXPORT_SELECTIONS 个框选列。
           const selectionRegions = getExportSelectionRegions(selectOverride, key, data, processedItem)
           const obj = selectionRegions[0] || null
-          const selectAdcValues = obj ? sliceSelectionData(canonicalStats.adcValues, obj) : []
-          const selectPressureValues = obj ? sliceSelectionData(canonicalStats.pressureValues, obj) : []
-          const selectForceValues = obj ? sliceSelectionData(canonicalStats.forceValues, obj) : []
+          // 下身上/中段「一个点占多格」，记录里存的是显示坐标，取数前换成规范坐标；
+          // 行/列范围文案仍按 obj 输出，保持和用户当时拖出来的框一致
+          const objRegion = obj ? footVisualRectToCanonicalRect(obj, key) : null
+          const selectAdcValues = objRegion ? sliceSelectionData(canonicalStats.adcValues, objRegion) : []
+          const selectPressureValues = objRegion ? sliceSelectionData(canonicalStats.pressureValues, objRegion) : []
+          const selectForceValues = objRegion ? sliceSelectionData(canonicalStats.forceValues, objRegion) : []
           const selectCanonicalStats = getMetricStatsFromValues(
             selectAdcValues,
             selectPressureValues,
@@ -1654,8 +1658,9 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry[`${key}pressureArea`] = pressureAreaValue
           rowEntry[`${key}realData`] = JSON.stringify(exportMetricData)
           rowEntry[`${key}selectMax`] = selectMetricStats.max
-          const selectWidth = (obj && obj.xEnd && obj.xStart !== undefined) ? (obj.xEnd - obj.xStart) : 0
-          const selectCoordInfo = (obj && selectWidth > 0) ? { xStart: obj.xStart, yStart: obj.yStart, selectWidth } : null
+          // selectMaxIndex 是在规范数组里取的，反算坐标也得用规范矩形
+          const selectWidth = (objRegion && objRegion.xEnd && objRegion.xStart !== undefined) ? (objRegion.xEnd - objRegion.xStart) : 0
+          const selectCoordInfo = (objRegion && selectWidth > 0) ? { xStart: objRegion.xStart, yStart: objRegion.yStart, selectWidth } : null
           rowEntry[`${key}selectMaxCoord`] = indexToCoord(selectMaxIndex, key, selectCoordInfo)
           rowEntry[`${key}selectAver`] = selectMetricStats.aver
           rowEntry[`${key}selectArea`] = selectAreaValue
@@ -1715,7 +1720,9 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             frameEntry[getExportKeyFieldId(key, 'max_gradient')] = formatGradientValue(shapeMetrics.maxGradient, gradientUnit)
           }
 
-          selectionRegions.forEach((region, regionIndex) => {
+          selectionRegions.forEach((visualRegion, regionIndex) => {
+            // 显示坐标 → 规范坐标（非下身、或下段的框原样返回）
+            const region = footVisualRectToCanonicalRect(visualRegion, key)
             const regionAdcValues = sliceSelectionData(canonicalStats.adcValues, region)
             const regionPressureValues = sliceSelectionData(canonicalStats.pressureValues, region)
             const regionForceValues = sliceSelectionData(canonicalStats.forceValues, region)

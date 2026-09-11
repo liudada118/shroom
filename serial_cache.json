@@ -3,27 +3,45 @@
     "504330390250435E45": {
       "type": "endi-jacket",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-21T06:42:39.737Z",
+      "lastSeen": "2026-09-11T06:34:45.405Z",
       "alias": ""
     },
     "464134391150431A9A": {
       "type": "endi-rightHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-25T06:53:54.670Z",
+      "lastSeen": "2026-09-11T06:34:45.410Z",
       "alias": ""
     },
     "46413439115043190B": {
       "type": "endi-leftHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-08-21T06:05:08.564Z",
+      "lastSeen": "2026-09-11T06:34:45.416Z",
       "alias": ""
     },
     "344637301550321301": {
       "type": "endi-leftFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-09-11T01:20:00.608Z",
+      "lastSeen": "2026-09-11T06:34:45.422Z",
+      "alias": ""
+    },
+    "554635300E5043598D": {
+      "type": "endi-rightFoot",
+      "deviceClass": "foot",
+      "lastSeen": "2026-09-11T06:34:45.428Z",
+      "alias": ""
+    },
+    "46413439115043198B": {
+      "type": "endi-leftFoot",
+      "deviceClass": "foot",
+      "lastSeen": "2026-09-11T06:47:41.448Z",
+      "alias": ""
+    },
+    "314631310550457130": {
+      "type": "endi-rightFoot",
+      "deviceClass": "foot",
+      "lastSeen": "2026-09-11T06:47:41.961Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-09-11T01:20:00.608Z"
+  "updatedAt": "2026-09-11T06:47:41.961Z"
 }

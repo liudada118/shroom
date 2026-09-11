@@ -1,3 +1,5 @@
+import { getFootDisplayHeight, getFootDisplayWidth } from './footDisplayLayout'
+
 // ─── 颜色配置 ────────────────────────────────────────────
 export const garyColors = [
   [0, 0, 0],
@@ -104,6 +106,22 @@ Object.assign(systemPointConfig, {
   'endi-rightFoot': { width: 12, height: 64 },
   'endi-foot': { width: 24, height: 64 },
 })
+
+/**
+ * 画到屏幕上用的点阵配置：下身每个格子拆成多格，显示尺寸是规范尺寸的 2 倍
+ * （合并 24×64 → 48×128、单腿 12×64 → 24×128），其它部位原样返回同一个对象。
+ *
+ * 画图、画标尺、框选几何这些「屏幕坐标」的地方一律用它；
+ * 切数据、算指标、入库这些「规范坐标」的地方仍用 systemPointConfig。
+ */
+export function getDisplayPointConfig(key) {
+  const config = systemPointConfig[key]
+  if (!config) return config
+  const displayWidth = getFootDisplayWidth(key, config.width)
+  const displayHeight = getFootDisplayHeight(key, config.height)
+  if (displayWidth === config.width && displayHeight === config.height) return config
+  return { ...config, width: displayWidth, height: displayHeight }
+}
 
 // 32x32 矩阵系统统一配置
 const point32Systems = [

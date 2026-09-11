@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { getDisplayType, getSelectArr, getSettingValue, getSysType, useEquipStore } from '../store/equipStore'
-import { getSystemMatrixParts, systemPointConfig } from '../util/constant'
+import { getDisplayPointConfig, getSystemMatrixParts, systemPointConfig } from '../util/constant'
 import { calcCentroidRatio, colSelectMatrix, kurtosis, mean, normalPDF, skewness, variance } from '../util/util'
 import { matrixGenBox, removeHistoryBox } from '../assets/util/selectMatrix'
 import { isMoreMatrix } from '../assets/util/util'
@@ -15,6 +15,7 @@ import {
   summarizeMetricValues,
 } from '../util/pressureMetrics'
 import { calcPartShapeMetrics, calcRegionShapeMetrics } from '../util/gradientMetrics'
+import { expandFootVisualMap, footVisualRectToCanonicalRect } from '../util/footDisplayLayout'
 
 /**
  * 矩阵数据处理 Hook
@@ -164,6 +165,8 @@ export function useMatrixData() {
 
   /**
    * 从矩阵中提取框选区域的数据
+   * 传进来的 matrix 必须是**规范坐标**（下身上/中段显示坐标和规范坐标不一致，
+   * 调用前先过 footVisualRectToCanonicalRect）
    */
   function extractSelectData(arr, matrix, width) {
     if (!matrix) return null
@@ -227,9 +230,11 @@ export function useMatrixData() {
    * 返回: { default: [...全部数据], boxes: [{data, colorIndex, bgc, matrix}] }
    */
   function computeSelectArr(arr, key, fullKey, select, displayType, sitDataItem) {
-    const { config } = getMatrixConfigEntry(fullKey, key)
+    const { key: configKey, config } = getMatrixConfigEntry(fullKey, key)
     if (!config) return { default: arr, boxes: [] }
+    // config 是规范尺寸（切数据用），displayConfig 是画到屏幕上的尺寸（画框用，下身 width 48）
     const { width, height } = config
+    const displayConfig = getDisplayPointConfig(configKey) || config
 
     // 实时框选 — 支持多个框
     const currentSelect = select
@@ -243,9 +248,11 @@ export function useMatrixData() {
       const boxes = []
       for (let i = 0; i < currentSelect.length; i++) {
         const { sel, originalIndex } = currentSelect[i]
-        const matrix = colSelectMatrix('canvasThree', sel, systemPointConfig[fullKey])
+        const matrix = colSelectMatrix('canvasThree', sel, displayConfig)
         if (matrix) {
-          const data = extractSelectData(arr, matrix, width)
+          // matrix 是屏幕上画出来的显示坐标，取数和算指标要换成规范坐标
+          const dataMatrix = footVisualRectToCanonicalRect(matrix, fullKey || key)
+          const data = extractSelectData(arr, dataMatrix, width)
           if (data) {
             boxes.push({
               data,
@@ -253,6 +260,7 @@ export function useMatrixData() {
               bgc: sel.bgc || '#FF6B6B',
               name: formatSelectionName(sel.name, originalIndex + 1),
               matrix,
+              dataMatrix,
             })
           }
         }
@@ -282,8 +290,9 @@ export function useMatrixData() {
             canvasX1: canvasInfo.left, canvasX2: canvasInfo.right,
             canvasY1: canvasInfo.top, canvasY2: canvasInfo.bottom
           }
-          const max = Math.max(width, height)
-          matrixGenBox(regions, canvasObj, max, config)
+          // 画历史框走显示坐标，和用户当时拖的位置对得上
+          const max = Math.max(displayConfig.width, displayConfig.height)
+          matrixGenBox(regions, canvasObj, max, displayConfig)
         }
       } else {
         removeHistoryBox()
@@ -292,7 +301,9 @@ export function useMatrixData() {
       const PLAYBACK_FALLBACK_COLORS = ['#FF6B6B', '#4ECDC4', '#FFD93D', '#6C5CE7']
       const boxes = []
       regions.forEach((region, index) => {
-        const data = extractSelectData(arr, region, width)
+        // 记录里存的 region 是显示坐标（画框用它，取数用换算后的规范坐标）
+        const dataMatrix = footVisualRectToCanonicalRect(region, fullKey || key)
+        const data = extractSelectData(arr, dataMatrix, width)
         if (!data) return
         const colorIndex = Number.isFinite(Number(region.colorIndex)) ? Number(region.colorIndex) : index
         boxes.push({
@@ -301,6 +312,7 @@ export function useMatrixData() {
           bgc: region.bgc || region.color || PLAYBACK_FALLBACK_COLORS[colorIndex % PLAYBACK_FALLBACK_COLORS.length],
           name: formatSelectionName(region.name || region.regionName, index + 1),
           matrix: region,
+          dataMatrix,
         })
       })
 
@@ -392,6 +404,8 @@ export function useMatrixData() {
     const { key: matrixKey, config } = getMatrixConfigEntry(fullKey, key)
     if (!config) return
     const { width, height } = config
+    // 重心点要画在画布上，得按显示尺寸（下身 width 48）换算才落在用户拖出来的框里
+    const displayConfig = getDisplayPointConfig(matrixKey) || config
 
     if (!data[key]) data[key] = {}
     if (!data[key].areaArr) data[key].areaArr = []
@@ -423,10 +437,12 @@ export function useMatrixData() {
     const pressureSummary = activeSummary.pressureSummary
     const forceSummary = activeSummary.forceSummary
     const firstBox = selectResult.boxes?.[0]
-    const firstBoxWidth = Math.max(1, Number(firstBox?.matrix?.xEnd) - Number(firstBox?.matrix?.xStart) || width)
-    const firstBoxHeight = Math.max(1, Number(firstBox?.matrix?.yEnd) - Number(firstBox?.matrix?.yStart) || height)
+    // selectedArr 是按规范矩形切出来的，算重心用规范尺寸；画到画布上再按显示矩形换算
+    const firstBoxDataMatrix = firstBox?.dataMatrix || firstBox?.matrix
+    const firstBoxWidth = Math.max(1, Number(firstBoxDataMatrix?.xEnd) - Number(firstBoxDataMatrix?.xStart) || width)
+    const firstBoxHeight = Math.max(1, Number(firstBoxDataMatrix?.yEnd) - Number(firstBoxDataMatrix?.yStart) || height)
     const selectedCenter = firstBox
-      ? projectBoxCenterToMatrix(calcCentroidRatio([...selectedArr], firstBoxWidth, firstBoxHeight), firstBox.matrix, width, height)
+      ? projectBoxCenterToMatrix(calcCentroidRatio([...selectedArr], firstBoxWidth, firstBoxHeight), firstBox.matrix, displayConfig.width, displayConfig.height)
       : calcCentroidRatio([...selectedArr], width, height)
     const mu = mean(selectedArr)
     const v = variance(selectedArr, mu)
@@ -510,15 +526,18 @@ export function useMatrixData() {
           stats,
         } = computeSingleStats(adcBox, pressureBox, forceBox, metricMode)
         boxStat.data = stats
-        const boxWidth = Math.max(1, Number(box.matrix?.xEnd) - Number(box.matrix?.xStart) || width)
-        const boxHeight = Math.max(1, Number(box.matrix?.yEnd) - Number(box.matrix?.yStart) || height)
+        // box.data 是按规范坐标切出来的，算重心/指标都得用规范矩形的尺寸
+        const dataMatrix = box.dataMatrix || box.matrix
+        const boxWidth = Math.max(1, Number(dataMatrix?.xEnd) - Number(dataMatrix?.xStart) || width)
+        const boxHeight = Math.max(1, Number(dataMatrix?.yEnd) - Number(dataMatrix?.yStart) || height)
         const boxMu = mean(box.data)
         const boxVariance = variance(box.data, boxMu)
         const boxSigma = Math.sqrt(boxVariance)
         const boxMax = box.data.length ? Math.max(...box.data, 1) : 1
         const boxXData = Array.from({ length: 256 }, (_, index) => boxMax * index / 255)
         const localCenter = calcCentroidRatio([...box.data], boxWidth, boxHeight)
-        boxStat.center = projectBoxCenterToMatrix(localCenter, box.matrix, width, height)
+        // 重心点画在画布上，按显示矩形换算才落在用户拖出来的框里
+        boxStat.center = projectBoxCenterToMatrix(localCenter, box.matrix, displayConfig.width, displayConfig.height)
         boxStat.localCenter = localCenter
         boxStat.normalDis = {
           ['\u03bc']: boxMu.toFixed(3),
@@ -535,7 +554,7 @@ export function useMatrixData() {
           metricData.pressureValues,
           width,
           height,
-          box.matrix,
+          dataMatrix,
           fullKey || key,
         )
 
@@ -879,7 +898,9 @@ export function useMatrixData() {
 
     chartRef.current = data
     sitDataRef.current = sourceAdcArr
-    disPlayDataRef.current = activeMetricMap
+    // 画图用的这一份把下身上/中段按「一个点占多格」重排，纯显示变换；
+    // 统计（computeStats / setMetricStatus / setDisplayStatus）仍吃规范数组，数值口径不变
+    disPlayDataRef.current = expandFootVisualMap(activeMetricMap)
 
     // 3. Update device status.
     let stamp, cop
@@ -952,7 +973,8 @@ export function useMatrixData() {
     useEquipStore.getState().setEquipStamp(stamp)
     if (cop) useEquipStore.getState().setEquipCop(cop)
 
-    disPlayDataRef.current = activeMetricMap
+    // 画图那一份要展开成显示数组（下身宽度翻倍），setDisplayStatus 仍存规范数组
+    disPlayDataRef.current = expandFootVisualMap(activeMetricMap)
     useEquipStore.getState().setDisplayStatus(activeMetricMap)
   }
 

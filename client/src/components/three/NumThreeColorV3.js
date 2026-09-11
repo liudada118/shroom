@@ -7,6 +7,7 @@ import { getDisplayType, getPressureUnit, getSettingValue, getStatus, getSysType
 import { isMoreMatrix } from '../../assets/util/util';
 import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicColorValueScale, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
 import { getMatrixPartFromDisplayType } from '../../util/constant';
+import { isFootVisualNullCell } from '../../util/footDisplayLayout';
 import { ADC_METRIC_MODE, formatPressureValue } from '../../util/pressureMetrics';
 
 function jet(min, max, x) {
@@ -94,12 +95,10 @@ const ENDI_JACKET_WIDTH = 24;
 const ENDI_JACKET_HEIGHT = 54;
 const ENDI_JACKET_HEAD_HEIGHT = 10;
 const ENDI_JACKET_HEAD_PADDING = 3;
-const ENDI_FOOT_WIDTH = 24;
-const ENDI_FOOT_HEIGHT = 64;
-const ENDI_FOOT_SINGLE_WIDTH = 12;
-const ENDI_FOOT_EXTRA_COL_COUNT = 4;
-const ENDI_FOOT_EXTRA_VALID_ROW_START = 16;
-const ENDI_FOOT_EXTRA_VALID_ROW_END = 29;
+// 下身画的是显示矩阵：每个格子拆成多格，尺寸是规范的 2×2 倍（24×64→48×128、单腿 12×64→24×128）
+// 哪些格子是空的（上段/中段铺满、下段只占外侧 16 格）统一由 util/footDisplayLayout.js 说了算
+const ENDI_FOOT_WIDTH = 48;
+const ENDI_FOOT_HEIGHT = 128;
 
 function isEndiJacketNullCell(index, width, height) {
   if (width !== ENDI_JACKET_WIDTH || height !== ENDI_JACKET_HEIGHT) return false;
@@ -111,14 +110,7 @@ function isEndiJacketNullCell(index, width, height) {
 
 function isEndiFootNullCell(index, width, height) {
   if (width !== ENDI_FOOT_WIDTH || height !== ENDI_FOOT_HEIGHT) return false;
-  const row = Math.floor(index / width);
-  const col = index % width;
-  const isRightFoot = col >= ENDI_FOOT_SINGLE_WIDTH;
-  const localCol = isRightFoot ? col - ENDI_FOOT_SINGLE_WIDTH : col;
-  const isValidExtraRow = row >= ENDI_FOOT_EXTRA_VALID_ROW_START && row <= ENDI_FOOT_EXTRA_VALID_ROW_END;
-  const isLeftFootNullCol = !isRightFoot && localCol >= ENDI_FOOT_SINGLE_WIDTH - ENDI_FOOT_EXTRA_COL_COUNT;
-  const isRightFootNullCol = isRightFoot && localCol < ENDI_FOOT_EXTRA_COL_COUNT;
-  return (isLeftFootNullCol || isRightFootNullCol) && !isValidExtraRow;
+  return isFootVisualNullCell(Math.floor(index / width), index % width, 'endi-foot');
 }
 
 function createEndiNullMask(systemType, displayType, width, height) {

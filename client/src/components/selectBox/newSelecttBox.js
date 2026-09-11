@@ -2,7 +2,7 @@ import React from 'react';
 import { message } from 'antd';
 import i18n from 'i18next';
 import { getDisplayType, getSysType } from '../../store/equipStore';
-import { getMatrixPartFromDisplayType, systemPointConfig } from '../../util/constant';
+import { getDisplayPointConfig, getMatrixPartFromDisplayType } from '../../util/constant';
 import { isMoreMatrix } from '../../assets/util/util';
 import { calMatrixToSelect, matrixRectToSelectRect, snapPixelRangeToMatrixRect } from '../../assets/util/selectMatrix';
 import { getDefaultSelectionName } from '../../util/selectionName';
@@ -112,7 +112,8 @@ export class BrushManager {
             if (matrixType) configKey = `${systemType}-${matrixType}`;
         }
 
-        const matrixConfig = systemPointConfig[configKey];
+        // 框的几何按画出来的格子算：下身是 48 列
+        const matrixConfig = getDisplayPointConfig(configKey);
         if (!matrixConfig) {
             return {
                 canvasRect: rect,
