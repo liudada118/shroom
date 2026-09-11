@@ -10,7 +10,7 @@ import { withTranslation } from 'react-i18next'
 import { getDisplayType, getSettingValue, getSettingValueOptimal, getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
-import { getDisplayPointConfig, getMatrixPartFromDisplayType, localAddress, pointConfig } from '../../util/constant'
+import { getMatrixPartFromDisplayType, localAddress, pointConfig, systemPointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
 import { normalizeVisualSettingMax, saveVisualSettingValue } from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
@@ -252,8 +252,7 @@ function SecondTitle(props) {
                     message.info(t('use2DMode'))
                     return
                 }
-                // 标尺画在画布上，按显示格子数走
-                const matrixConfig = getDisplayPointConfig(`${system}-${key}`)
+                const matrixConfig = systemPointConfig[`${system}-${key}`]
                 const pointLength = config.pointLength
                 const widthDistance = config.pointWidthDistance
                 const heightDistance = config.pointHeightDistance

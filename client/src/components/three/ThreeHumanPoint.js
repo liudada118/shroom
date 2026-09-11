@@ -5,7 +5,6 @@ import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls
 import { WebGLCanvas } from '../webgl/WebGL.HeatMap copy 2'
 import { getSettingValue } from '../../store/equipStore'
 import { cleanupThree } from '../../util/disposeThree'
-import { canonicalColToVisualCol, canonicalRowToVisualRow, getFootDisplayHeight, getFootDisplayWidth } from '../../util/footDisplayLayout'
 import { animateCameraZoom, applyZoomBounds, bindZoomValueSync, getZoomValueFromCamera } from '../../util/threeZoom'
 
 const MODEL_PATH = './model/human_matrix_atlas_rectangular_less_spike_long_legs_vfixed_arm_hflip_swap_lr.glb'
@@ -67,15 +66,13 @@ const HUMAN_TEXTURE_PARTS = [
   { key: 'leftHand', width: 36, height: 4, regionName: 'left_back_arm' },
   { key: 'rightHand', width: 36, height: 4, regionName: 'right_back_arm' },
   {
-    // 下身传进来的是显示数组（每腿 24 列、合并 48 列，每段每个格子占的宽度还不一样），
-    // 这里按「规范列」反查着取，仍旧是每条腿外侧 8 列 —— 和下身改版之前画的是同一块
     key: 'leftFoot',
     width: 8,
     height: 64,
     regionName: 'left_back_leg',
     sources: [
-      { dataKey: 'leftFoot', footKey: 'endi-leftFoot', canonicalX: 0 },
-      { dataKey: 'foot', footKey: 'endi-foot', canonicalX: 0 },
+      { dataKey: 'leftFoot', sourceWidth: 12, sourceX: 0, sourceY: 0 },
+      { dataKey: 'foot', sourceWidth: 24, sourceX: 0, sourceY: 0 },
     ],
   },
   {
@@ -84,8 +81,8 @@ const HUMAN_TEXTURE_PARTS = [
     height: 64,
     regionName: 'right_back_leg',
     sources: [
-      { dataKey: 'rightFoot', footKey: 'endi-rightFoot', canonicalX: 4 },
-      { dataKey: 'foot', footKey: 'endi-foot', canonicalX: 16 },
+      { dataKey: 'rightFoot', sourceWidth: 12, sourceX: 4, sourceY: 0 },
+      { dataKey: 'foot', sourceWidth: 24, sourceX: 16, sourceY: 0 },
     ],
   },
 ]
@@ -116,29 +113,7 @@ function hasMatrixSource(source) {
   return (Array.isArray(raw) || ArrayBuffer.isView(raw)) && raw.length > 0
 }
 
-/** 下身：按规范行列反查显示行列来裁，避开各段不同的横向倍数和纵向一行两格 */
-function extractFootPartMatrixData(source, part, sourceConfig) {
-  const footKey = sourceConfig.footKey
-  const displayWidth = getFootDisplayWidth(footKey)
-  const displayHeight = getFootDisplayHeight(footKey)
-  const canonicalX = Number(sourceConfig.canonicalX) || 0
-  const sourceMatrix = normalizeMatrixData(source, displayWidth * displayHeight)
-
-  const data = []
-  for (let row = 0; row < part.height; row++) {
-    const visualRow = canonicalRowToVisualRow(row)
-    for (let col = 0; col < part.width; col++) {
-      const visualCol = canonicalColToVisualCol(row, canonicalX + col, footKey)
-      data.push(visualCol < 0 ? 0 : (sourceMatrix[visualRow * displayWidth + visualCol] || 0))
-    }
-  }
-  return data
-}
-
 function extractPartMatrixData(source, part, sourceConfig = part) {
-  if (sourceConfig.footKey) {
-    return extractFootPartMatrixData(source, part, sourceConfig)
-  }
   const sourceWidth = Number(sourceConfig.sourceWidth) || Number(part.sourceWidth) || part.width
   const sourceX = Number(sourceConfig.sourceX ?? part.sourceX) || 0
   const sourceY = Number(sourceConfig.sourceY ?? part.sourceY) || 0

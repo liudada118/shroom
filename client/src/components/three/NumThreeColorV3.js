@@ -7,7 +7,7 @@ import { getDisplayType, getPressureUnit, getSettingValue, getStatus, getSysType
 import { isMoreMatrix } from '../../assets/util/util';
 import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicColorValueScale, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
 import { getMatrixPartFromDisplayType } from '../../util/constant';
-import { isFootVisualNullCell } from '../../util/footDisplayLayout';
+import { expandFootVisualArr, isFootVisualNullCell } from '../../util/footDisplayLayout';
 import { ADC_METRIC_MODE, formatPressureValue } from '../../util/pressureMetrics';
 
 function jet(min, max, x) {
@@ -438,6 +438,9 @@ export default function NumThree(props) {
           const realType = getMatrixPartFromDisplayType(displayType)
           data = props.sitData.current[realType]
           if (!data) data = new Array(4096).fill(0)
+          // 下身只在这块画布上把每个格子拆成多格（24×64 → 48×128）、并把每条腿的里外侧倒过来，
+          // sitData 本身还是规范数组，别处拿到的数一个没变
+          data = expandFootVisualArr(data, `${systemType}-${realType}`)
         }
       } else {
         data = props.sitData.current[systemType]

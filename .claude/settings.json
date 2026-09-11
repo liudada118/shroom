@@ -4,7 +4,19 @@
       "Bash(node -e ' *)",
       "Bash(rg -n \"最多.{0,4}4|slice\\\\\\(0,\\\\s*4\\\\\\)|\\\\.length\\\\s*>=?\\\\s*4|Math\\\\.min\\\\\\(4|4\\\\s*个框|selection_\\\\$\\\\{|selection_[1-4]\" client/src util server)",
       "Bash(rg -n \"框选[0-9]|selection_[0-9]|框选\\\\$\\\\{|selectionIndex\" util/db.js client/src/util client/src/assets)",
-      "Bash(rg -n \"最多.{0,3}4|4 个框|/4\\\\\\)|Up to 4\" client/src util server)"
+      "Bash(rg -n \"最多.{0,3}4|4 个框|/4\\\\\\)|Up to 4\" client/src util server)",
+      "Bash(env -u ELECTRON_RUN_AS_NODE node ./__3dcrop_test.js)",
+      "Bash(node -e \"console.log\\(require\\('./package.json'\\).main\\)\")",
+      "Bash(env -u ELECTRON_RUN_AS_NODE node scripts/sync-client-build.js)",
+      "Bash(env -u ELECTRON_RUN_AS_NODE npm run build:win)",
+      "Bash(env -u ELECTRON_RUN_AS_NODE node -e ' *)",
+      "Bash(powershell.exe -NoProfile -Command 'Get-CimInstance Win32_Process | Where-Object { $_.Name -match '\\\\''electron|SHROOM-HUMAN'\\\\'' -or $_.ProcessId -eq 23160 } | Select-Object ProcessId,ParentProcessId,Name,@{n='\\\\''CMD'\\\\'';e={$_.CommandLine.Substring\\(0,[Math]::Min\\(110,$_.CommandLine.Length\\)\\)}} | Format-Table -AutoSize | Out-String -Width 220')",
+      "Bash(env -u ELECTRON_RUN_AS_NODE npm run dev)",
+      "Bash(powershell.exe -NoProfile -Command 'Get-CimInstance Win32_Process | Where-Object { $_.Name -eq '\\\\''electron.exe'\\\\'' -and $_.CommandLine -notmatch '\\\\''--type='\\\\'' } | Select-Object ProcessId,@{n='\\\\''CMD'\\\\'';e={$_.CommandLine}} | Format-List | Out-String -Width 200')",
+      "Bash(env -u ELECTRON_RUN_AS_NODE node __flip_test.mjs)",
+      "Bash(rm -f __flip_test.mjs)",
+      "Bash(env -u ELECTRON_RUN_AS_NODE node -e \"const p=require\\('./package.json'\\);console.log\\(p.version\\);console.log\\(JSON.stringify\\(p.scripts,null,1\\)\\)\")",
+      "Bash(powershell.exe -NoProfile -Command \"Get-CimInstance Win32_Process -Filter \\\\\"Name='SHROOM-HUMAN.exe'\\\\\" | Select-Object ProcessId,ExecutablePath | Format-Table -AutoSize | Out-String -Width 300\")"
     ]
   }
 }

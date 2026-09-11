@@ -3,7 +3,7 @@ import './index.scss'
 import axios from 'axios'
 import { message } from 'antd'
 import { getDisplayType, getSysType, useEquipStore } from '../../store/equipStore'
-import { getDisplayPointConfig, localAddress, systemPointConfig } from '../../util/constant'
+import { localAddress, systemPointConfig } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
 import { pageContext } from '../../page/test/Test'
 import { useTranslation } from 'react-i18next'
@@ -45,8 +45,7 @@ export default function Col(props) {
             if (!range) return
             const { _element, ...safeRange } = range
             const typeKey = getSelectionTypeKey(safeRange)
-            // 框存的是显示坐标（下身 width 48），取数时再换回规范坐标
-            const config = getDisplayPointConfig(typeKey)
+            const config = systemPointConfig[typeKey]
             if (!config) return
 
             const matrix = safeRange.matrixRect || colSelectMatrix('canvasThree', safeRange, config)

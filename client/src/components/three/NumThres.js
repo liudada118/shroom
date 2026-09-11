@@ -5,7 +5,8 @@ import NumThree2 from '../../components/three/NumThreeColorV4'
 import { useEquipStore } from '../../store/equipStore';
 import { shallow } from 'zustand/shallow';
 import { pageContext } from '../../page/test/Test';
-import { getDisplayPointConfig, getMatrixPartFromDisplayType } from '../../util/constant';
+import { getMatrixPartFromDisplayType, systemPointConfig } from '../../util/constant';
+import { getFootDisplayHeight, getFootDisplayWidth } from '../../util/footDisplayLayout';
 
 export default function NumThres(props) {
     const pageInfo = useContext(pageContext);
@@ -20,9 +21,14 @@ export default function NumThres(props) {
     const getMatrixSize = () => {
         if (!isMoreMatrix(systemType)) return { width: 32, height: 32 }
         const configKey = `${systemType}-${matrixPart}`
-        // 用显示配置：下身画出来是 48 列（sitData 里的下身数组已经按显示宽度展开过）
-        const config = getDisplayPointConfig(configKey)
-        if (config) return { width: config.width, height: config.height }
+        const config = systemPointConfig[configKey]
+        // 只有这块 2D 画布按显示尺寸画：下身每格拆成多格，48×128。
+        // 画出来的整体外框跟规范 24×64 一模一样（格子小一半、多一倍），
+        // 所以标尺、框选、面板指标那边继续用 systemPointConfig 的规范尺寸，不受影响。
+        if (config) return {
+            width: getFootDisplayWidth(configKey, config.width),
+            height: getFootDisplayHeight(configKey, config.height),
+        }
         // fallback to endi defaults
         return { width: 32, height: 32 }
     }

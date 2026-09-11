@@ -1,8 +1,8 @@
 /**
- * footDisplayLayout.js — 下身热图「一个格子拆成多格」的显示布局（浏览器侧）
+ * footDisplayLayout.js — 下身热图「一个格子拆成多格」的显示布局
  *
- * Node 侧镜像文件：util/footDisplayLayout.js
- * 两边逻辑必须保持一致，修改时请同步。
+ * 只给画 2D 下身的那两个地方用（NumThres / NumThreeColorV3、对比视图的 ContrastHeatmap），
+ * 别的地方一律不要引它。
  *
  * 【背景】
  *   每条腿物理上是 6×32 通道矩阵，但窄段每行只接 4 个通道、宽段才接满 6 个，
@@ -24,12 +24,14 @@
  *   下身显示尺寸 = 规范尺寸 × 2：合并 24×64 → 48×128，单腿 12×64 → 24×128，
  *   长宽比和原来一样。
  *
+ *   另外每条腿块内部的取值顺序是倒过来的：源数据里外侧本来就是反的
+ *   （按内侧亮外侧、按外侧亮内侧），这里统一倒一下。腿的左右位置不变。
+ *
  * 【只改显示，不改数值】
- *   规范数组（入库、统计、导出用的那一份）一个字节都不动，
- *   受力面积 / 压强 / 对称系数 / 梯度全部保持原口径。
- *   框选因此有两套坐标：屏幕上画的框、存进记录的框是显示坐标（48×128），
- *   取数和算指标之前先用 footVisualRectToCanonicalRect 换回规范坐标（24×64）。
- *   老记录里存的框是 24×64（那时显示=规范），按尺寸区分，原样放行不做换算。
+ *   展开只发生在画布内部：sitData / 入库数组 / 统计 / 导出拿到的永远是规范的 24×64，
+ *   受力面积 / 压强 / 对称系数 / 梯度全部保持原口径，3D 也完全不受影响。
+ *   又因为横纵都正好 ×2，画出来的整体外框跟规范尺寸一模一样（格子小一半、数量多一倍），
+ *   所以框选、标尺这些还按 systemPointConfig 的 24×64 算，坐标一点不用换。
  */
 
 export const ENDI_FOOT_COMBINED_WIDTH = 24
@@ -66,10 +68,6 @@ export function getFootLayoutKind(key) {
   if (LEFT_KEYS.includes(text)) return 'left'
   if (RIGHT_KEYS.includes(text)) return 'right'
   return null
-}
-
-export function isEndiFootKey(key) {
-  return getFootLayoutKind(key) !== null
 }
 
 /** 参数既收 getFootLayoutKind 的结果，也收部位 key，省得两边传混 */
@@ -112,11 +110,6 @@ export function visualRowToCanonicalRow(row) {
   return Math.floor(row / FOOT_DISPLAY_SCALE_Y)
 }
 
-/** 规范行 → 它占的第一个显示行 */
-export function canonicalRowToVisualRow(row) {
-  return row * FOOT_DISPLAY_SCALE_Y
-}
-
 /** 这一规范行属于哪一段 */
 export function getFootBand(canonicalRow) {
   for (const band of FOOT_BANDS) {
@@ -140,6 +133,11 @@ function getLegBandGeometry(band, legKind) {
 
 /**
  * 单条腿本地坐标：显示列 → 规范列，落在空白处返回 -1
+ *
+ * 里外侧是反的（按内侧亮外侧、按外侧亮内侧），所以这里把每条腿块内部的取值顺序
+ * 倒过来。只倒顺序：有值的那一块占哪几个显示格子（blockStart / span）一点不动，
+ * 两条腿在屏幕上的左右位置、中间的空带都还在原地。
+ *
  * @param {object} band getFootBand 的返回值
  * @param {number} col 显示列（0–23）
  * @param {string} legKind 'left' / 'right'
@@ -147,7 +145,8 @@ function getLegBandGeometry(band, legKind) {
 function visualColToCanonicalColInLeg(band, col, legKind) {
   const { span, blockStart, sourceStart } = getLegBandGeometry(band, legKind)
   if (col < blockStart || col >= blockStart + span) return -1
-  return sourceStart + Math.floor((col - blockStart) / band.factor)
+  const sourceIndex = Math.floor((col - blockStart) / band.factor)
+  return sourceStart + (band.sourceCols - 1 - sourceIndex)
 }
 
 /**
@@ -169,27 +168,9 @@ export function visualColToCanonicalCol(visualRow, col, kindOrKey) {
 }
 
 /**
- * 反查：规范列 → 它占的第一个显示列，这一段没有这一列就返回 -1
- * 给「按规范坐标裁一块出来画」的地方用（比如 3D 人体图谱只取每条腿外侧 8 列）
- * @param {number} canonicalRow 规范行（0–63）
- * @param {number} canonicalCol 规范列（合并 0–23 / 单腿 0–11）
- * @param {string} kindOrKey getFootLayoutKind 的结果或部位 key
+ * 这个显示格子是不是空的（下段中间那一块）——渲染时按它决定画不画
+ * 跟里外侧倒不倒无关：倒的只是块内部的取值顺序，空的还是原来那几格
  */
-export function canonicalColToVisualCol(canonicalRow, canonicalCol, kindOrKey) {
-  const kind = normalizeFootKind(kindOrKey)
-  if (!kind) return -1
-  const band = getFootBand(canonicalRow)
-  const isRight = kind === 'combined'
-    ? canonicalCol >= ENDI_FOOT_SINGLE_WIDTH
-    : kind === 'right'
-  const local = kind === 'combined' && isRight ? canonicalCol - ENDI_FOOT_SINGLE_WIDTH : canonicalCol
-  const { span, blockStart, sourceStart } = getLegBandGeometry(band, isRight ? 'right' : 'left')
-  if (local < sourceStart || local >= sourceStart + span / band.factor) return -1
-  const visual = blockStart + (local - sourceStart) * band.factor
-  return kind === 'combined' && isRight ? visual + FOOT_SINGLE_DISPLAY_WIDTH : visual
-}
-
-/** 这个显示格子是不是空的（下段中间那一块）——渲染时按它决定画不画 */
 export function isFootVisualNullCell(visualRow, col, key) {
   const kind = getFootLayoutKind(key)
   if (!kind) return false
@@ -215,114 +196,6 @@ export function expandFootVisualArr(arr, key) {
       const canonicalCol = visualColToCanonicalCol(row, col, kind)
       result[targetOffset + col] = canonicalCol < 0 ? 0 : arr[sourceOffset + canonicalCol]
     }
-  }
-  return result
-}
-
-/**
- * 一段之内、一条腿之内：显示列区间 [a, b) → 规范列区间 [start, end)
- * 整段都落在空白处返回 null
- */
-function mapLegRange(band, a, b, legKind) {
-  const { span, blockStart } = getLegBandGeometry(band, legKind)
-  const from = Math.max(a, blockStart)
-  const to = Math.min(b, blockStart + span)
-  if (to <= from) return null
-  return [
-    visualColToCanonicalColInLeg(band, from, legKind),
-    visualColToCanonicalColInLeg(band, to - 1, legKind) + 1,
-  ]
-}
-
-/** 框在合并坐标下横跨两条腿时，按腿拆成若干段 */
-function getLegSegments(kind, xStart, xEnd) {
-  if (kind !== 'combined') {
-    return [{ a: xStart, b: xEnd, legKind: kind, base: 0 }]
-  }
-  const segments = []
-  const leftEnd = Math.min(FOOT_SINGLE_DISPLAY_WIDTH, xEnd)
-  if (xStart < leftEnd) {
-    segments.push({ a: xStart, b: leftEnd, legKind: 'left', base: 0 })
-  }
-  const rightStart = Math.max(FOOT_SINGLE_DISPLAY_WIDTH, xStart)
-  if (rightStart < xEnd) {
-    segments.push({
-      a: rightStart - FOOT_SINGLE_DISPLAY_WIDTH,
-      b: xEnd - FOOT_SINGLE_DISPLAY_WIDTH,
-      legKind: 'right',
-      base: ENDI_FOOT_SINGLE_WIDTH,
-    })
-  }
-  return segments
-}
-
-/** 框覆盖到的所有段（入参是规范行区间） */
-function getTouchedBands(yStart, yEnd) {
-  let start = 0
-  const touched = []
-  for (const band of FOOT_BANDS) {
-    if (yStart < band.end && yEnd > start) touched.push(band)
-    start = band.end
-  }
-  return touched
-}
-
-/**
- * 框选区域：显示坐标（48×128 / 24×128）→ 规范坐标（24×64 / 12×64）
- * 框同时压到两段时，两段的列映射不同，取并集，可能比拖出来的范围略宽一点。
- * 不是下身 / 尺寸对不上（老记录存的就是规范坐标）/ 区间非法，一律原样返回。
- */
-export function footVisualRectToCanonicalRect(rect, key) {
-  const kind = getFootLayoutKind(key)
-  if (!kind || !rect) return rect
-  const canonicalWidth = getFootCanonicalWidth(kind)
-  const displayWidth = canonicalWidth * FOOT_DISPLAY_SCALE_X
-  if (Number(rect.width) !== displayWidth || Number(rect.height) !== FOOT_DISPLAY_HEIGHT) return rect
-
-  const xStart = Math.max(0, Math.floor(Number(rect.xStart)))
-  const xEnd = Math.min(displayWidth, Math.ceil(Number(rect.xEnd)))
-  const visualYStart = Math.max(0, Math.floor(Number(rect.yStart)))
-  const visualYEnd = Math.min(FOOT_DISPLAY_HEIGHT, Math.ceil(Number(rect.yEnd)))
-  if (!(xEnd > xStart) || !(visualYEnd > visualYStart)) return rect
-
-  // 行只是整体拆成两份，直接除回去；末行向上取整保证边界那一行不被漏掉
-  const yStart = visualRowToCanonicalRow(visualYStart)
-  const yEnd = Math.min(ENDI_FOOT_HEIGHT, Math.ceil(visualYEnd / FOOT_DISPLAY_SCALE_Y))
-
-  let lo = Infinity
-  let hi = -Infinity
-  for (const band of getTouchedBands(yStart, yEnd)) {
-    for (const segment of getLegSegments(kind, xStart, xEnd)) {
-      const mapped = mapLegRange(band, segment.a, segment.b, segment.legKind)
-      if (!mapped) continue
-      lo = Math.min(lo, segment.base + mapped[0])
-      hi = Math.max(hi, segment.base + mapped[1])
-    }
-  }
-  // 整个框都压在空白上（下段中间那块），没有对应的规范列
-  if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
-    return { ...rect, xStart: 0, xEnd: 0, yStart, yEnd, width: canonicalWidth, height: ENDI_FOOT_HEIGHT }
-  }
-
-  return {
-    ...rect,
-    xStart: Math.max(0, lo),
-    xEnd: Math.min(canonicalWidth, hi),
-    yStart,
-    yEnd,
-    width: canonicalWidth,
-    height: ENDI_FOOT_HEIGHT,
-  }
-}
-
-
-/** 渲染用的整个部位 map：只把下身那几项换成显示数组，其它原样带过去 */
-export function expandFootVisualMap(matrixMap) {
-  if (!matrixMap || typeof matrixMap !== 'object') return matrixMap
-  const result = { ...matrixMap }
-  for (const key of Object.keys(result)) {
-    if (!isEndiFootKey(key)) continue
-    result[key] = expandFootVisualArr(result[key], key)
   }
   return result
 }

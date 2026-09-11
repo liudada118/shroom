@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { getSysType, useEquipStore } from '../../store/equipStore'
 import { shallow } from 'zustand/shallow'
 import { colSelectMatrix } from '../../util/util'
-import { getDisplayPointConfig, getMatrixPartFromDisplayType, localAddress } from '../../util/constant'
+import { getMatrixPartFromDisplayType, localAddress, systemPointConfig } from '../../util/constant'
 import { pageContext } from '../../page/test/Test'
 import { isMoreMatrix } from '../../assets/util/util'
 import { MAX_BOXES, SELECT_COLORS } from '../selectBox/newSelecttBox'
@@ -349,8 +349,7 @@ export default function SelectSet(props) {
         return currentSystem
     }
 
-    // 框选面板里的坐标一律是显示坐标（下身 width 48）
-    const getCurrentMatrixConfig = () => getDisplayPointConfig(sysType) || getDisplayPointConfig(getCurrentMatrixType())
+    const getCurrentMatrixConfig = () => systemPointConfig[sysType] || systemPointConfig[getCurrentMatrixType()]
 
     useEffect(() => {
         let cancelled = false
@@ -449,9 +448,8 @@ export default function SelectSet(props) {
         }
         setSysType(type)
 
-        const displayConfig = getDisplayPointConfig(type)
-        if (displayConfig) {
-            const { width, height } = displayConfig
+        if (systemPointConfig[type]) {
+            const { width, height } = systemPointConfig[type]
             setMatrixInfo({ width, height })
         }
         pageInfo.brushInstance.refreshCurrentMatrix?.(false)
@@ -460,7 +458,7 @@ export default function SelectSet(props) {
             const newBoxes = rangeArr.map((range, rangeIndex) => ({ range, rangeIndex }))
                 .filter(({ range }) => !range.matrixKey || range.matrixKey === type)
                 .map(({ range, rangeIndex }, idx) => {
-                    const matrix = range.matrixRect || colSelectMatrix('canvasThree', range, displayConfig)
+                    const matrix = range.matrixRect || colSelectMatrix('canvasThree', range, systemPointConfig[type])
                     if (!matrix) return null
                     return {
                         rangeIndex,
@@ -528,7 +526,7 @@ export default function SelectSet(props) {
     }
 
     const handleAddByInput = () => {
-        if (!getDisplayPointConfig(sysType)) {
+        if (!systemPointConfig[sysType]) {
             message.error(t('selectionUnsupportedView'))
             return
         }
