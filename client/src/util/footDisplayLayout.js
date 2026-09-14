@@ -18,7 +18,8 @@
  *     0–15 （上段）：原来有值的 8 列，每列变 3 列 → 24 列铺满，中间空带消失
  *     16–29（中段）：原来有值的 12 列，每列变 2 列 → 24 列铺满
  *     30–63（下段）：原来有值的 8 列，每列变 2 列 → 16 列，贴外侧（左腿贴左、右腿贴右），
- *                    中间空 8 列；两腿合起来有值的那块 16×34 → 32×68
+ *                    中间 8 列没有源点，填 0（画出来是底色蓝，不挖空，整张图是个完整长方形）；
+ *                    两腿合起来有值的那块 16×34 → 32×68
  *
  *   于是一个源点占的格子数：上段 3×2=6，中段 2×2=4，下段 2×2=4。
  *   下身显示尺寸 = 规范尺寸 × 2：合并 24×64 → 48×128，单腿 12×64 → 24×128，
@@ -165,16 +166,6 @@ export function visualColToCanonicalCol(visualRow, col, kindOrKey) {
   }
   const local = visualColToCanonicalColInLeg(band, col - FOOT_SINGLE_DISPLAY_WIDTH, 'right')
   return local < 0 ? -1 : ENDI_FOOT_SINGLE_WIDTH + local
-}
-
-/**
- * 这个显示格子是不是空的（下段中间那一块）——渲染时按它决定画不画
- * 跟里外侧倒不倒无关：倒的只是块内部的取值顺序，空的还是原来那几格
- */
-export function isFootVisualNullCell(visualRow, col, key) {
-  const kind = getFootLayoutKind(key)
-  if (!kind) return false
-  return visualColToCanonicalCol(visualRow, col, kind) < 0
 }
 
 /**

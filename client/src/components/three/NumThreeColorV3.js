@@ -7,7 +7,7 @@ import { getDisplayType, getPressureUnit, getSettingValue, getStatus, getSysType
 import { isMoreMatrix } from '../../assets/util/util';
 import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicColorValueScale, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
 import { getMatrixPartFromDisplayType } from '../../util/constant';
-import { expandFootVisualArr, isFootVisualNullCell } from '../../util/footDisplayLayout';
+import { expandFootVisualArr } from '../../util/footDisplayLayout';
 import { ADC_METRIC_MODE, formatPressureValue } from '../../util/pressureMetrics';
 
 function jet(min, max, x) {
@@ -96,9 +96,7 @@ const ENDI_JACKET_HEIGHT = 54;
 const ENDI_JACKET_HEAD_HEIGHT = 10;
 const ENDI_JACKET_HEAD_PADDING = 3;
 // 下身画的是显示矩阵：每个格子拆成多格，尺寸是规范的 2×2 倍（24×64→48×128、单腿 12×64→24×128）
-// 哪些格子是空的（上段/中段铺满、下段只占外侧 16 格）统一由 util/footDisplayLayout.js 说了算
-const ENDI_FOOT_WIDTH = 48;
-const ENDI_FOOT_HEIGHT = 128;
+// 下段两腿中间那块没有源点，但不挖空：照常按 0 画成底色蓝，整张图看着是个完整的长方形
 
 function isEndiJacketNullCell(index, width, height) {
   if (width !== ENDI_JACKET_WIDTH || height !== ENDI_JACKET_HEIGHT) return false;
@@ -108,18 +106,10 @@ function isEndiJacketNullCell(index, width, height) {
     && (col < ENDI_JACKET_HEAD_PADDING || col >= width - ENDI_JACKET_HEAD_PADDING);
 }
 
-function isEndiFootNullCell(index, width, height) {
-  if (width !== ENDI_FOOT_WIDTH || height !== ENDI_FOOT_HEIGHT) return false;
-  return isFootVisualNullCell(Math.floor(index / width), index % width, 'endi-foot');
-}
-
 function createEndiNullMask(systemType, displayType, width, height) {
   if (systemType !== 'endi') return null;
   if (displayType === 'jacket2D') {
     return Array.from({ length: width * height }, (_, index) => isEndiJacketNullCell(index, width, height));
-  }
-  if (displayType === 'foot2D') {
-    return Array.from({ length: width * height }, (_, index) => isEndiFootNullCell(index, width, height));
   }
   return null;
 }
