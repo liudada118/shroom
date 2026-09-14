@@ -5,23 +5,28 @@
  * 别的地方一律不要引它。
  *
  * 【背景】
- *   每条腿物理上是 6×32 通道矩阵，但窄段每行只接 4 个通道、宽段才接满 6 个，
- *   双线性 2× 插值成 12×64 之后，窄段内侧 4 列是空的 —— 合并成 24×64 后
- *   上面 16 行中间就有一条空带。
+ *   每条腿的规范矩阵是 12×64，但窄段每行只接 8 个通道、宽段才接满 12 个，
+ *   合并成 24×64 之后，上面 16 行中间就有一条空带。
  *
  * 【这里做什么】
  *   完全以「原来屏幕上显示的样子」为基准，把每个格子原样复制成多格，
  *   不重新插值、也不丢掉原来插值出来的列。
  *
  *   纵向：所有段一律一行变两行（下面那行复制上面那行），64 → 128。
- *   横向：分三段，每段的倍数不一样（规范行号）：
- *     0–15 （上段）：原来有值的 8 列，每列变 3 列 → 24 列铺满，中间空带消失
- *     16–29（中段）：原来有值的 12 列，每列变 2 列 → 24 列铺满
- *     30–63（下段）：原来有值的 8 列，每列变 2 列 → 16 列，贴外侧（左腿贴左、右腿贴右），
- *                    中间 8 列没有源点，填 0（画出来是底色蓝，不挖空，整张图是个完整长方形）；
- *                    两腿合起来有值的那块 16×34 → 32×68
+ *   横向：按规范行分三段，每段的倍数不一样：
+ *     0–15 （上段）：有值的 8 列，每列变 3 列 → 24 列铺满，中间空带消失
+ *     16–29（中段）：有值的 12 列，每列变 2 列 → 24 列铺满
+ *     30–63（下段）：有值的 8 列，每列变 2 列 → 16 列，贴外侧（左腿贴左、右腿贴右），
+ *                    中间 8 列没有源点，填 0（画出来是底色蓝，不挖空，整张图是个完整长方形）
  *
- *   于是一个源点占的格子数：上段 3×2=6，中段 2×2=4，下段 2×2=4。
+ *   【中段→下段的过渡】规范行 23–31（线序图上的 24–32 行）不按上面的等宽规则，
+ *   改成逐行给定的摆位（见 FOOT_ROW_STARTS）：每个源列的起始显示列由图决定，
+ *   源列之间的空档就近复制前一个源列的值，最后一个源列铺到该行 span 为止，
+ *   span 之后没有源点、填 0。这样每腿铺开宽度 24 → 22 → 21 → 20 → 18 → 16
+ *   一行行收窄，中间那条空带是慢慢开出来的，不再从 24 直接掉到 16。
+ *
+ *   于是一个源点占的格子数：等宽段上段 3×2=6、中段 2×2=4、下段 2×2=4，
+ *   过渡段每个源点宽度不等（按图）。
  *   下身显示尺寸 = 规范尺寸 × 2：合并 24×64 → 48×128，单腿 12×64 → 24×128，
  *   长宽比和原来一样。
  *
@@ -46,9 +51,9 @@ export const FOOT_SINGLE_DISPLAY_WIDTH = ENDI_FOOT_SINGLE_WIDTH * FOOT_DISPLAY_S
 export const FOOT_DISPLAY_HEIGHT = ENDI_FOOT_HEIGHT * FOOT_DISPLAY_SCALE_Y
 
 /**
- * 三段横向布局，end 是规范行的结束行（右开区间）
+ * 三段等宽布局，end 是规范行的结束行（右开区间）
  *   factor     —— 这一段每个源格子横向占几个显示格子
- *   sourceCols —— 这一段每条腿原来有值的源列数
+ *   sourceCols —— 这一段每条腿有值的源列数
  * factor × sourceCols 就是这一段在一条腿里铺开的宽度：
  *   上段 8×3=24 铺满、中段 12×2=24 铺满、下段 8×2=16 只占外侧 16 格，中间 8 格是空的
  */
@@ -57,6 +62,26 @@ const FOOT_BANDS = [
   { end: 30, factor: 2, sourceCols: 12 },
   { end: ENDI_FOOT_HEIGHT, factor: 2, sourceCols: 8 },
 ]
+
+/**
+ * 中段→下段的过渡段，按线序图逐行给定（键是规范行，0 基；线序图上的行号 = 键 + 1）
+ *   starts —— 每个源列在一条腿 24 个显示列里的起始位置（1 基，从外侧往内数）
+ *   span   —— 这一行一共铺多宽，span 之后没有源点（填 0，画出来是底色蓝）
+ * 源列按 starts 的顺序一一对应：starts[0] 是最外侧那个源列，往里依次排。
+ */
+const FOOT_ROW_STARTS = {
+  23: { starts: [1, 2, 4, 5, 7, 9, 11, 13, 15, 17, 19, 21], span: 22 },
+  24: { starts: [1, 2, 4, 5, 7, 9, 11, 13, 15, 17, 19, 21], span: 22 },
+  25: { starts: [1, 2, 4, 5, 7, 8, 10, 12, 14, 16, 18, 20], span: 21 },
+  26: { starts: [1, 2, 4, 5, 7, 8, 10, 12, 14, 16, 18, 20], span: 21 },
+  27: { starts: [1, 2, 4, 5, 7, 8, 10, 11, 13, 15, 17, 19], span: 20 },
+  28: { starts: [1, 2, 4, 5, 7, 8, 10, 11, 13, 15, 17, 19], span: 20 },
+  29: { starts: [1, 2, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17], span: 18 },
+  // 图上 31、32 行（规范行 30、31）是 1,3,5,7,9,11,13,15 八个点各占两格、正好铺到 16，
+  // 跟下段等宽规则算出来的一模一样，所以不用在这儿单列。
+  // （图上那行的第 9 个数 16 是最后一个点占的第二格；下段每条腿只有 8 个源列有数据，
+  //   源列 8–11 一直是空的，硬当成 9 个源列会把空列摆到最外侧、外侧两格变蓝。）
+}
 
 const COMBINED_KEYS = ['endi-foot', 'foot']
 const LEFT_KEYS = ['endi-leftFoot', 'leftFoot']
@@ -111,7 +136,7 @@ export function visualRowToCanonicalRow(row) {
   return Math.floor(row / FOOT_DISPLAY_SCALE_Y)
 }
 
-/** 这一规范行属于哪一段 */
+/** 这一规范行属于哪一等宽段 */
 export function getFootBand(canonicalRow) {
   for (const band of FOOT_BANDS) {
     if (canonicalRow < band.end) return band
@@ -120,34 +145,70 @@ export function getFootBand(canonicalRow) {
 }
 
 /**
- * 一条腿在这一段里的摆放：有值的那一块占哪几个显示格子、对应哪几个规范列
- * 左腿贴左（外侧在左），右腿贴右（外侧在右）—— 空的永远在中间
+ * 把「每个源列的起始位置」摊成「离外侧第几格 → 第几个源列」
+ * 源列之间的空档就近归给前一个源列（也就是往里复制到下一个源列开始为止）
  */
-function getLegBandGeometry(band, legKind) {
-  const span = band.factor * band.sourceCols
-  return {
-    span,
-    blockStart: legKind === 'right' ? FOOT_SINGLE_DISPLAY_WIDTH - span : 0,
-    sourceStart: legKind === 'right' ? ENDI_FOOT_SINGLE_WIDTH - band.sourceCols : 0,
+function buildLayoutFromStarts(starts, span) {
+  const sourceCols = starts.length
+  const colToIndex = new Array(span).fill(-1)
+  for (let i = 0; i < sourceCols; i++) {
+    const from = starts[i] - 1
+    const to = (i < sourceCols - 1 ? starts[i + 1] - 1 : span) - 1
+    for (let col = Math.max(0, from); col <= to && col < span; col++) {
+      colToIndex[col] = i
+    }
   }
+  return { span, sourceCols, colToIndex }
+}
+
+/** 等宽段：每个源列固定占 factor 格 */
+function buildLayoutFromBand(band) {
+  const span = band.factor * band.sourceCols
+  const colToIndex = new Array(span)
+  for (let col = 0; col < span; col++) {
+    colToIndex[col] = Math.floor(col / band.factor)
+  }
+  return { span, sourceCols: band.sourceCols, colToIndex }
+}
+
+/** 每一规范行的横向摆位，启动时算一次 */
+const FOOT_ROW_LAYOUTS = (() => {
+  const rows = new Array(ENDI_FOOT_HEIGHT)
+  for (let row = 0; row < ENDI_FOOT_HEIGHT; row++) {
+    const explicit = FOOT_ROW_STARTS[row]
+    rows[row] = explicit
+      ? buildLayoutFromStarts(explicit.starts, explicit.span)
+      : buildLayoutFromBand(getFootBand(row))
+  }
+  return rows
+})()
+
+/** 这一规范行的横向摆位 */
+export function getFootRowLayout(canonicalRow) {
+  return FOOT_ROW_LAYOUTS[canonicalRow] || FOOT_ROW_LAYOUTS[ENDI_FOOT_HEIGHT - 1]
 }
 
 /**
  * 单条腿本地坐标：显示列 → 规范列，落在空白处返回 -1
  *
- * 里外侧是反的（按内侧亮外侧、按外侧亮内侧），所以这里把每条腿块内部的取值顺序
- * 倒过来。只倒顺序：有值的那一块占哪几个显示格子（blockStart / span）一点不动，
- * 两条腿在屏幕上的左右位置、中间的空带都还在原地。
+ * 先把显示列换算成「离外侧第几格」（左腿外侧在左、右腿外侧在右），
+ * 这样两条腿用同一张摆位表，有值的那块自然贴外侧、空的永远在中间。
  *
- * @param {object} band getFootBand 的返回值
+ * 里外侧是反的（按内侧亮外侧、按外侧亮内侧），所以取值顺序倒过来：
+ * 左腿最外侧取规范列的最大号、右腿最外侧取最小号 —— 和等宽段原来的算法逐格一致。
+ *
+ * @param {object} layout getFootRowLayout 的返回值
  * @param {number} col 显示列（0–23）
  * @param {string} legKind 'left' / 'right'
  */
-function visualColToCanonicalColInLeg(band, col, legKind) {
-  const { span, blockStart, sourceStart } = getLegBandGeometry(band, legKind)
-  if (col < blockStart || col >= blockStart + span) return -1
-  const sourceIndex = Math.floor((col - blockStart) / band.factor)
-  return sourceStart + (band.sourceCols - 1 - sourceIndex)
+function visualColToCanonicalColInLeg(layout, col, legKind) {
+  const offsetFromOuter = legKind === 'right' ? FOOT_SINGLE_DISPLAY_WIDTH - 1 - col : col
+  if (offsetFromOuter < 0 || offsetFromOuter >= layout.span) return -1
+  const sourceIndex = layout.colToIndex[offsetFromOuter]
+  if (sourceIndex < 0) return -1
+  return legKind === 'right'
+    ? ENDI_FOOT_SINGLE_WIDTH - layout.sourceCols + sourceIndex
+    : layout.sourceCols - 1 - sourceIndex
 }
 
 /**
@@ -159,12 +220,12 @@ function visualColToCanonicalColInLeg(band, col, legKind) {
 export function visualColToCanonicalCol(visualRow, col, kindOrKey) {
   const kind = normalizeFootKind(kindOrKey)
   if (!kind) return -1
-  const band = getFootBand(visualRowToCanonicalRow(visualRow))
-  if (kind !== 'combined') return visualColToCanonicalColInLeg(band, col, kind)
+  const layout = getFootRowLayout(visualRowToCanonicalRow(visualRow))
+  if (kind !== 'combined') return visualColToCanonicalColInLeg(layout, col, kind)
   if (col < FOOT_SINGLE_DISPLAY_WIDTH) {
-    return visualColToCanonicalColInLeg(band, col, 'left')
+    return visualColToCanonicalColInLeg(layout, col, 'left')
   }
-  const local = visualColToCanonicalColInLeg(band, col - FOOT_SINGLE_DISPLAY_WIDTH, 'right')
+  const local = visualColToCanonicalColInLeg(layout, col - FOOT_SINGLE_DISPLAY_WIDTH, 'right')
   return local < 0 ? -1 : ENDI_FOOT_SINGLE_WIDTH + local
 }
 
