@@ -21,8 +21,8 @@ try {
     pressureFormulaFile: 'pressureFormula_calibration_v2746_seat_v2752_backrest.js',
     pressureFormulaProfile: 'calibration_v2746_seat_v2752_backrest',
   })
-  assert.strictEqual(migrated.pressureFormulaFile, 'point_pressure_calibration.js')
-  assert.strictEqual(migrated.pressureFormulaProfile, 'point_pressure_calibration')
+  assert.strictEqual(migrated.pressureFormulaFile, 'adc-matrix-to-pressure-filter30-v2.7.63.js')
+  assert.strictEqual(migrated.pressureFormulaProfile, 'adc-matrix-to-pressure-filter30-v2.7.63')
 
   const saved = config.savePressureConfig(pressurePath, {
     backValueMultiplier: 2,

@@ -6,11 +6,12 @@ const {
   REQUIRED_CALIBRATION_EXPORTS,
 } = require('../../util/calibrationPressureAdapter')
 
+const ACTIVE_PRESSURE_CALIBRATION_FILE = 'adc-matrix-to-pressure-filter30-v2.7.63.js'
 const POINT_PRESSURE_CALIBRATION_FILE = 'point_pressure_calibration.js'
 const LEGACY_POINT_PRESSURE_CALIBRATION_FILE = 'pressureFormula_calibration_v2746_seat_v2752_backrest.js'
 const DEFAULT_PRESSURE_CONFIG = {
-  pressureFormulaFile: POINT_PRESSURE_CALIBRATION_FILE,
-  pressureFormulaProfile: 'point_pressure_calibration',
+  pressureFormulaFile: ACTIVE_PRESSURE_CALIBRATION_FILE,
+  pressureFormulaProfile: 'adc-matrix-to-pressure-filter30-v2.7.63',
 }
 
 let configCache = null
@@ -29,11 +30,15 @@ function getFormulaDir() {
 
 function normalizeFormulaFile(fileName) {
   const baseName = path.basename(String(fileName || DEFAULT_PRESSURE_CONFIG.pressureFormulaFile))
-  if (baseName.toLowerCase() === LEGACY_POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()) {
-    return POINT_PRESSURE_CALIBRATION_FILE
+  const normalizedName = baseName.toLowerCase()
+  if (
+    normalizedName === POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()
+    || normalizedName === LEGACY_POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()
+  ) {
+    return ACTIVE_PRESSURE_CALIBRATION_FILE
   }
   const isSupportedFormula = /^pressureFormula.*\.js$/i.test(baseName)
-    || baseName.toLowerCase() === POINT_PRESSURE_CALIBRATION_FILE
+    || normalizedName === ACTIVE_PRESSURE_CALIBRATION_FILE.toLowerCase()
   return isSupportedFormula ? baseName : DEFAULT_PRESSURE_CONFIG.pressureFormulaFile
 }
 
@@ -95,7 +100,7 @@ function listPressureFormulaFiles() {
     return fs.readdirSync(getFormulaDir())
       .filter((file) => (
         /^pressureFormula.*\.js$/i.test(file)
-        || file.toLowerCase() === POINT_PRESSURE_CALIBRATION_FILE
+        || file.toLowerCase() === ACTIVE_PRESSURE_CALIBRATION_FILE.toLowerCase()
       ))
       .sort()
   } catch {

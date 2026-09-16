@@ -52,9 +52,10 @@ function run() {
 
   const thresholdMetrics = sdk.computePressureMetrics([29, 30, 31], 'endi-sit')
   assert.strictEqual(thresholdMetrics.calibrationInputMinAdc, 30)
-  assert.strictEqual(thresholdMetrics.calibrationValidCount, 2)
-  assert.strictEqual(thresholdMetrics.activeCount, 2)
+  assert.strictEqual(thresholdMetrics.calibrationValidCount, 1)
+  assert.strictEqual(thresholdMetrics.activeCount, 1)
   assert.strictEqual(thresholdMetrics.pressureValues[0], 0)
+  assert.strictEqual(thresholdMetrics.pressureValues[1], 0)
 
   const largePointMetrics = sdk.computePressureMetrics(new Array(301).fill(120), 'endi-sit')
   assert.strictEqual(largePointMetrics.pressureCalibrationBranch, 'human')

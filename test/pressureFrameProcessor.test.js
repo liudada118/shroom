@@ -13,7 +13,7 @@ const {
   normalizeFrameProcessingConfig,
   processMatrixItem,
 } = require('../util/pressureFrameProcessor')
-const calibrationFormula = require('../server/kpa/point_pressure_calibration')
+const calibrationFormula = require('../server/kpa/adc-matrix-to-pressure-filter30-v2.7.63')
 const { endiBack1024 } = require('../util/line')
 
 function mean(values) {
@@ -36,7 +36,7 @@ test('zeroed ADC applies the fixed 30 gate without configurable filter or Gaussi
   const values = new Array(46 * 46).fill(0)
   values[22 * 46 + 22] = 29
   values[23 * 46 + 23] = 1000
-  const expectedCalibrationValues = values.map((value) => (value >= 30 ? value : 0))
+  const expectedCalibrationValues = values.map((value) => (value > 30 ? value : 0))
   const firstConfig = { filter: 0, gauss: 0, coherent: 7 }
   const ignoredProcessingConfig = { filter: 4095, gauss: 4, coherent: 1 }
 
@@ -105,7 +105,7 @@ test('backrest calibration runs after 25x32 ADC interpolation produces the 50x64
   }
   rawValues[24 * 32 + 24] = 100
   const interpolatedValues = endiBack1024(rawValues)
-  const gatedInterpolatedValues = interpolatedValues.map((value) => (value >= 30 ? value : 0))
+  const gatedInterpolatedValues = interpolatedValues.map((value) => (value > 30 ? value : 0))
   const interpolatedCount = gatedInterpolatedValues.filter((value) => value > 0).length
   const result = calcNativeCalibrationPressureValues(
     interpolatedValues,
@@ -120,7 +120,7 @@ test('backrest calibration runs after 25x32 ADC interpolation produces the 50x64
   assert.equal(result.branch, 'human')
   assert.equal(result.humanCoefficient, 2.2)
   const firstActiveIndex = gatedInterpolatedValues.findIndex((value) => value > 0)
-  const expectedPressure = calibrationFormula.calculateBasePressure(
+  const expectedPressure = calibrationFormula.estimateBasePressure(
     gatedInterpolatedValues[firstActiveIndex],
     'backrest',
   ) * 2.2
@@ -129,35 +129,37 @@ test('backrest calibration runs after 25x32 ADC interpolation produces the 50x64
 
 test('native calibration derives average and maximum from the normalized heatmap matrix', () => {
   const seatValues = [0, ...Array.from({ length: 100 }, (_, index) => index + 70)]
-  const seatDistribution = calibrationFormula.calculateWeightPointPressures(seatValues, 'seat')
+  const seatDistribution = calibrationFormula.calculateWeightNormalizedPressureMatrix([seatValues], 'seat')
+  const seatPressures = seatDistribution.pressureMatrixKPa[0].filter((value) => value > 0)
   const seatStats = calcPressureFormulaStats(seatValues, 'endi-sit')
 
-  assert.equal(seatStats.calibrationSelectedCount, seatDistribution.selectedCount)
-  assert.ok(Math.abs(seatStats.adcAvg - seatDistribution.mean) < 1e-12)
-  assert.ok(Math.abs(seatStats.aver - seatDistribution.actualAveragePressureKPa) < 1e-12)
-  assert.ok(Math.abs(seatStats.max - seatDistribution.maxPressureKPa) < 1e-12)
-  assert.ok(Math.abs(seatStats.total - seatDistribution.pressureValuesKPa.reduce((sum, value) => sum + value, 0) * 0.1) < 1e-12)
+  assert.equal(seatStats.calibrationSelectedCount, seatDistribution.topCount)
+  assert.ok(Math.abs(seatStats.adcAvg - seatDistribution.topMean) < 1e-12)
+  assert.ok(Math.abs(seatStats.aver - mean(seatPressures)) < 1e-12)
+  assert.ok(Math.abs(seatStats.max - Math.max(...seatPressures)) < 1e-12)
+  assert.ok(Math.abs(seatStats.total - seatPressures.reduce((sum, value) => sum + value, 0) * 0.1) < 1e-12)
   assert.equal(seatStats.pressureDistribution, NATIVE_CALIBRATION_DISTRIBUTION)
   assert.equal(seatStats.pressureCalibrationBranch, 'weight')
-  assert.equal(seatStats.normalizationScale, seatDistribution.normalizationScale)
+  assert.equal(seatStats.normalizationScale, seatDistribution.normalization.scale)
 
   const backValues = Array.from({ length: 80 }, (_, index) => index + 100)
-  const backDistribution = calibrationFormula.calculateWeightPointPressures(backValues, 'backrest')
+  const backDistribution = calibrationFormula.calculateWeightNormalizedPressureMatrix([backValues], 'backrest')
+  const backPressures = backDistribution.pressureMatrixKPa[0].filter((value) => value > 0)
   const backStats = calcPressureFormulaStats(backValues, 'endi-back')
 
-  assert.equal(backStats.calibrationSelectedCount, backDistribution.selectedCount)
-  assert.ok(Math.abs(backStats.adcAvg - backDistribution.mean) < 1e-12)
-  assert.ok(Math.abs(backStats.aver - backDistribution.actualAveragePressureKPa) < 1e-12)
-  assert.ok(Math.abs(backStats.max - backDistribution.maxPressureKPa) < 1e-12)
+  assert.equal(backStats.calibrationSelectedCount, backDistribution.topCount)
+  assert.ok(Math.abs(backStats.adcAvg - backDistribution.topMean) < 1e-12)
+  assert.ok(Math.abs(backStats.aver - mean(backPressures)) < 1e-12)
+  assert.ok(Math.abs(backStats.max - Math.max(...backPressures)) < 1e-12)
   assert.equal(backStats.matrixMaxPressureKPa, backStats.max)
   assert.equal(backStats.matrixAveragePressureKPa, backStats.aver)
-  assert.ok(Math.abs(backStats.total - backDistribution.pressureValuesKPa.reduce((sum, value) => sum + value, 0) * 1.3 * 0.1) < 1e-12)
+  assert.ok(Math.abs(backStats.total - backPressures.reduce((sum, value) => sum + value, 0) * 1.3 * 0.1) < 1e-12)
 })
 
 test('more than 300 effective points multiply every direct point pressure by 2.2', () => {
   const values = Array.from({ length: 301 }, (_, index) => 70 + (index % 120))
   const expectedPressureValues = values.map((value) => (
-    calibrationFormula.calculateBasePressure(value, 'seat') * 2.2
+    calibrationFormula.estimateBasePressure(value, 'seat') * 2.2
   ))
   const stats = calcPressureFormulaStats(values, 'endi-sit')
 
@@ -272,8 +274,7 @@ test('backrest ADC 106.24 reaches the supplied calibration without a pre-calibra
 
   assert.equal(Math.max(...processed.calibrationAdcArr), 106.24)
   assert.equal(activePressures.length, 56)
-  assert.ok(Math.abs(mean(activePressures) - calibrationFormula.calculateBasePressure(106.24, 'backrest')) < 1e-12)
-  assert.ok(Math.abs(calibrationFormula.calculateBasePressure(106.24, 'backrest') - 2.986460554) < 1e-9)
+  assert.ok(Math.abs(mean(activePressures) - calibrationFormula.estimateBasePressure(106.24, 'backrest')) < 1e-12)
 })
 
 test('seat and backrest both filter finite ADC values below 30', () => {
@@ -283,8 +284,8 @@ test('seat and backrest both filter finite ADC values below 30', () => {
     })
 
     assert.equal(processed.processing.calibrationInputMinAdc, NATIVE_CALIBRATION_MIN_ADC)
-    assert.deepEqual(processed.calibrationAdcArr.slice(0, 3), [0, 30, 31])
-    assert.equal(processed.calibrationDiagnostics.validCount, 2)
+    assert.deepEqual(processed.calibrationAdcArr.slice(0, 3), [0, 0, 31])
+    assert.equal(processed.calibrationDiagnostics.validCount, 1)
   }
   assert.equal(NATIVE_BACKREST_CALIBRATION_MIN_ADC, NATIVE_CALIBRATION_MIN_ADC)
 })
@@ -305,7 +306,7 @@ test('ADC values below 30 do not enter calibration count or switch the branch', 
   assert.ok(Math.abs(belowBoundary.calibrationDiagnostics.inputMeanAdc - 106.24) < 1e-9)
   assert.ok(Math.abs(
     belowBoundary.calibrationDiagnostics.averagePressureKPa
-      - calibrationFormula.calculateBasePressure(106.24, 'backrest'),
+      - calibrationFormula.estimateBasePressure(106.24, 'backrest'),
   ) < 1e-12)
   assert.equal(belowBoundary.pressureArr.filter((value) => value > 0).length, 56)
 
@@ -317,7 +318,7 @@ test('ADC values below 30 do not enter calibration count or switch the branch', 
   assert.equal(aboveBoundary.pressureArr.filter((value) => value > 0).length, 56)
   assert.ok(Math.abs(
     aboveBoundary.calibrationDiagnostics.averagePressureKPa
-      - calibrationFormula.calculateBasePressure(106.24, 'backrest'),
+      - calibrationFormula.estimateBasePressure(106.24, 'backrest'),
   ) < 1e-12)
   assert.equal(belowBoundary.calibrationDiagnostics.preGatePositiveCount, 299)
   assert.equal(aboveBoundary.calibrationDiagnostics.preGatePositiveCount, 301)

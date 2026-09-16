@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-08-30
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-09-02
 
 ## 1. 项目概述
 
@@ -50,7 +50,8 @@ shroom/
 │   ├── services/
 │   │   └── DataService.js      # 数据采集/回放/导出（~201 行）
 │   ├── kpa/
-│   │   └── point_pressure_calibration.js # 座椅 V2.7.46 / 靠背 V2.7.52 原生标定公式
+│   │   ├── adc-matrix-to-pressure-filter30-v2.7.63.js # 当前坐垫/靠背整帧压强标定公式
+│   │   └── point_pressure_calibration.js # 旧 V2.7.46 / V2.7.52 标定文件，仅保留兼容
 │   ├── equipMap.js             # 设备映射配置
 │   └── HttpResult.js           # HTTP 响应封装
 ├── util/                       # 通用工具模块
@@ -364,12 +365,12 @@ graph TD
 28. **压强/压力统一计量模式**
     - `equipStore.pressureMetricMode` 是全局显示口径，值为 `pressure`（压强，kPa）或 `force`（压力，N），默认沿用原压力总和曲线的 `force` 口径，并持久化到 `localStorage.pressureMetricMode`。
     - `util/pressureFrameProcessor.js` 是实时、采集、回放与导出的标准数据入口。Endi 1024 点先在线序映射阶段完成插值：坐垫 `23×23 → 46×46`，靠背 `25×32 → 50×64`；其后每个传感器帧按“方向修正 → 置零 → 整理二维 ADC 矩阵 → 标定文件整帧换算 → N 换算”生成 `arr`、`calibrationAdcArr`、`calibrationValidMask`、`pressureArr` 和 `forceArr`。
-    - 后端直接加载 `server/kpa/point_pressure_calibration.js`，不增加或修改标定规则。处理器对坐垫直接调用 `adcMatrixToPressureMatrix(seatAdcMatrix, "seat", 2.2)`，对靠背直接调用 `adcMatrixToPressureMatrix(backrestAdcMatrix, "backrest", 2.2)`；砝码段归一化、真人段系数和逐点结果全部由标定文件内部决定，应用只校验并展开其返回矩阵。
+    - 后端直接加载 `server/kpa/adc-matrix-to-pressure-filter30-v2.7.63.js`，不修改标定文件。处理器按 `{ sensorType: "seat" | "backrest", humanCoefficient: 2.2 }` 调用其整帧 API；文件内部完成 `ADC<=30` 过滤、砝码段归一化、真人段系数和逐点矩阵计算，应用只校验并展开结果。
     - 串口矩阵在线序转换和 Endi 插值后保持 ADC 原值，靠背不再应用专属乘数。`pressure_config.json` 仅保留公式文件及 profile，旧 `backValueMultiplier` 在后端、前端和 SDK 配置归一化时被丢弃，不能影响实时、采集、回放或导出结果。
-    - 置零后执行固定的原生标定门槛：座椅和靠背均将有限且 `ADC>=30` 的点作为标定有效点，低于 30 的值置为 0；不执行用户可调阈值、空间高斯或跨帧平滑。`filter/gauss/coherent` 仍只作为兼容配置保存，帧元数据写入 `filterApplied=false`、`gaussianApplied=false`、`gaussianSigma=0`、`temporal=false`。
-    - 单点压力按 `压力(N) = 压强(kPa) × 单点面积(cm²) × 0.1` 换算。热力图、2D 数字、平均值、最大值、点数、面积、正态分布、框选和总压力都从同一份 `pressureArr/forceArr` 聚合；平均压强为 `SUM(Pi)/COUNT(ADC_i>=30)`，最大压强为最终逐点矩阵 `MAX(Pi)`，点数和面积仍按 `Pi>0` 统计。“压力总和”固定为 `forceArr` 求和后的真实压力 `N`。
+    - 置零后按 V2.7.63 规则执行固定门槛：座椅和靠背均仅将有限且 `ADC>30` 的点作为标定有效点，`ADC<=30` 置为 0；不执行用户可调阈值、空间高斯或跨帧平滑。`filter/gauss/coherent` 仍只作为兼容配置保存，帧元数据写入 `filterApplied=false`、`gaussianApplied=false`、`gaussianSigma=0`、`temporal=false`。
+    - 单点压力按 `压力(N) = 压强(kPa) × 单点面积(cm²) × 0.1` 换算。热力图、2D 数字、平均值、最大值、点数、面积、正态分布、框选和总压力都从同一份 `pressureArr/forceArr` 聚合；平均压强为 `SUM(Pi)/COUNT(ADC_i>30)`，最大压强为最终逐点矩阵 `MAX(Pi)`，点数和面积仍按 `Pi>0` 统计。“压力总和”固定为 `forceArr` 求和后的真实压力 `N`。
     - `pressureMetrics.js` 进一步集中维护 `getPressureMetricDisplay()` 展示定义，统一返回当前口径的单位、曲线名、坐标轴标题、统计项文案、趋势数组字段和数据前缀；左侧图表、数据对比页和 COP 报告不再各自硬编码 `N/kPa` 与“压力/压强”文案。
-    - `DataService.sendData()` 只处理一次帧对象，并把同一个结果用于 WebSocket 广播和 `storageData()` 入库。当前处理水印为 `backend-zero-native-v15-matrix-calibration-min30`，ADC 预处理口径为 `zero-baseline-native-min30`，分配标识为 `native-adc-matrix-to-pressure-matrix-v2746-v2752`；水印变化时优先用 `calibrationAdcArr`，其次用 `rawAdcArr` 重算标准矩阵。
+    - `DataService.sendData()` 只处理一次帧对象，并把同一个结果用于 WebSocket 广播和 `storageData()` 入库。当前处理水印为 `backend-zero-native-v16-matrix-calibration-v2763`，ADC 预处理口径为 `zero-baseline-native-filter30-v2763`，分配标识为 `native-adc-matrix-to-pressure-filter30-v2763`；水印变化时优先用 `calibrationAdcArr`，其次用 `rawAdcArr` 重算标准矩阵。
     - 左侧曲线旁的交换按钮只修改全局显示模式；`useMatrixData`、3D 点图、2D 数字图、框选统计、数据对比和 COP 报告直接消费后端 `pressureArr/forceArr`，前端不再执行阈值、高斯、压力公式或时序平滑。Three.js 仍可做不改变传感器格点语义的几何插值。
     - 开始采集时 `/startCol` 仍把 `filter/gauss/coherent` 保存为 `collectionProcessingConfig` 并锁定，采集结束后解锁。该行为用于兼容旧界面和历史配置，三个参数不再改变标准矩阵计算结果。
     - 2D 数字矩阵的贴图图集统一按 `显示值 × 10` 选择格子，压强 kPa 与压力 N 都以 1 位小数展示；V3/V4 使用 64x64 图集，避免高压强小数索引被 16x16 图集截断。
@@ -588,6 +589,7 @@ graph TD
 | 2026-08-30 | 热力图统计单一数据源 | `pressureArr` 作为热力图、平均压强、最大压强、导出和 COP 的唯一来源；平均分母由同帧 `calibrationValidMask` 提供，最大值直接取最终矩阵 |
 | 2026-08-30 | 标定文件直接加载 | 默认公式路径统一为 `server/kpa/point_pressure_calibration.js`；旧文件名在配置归一化时自动迁移，不再保留同内容的旧文件副本 |
 | 2026-08-30 | 原生标定 ADC 门槛 | 插值与置零后统一将 `ADC<30` 置零，`ADC>=30` 才进入标定文件、有效点计数与 300 点分支判断 |
+| 2026-09-02 | V2.7.63 标定切换 | 默认启用 `adc-matrix-to-pressure-filter30-v2.7.63.js`，坐垫和靠背使用对象参数进入同一整帧 API；`ADC<=30` 过滤、分段曲线、砝码归一化和真人系数均由新文件定义 |
 
 ## 9. 更新日志
 
@@ -757,6 +759,7 @@ graph TD
 | 2026-08-30 | 修复缺陷 | 修复热力图与统计二次计算分叉，实时、框选、历史导出与 COP 均从最终 `pressureArr/forceArr` 和 `calibrationValidMask` 聚合 |
 | 2026-08-30 | 配置变更 | 后端、前端与 SDK 默认直接使用 `point_pressure_calibration.js`，并将旧标定文件名自动映射到新文件名 |
 | 2026-08-30 | 配置变更 | 原生坐垫与靠背标定调用前统一应用固定 `ADC>=30` 门槛，并升级标准帧水印以重算旧矩阵 |
+| 2026-09-02 | 配置变更 | 后端、前端和 SDK 默认标定切换为 V2.7.63，适配对象参数接口与 `ADC<=30` 内置过滤，并升级 V16 标准帧水印 |
 
 *变更类型：`新增功能` / `优化重构` / `修复缺陷` / `配置变更` / `文档更新` / `依赖升级` / `初始化`*
 
@@ -1882,3 +1885,14 @@ graph TD
 - Processing watermark `backend-zero-native-v15-matrix-calibration-min30`, preprocessing identifier `zero-baseline-native-min30`, and distribution identifier `native-adc-matrix-to-pressure-matrix-v2746-v2752` invalidate prior matrices that did not use the fixed ADC 30 gate and complete frame API.
 - The direct-file integration was previously verified with calibration-file parity, 33 focused regression tests, and the complete SDK checks. The subsequent fixed ADC 30 gate was not test-run at the user's request; its assertions and documentation were updated, and the production frontend bundle was regenerated successfully during commit preparation.
 | 2026-08-30 | Refactor | Load `point_pressure_calibration.js` directly and consume `adcMatrixToPressureMatrix()` for seat and backrest, with legacy filename migration |
+
+## 2026-09-02 V2.7.63 matrix calibration
+
+- The active formula is `server/kpa/adc-matrix-to-pressure-filter30-v2.7.63.js`; persisted and fallback configuration names the profile `adc-matrix-to-pressure-filter30-v2.7.63`. Previous native calibration filenames migrate to this active file.
+- The adapter invokes the supplied structured matrix API with `{ sensorType, humanCoefficient: 2.2 }`. Seat and backrest selection is therefore explicit and cannot fall back to the seat profile because of a positional argument mismatch.
+- The formula owns the effective-point rule: non-finite values and `ADC<=30` become zero. The application mirrors this threshold only when materializing `calibrationAdcArr` and `calibrationValidMask`, so statistics and the formula branch use the same set of points.
+- Weight frames (`N<=300`) use the sensor-specific ranked ADC mean and normalized point responses. Human frames (`N>300`) use each point's V2.7.63 base pressure multiplied by `2.2`. Both base curves clamp at `27 kPa`.
+- `pressureArr` remains the single source for heatmaps, 2D values, average/maximum pressure, reports and exports. Browser fallback and standalone SDK profiles mirror the V2.7.63 linear segments for historical frames that do not carry canonical matrices.
+- Processing watermark `backend-zero-native-v16-matrix-calibration-v2763`, preprocessing identifier `zero-baseline-native-filter30-v2763`, and distribution identifier `native-adc-matrix-to-pressure-filter30-v2763` force stale matrices to be recalculated.
+- Windows packaging completed with Electron Builder on 2026-09-02. The unpacked application contains the V2.7.63 formula in `app.asar`, and its packaged `resources/db/pressure_config.json` selects the same file and profile.
+| 2026-09-02 | Configuration | Switch the complete runtime, browser fallback and SDK calibration contract to `adc-matrix-to-pressure-filter30-v2.7.63.js` |

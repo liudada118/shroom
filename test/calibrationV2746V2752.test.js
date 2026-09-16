@@ -14,17 +14,17 @@ function mean(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-test('legacy calibration filename migrates to point_pressure_calibration.js', () => {
+test('legacy calibration filename migrates to adc-matrix-to-pressure-filter30-v2.7.63.js', () => {
   const config = normalizePressureConfig({
     pressureFormulaFile: 'pressureFormula_calibration_v2746_seat_v2752_backrest.js',
     pressureFormulaProfile: 'calibration_v2746_seat_v2752_backrest',
   })
 
   assert.deepEqual(config, {
-    pressureFormulaFile: 'point_pressure_calibration.js',
-    pressureFormulaProfile: 'point_pressure_calibration',
+    pressureFormulaFile: 'adc-matrix-to-pressure-filter30-v2.7.63.js',
+    pressureFormulaProfile: 'adc-matrix-to-pressure-filter30-v2.7.63',
   })
-  assert.ok(listPressureFormulaFiles().includes('point_pressure_calibration.js'))
+  assert.ok(listPressureFormulaFiles().includes('adc-matrix-to-pressure-filter30-v2.7.63.js'))
 })
 
 test('seat V2.7.46 and backrest V2.7.52 preserve calibration nodes and clamps', () => {

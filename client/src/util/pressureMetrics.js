@@ -2,8 +2,11 @@
 // Keep estimatePressure/estimateMaxPressure constants synchronized with that file.
 import { distributeWeightPointPressures } from './weightPointPressureNormalization.js'
 
-const DEFAULT_PRESSURE_FORMULA_PROFILE = 'point_pressure_calibration'
-const LEGACY_NATIVE_CALIBRATION_PROFILE = 'calibration_v2746_seat_v2752_backrest'
+const DEFAULT_PRESSURE_FORMULA_PROFILE = 'adc-matrix-to-pressure-filter30-v2.7.63'
+const LEGACY_NATIVE_CALIBRATION_PROFILES = new Set([
+  'point_pressure_calibration',
+  'calibration_v2746_seat_v2752_backrest',
+])
 const LEGACY_PRESSURE_FORMULA_PROFILE = 'V2.7.38中英文logo'
 const NATIVE_CALIBRATION_MIN_ADC = 30
 const NATIVE_HUMAN_VALID_POINT_THRESHOLD = 300
@@ -13,32 +16,53 @@ const NATIVE_SEAT_PROFILE = {
   topStartRank: 5,
   topEndRank: 70,
   lowMode: 'zero-origin',
-  leftSlope: 0.029128888206340246,
-  highPressureClampKPa: 18.5,
+  leftSlope: 0.042221396731054977,
+  highPressureClampKPa: 27,
   segments: [
-    { lo: 85.82545211786852, hi: 121.5036992910407, a: 2.5, b: 0.02514685021658099, c: 0.0017825667387957197, d: -1.4670793073122023e-5 },
-    { lo: 121.5036992910407, hi: 139.641626683983, a: 5, b: 0.09631956352570038, c: 0.0027903094592002, d: -2.7652576622304387e-5 },
-    { lo: 139.641626683983, hi: 151.33637260464792, a: 7.5, b: 0.17024862445085923, c: 0.005306109727072367, d: -0.00013549326385175618 },
-    { lo: 151.33637260464792, hi: 160.67119079377784, a: 10, b: 0.23876277957790853, c: 0.004456199006891006, d: -0.000143977733492508 },
-    { lo: 160.67119079377784, hi: 168.94354707035922, a: 12.5, b: 0.2843202406683852, c: 0.0183281389088602, d: -0.0019541445263075077 },
-    { lo: 168.94354707035922, hi: 189.17, a: 15, b: 0.1863766889442589, c: -9.649901079908721e-5, d: -0.00014867500346334297 },
+    { lo: 53.84, hi: 61.33375, a: 2.2732, b: 0.06000000000000003 },
+    { lo: 61.33375, hi: 68.8275, a: 2.7228250000000003, b: 0.06382641966890193 },
+    { lo: 68.8275, hi: 76.32125, a: 3.201124232393834, b: 0.06682641966890183 },
+    { lo: 76.32125, hi: 83.815, a: 3.7019047147876676, b: 0.06982641966890177 },
+    { lo: 83.815, hi: 91.30875, a: 4.2251664471815, b: 0.07282641966890172 },
+    { lo: 91.30875, hi: 98.8025, a: 4.770909429575332, b: 0.07582641966890165 },
+    { lo: 98.8025, hi: 106.29625, a: 5.339133661969163, b: 0.07882641966890166 },
+    { lo: 106.29625, hi: 113.79, a: 5.929839144362996, b: 0.12623356167051475 },
+    { lo: 113.79, hi: 121.28375, a: 6.875801897131416, b: 0.1292335616705143 },
+    { lo: 121.28375, hi: 128.7775, a: 7.844245899899832, b: 0.15661037138419087 },
+    { lo: 128.7775, hi: 136.27125, a: 9.017844870460113, b: 0.15961037138419065 },
+    { lo: 136.27125, hi: 143.765, a: 10.213925091020393, b: 0.3384472701670871 },
+    { lo: 143.765, hi: 151.25875, a: 12.750164321834994, b: 0.3414472701670874 },
+    { lo: 151.25875, hi: 158.7525, a: 15.308884802649617, b: 0.3444472701670879 },
+    { lo: 158.7525, hi: 166.24625, a: 17.890086533464224, b: 0.4839608686196772 },
+    { lo: 166.24625, hi: 173.74, a: 21.516768292682933, b: 0.7317073170731694 },
   ],
 }
 
 const NATIVE_BACKREST_PROFILE = {
   topStartRank: 1,
   topEndRank: 46,
-  lowMode: 'first-segment',
-  leftSlope: 0.061300639659,
-  highPressureClampKPa: 18.5,
+  lowMode: 'zero-origin',
+  leftSlope: 0.033439088248883412,
+  highPressureClampKPa: 27,
   segments: [
-    { lo: 98.304347826, hi: 139.086956522, a: 2.5, b: 0.061300639659, c: 0, d: 0 },
-    { lo: 139.086956522, hi: 158.195652174, a: 5, b: 0.130830489192, c: 0, d: 0 },
-    { lo: 158.195652174, hi: 171.282608696, a: 7.5, b: 0.191029900332, c: 0, d: 0 },
-    { lo: 171.282608696, hi: 180.086956522, a: 10, b: 0.283950617284, c: 0, d: 0 },
-    { lo: 180.086956522, hi: 188.217391304, a: 12.5, b: 0.307486631016, c: 0, d: 0 },
-    { lo: 188.217391304, hi: 194.47826087, a: 15, b: 0.399305555556, c: 0, d: 0 },
-    { lo: 194.47826087, hi: 196.982608696, a: 17.5, b: 0.399305555556, c: 0, d: 0 },
+    { lo: 64.93, hi: 77.99578947368421, a: 2.171199999999999, b: 0.04000000000000015 },
+    { lo: 77.99578947368421, hi: 107.9942105263158, a: 2.693831578947369, b: 0.07152099258507517 },
+    { lo: 107.9942105263158, hi: 116.5842105263158, a: 4.839348428616596, b: 0.07452099258507523 },
+    { lo: 116.5842105263158, hi: 128.00263157894736, a: 5.479483754922392, b: 0.14953903662226653 },
+    { lo: 128.00263157894736, hi: 135.86894736842106, a: 7.186983438880322, b: 0.1525390366222664 },
+    { lo: 135.86894736842106, hi: 142.54315789473685, a: 8.386903671173163, b: 0.15553903662226615 },
+    { lo: 142.54315789473685, hi: 148.77052631578945, a: 9.42500394665051, b: 0.15853903662226654 },
+    { lo: 148.77052631578945, hi: 154.32736842105265, a: 10.412284936816114, b: 0.2465713823659119 },
+    { lo: 154.32736842105265, hi: 159.07789473684213, a: 11.782443176299966, b: 0.2495713823659125 },
+    { lo: 159.07789473684213, hi: 162.78105263157894, a: 12.96803859589719, b: 0.39822322147755757 },
+    { lo: 162.78105263157894, hi: 165.38210526315788, a: 14.442722062379335, b: 0.4012232214775568 },
+    { lo: 165.38210526315788, hi: 170.20105263157893, a: 15.486324778454113, b: 0.40422322147755524 },
+    { lo: 170.20105263157893, hi: 173.70842105263156, a: 17.434255207848057, b: 0.44139613105542036 },
+    { lo: 173.70842105263156, hi: 175.1836842105263, a: 18.982394059086648, b: 0.5020594652919378 },
+    { lo: 175.1836842105263, hi: 178.69052631578947, a: 19.72306389130418, b: 0.5050594652919369 },
+    { lo: 178.69052631578947, hi: 180.56894736842105, a: 21.49422768985164, b: 0.5080594652919352 },
+    { lo: 180.56894736842105, hi: 181.79736842105265, a: 22.448577285444756, b: 0.5110594652919322 },
+    { lo: 181.79736842105265, hi: 189.43, a: 23.076373491756016, b: 0.514059465291931 },
   ],
 }
 
@@ -132,7 +156,7 @@ function getActiveSensorMeta(sensor) {
 
 export function setPressureFormulaProfile(profile) {
   const configuredProfile = String(profile || '').trim()
-  const nextProfile = configuredProfile === LEGACY_NATIVE_CALIBRATION_PROFILE
+  const nextProfile = LEGACY_NATIVE_CALIBRATION_PROFILES.has(configuredProfile)
     ? DEFAULT_PRESSURE_FORMULA_PROFILE
     : configuredProfile
   if (nextProfile !== DEFAULT_PRESSURE_FORMULA_PROFILE && !PRESSURE_FORMULA_PROFILES[nextProfile]) {
@@ -160,12 +184,15 @@ function getNativeProfile(sensor) {
 
 function evaluateNativeSegment(adc, segment) {
   const dx = adc - segment.lo
-  return segment.a + segment.b * dx + segment.c * dx * dx + segment.d * dx * dx * dx
+  return segment.a
+    + segment.b * dx
+    + (Number(segment.c) || 0) * dx * dx
+    + (Number(segment.d) || 0) * dx * dx * dx
 }
 
 function calculateNativeBasePressure(adc, sensor) {
   const value = Number(adc)
-  if (!Number.isFinite(value) || value <= 0) return null
+  if (!Number.isFinite(value) || value <= NATIVE_CALIBRATION_MIN_ADC) return null
   const profile = getNativeProfile(sensor)
   const first = profile.segments[0]
   const last = profile.segments[profile.segments.length - 1]
@@ -196,7 +223,7 @@ function getNativeCalibrationAverage(positiveValues, sensor) {
 function getNativePressureDistribution(values, sensor) {
   const minAdc = NATIVE_CALIBRATION_MIN_ADC
   const filteredValues = values.map((value) => (
-    Number.isFinite(value) && value > 0 && (minAdc === 0 || value >= minAdc) ? value : 0
+    Number.isFinite(value) && value > 0 && (minAdc === 0 || value > minAdc) ? value : 0
   ))
   const validValues = filteredValues.filter((value) => value > 0)
   if (!validValues.length) {

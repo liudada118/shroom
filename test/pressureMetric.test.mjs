@@ -31,11 +31,11 @@ import {
 } from '../client/src/util/pressureDisplayMatrix.js'
 
 const require = createRequire(import.meta.url)
-const calibrationFormula = require('../server/kpa/point_pressure_calibration.js')
+const calibrationFormula = require('../server/kpa/adc-matrix-to-pressure-filter30-v2.7.63.js')
 const { calculateCalibrationPressureDistribution } = require('../util/calibrationPressureAdapter.js')
 const { normalizePressureConfig } = require('../server/services/PressureConfig.js')
 const { calcPressureFormulaStats } = require('../util/pressureFrameProcessor.js')
-const CALIBRATION_FORMULA_PROFILE = 'point_pressure_calibration'
+const CALIBRATION_FORMULA_PROFILE = 'adc-matrix-to-pressure-filter30-v2.7.63'
 
 setPressureFormulaProfile(CALIBRATION_FORMULA_PROFILE)
 
@@ -45,7 +45,7 @@ function mean(values) {
 
 function getExpectedPointValues(values, sensor) {
   const gatedValues = values.map((value) => (
-    Number.isFinite(Number(value)) && Number(value) >= 30 ? Number(value) : 0
+    Number.isFinite(Number(value)) && Number(value) > 30 ? Number(value) : 0
   ))
   return calculateCalibrationPressureDistribution(calibrationFormula, gatedValues, sensor).pressureMatrixKPa
 }
@@ -97,7 +97,7 @@ test('browser fallback applies weight normalization through 300 points and 2.2 a
   const boundaryValues = Array.from({ length: 300 }, (_, index) => 70 + (index % 120))
   const boundaryPointValues = getPressureMetricPointValues(boundaryValues, 'endi-sit', PRESSURE_METRIC_MODE)
   const boundaryExpectedValues = getExpectedPointValues(boundaryValues, 'seat')
-  const boundaryBasePressure = calibrationFormula.calculateBasePressure(boundaryValues[0], 'seat')
+  const boundaryBasePressure = calibrationFormula.estimateBasePressure(boundaryValues[0], 'seat')
   assert.ok(Math.abs(boundaryPointValues[0] - boundaryExpectedValues[0]) < 1e-9)
   assert.ok(Math.abs(mean(boundaryPointValues) - mean(boundaryExpectedValues)) < 1e-9)
 
@@ -112,7 +112,7 @@ test('browser fallback applies weight normalization through 300 points and 2.2 a
 test('browser native fallback filters ADC values below 30 before branch counting', () => {
   const seatValues = getPressureMetricPointValues([29, 30, 31], 'endi-sit', PRESSURE_METRIC_MODE)
   assert.equal(seatValues[0], 0)
-  assert.ok(seatValues[1] > 0)
+  assert.equal(seatValues[1], 0)
   assert.ok(seatValues[2] > 0)
 
   const buildValues = (noiseCount) => [
@@ -202,7 +202,7 @@ test('left-side totals use the heatmap matrix while average uses the ADC valid-p
   const pressureSummary = summarizePressureDisplayMatrix(pressureMatrix, matrixKey, PRESSURE_METRIC_MODE)
   const forceSummary = summarizePressureDisplayMatrix(forceMatrix, matrixKey, FORCE_METRIC_MODE)
 
-  assert.deepEqual(pressureMatrix, [0.9, 0])
+  assert.deepEqual(pressureMatrix, [1.3, 0])
   assert.deepEqual(forceMatrix, [0.1, 0])
   assert.equal(pressureSummary.activeCount, pressureMatrix.filter((value) => value > 0).length)
   assert.equal(forceSummary.activeCount, forceMatrix.filter((value) => value > 0).length)

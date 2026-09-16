@@ -5,11 +5,12 @@ const path = require('path')
 
 const AES_KEY_TEXT = 'JIANXINGZHEPSVMC'
 
+const ACTIVE_PRESSURE_CALIBRATION_FILE = 'adc-matrix-to-pressure-filter30-v2.7.63.js'
 const POINT_PRESSURE_CALIBRATION_FILE = 'point_pressure_calibration.js'
 const LEGACY_POINT_PRESSURE_CALIBRATION_FILE = 'pressureFormula_calibration_v2746_seat_v2752_backrest.js'
 const DEFAULT_PRESSURE_CONFIG = {
-  pressureFormulaFile: POINT_PRESSURE_CALIBRATION_FILE,
-  pressureFormulaProfile: 'point_pressure_calibration',
+  pressureFormulaFile: ACTIVE_PRESSURE_CALIBRATION_FILE,
+  pressureFormulaProfile: 'adc-matrix-to-pressure-filter30-v2.7.63',
 }
 
 function stringToHex(str) {
@@ -95,11 +96,15 @@ function writeEncryptedSystemConfig(configPath, config, options = {}) {
 
 function normalizeFormulaFile(fileName, fallback = DEFAULT_PRESSURE_CONFIG.pressureFormulaFile) {
   const baseName = path.basename(String(fileName || fallback))
-  if (baseName.toLowerCase() === LEGACY_POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()) {
-    return POINT_PRESSURE_CALIBRATION_FILE
+  const normalizedName = baseName.toLowerCase()
+  if (
+    normalizedName === POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()
+    || normalizedName === LEGACY_POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()
+  ) {
+    return ACTIVE_PRESSURE_CALIBRATION_FILE
   }
   const isSupportedFormula = /^pressureFormula.*\.js$/i.test(baseName)
-    || baseName.toLowerCase() === POINT_PRESSURE_CALIBRATION_FILE
+    || normalizedName === ACTIVE_PRESSURE_CALIBRATION_FILE.toLowerCase()
   return isSupportedFormula ? baseName : fallback
 }
 
@@ -136,7 +141,7 @@ function listPressureFormulaFiles(formulaDir) {
     return fs.readdirSync(formulaDir)
       .filter((file) => (
         /^pressureFormula.*\.js$/i.test(file)
-        || file.toLowerCase() === POINT_PRESSURE_CALIBRATION_FILE
+        || file.toLowerCase() === ACTIVE_PRESSURE_CALIBRATION_FILE.toLowerCase()
       ))
       .sort()
   } catch {
@@ -152,13 +157,9 @@ function loadPressureFormula(formulaDir, formulaFile) {
   const hasLegacyAverageFormula = typeof moduleValue.estimatePressure === 'function'
     && typeof moduleValue.estimateMaxPressure === 'function'
   const hasPointFormula = typeof moduleValue.master === 'function'
-  const hasNativeCalibrationFormula = typeof moduleValue.calculateBasePressure === 'function'
-    && typeof moduleValue.getCalibrationInput === 'function'
-    && typeof moduleValue.calculateWeightPointPressures === 'function'
-    && typeof moduleValue.calculatePressureMetrics === 'function'
-    && typeof moduleValue.adcMatrixToPressureMatrix === 'function'
+  const hasNativeCalibrationFormula = typeof moduleValue.adcMatrixToPressureMatrix === 'function'
   if (!hasLegacyAverageFormula && !hasPointFormula && !hasNativeCalibrationFormula) {
-    throw new Error(`Pressure formula file must export calculateBasePressure/getCalibrationInput/calculateWeightPointPressures/calculatePressureMetrics/adcMatrixToPressureMatrix, master, or estimatePressure/estimateMaxPressure: ${formulaFile}`)
+    throw new Error(`Pressure formula file must export adcMatrixToPressureMatrix, master, or estimatePressure/estimateMaxPressure: ${formulaFile}`)
   }
   return moduleValue
 }

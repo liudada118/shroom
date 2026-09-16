@@ -3,8 +3,8 @@ import { localAddress } from './constant'
 import { setPressureFormulaProfile } from './pressureMetrics'
 
 const DEFAULT_PRESSURE_CONFIG = {
-  pressureFormulaFile: 'point_pressure_calibration.js',
-  pressureFormulaProfile: 'point_pressure_calibration',
+  pressureFormulaFile: 'adc-matrix-to-pressure-filter30-v2.7.63.js',
+  pressureFormulaProfile: 'adc-matrix-to-pressure-filter30-v2.7.63',
 }
 
 let pressureConfigCache = DEFAULT_PRESSURE_CONFIG

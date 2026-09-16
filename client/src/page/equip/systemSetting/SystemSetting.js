@@ -92,8 +92,8 @@ const fallbackConfig = {
 };
 
 const fallbackPressureConfig = {
-    pressureFormulaFile: 'point_pressure_calibration.js',
-    pressureFormulaProfile: 'point_pressure_calibration',
+    pressureFormulaFile: 'adc-matrix-to-pressure-filter30-v2.7.63.js',
+    pressureFormulaProfile: 'adc-matrix-to-pressure-filter30-v2.7.63',
 };
 
 const CheckboxGroup = Checkbox.Group;

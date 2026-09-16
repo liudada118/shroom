@@ -5,9 +5,9 @@ const {
   calculateCalibrationPressureDistribution,
 } = require('./calibrationPressureAdapter')
 
-const PROCESSING_VERSION = 'backend-zero-native-v15-matrix-calibration-min30'
-const ADC_PREPROCESSING_MODE = 'zero-baseline-native-min30'
-const NATIVE_CALIBRATION_DISTRIBUTION = 'native-adc-matrix-to-pressure-matrix-v2746-v2752'
+const PROCESSING_VERSION = 'backend-zero-native-v16-matrix-calibration-v2763'
+const ADC_PREPROCESSING_MODE = 'zero-baseline-native-filter30-v2763'
+const NATIVE_CALIBRATION_DISTRIBUTION = 'native-adc-matrix-to-pressure-filter30-v2763'
 const CURVE_PRESSURE_DISTRIBUTION = 'curve-response-mean-normalized-v1'
 const POINT_PRESSURE_DISTRIBUTION = 'point-formula-v1'
 const DISPLAY_DIGITS = 1
@@ -132,7 +132,9 @@ function getPressureSensor(key) {
 
 function getCalibrationInputMinAdc(key, formula = loadPressureFormula()) {
   if (!isNativeCalibrationFormula(formula)) return 0
-  return getPressureSensor(key) ? NATIVE_CALIBRATION_MIN_ADC : 0
+  if (!getPressureSensor(key)) return 0
+  const formulaThreshold = Number(formula.ADC_FILTER_THRESHOLD)
+  return Number.isFinite(formulaThreshold) ? formulaThreshold : NATIVE_CALIBRATION_MIN_ADC
 }
 
 function applyCalibrationInputGate(values, key, formula = loadPressureFormula()) {
@@ -140,7 +142,7 @@ function applyCalibrationInputGate(values, key, formula = loadPressureFormula())
   return (Array.isArray(values) ? values : []).map((value) => {
     const numeric = Number(value)
     if (!Number.isFinite(numeric) || numeric <= 0) return 0
-    return minAdc > 0 && numeric < minAdc ? 0 : numeric
+    return minAdc > 0 && numeric <= minAdc ? 0 : numeric
   })
 }
 
@@ -482,7 +484,7 @@ function buildProcessingMetadata(config, key) {
     pressureDistribution: getPressureDistributionMode(),
     calibrationInputGrid: 'display-matrix-post-interpolation',
     calibrationInputMinAdc: getCalibrationInputMinAdc(key),
-    calibrationMethod: 'formula-weight-normalization-or-human-x2.2-gt300',
+    calibrationMethod: 'v2763-filter30-weight-normalization-or-human-x2.2-gt300',
     statisticsSource: 'pressureArr+calibrationValidMask',
   }
 }

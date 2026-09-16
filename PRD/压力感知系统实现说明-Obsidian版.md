@@ -479,7 +479,7 @@
 
 - 压强标定
 	- 当前公式
-		- 文件 point_pressure_calibration.js
+		- 文件 adc-matrix-to-pressure-filter30-v2.7.63.js
 		- 座椅 V2.7.46
 		- 靠背 V2.7.52
 	- 标定接口
