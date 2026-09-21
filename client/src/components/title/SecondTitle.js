@@ -18,6 +18,10 @@ import { getPressureMetricDisplay, PRESSURE_METRIC_MODE } from '../../util/press
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
+// 可视化调节面板里输入框的步长和小数位（滑条仍按各项自己的 step 走）
+const INPUT_STEP = 0.01
+const INPUT_PRECISION = 2
+
 function SecondTitle(props) {
     const { t, i18n } = props;
 
@@ -456,7 +460,9 @@ function SecondTitle(props) {
                                         <InputNumber
                                             min={getSliderMin(a)}
                                             max={getSliderMax(a)}
-                                            step={getSliderStep(a)}
+                                            // 输入框的加减箭头统一一次 0.01，显示也只留两位小数（滑条的步长不动）
+                                            step={INPUT_STEP}
+                                            precision={INPUT_PRECISION}
                                             style={{ margin: '0 16px' }}
                                             className='setItemInput'
                                             value={getSliderValue(a)}

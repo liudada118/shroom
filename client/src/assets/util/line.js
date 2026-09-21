@@ -1,11 +1,13 @@
 import {
+  DYNAMIC_RANGE_PERCENTILE,
   GAMMA,
   MIN_RANGE_MAX,
   PRESSURE_GAMMA,
   PRESSURE_MIN_RANGE_MAX,
   PRESSURE_RANGE_MIN,
+  RANGE_DECAY_ALPHA,
+  RANGE_MAX_OVERSHOOT,
   RANGE_MIN,
-  SMOOTH_ALPHA,
 } from './colorMap_dynamic_gamma';
 
 const DEFAULT_DYNAMIC_COLOR_SCOPE = 'default';
@@ -52,12 +54,55 @@ function updateScopedFrameMax(frameMax, scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
   const value = Number(frameMax);
   const safeFrameMax = Number.isFinite(value) ? value : 0;
   const currentMax = getScopedDynamicRangeMax(key);
+  // 上升不平滑：量程永远不低于本帧目标值，所以最重的那一片一定是红的。
+  // 下降才平滑，但最多只让量程挂在目标值的 RANGE_MAX_OVERSHOOT 倍，
+  // 否则一次重压过后量程会长时间下不来，画面整片发冷。
+  const decayed = RANGE_DECAY_ALPHA * safeFrameMax + (1 - RANGE_DECAY_ALPHA) * currentMax;
   const nextMax = Math.max(
-    SMOOTH_ALPHA * safeFrameMax + (1 - SMOOTH_ALPHA) * currentMax,
+    safeFrameMax,
+    Math.min(decayed, safeFrameMax * RANGE_MAX_OVERSHOOT),
     getScopedMinRangeMax(key)
   );
   dynamicColorRangeMap.set(key, nextMax);
   return nextMax;
+}
+
+// ── 帧内百分位（不排序，直方图数下来，O(n)）──────────────────────────────
+// 0.1 一格，4096 格覆盖 0~409.5（压强 kPa 和 ADC 0~255 都够用）
+const PERCENTILE_BIN_STEP = 0.1;
+const PERCENTILE_BIN_COUNT = 4096;
+const percentileBins = new Int32Array(PERCENTILE_BIN_COUNT);
+
+/**
+ * 取帧内第 percentile 分位的值，用来定动态量程。
+ * 直接用绝对最大值的话，单个噪声尖峰就能把量程顶飞、整片画面发蓝。
+ * 只统计 > 0 的点（<=0 按无接触处理）。全是 0 就返回 0。
+ */
+function getFramePercentile(values, percentile) {
+  percentileBins.fill(0);
+  let count = 0;
+  let rawMax = 0;
+  for (let i = 0; i < values.length; i++) {
+    const value = Number(values[i]);
+    if (!Number.isFinite(value) || value <= 0) continue;
+    count++;
+    if (value > rawMax) rawMax = value;
+    const bin = Math.min(PERCENTILE_BIN_COUNT - 1, Math.round(value / PERCENTILE_BIN_STEP));
+    percentileBins[bin]++;
+  }
+  if (!count) return 0;
+  // 从最高一格往下数，丢掉最高的 (1 - percentile) 那部分点
+  let drop = Math.floor(count * (1 - percentile));
+  for (let bin = PERCENTILE_BIN_COUNT - 1; bin >= 0; bin--) {
+    const binCount = percentileBins[bin];
+    if (!binCount) continue;
+    if (drop < binCount) {
+      // 落在最后一格说明量程超出了直方图范围，退回真实最大值
+      return bin === PERCENTILE_BIN_COUNT - 1 ? rawMax : Math.min(rawMax, bin * PERCENTILE_BIN_STEP);
+    }
+    drop -= binCount;
+  }
+  return rawMax;
 }
 
 function quantizeValue(value, step = 1) {
@@ -184,11 +229,7 @@ export function gaussBlur_return(scl, w, h, r, step = 1) {
 export function beginDynamicColorFrame(values = [], fallbackMax = 0, scope = DEFAULT_DYNAMIC_COLOR_SCOPE) {
   if (!dynamicGammaEnabled) return null;
   const arr = Array.isArray(values) || ArrayBuffer.isView(values) ? values : [];
-  let frameMax = 0;
-  for (let i = 0; i < arr.length; i++) {
-    const value = Number(arr[i]);
-    if (Number.isFinite(value) && value > frameMax) frameMax = value;
-  }
+  const frameMax = getFramePercentile(arr, DYNAMIC_RANGE_PERCENTILE);
   const fallback = Number(fallbackMax);
   return updateScopedFrameMax(frameMax > 0 ? frameMax : (Number.isFinite(fallback) ? fallback : 0), scope);
 }

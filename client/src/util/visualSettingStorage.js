@@ -45,6 +45,10 @@ function safeParse(value, fallback) {
 function normalizeSettingValue(value = {}, fallback = {}, maxValue = {}) {
   const normalizedMax = normalizeVisualSettingMax(maxValue)
   const result = {
+    // 后端 optimalObj 里没有 autoColor（只有 gauss/color/filter/height/coherent），
+    // 直接拿它当兜底会让 autoColor 变成 undefined，开关看着就是「默认关闭」。
+    // 先垫一层默认值，再让 fallback / 本地存档往上盖。
+    ...VISUAL_SETTING_DEFAULTS,
     ...fallback,
   }
   const legacyColor = Number(value.color ?? value.color3D ?? value.color2D ?? fallback.color)
