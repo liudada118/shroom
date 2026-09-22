@@ -356,6 +356,18 @@ function convertPhysicalPressureMatrix(key, adcValues) {
 
   const stats = formula.calculateDummyValuesPressure(validValues, config.sensorType)
   if (!stats || stats.mode === 'none') return new Array(adcValues.length).fill(0)
+
+  // v2.10.27 起公式自己按输入顺序返回逐点 kPa，直接用它的值。
+  // 老公式（v2.10.4）只给 avg/max，才退回下面两条反推路径。
+  if (Array.isArray(stats.pressureValuesKpa)
+    && stats.pressureValuesKpa.length === validIndexes.length) {
+    const pointResult = new Array(adcValues.length).fill(0)
+    validIndexes.forEach((index, order) => {
+      pointResult[index] = Math.max(0, Number(stats.pressureValuesKpa[order]) || 0)
+    })
+    return pointResult
+  }
+
   if (stats.mode === 'top50') {
     return buildTopAveragePointPressures(adcValues, validIndexes, stats)
   }

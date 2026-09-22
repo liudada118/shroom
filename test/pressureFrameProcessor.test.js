@@ -26,7 +26,10 @@ const {
 } = require('../util/db')
 const { interpolateEndiWearSource } = require('../util/line')
 const { buildDirectedFrame } = require('../server/services/DataService')
-const formula = require('../server/kpa/dummyPressure_v2.10.4')
+const { loadPressureConfig, loadDummyPressureFormula } = require('../server/services/PressureConfig')
+
+const pressureConfig = loadPressureConfig()
+const formula = loadDummyPressureFormula()
 
 function run(db, sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -51,7 +54,6 @@ function assertOneDecimal(values) {
 
 test('dummy formula self-check passes', () => {
   const result = formula.runSelfCheck()
-  assert.equal(formula.VERSION, '2.10.4')
   assert.equal(result.pass, true)
   assert.equal(result.passed, result.total)
 })
@@ -82,8 +84,11 @@ test('all dummy sensor matrices produce canonical pressure and force arrays', ()
   Object.entries(expectedLengths).forEach(([key, expectedLength]) => {
     const item = processed[key]
     assert.equal(item.processing.version, PROCESSING_VERSION)
-    assert.equal(item.processing.formulaFile, 'dummyPressure_v2.10.4.js')
-    assert.equal(item.processing.formulaProfile, 'dummy-v2.10.4')
+    assert.equal(item.processing.formulaFile, pressureConfig.dummyPressureFormulaFile)
+    assert.equal(
+      item.processing.formulaProfile,
+      `dummy-v${pressureConfig.dummyPressureFormulaFile.match(/v(\d+(?:\.\d+)*)/i)[1]}`,
+    )
     assert.equal(item.pressureArr.length, expectedLength)
     assert.equal(item.forceArr.length, expectedLength)
     assertOneDecimal(item.pressureArr)
@@ -117,18 +122,22 @@ test('combined lower-body matrix keeps canonical left/right sources', () => {
 })
 
 test('backend threshold follows the converted display metric', () => {
-  const source = { 'endi-leftHand': { arr: new Array(18 * 2).fill(20) } }
+  // 阈值和期望值都从当前公式推出来，换公式不用改这个用例
+  const adcValue = Number(formula.DUMMY_VALID_ADC_THRESHOLD) + 20
+  const source = { 'endi-leftHand': { arr: new Array(18 * 2).fill(adcValue) } }
   const unfiltered = processFrame(source, {
     filter: 0,
     filterMode: PRESSURE_FILTER_MODE,
     gauss: 0,
     coherent: 1,
   })['endi-leftHand']
-  assert.ok(unfiltered.pressureArr.some((value) => value === 0.4))
-  assert.ok(unfiltered.forceArr.some((value) => value === 0.1))
+  const index = unfiltered.pressureArr.findIndex((value) => value > 0)
+  assert.notEqual(index, -1)
+  const samplePressure = unfiltered.pressureArr[index]
+  assert.ok(Math.abs(unfiltered.forceArr[index] - samplePressure * FORCE_PER_KPA) <= 0.1)
 
   const pressureFiltered = processFrame(source, {
-    filter: 0.5,
+    filter: samplePressure + 1,
     filterMode: PRESSURE_FILTER_MODE,
     gauss: 0,
     coherent: 1,
@@ -140,7 +149,7 @@ test('backend threshold follows the converted display metric', () => {
   assert.equal(pressureFiltered.processing.filterStage, 'converted-display-matrix')
 
   const pressureRetained = processFrame(source, {
-    filter: 0.3,
+    filter: samplePressure / 2,
     filterMode: PRESSURE_FILTER_MODE,
     gauss: 0,
     coherent: 1,
@@ -148,7 +157,7 @@ test('backend threshold follows the converted display metric', () => {
   assert.ok(pressureRetained.pressureArr.some((value) => value > 0))
 
   const forceFiltered = processFrame(source, {
-    filter: 0.1,
+    filter: samplePressure * FORCE_PER_KPA + 1,
     filterMode: FORCE_FILTER_MODE,
     gauss: 0,
     coherent: 1,
@@ -157,7 +166,7 @@ test('backend threshold follows the converted display metric', () => {
   assert.ok(forceFiltered.forceArr.every((value) => value === 0))
 
   const adcFiltered = processFrame(source, {
-    filter: 30,
+    filter: adcValue + 1,
     filterMode: ADC_FILTER_MODE,
     gauss: 0,
     coherent: 1,
