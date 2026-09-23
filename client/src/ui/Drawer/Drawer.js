@@ -12,7 +12,7 @@ function getNextDrawerZIndex(baseZIndex) {
 }
 
 const Drawer = React.memo(function Drawer(props) {
-    const { show, title, setShow, children, asideClose, zindex, close, direction = 'right' } = props
+    const { show, title, setShow, children, asideClose, zindex, close, direction = 'right', className = '' } = props
     const baseZIndex = zindex ? zindex * 100 : 100
     const [activeZIndex, setActiveZIndex] = useState(baseZIndex)
 
@@ -29,10 +29,10 @@ const Drawer = React.memo(function Drawer(props) {
     }, [show, baseZIndex])
 
     const drawerNode = (
-        <div className='drawerContent' onMouseDown={bringToFront} style={{
+        <div className={`drawerContent ${className}`} onMouseDown={bringToFront} style={{
 
-            right: direction == 'left' ? 'unset' : show ? 0 : 'calc(-18% - 5px)',
-            left: direction == 'right' ? 'unset' : show ? 0 : 'calc(-18% - 5px)',
+            right: direction == 'left' ? 'unset' : show ? 0 : 'calc(-1 * var(--drawer-width, 18%) - 5px)',
+            left: direction == 'right' ? 'unset' : show ? 0 : 'calc(-1 * var(--drawer-width, 18%) - 5px)',
 
 
             zIndex: activeZIndex

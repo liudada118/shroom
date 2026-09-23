@@ -112,7 +112,7 @@ export function summarizePressureDisplayMatrix(values, matrixKey, metricMode, va
 }
 
 export function buildPressureDisplayNormalDistribution(values, metricMode) {
-  const meta = getPressureMetricMeta(metricMode)
+  const meta = metricMode === 'adc' ? { mode: 'adc', unit: 'ADC' } : getPressureMetricMeta(metricMode)
   const activeValues = Array.from(values || [], toFiniteNonNegative).filter((value) => value > 0)
   const count = activeValues.length
   const average = count

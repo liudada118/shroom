@@ -30,6 +30,7 @@ import NumThresContrast from '../../components/contrast/NumThresContrast'
 import { isMoreMatrix } from '../../assets/util/util'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useMatrixData } from '../../hooks/useMatrixData'
+import { useThreeDisplayData } from '../../hooks/useThreeDisplayData'
 import NumThres from '../../components/three/NumThres'
 import { buildFallbackParams } from '../../util/request'
 import { formatSelectionName } from '../../util/selectionName'
@@ -104,6 +105,7 @@ function Test() {
         changeDataDirection,
         changeWsLocalData,
     } = useMatrixData()
+    const threeDisplayDataRef = useThreeDisplayData(renderedMetricDataRef)
 
     const [playBack, setPlayBack] = useState(false)
     const wsLocalDataRef = useRef({ data: new Array(4096).fill(0), flag: false })
@@ -392,23 +394,23 @@ function Test() {
 
     // ─── 3D 组件映射 ─────────────────────────────────────
     const threeComponentObj = {
-        bigHand: <Canvas metricData={renderedMetricDataRef} ref={threeRef} sitnum1={64} sitnum2={64} />,
-        bed: <Bed sitData={disPlayDataRef} metricData={renderedMetricDataRef} changeViewProp={handleChangeViewProp} type={'bed'} ref={threeRef} sitnum1={32} sitnum2={32} />,
-        hand: <Canvas metricData={renderedMetricDataRef} changeViewProp={handleChangeViewProp} ref={threeRef} sitnum1={32} sitnum2={32} positionInfo={[-40, 0, -60]} />,
-        foot: <Canvas metricData={renderedMetricDataRef} ref={threeRef} sitnum1={32} sitnum2={32} positionInfo={[-40, 0, -60]} />,
+        bigHand: <Canvas metricData={threeDisplayDataRef} ref={threeRef} sitnum1={64} sitnum2={64} />,
+        bed: <Bed sitData={disPlayDataRef} metricData={threeDisplayDataRef} changeViewProp={handleChangeViewProp} type={'bed'} ref={threeRef} sitnum1={32} sitnum2={32} />,
+        hand: <Canvas metricData={threeDisplayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef} sitnum1={32} sitnum2={32} positionInfo={[-40, 0, -60]} />,
+        foot: <Canvas metricData={threeDisplayDataRef} ref={threeRef} sitnum1={32} sitnum2={32} positionInfo={[-40, 0, -60]} />,
         car: <Endi
             sitData={disPlayDataRef}
-            metricData={renderedMetricDataRef}
+            metricData={threeDisplayDataRef}
             changeViewProp={handleChangeViewProp}
             ref={threeRef}
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 4, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
         />,
-        endi: <Endi1 key="endi" sitData={disPlayDataRef} metricData={renderedMetricDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
+        endi: <Endi1 key="endi" sitData={disPlayDataRef} metricData={threeDisplayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
             backConfig={{ sitnum1: 64, sitnum2: 50, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 46, sitnum2: 46, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
         />,
-        carY: <Endi1 key="carY" sitData={disPlayDataRef} metricData={renderedMetricDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
+        carY: <Endi1 key="carY" sitData={disPlayDataRef} metricData={threeDisplayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             backPointConfig={{ position: [2.5000, -11.0000, -1.0000], rotation: [-1.8326, 0.0000, 0.0000], scale: [0.0015, 0.0030, 0.0026], pointSize: 1.00 }}

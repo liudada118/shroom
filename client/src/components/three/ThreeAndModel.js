@@ -14,11 +14,11 @@ import {
 } from "../../util/util";
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
-import { jetWhite3, lineInterp } from "../../assets/util/line";
+import { jetWhite3, lineInterp, beginDynamicColorFrame, setDynamicGammaColorEnabled } from "../../assets/util/line";
 import { useEquipStore } from "../../store/equipStore";
 import { Scheduler } from "../../scheduler/scheduler";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
-import { getColorLimit, getDisplayColorValue } from "../../util/displayMapping";
+import { getThreeDisplaySettings } from "../../util/threeDisplayProcessing";
 import { disableRightMouseControl } from "../../util/threeInteraction";
 
 // function rotate90(arr, height, width) {
@@ -670,8 +670,11 @@ const Canvas =
             // valuej1 = 500 
             // value1 =2
 
-            const { color, height = 1 } = useEquipStore.getState().settingValue
-            const colorLimit = getColorLimit(color)
+            const store = useEquipStore.getState()
+            const { colorLimit, height, autoColor, mode } = getThreeDisplaySettings(store)
+            const colorScope = `bed-${mode}`
+            setDynamicGammaColorEnabled(Boolean(autoColor), colorScope)
+            beginDynamicColorFrame(props.metricData?.current?.[store.pressureMetricMode]?.bed, colorLimit, colorScope)
             const numParticles = AMOUNTX * AMOUNTY;
             const positions = new Float32Array(numParticles * 3);
             const colors = new Float32Array(numParticles * 3);
@@ -713,7 +716,7 @@ const Canvas =
                     positions[k + 2] = ix * SEPARATION - (AMOUNTX * SEPARATION) / 2; // z
 
                     let rgb
-                    rgb = jetWhite3(0, colorLimit, getDisplayColorValue(smoothBig[l], colorLimit));
+                    rgb = jetWhite3(0, colorLimit, smoothBig[l]);
 
                     colors[k] = rgb[0] / 255;
                     colors[k + 1] = rgb[1] / 255;

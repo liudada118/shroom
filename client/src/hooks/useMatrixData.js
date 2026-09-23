@@ -422,6 +422,7 @@ export function useMatrixData() {
 
     const pressureSelectResult = mapSelectionToMatrix(renderedMetrics[PRESSURE_METRIC_MODE], selectResult, width)
     const forceSelectResult = mapSelectionToMatrix(renderedMetrics[FORCE_METRIC_MODE], selectResult, width)
+    const adcSelectResult = mapSelectionToMatrix(renderedMetrics.adc, selectResult, width)
     const validMaskSelectResult = mapSelectionToMatrix(renderedMetrics.validMask, selectResult, width)
     const activeSelectResult = normalizePressureMetricMode(useEquipStore.getState().pressureMetricMode) === PRESSURE_METRIC_MODE
       ? pressureSelectResult
@@ -467,6 +468,7 @@ export function useMatrixData() {
     setTrendValue(data[key].forceArr, roundMetricValue(forceSummary.total), options)
 
     Object.assign(data[key].data, renderedStats.stats)
+    appendAdcChartStats(data[key], adcSelectResult.default, width, height, firstBox?.matrix, options)
 
     // carY 类型压力转换
     if (matrixKey === 'carY-back' || matrixKey === 'carY-sit') {
@@ -547,11 +549,33 @@ export function useMatrixData() {
         setTrendValue(boxStat.areaArr, boxActiveSummary.activeCount, options)
         setTrendValue(boxStat.pressureAreaArr, boxPressureSummary.activeCount, options)
         setTrendValue(boxStat.forceAreaArr, boxForceSummary.activeCount, options)
+        appendAdcChartStats(boxStat, adcSelectResult.boxes[i]?.data, width, height, box.matrix, options)
       }
     } else {
       // 无框选时清空 boxStats
       data[key].boxStats = []
     }
+  }
+
+  function appendAdcChartStats(target, values, width, height, box, options) {
+    const source = Array.from(values || [], value => Number.isFinite(value) && value > 0 ? value : 0)
+    const positive = source.filter(value => value > 0)
+    const total = positive.reduce((sum, value) => sum + value, 0)
+    Object.assign(target.data, {
+      adcAver: positive.length ? total / positive.length : 0,
+      adcMax: positive.length ? Math.max(...positive) : 0,
+      adcTotal: total,
+      adcPointTotal: positive.length,
+    })
+    if (!target.adcArr) target.adcArr = []
+    if (!target.adcAreaArr) target.adcAreaArr = []
+    setTrendValue(target.adcArr, roundMetricValue(total), options)
+    setTrendValue(target.adcAreaArr, positive.length, options)
+    target.normalDis.byMode.adc = buildPressureDisplayNormalDistribution(source, 'adc')
+    const boxWidth = box ? Math.max(1, Number(box.xEnd) - Number(box.xStart)) : width
+    const boxHeight = box ? Math.max(1, Number(box.yEnd) - Number(box.yStart)) : height
+    const localCenter = calcCentroidRatio(source, boxWidth, boxHeight)
+    target.adcCenter = box ? projectBoxCenterToMatrix(localCenter, box, width, height) : localCenter
   }
 
   /**
@@ -687,6 +711,9 @@ export function useMatrixData() {
     const next = {
       [PRESSURE_METRIC_MODE]: {},
       [FORCE_METRIC_MODE]: {},
+      adc: {},
+      dimensions: {},
+      orientation: {},
       validMask: {},
     }
 
@@ -711,6 +738,10 @@ export function useMatrixData() {
       }
       next[PRESSURE_METRIC_MODE][shortKey] = readMetric('pressureArr')
       next[FORCE_METRIC_MODE][shortKey] = readMetric('forceArr')
+      // No calibrated fallback: missing historical raw ADC must not masquerade as original data.
+      if (Array.isArray(item.rawAdcArr)) next.adc[shortKey] = readMetric('rawAdcArr')
+      next.dimensions[shortKey] = { width, height }
+      next.orientation[shortKey] = [getExecutedDirectionForFrame(fullKey, item), item.zeroState]
       const validMaskField = Array.isArray(item.calibrationValidMask)
         ? 'calibrationValidMask'
         : Array.isArray(item.calibrationAdcArr)
@@ -775,6 +806,7 @@ export function useMatrixData() {
         [PRESSURE_METRIC_MODE]: renderedMetricData[PRESSURE_METRIC_MODE][key],
         [FORCE_METRIC_MODE]: renderedMetricData[FORCE_METRIC_MODE][key],
         validMask: renderedMetricData.validMask[key],
+        adc: renderedMetricData.adc[key],
       })
     }
 
@@ -977,6 +1009,7 @@ export function useMatrixData() {
           [PRESSURE_METRIC_MODE]: renderedMetricData[PRESSURE_METRIC_MODE][key],
           [FORCE_METRIC_MODE]: renderedMetricData[FORCE_METRIC_MODE][key],
           validMask: renderedMetricData.validMask[key],
+          adc: renderedMetricData.adc[key],
         })
       }
       chartRef.current = data

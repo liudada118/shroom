@@ -10,10 +10,10 @@ import {
   addSide,
 } from "../../util/util";
 import gsap from "gsap";
-import { jetWhite3, lineInterp } from "../../assets/util/line";
+import { jetWhite3, lineInterp, beginDynamicColorFrame, setDynamicGammaColorEnabled } from "../../assets/util/line";
 import { useEquipStore } from "../../store/equipStore";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
-import { getColorLimit, getDisplayColorValue } from "../../util/displayMapping";
+import { getThreeDisplaySettings } from "../../util/threeDisplayProcessing";
 import { disableRightMouseControl } from "../../util/threeInteraction";
 
 let camera
@@ -667,8 +667,10 @@ const Canvas = memo(React.forwardRef((props, refs) => {
     // value1 =2
 
     const store = useEquipStore.getState()
-    const { color, height = 1 } = store.settingValue
-    const colorLimit = getColorLimit(color)
+    const { colorLimit, height, autoColor, mode } = getThreeDisplaySettings(store)
+    const colorScope = `canvas-${store.systemType}-${mode}`
+    setDynamicGammaColorEnabled(Boolean(autoColor), colorScope)
+    beginDynamicColorFrame(props.metricData?.current?.[store.pressureMetricMode]?.[store.systemType], colorLimit, colorScope)
     const numParticles = AMOUNTX * AMOUNTY;
     const positions = new Float32Array(numParticles * 3);
     const colors = new Float32Array(numParticles * 3);
@@ -699,7 +701,7 @@ const Canvas = memo(React.forwardRef((props, refs) => {
         positions[k + 2] = ix * SEPARATION - (AMOUNTX * SEPARATION) / 2; // z
 
         let rgb
-        rgb = jetWhite3(0, colorLimit, getDisplayColorValue(smoothBig[l], colorLimit));
+        rgb = jetWhite3(0, colorLimit, smoothBig[l]);
 
         colors[k] = rgb[0] / 255;
         colors[k + 1] = rgb[1] / 255;

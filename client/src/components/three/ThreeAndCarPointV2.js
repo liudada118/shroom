@@ -19,7 +19,7 @@ import { beginDynamicColorFrame, jetWhite3, lineInterp, setDynamicGammaColorEnab
 import { getDisplayType, useEquipStore } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
-import { getColorLimit } from "../../util/displayMapping";
+import { getThreeDisplaySettings } from "../../util/threeDisplayProcessing";
 import { isEndiBackPointVisible } from "../../util/endiBackVisibleMask";
 import { disableRightMouseControl } from "../../util/threeInteraction";
 
@@ -1135,11 +1135,9 @@ const Canvas =
 
 
             // const gauss = 1, color  =1, filter=1, height = 1, coherent = 1
-            const { color, height = 1, autoColor } = useEquipStore.getState().settingValue
-            const metricMode = useEquipStore.getState().pressureMetricMode
+            const { colorLimit, height, autoColor, mode: metricMode } = getThreeDisplaySettings(useEquipStore.getState())
             const colorScope = `point-${name}-${metricMode}`
             setDynamicGammaColorEnabled(Boolean(autoColor), colorScope)
-            const colorLimit = getColorLimit(color)
 
             // height , width , heightInterp , widthInterp
             // export function interpSmall(smallMat, width, height, interp1, interp2)

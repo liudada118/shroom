@@ -2,7 +2,7 @@
     position: fixed;
     top: calc(4.5rem);
     height: calc(100vh - 4.3rem - 4px);
-    width: 18%;
+    width: var(--drawer-width, 18%);
     right: 0;
     background: #141414;
     border: 1px solid #292D32;

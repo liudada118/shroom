@@ -47,6 +47,9 @@ export const useEquipStore = create((set) => ({
   settingValueOptimal: initialSettings,
   num2DZoom: 100,
   pressureMetricMode: loadPressureMetricMode(),
+  threeDisplaySource: 'metric',
+  threeAdcColor: 255,
+  threeDisplayStatus: { pressure: {}, force: {} },
 
   // 框选工具
   selectArr: [],
@@ -91,6 +94,9 @@ export const useEquipStore = create((set) => ({
   setSettingValueMax: (s) => set({ settingValueMax: s }),
   setSettingValueOptimal: (s) => set({ settingValueOptimal: s }),
   setNum2DZoom: (s) => set({ num2DZoom: s }),
+  setThreeDisplaySource: (source) => set({ threeDisplaySource: source === 'adc' ? 'adc' : 'metric' }),
+  setThreeAdcColor: (value) => set({ threeAdcColor: Math.max(1, Math.min(255, Number(value) || 255)) }),
+  setThreeDisplayStatus: (value) => set({ threeDisplayStatus: value }),
   setPressureMetricMode: (mode) => {
     const nextMode = normalizePressureMetricMode(mode)
     if (typeof localStorage !== 'undefined') {

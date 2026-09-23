@@ -16,7 +16,7 @@ import { ChartPanel, DraggablePanel, MetricValue } from '../../ui';
 import { formatSelectionName } from '../../util/selectionName';
 import { Button, Tooltip } from 'antd';
 import { SwapOutlined } from '@ant-design/icons';
-import { getPressureMetricDisplay } from '../../util/pressureMetrics';
+import { getChartMetricDisplay } from '../../util/chartMetricDisplay';
 
 function ChartsAside(props) {
 
@@ -35,22 +35,28 @@ function ChartsAside(props) {
     const [data, setData] = useState({})
     const historyChart = useEquipStore(s => s.historyChart, shallow)
     const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
+    const threeDisplaySource = useEquipStore(s => s.threeDisplaySource)
+    const display = useEquipStore(s => s.display)
+    const chartMetricMode = display === 'point3D' && threeDisplaySource === 'adc' ? 'adc' : pressureMetricMode
     const historyChartRef = useRef(historyChart)
-    const pressureMetricModeRef = useRef(pressureMetricMode)
+    const pressureMetricModeRef = useRef(chartMetricMode)
 
-    const getMetricTrendField = () => getPressureMetricDisplay(pressureMetricModeRef.current).trendField
-    const getMetricAreaTrendField = () => `${getPressureMetricDisplay(pressureMetricModeRef.current).valuePrefix}AreaArr`
+    const getMetricTrendField = () => getChartMetricDisplay(pressureMetricModeRef.current).trendField
+    const getMetricAreaTrendField = () => `${getChartMetricDisplay(pressureMetricModeRef.current).valuePrefix}AreaArr`
     const getHistoryMetricMap = (historyData) => {
-        const field = `${getPressureMetricDisplay(pressureMetricModeRef.current).valuePrefix}Arr`
+        const field = `${getChartMetricDisplay(pressureMetricModeRef.current).valuePrefix}Arr`
+        if (pressureMetricModeRef.current === 'adc') return historyData?.[field] || {}
         return historyData?.[field] || historyData?.pressArr || {}
     }
     const getHistoryAreaMap = (historyData) => {
         const field = getMetricAreaTrendField()
+        if (pressureMetricModeRef.current === 'adc') return historyData?.[field] || {}
         return historyData?.[field] || historyData?.areaArr || {}
     }
     const getNormalDistributionForMode = (normalDis) => (
-        normalDis?.byMode?.[pressureMetricModeRef.current] || normalDis
+        normalDis?.byMode?.[pressureMetricModeRef.current] || (pressureMetricModeRef.current === 'adc' ? null : normalDis)
     )
+    const getCenterForMode = (entry) => pressureMetricModeRef.current === 'adc' ? entry?.adcCenter : entry?.center
     const roundMetricValue = (value, digits = 1) => {
         const numeric = Number(value)
         return Number.isFinite(numeric) ? Number(numeric.toFixed(digits)) : 0
@@ -74,12 +80,13 @@ function ChartsAside(props) {
     }, [historyChart])
 
     useEffect(() => {
-        pressureMetricModeRef.current = pressureMetricMode
+        pressureMetricModeRef.current = chartMetricMode
         renderCharts1()
         renderCharts2()
         renderNormal()
+        renderCenter()
         setData((current) => ({ ...current, t: Date.now() }))
-    }, [pressureMetricMode])
+    }, [chartMetricMode])
 
     const clearChartViews = () => {
         myChart1.current?.clear()
@@ -285,7 +292,7 @@ function ChartsAside(props) {
             myChart: myChart1.current,
             yMax: getChartYMax(value),
             xName: props.t('timeFrame'),
-            yName: getPressureMetricDisplay(pressureMetricModeRef.current, props.t).axisLabel,
+            yName: getChartMetricDisplay(pressureMetricModeRef.current, props.t).axisLabel,
         });
     }
 
@@ -408,7 +415,7 @@ function ChartsAside(props) {
         }
         const boxCenters = getBoxStats(chartData)
             .map((box) => ({
-                center: getCenterValues(box.center),
+                center: getCenterValues(getCenterForMode(box)),
                 color: box.bgc || SELECT_COLORS[box.colorIndex] || SELECT_COLORS[box.boxIndex],
             }))
             .filter((box) => box.center)
@@ -420,7 +427,7 @@ function ChartsAside(props) {
         const centerArr = []
         for (let i = 0; i < keys.length; i++) {
             const key = keys[i]
-            const center = getCenterValues(chartData[key].center)
+            const center = getCenterValues(getCenterForMode(chartData[key]))
             if (center) {
                 centerArr.push({
                     center,
@@ -475,7 +482,7 @@ function ChartsAside(props) {
             axisMax = Math.max(axisMax, Number(item.normalDis?.max) || 0, ...distributionXData)
         }
 
-        const metricDisplay = getPressureMetricDisplay(
+        const metricDisplay = getChartMetricDisplay(
             pressureMetricModeRef.current,
             props.t,
             props.i18n?.language,
@@ -584,7 +591,7 @@ function ChartsAside(props) {
         const offUI = Scheduler.onUI(() => setData(() => {
             const system = getSysType()
             const chartData = props.chartData.current
-            const currentMetricPrefix = getPressureMetricDisplay(pressureMetricModeRef.current).valuePrefix
+            const currentMetricPrefix = getChartMetricDisplay(pressureMetricModeRef.current).valuePrefix
             const currentPointField = `${currentMetricPrefix}PointTotal`
 
             const select = getSelectArr()
@@ -617,6 +624,9 @@ function ChartsAside(props) {
                         dataObj[key].forceAver = formatMetricValue(chartData[key].data.forceAver)
                         dataObj[key].forceMax = formatMetricValue(chartData[key].data.forceMax)
                         dataObj[key].forceTotal = formatMetricValue(chartData[key].data.pressTotal)
+                        dataObj[key].adcAver = formatMetricValue(chartData[key].data.adcAver)
+                        dataObj[key].adcMax = formatMetricValue(chartData[key].data.adcMax)
+                        dataObj[key].adcTotal = formatMetricValue(chartData[key].data.adcTotal)
 
                         const activeNormalDis = getNormalDistributionForMode(chartData[key].normalDis)
                         dataObj[key].μ = activeNormalDis?.μ
@@ -624,7 +634,7 @@ function ChartsAside(props) {
                         dataObj[key].Skew = activeNormalDis?.Skew
                         dataObj[key].Kurt = activeNormalDis?.Kurt
 
-                        dataObj[key].pressureCenter = Object.values(chartData[key].center)
+                        dataObj[key].pressureCenter = getCenterValues(getCenterForMode(chartData[key])) || ['-', '-']
 
                         // 多框选统计数据
                         if (chartData[key].boxStats && chartData[key].boxStats.length > 0) {
@@ -650,7 +660,10 @@ function ChartsAside(props) {
                                     forceAver: formatMetricValue(box.data.forceAver),
                                     forceMax: formatMetricValue(box.data.forceMax),
                                     forceTotal: formatMetricValue(box.data.pressTotal),
-                                    pressureCenter: getCenterValues(box.center) || ['-', '-'],
+                                    adcAver: formatMetricValue(box.data.adcAver),
+                                    adcMax: formatMetricValue(box.data.adcMax),
+                                    adcTotal: formatMetricValue(box.data.adcTotal),
+                                    pressureCenter: getCenterValues(getCenterForMode(box)) || ['-', '-'],
                                     normalDis: activeBoxNormalDis,
                                     μ: activeBoxNormalDis?.['\u03bc'],
                                     Var: activeBoxNormalDis?.Var,
@@ -700,19 +713,21 @@ function ChartsAside(props) {
     }
 
     const hasSelectionStats = hasBoxStats()
-    const metricDisplay = getPressureMetricDisplay(pressureMetricMode, t, i18n.language)
+    const metricDisplay = getChartMetricDisplay(chartMetricMode, t, i18n.language)
     const metricPrefix = metricDisplay.valuePrefix
     const normalDistTitle = String(i18n.language || '').toLowerCase().startsWith('en')
         ? `${metricDisplay.name} Normal Distribution`
         : `${metricDisplay.name}正态分布图`
+    const centerTitle = chartMetricMode === 'adc' ? t('adcCenter') : t('pressureCenterCurve')
 
     const getMetricValue = (source, item) => {
-        if (item === 'total') return source?.forceTotal
+        if (item === 'total') return chartMetricMode === 'adc' ? source?.adcTotal : source?.forceTotal
         return source?.[`${metricPrefix}${item.charAt(0).toUpperCase()}${item.slice(1)}`]
     }
     const getMetricLabel = (item) => {
         if (item === 'aver') return metricDisplay.labels.average
         if (item === 'max') return metricDisplay.labels.max
+        if (chartMetricMode === 'adc') return metricDisplay.labels.total
         const fixedTotalLabel = t('forceTotal')
         return fixedTotalLabel && fixedTotalLabel !== 'forceTotal'
             ? fixedTotalLabel
@@ -759,7 +774,7 @@ function ChartsAside(props) {
     const renderDataRow = (item, colorArr) => {
         const isPressureMetric = pressDataArr.includes(item)
         const getDisplayValue = (source) => isPressureMetric ? getMetricValue(source, item) : source?.[item]
-        const getDisplayUnit = () => item === 'total' ? 'N' : isPressureMetric ? metricDisplay.unit : item === 'pointTotal' ? '个' : item === 'areaTotal' ? 'cm²' : ''
+        const getDisplayUnit = () => item === 'total' ? (chartMetricMode === 'adc' ? 'ADC' : 'N') : isPressureMetric ? metricDisplay.unit : item === 'pointTotal' ? '个' : item === 'areaTotal' ? 'cm²' : ''
         if (hasBoxStats()) {
             // 多框选模式
             const allBoxRows = []
@@ -849,7 +864,10 @@ function ChartsAside(props) {
                                 size="small"
                                 icon={<SwapOutlined />}
                                 aria-label={t('switchPressureMetric')}
-                                onClick={() => useEquipStore.getState().setPressureMetricMode(metricDisplay.nextMode)}
+                                onClick={() => {
+                                    useEquipStore.getState().setPressureMetricMode(metricDisplay.nextMode)
+                                    useEquipStore.getState().setThreeDisplaySource('metric')
+                                }}
                             />
                         </Tooltip>
                     )}
@@ -879,10 +897,10 @@ function ChartsAside(props) {
                 </ChartPanel>
             </DraggablePanel>
 
-            <DraggablePanel title={t('pressureCenterCurve') + ' / ' + normalDistTitle} defaultPosition={{ right: 20, y: 80 }}>
+            <DraggablePanel title={centerTitle + ' / ' + normalDistTitle} defaultPosition={{ right: 20, y: 80 }}>
                 <ChartPanel
                     className="chartAndDataContent"
-                    title={t('pressureCenterCurve')}
+                    title={centerTitle}
                     legend={renderLegend(areaColorArr)}
                 >
                     <FootTrack ref={trackRef} />

@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-09-02
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-09-17
 
 ## 1. 项目概述
 
@@ -81,6 +81,7 @@ shroom/
 │   │   ├── hooks/
 │   │   │   ├── useWebSocket.js # WebSocket 连接管理 Hook
 │   │   │   ├── useMatrixData.js# 矩阵数据处理 Hook
+│   │   │   ├── useThreeDisplayData.js # 3D 显示数据副本、高斯及跨帧平滑
 │   │   │   ├── useWindowsize.js# 窗口尺寸 Hook
 │   │   │   └── useDebounce.js  # 防抖 Hook
 │   │   ├── store/
@@ -371,7 +372,7 @@ graph TD
     - 单点压力按 `压力(N) = 压强(kPa) × 单点面积(cm²) × 0.1` 换算。热力图、2D 数字、平均值、最大值、点数、面积、正态分布、框选和总压力都从同一份 `pressureArr/forceArr` 聚合；平均压强为 `SUM(Pi)/COUNT(ADC_i>30)`，最大压强为最终逐点矩阵 `MAX(Pi)`，点数和面积仍按 `Pi>0` 统计。“压力总和”固定为 `forceArr` 求和后的真实压力 `N`。
     - `pressureMetrics.js` 进一步集中维护 `getPressureMetricDisplay()` 展示定义，统一返回当前口径的单位、曲线名、坐标轴标题、统计项文案、趋势数组字段和数据前缀；左侧图表、数据对比页和 COP 报告不再各自硬编码 `N/kPa` 与“压力/压强”文案。
     - `DataService.sendData()` 只处理一次帧对象，并把同一个结果用于 WebSocket 广播和 `storageData()` 入库。当前处理水印为 `backend-zero-native-v16-matrix-calibration-v2763`，ADC 预处理口径为 `zero-baseline-native-filter30-v2763`，分配标识为 `native-adc-matrix-to-pressure-filter30-v2763`；水印变化时优先用 `calibrationAdcArr`，其次用 `rawAdcArr` 重算标准矩阵。
-    - 左侧曲线旁的交换按钮只修改全局显示模式；`useMatrixData`、3D 点图、2D 数字图、框选统计、数据对比和 COP 报告直接消费后端 `pressureArr/forceArr`，前端不再执行阈值、高斯、压力公式或时序平滑。Three.js 仍可做不改变传感器格点语义的几何插值。
+    - 左侧曲线旁的交换按钮修改全局物理单位；`useMatrixData`、2D 数字图、框选统计、数据对比和 COP 报告直接消费后端 `pressureArr/forceArr`，不再重做标定或平滑。3D 经 `useThreeDisplayData` / `threeDisplayProcessing.js` 生成显示专用副本，可选择原始 ADC 或当前物理单位，并做浮点高斯和跨帧平滑，再进行几何插值；显示副本不写回统计、采集、报告或导出。
     - 开始采集时 `/startCol` 仍把 `filter/gauss/coherent` 保存为 `collectionProcessingConfig` 并锁定，采集结束后解锁。该行为用于兼容旧界面和历史配置，三个参数不再改变标准矩阵计算结果。
     - 2D 数字矩阵的贴图图集统一按 `显示值 × 10` 选择格子，压强 kPa 与压力 N 都以 1 位小数展示；V3/V4 使用 64x64 图集，避免高压强小数索引被 16x16 图集截断。
     - 可视化调节面板里的“当前最大值”使用同一套压强/压力点矩阵计算，并随当前模式显示 `kPa` 或 `N`，不再显示原始 ADC 最大值。
@@ -590,6 +591,10 @@ graph TD
 | 2026-08-30 | 标定文件直接加载 | 默认公式路径统一为 `server/kpa/point_pressure_calibration.js`；旧文件名在配置归一化时自动迁移，不再保留同内容的旧文件副本 |
 | 2026-08-30 | 原生标定 ADC 门槛 | 插值与置零后统一将 `ADC<30` 置零，`ADC>=30` 才进入标定文件、有效点计数与 300 点分支判断 |
 | 2026-09-02 | V2.7.63 标定切换 | 默认启用 `adc-matrix-to-pressure-filter30-v2.7.63.js`，坐垫和靠背使用对象参数进入同一整帧 API；`ADC<=30` 过滤、分段曲线、砝码归一化和真人系数均由新文件定义 |
+
+| 2026-09-16 | 3D 显示平滑及数据源切换 | 显示副本支持浮点高斯与跨帧平滑；设置面板增加 ADC / kPa / N 切换，ADC 独立色阶，不改变标定矩阵、2D、统计或导出 |
+
+| 2026-09-17 | 图表与 3D 平滑解耦 | 图表跟随 ADC/kPa/N 数据源；ADC 的均值、最大值、总和、点数、面积、重心和分布直接取未平滑矩阵，高斯/跨帧仅影响 3D 副本 |
 
 ## 9. 更新日志
 
@@ -1896,3 +1901,25 @@ graph TD
 - Processing watermark `backend-zero-native-v16-matrix-calibration-v2763`, preprocessing identifier `zero-baseline-native-filter30-v2763`, and distribution identifier `native-adc-matrix-to-pressure-filter30-v2763` force stale matrices to be recalculated.
 - Windows packaging completed with Electron Builder on 2026-09-02. The unpacked application contains the V2.7.63 formula in `app.asar`, and its packaged `resources/db/pressure_config.json` selects the same file and profile.
 | 2026-09-02 | Configuration | Switch the complete runtime, browser fallback and SDK calibration contract to `adc-matrix-to-pressure-filter30-v2.7.63.js` |
+
+## 2026-09-16 3D display processing
+
+- `useMatrixData` retains canonical `pressureArr/forceArr` unchanged and exposes a separate, direction-aligned ADC source plus explicit matrix dimensions for 3D. `rawAdcArr` is taken after hardware mapping/interpolation/direction and before zero-baseline subtraction, ADC gating and calibration. It is not the serial byte stream; missing raw data does not fall back to calibrated values.
+- `useThreeDisplayData` subscribes to incoming frame and visualization-setting changes. `threeDisplayProcessing.js` creates display-only matrix copies: floating-point separable Gaussian convolution, then `previous + (current - previous) / coherent`. Gaussian `0` disables spatial smoothing and coherent `1` disables temporal smoothing. Legacy integer-rounding Gaussian code is not used.
+- Temporal processing runs once per new canonical frame, not per Three.js animation tick. Changing data source, physical unit, system, mode, orientation, zero state or smoothing parameters resets the history; discontinuous playback indices and long input gaps also reset it. Clearing matrices discards all per-surface history.
+- Existing `gauss/coherent` settings are reused; their collection-time lock remains. Display processing never mutates backend matrices or influences collection, 2D numbers, average/maximum statistics, point count, area, COP, reports or CSV.
+- The visualization drawer provides `Raw ADC / kPa / N` controls only in 3D mode. ADC is a display-only source; kPa/N use the existing global physical-unit selector. ADC uses its own manual color limit (`1..255`, initially `255`) and geometry height scale. Automatic colors and the drawer maximum use the selected, smoothed display matrix.
+- Active `CanvasMemo`, `ThreeAndModel`, `ThreeAndCarPoint` and `ThreeAndCarPointV2` consume the new display ref. 2D continues consuming the canonical ref. The drawer gets a scoped responsive width and scrollable settings body.
+- Verification: production Vite build passed with pre-existing Sass/ASI/bundle-size warnings. Isolated browser preview uses synthetic frames, not physical sensor readings; full automated suites were not run.
+
+| 2026-09-16 | 新增功能 | 3D 独立浮点高斯/跨帧平滑与 ADC/kPa/N 显示切换；保留原始标定和统计导出链路 |
+
+## 2026-09-17 Canonical chart data and 3D-only smoothing
+
+- The existing visualization source selector now drives both 3D and the side charts. `ChartsAside` resolves ADC only when the 3D ADC source is active; returning to 2D restores the selected physical unit. `chartMetricDisplay.js` supplies chart-only ADC labels without adding ADC to the calibration or export unit enums.
+- `useMatrixData` builds ADC aggregates, per-selection aggregates, rolling totals/counts, ADC-weighted centroids and normal distributions directly from the direction-aligned `rawAdcArr` matrix. Valid ADC points are finite values greater than zero. ADC averages use those points; area is their count times the existing sensor point area. No Gaussian, temporal filter, ADC-to-kPa conversion or physical-unit fallback is used for ADC charts.
+- kPa/N charts retain their canonical, unsmoothed calibrated inputs and existing summary rules. Their last total row remains force in N; ADC mode instead labels and displays an ADC sum. Source switching updates chart axes, summary units, distribution and centroid selection without requiring a new sensor frame.
+- The chart path never reads `threeDisplayStatus`. Only the 3D renderers use `useThreeDisplayData` / `threeDisplayProcessing.js`. Settings therefore change the 3D appearance without changing chart metrics, 2D values, reports or CSV.
+- Historical records without a full ADC trend use the currently computed ADC rolling window, never relabel a pressure trend as ADC. The calibration file and backend pipeline remain unchanged.
+
+| 2026-09-17 | 修复缺陷 | 图表补齐未平滑 ADC 数据源，单位随 ADC/kPa/N 切换，高斯与跨帧平滑严格限定在 3D 显示 |

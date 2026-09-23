@@ -14,11 +14,11 @@ import {
 } from "../../util/util";
 import gsap from "gsap";
 import { pageContext } from "../../page/test/Test";
-import { jetWhite3, lineInterp } from "../../assets/util/line";
+import { jetWhite3, lineInterp, beginDynamicColorFrame, setDynamicGammaColorEnabled } from "../../assets/util/line";
 import { getDisplayType, useEquipStore } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
-import { getColorLimit, getDisplayColorValue } from "../../util/displayMapping";
+import { getThreeDisplaySettings } from "../../util/threeDisplayProcessing";
 import { disableRightMouseControl } from "../../util/threeInteraction";
 
 // function rotate90(arr, height, width) {
@@ -822,8 +822,10 @@ const Canvas =
 
 
             // const gauss = 1, color  =1, filter=1, height = 1, coherent = 1
-            const { color, height = 1 } = useEquipStore.getState().settingValue
-            const colorLimit = getColorLimit(color)
+            const { colorLimit, height, autoColor, mode } = getThreeDisplaySettings(useEquipStore.getState())
+            const colorScope = `car-${name}-${mode}`
+            setDynamicGammaColorEnabled(Boolean(autoColor), colorScope)
+            beginDynamicColorFrame(ndata1, colorLimit, colorScope)
 
             // height , width , heightInterp , widthInterp
             // export function interpSmall(smallMat, width, height, interp1, interp2)
@@ -872,7 +874,7 @@ const Canvas =
 
 
 
-                    rgb = jetWhite3(0, colorLimit, getDisplayColorValue(smoothBig[l], colorLimit));
+                    rgb = jetWhite3(0, colorLimit, smoothBig[l]);
 
 
 

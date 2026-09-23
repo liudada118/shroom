@@ -201,6 +201,45 @@
     }
 }
 
+.visual-settings-drawer {
+    --drawer-width: min(100vw, clamp(320px, 22vw, 420px));
+
+    .setContent {
+        margin-top: 1rem;
+        color: #e6ebf0;
+        min-height: 0;
+        overflow-y: auto;
+        padding-right: 4px;
+    }
+
+    .ant-segmented {
+        background: #23272c;
+        color: #b9c2ca;
+    }
+
+    .ant-segmented-item-selected {
+        background: #0072ef;
+        color: #fff;
+    }
+
+    .ui-setting-control {
+        margin-bottom: 1.8rem;
+    }
+
+    .ui-setting-control__label {
+        width: 6rem;
+        flex-shrink: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .ui-setting-control__input.ant-input-number {
+        width: 5rem;
+        flex-shrink: 0;
+        margin-right: 0;
+        margin-left: 10px;
+    }
+}
+
 .popover {
     background-color: #32373E !important;
 }
