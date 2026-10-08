@@ -36,24 +36,45 @@ isPackaged = isPackaged === 'true'
 const resourcesRoot = isPackaged
   ? (process.env.RESOURCES_PATH || (appPath ? path.resolve(appPath, '..') : path.resolve('resources')))
   : path.join(__dirname, '..')
-const serialCachePath = process.env.SERIAL_CACHE_PATH || path.join(resourcesRoot, 'serial_cache.json')
+const userDataRoot = process.env.USER_DATA_PATH || path.join(os.homedir(), '.shroom-seat')
+const serialCachePath = process.env.SERIAL_CACHE_PATH || path.join(isPackaged ? userDataRoot : resourcesRoot, 'serial_cache.json')
 
 setCachePath(serialCachePath)
 console.log('[Server] Serial cache path:', serialCachePath)
 
+function seedWritableDirectory(sourceDir, targetDir) {
+  fs.mkdirSync(targetDir, { recursive: true })
+  if (!fs.existsSync(sourceDir)) return
+
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    if (entry.isSymbolicLink() || entry.name === 'corrupt-backups') continue
+    if (entry.name.endsWith('-wal') || entry.name.endsWith('-shm')) continue
+    const sourcePath = path.join(sourceDir, entry.name)
+    const targetPath = path.join(targetDir, entry.name)
+    if (entry.isDirectory()) {
+      seedWritableDirectory(sourcePath, targetPath)
+    } else if (entry.isFile() && !fs.existsSync(targetPath)) {
+      fs.copyFileSync(sourcePath, targetPath)
+    }
+  }
+}
+
 // ─── 路径配置 ────────────────────────────────────────────
 let dbPath = path.join(__dirname, '..', 'db')
 let csvPath = path.join(__dirname, '..', 'data')
-const configPath = path.join(__dirname, '..', 'config.txt')
+let configPath = path.join(__dirname, '..', 'config.txt')
 
 if (isPackaged) {
-  if (os.platform() === 'darwin') {
-    dbPath = path.join(__dirname, '../../db')
-    csvPath = path.join(__dirname, '../../data')
-  } else {
-    dbPath = path.join(resourcesRoot, 'db')
-    csvPath = path.join(resourcesRoot, 'data')
+  // Signed resources are read-only seeds; runtime files belong in userData.
+  dbPath = path.join(userDataRoot, 'db')
+  csvPath = path.join(userDataRoot, 'data')
+  seedWritableDirectory(path.join(resourcesRoot, 'db'), dbPath)
+  seedWritableDirectory(path.join(resourcesRoot, 'data'), csvPath)
+  const writableConfigPath = path.join(userDataRoot, 'config.txt')
+  if (!fs.existsSync(writableConfigPath)) {
+    fs.copyFileSync(configPath, writableConfigPath)
   }
+  configPath = writableConfigPath
 }
 
 // ─── 配置文件读取 ─────────────────────────────────────────

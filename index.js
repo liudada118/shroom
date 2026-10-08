@@ -39,6 +39,7 @@ function startApiChild() {
         isPackaged: String(isPackaged),
         appPath: app.getAppPath(),
         RESOURCES_PATH: process.resourcesPath,
+        USER_DATA_PATH: app.getPath('userData'),
         SERIAL_CACHE_PATH: isPackaged
           ? path.join(app.getPath('userData'), 'serial_cache.json')
           : path.join(__dirname, 'serial_cache.json'),
