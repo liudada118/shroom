@@ -67,6 +67,26 @@ const collectHistoryParts = (historyChart) => {
     return set.size ? set : null
 }
 
+// 把一个实测峰值向上取到最近的「整档」（1/2/2.5/5/10 × 10^n）。
+// 轴只认这些档，峰值在档内怎么抖轴都不动。
+const NORMAL_AXIS_STEPS = [1, 2, 2.5, 5, 10]
+function ceilToNiceStep(value) {
+    if (!(value > 0)) return 0
+    const base = Math.pow(10, Math.floor(Math.log10(value)))
+    const mantissa = value / base
+    const step = NORMAL_AXIS_STEPS.find((s) => mantissa <= s + 1e-9) ?? 10
+    return step * base
+}
+
+// 只在真的装不下时往上跳档；往下必须掉到当前档的一半以下才缩，
+// 避免峰值在档位边界上来回跨、轴一帧一个样。
+function stabilizeAxisMax(current, peak) {
+    if (!(peak > 0)) return current > 0 ? current : 1
+    if (!(current > 0) || peak > current) return ceilToNiceStep(peak)
+    if (peak < current * 0.5) return ceilToNiceStep(peak)
+    return current
+}
+
 function ChartsAside(props) {
 
     // 设备颜色（无框选时使用）
@@ -89,6 +109,8 @@ function ChartsAside(props) {
     const myChart2Dom = useRef()
     const normalChartDom = useRef()
     const trackRef = useRef()
+    // 正态分布图两条轴的当前档位：{ unit, x, y }。稳定按压时不重算，轴就钉住不动
+    const normalAxisRef = useRef({ unit: '', x: 0, y: 0 })
 
     const [data, setData] = useState({})
     // 左下角那条工具条要占的高度，面板自动缩放时把这块空间让出来，别压到「重置视图」
@@ -557,9 +579,14 @@ function ChartsAside(props) {
         const keys = Object.keys(chartData)
         if (!keys.length) {
             chart.current.clear()
+            // 断流/切设备后重新开始，别把上一台的档位带过来
+            normalAxisRef.current = { unit: '', x: 0, y: 0 }
             return
         }
-        let series = [], Xmax = 0, valueMax = 1
+        // valueMax 原来初值是 1：那时候 x 轴是 ADC(0~255)，1 只是个防零的兜底。
+        // 换成压强(N/cm²)之后 1 变成了很大的一档，实测峰值不到 0.2 时整条曲线被挤在最左边。
+        // 这里只取本帧真实峰值，轴范围交给下面的 stabilizeAxisMax 定档。
+        let series = [], Xmax = 0, valueMax = 0
         // x 轴是压强值，按当前显示单位换算（非压强指标 valueScale 恒为 1）
         const metricDisplay = getMetricDisplay()
         const valueScale = metricDisplay.valueScale
@@ -594,14 +621,31 @@ function ChartsAside(props) {
 
         const pressureValueLabel = metricDisplay.labels.data
         const probabilityDensityLabel = props.t('probabilityDensity') || '概率密度'
+        // 两条轴都走「整档 + 迟滞」：换单位先清零重算，否则 kPa 的档会留在 N/cm² 上
+        const axisState = normalAxisRef.current
+        if (axisState.unit !== metricDisplay.unit) {
+            axisState.unit = metricDisplay.unit
+            axisState.x = 0
+            axisState.y = 0
+        }
+        axisState.x = stabilizeAxisMax(axisState.x, valueMax)
+        axisState.y = stabilizeAxisMax(axisState.y, Xmax)
+        const axisMax = axisState.x
+        const densityMax = axisState.y
+        // y 轴标签原来固定两位小数，"50.00%" 在 32px 的留白里放不下，左边被裁掉一截。
+        // 大数去小数、小数留一位，最长只到 5 个字符。
+        const formatDensity = (value) => {
+            const percent = (Number(value) || 0) * 100
+            return `${percent >= 10 ? percent.toFixed(0) : percent.toFixed(1)}%`
+        }
         chart.current.setOption({
             // 和上面两条曲线一样把左右留白收窄，绘图区宽一点
-            grid: { left: 32, right: 12, top: 30, bottom: 34, containLabel: false },
+            grid: { left: 40, right: 12, top: 30, bottom: 34, containLabel: false },
             title: { left: 'center' },
             graphic: [
                 {
                     type: 'text',
-                    left: 32,
+                    left: 40,
                     top: 6,
                     silent: true,
                     style: {
@@ -634,7 +678,7 @@ function ChartsAside(props) {
                 }
             },
             xAxis: {
-                type: 'value', min: 0, max: valueMax,
+                type: 'value', min: 0, max: axisMax,
                 name: '', splitNumber: 5,
                 axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
                 axisLabel: { color: '#AEB8C4', fontSize: 9, margin: 6 },
@@ -642,9 +686,9 @@ function ChartsAside(props) {
                 splitLine: { show: false }
             },
             yAxis: {
-                type: 'value', name: '', splitNumber: 3,
+                type: 'value', name: '', splitNumber: 3, min: 0, max: densityMax,
                 axisLine: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
-                axisLabel: { color: '#AEB8C4', fontSize: 9, margin: 4, formatter: (value) => `${(Number(value) * 100).toFixed(2)}%` },
+                axisLabel: { color: '#AEB8C4', fontSize: 9, margin: 4, formatter: formatDensity },
                 axisTick: { show: true, lineStyle: { width: 0.5, color: '#46515F' } },
                 splitLine: { lineStyle: { width: 0.5, color: '#32373E' } },
                 scale: false,
