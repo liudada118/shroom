@@ -109,8 +109,9 @@ function ChartsAside(props) {
     const myChart2Dom = useRef()
     const normalChartDom = useRef()
     const trackRef = useRef()
-    // 正态分布图两条轴的当前档位：{ unit, x, y }。稳定按压时不重算，轴就钉住不动
-    const normalAxisRef = useRef({ unit: '', x: 0, y: 0 })
+    // 正态分布图 X 轴的当前档位：{ unit, x }。稳定按压时不重算，轴就钉住不动
+    // （Y 轴已改为各曲线归一化后的固定 0~100%，不需要档位）
+    const normalAxisRef = useRef({ unit: '', x: 0 })
 
     const [data, setData] = useState({})
     // 左下角那条工具条要占的高度，面板自动缩放时把这块空间让出来，别压到「重置视图」
@@ -580,13 +581,13 @@ function ChartsAside(props) {
         if (!keys.length) {
             chart.current.clear()
             // 断流/切设备后重新开始，别把上一台的档位带过来
-            normalAxisRef.current = { unit: '', x: 0, y: 0 }
+            normalAxisRef.current = { unit: '', x: 0 }
             return
         }
         // valueMax 原来初值是 1：那时候 x 轴是 ADC(0~255)，1 只是个防零的兜底。
         // 换成压强(N/cm²)之后 1 变成了很大的一档，实测峰值不到 0.2 时整条曲线被挤在最左边。
         // 这里只取本帧真实峰值，轴范围交给下面的 stabilizeAxisMax 定档。
-        let series = [], Xmax = 0, valueMax = 0
+        let series = [], valueMax = 0
         // x 轴是压强值，按当前显示单位换算（非压强指标 valueScale 恒为 1）
         const metricDisplay = getMetricDisplay()
         const valueScale = metricDisplay.valueScale
@@ -605,33 +606,43 @@ function ChartsAside(props) {
             const xValues = Array.isArray(item.normalDis?.xData)
                 ? item.normalDis.xData
                 : Array.from({ length: item.normalDis?.yData?.length || 0 }, (_, index) => index)
-            const xDataRes = xValues.map((x, idx) => [(Number(x) || 0) * valueScale, item.normalDis?.yData?.[idx] || 0])
+            const xDataRes = xValues.map((x, idx) => [(Number(x) || 0) * valueScale, Number(item.normalDis?.yData?.[idx]) || 0])
+            // 每条曲线除以自己的峰值、顶到 100%：原始密度峰值和 σ 成反比，
+            // 几乎全 0 的部位是根冲天细刺，会把 Y 轴撑到几千 %、把压满的部位衬成贴地平线。
+            // 全 0 的部位 σ=0，PDF 算出来是 NaN/Infinity，没有有效峰值，直接不画。
+            const peak = Math.max(...xDataRes.map((a) => a[1]))
+            if (!Number.isFinite(peak) || peak <= 0) continue
             series.push({
                 symbol: 'none',
-                data: xDataRes,
+                data: xDataRes.map(([x, y]) => [x, y / peak]),
                 type: 'line',
                 smooth: true,
                 showSymbol: false,
                 color: color,
                 lineStyle: { width: 2 },
             })
-            Xmax = Math.max(Xmax, ...xDataRes.map((a) => a[1]))
-            valueMax = Math.max(valueMax, ...xDataRes.map((a) => Number(a[0]) || 0))
+            // X 轴只需要盖住曲线「看得见」的部分：取归一化后高度还剩 ≥1% 的最远 x。
+            // 原来追最大单点压强，但正态尾巴早衰减成 0 了，右边一大段空白把曲线挤到左边
+            for (let j = xDataRes.length - 1; j >= 0; j--) {
+                if (xDataRes[j][1] / peak >= 0.01) {
+                    valueMax = Math.max(valueMax, xDataRes[j][0])
+                    break
+                }
+            }
         }
 
         const pressureValueLabel = metricDisplay.labels.data
         const probabilityDensityLabel = props.t('probabilityDensity') || '概率密度'
-        // 两条轴都走「整档 + 迟滞」：换单位先清零重算，否则 kPa 的档会留在 N/cm² 上
+        // X 轴走「整档 + 迟滞」：换单位先清零重算，否则 kPa 的档会留在 N/cm² 上
         const axisState = normalAxisRef.current
         if (axisState.unit !== metricDisplay.unit) {
             axisState.unit = metricDisplay.unit
             axisState.x = 0
-            axisState.y = 0
         }
         axisState.x = stabilizeAxisMax(axisState.x, valueMax)
-        axisState.y = stabilizeAxisMax(axisState.y, Xmax)
         const axisMax = axisState.x
-        const densityMax = axisState.y
+        // 曲线已各自归一化，Y 轴恒定 0~100%
+        const densityMax = 1
         // y 轴标签原来固定两位小数，"50.00%" 在 32px 的留白里放不下，左边被裁掉一截。
         // 大数去小数、小数留一位，最长只到 5 个字符。
         const formatDensity = (value) => {
