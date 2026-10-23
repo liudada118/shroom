@@ -121,7 +121,7 @@ test('combined lower-body matrix keeps canonical left/right sources', () => {
   assert.equal(item.sourcePressureMatrices['endi-rightFoot'].length, 12 * 64)
 })
 
-test('backend threshold follows the converted display metric', () => {
+test('display controls leave algorithm pressure and force values unchanged', () => {
   // 阈值和期望值都从当前公式推出来，换公式不用改这个用例
   const adcValue = Number(formula.DUMMY_VALID_ADC_THRESHOLD) + 20
   const source = { 'endi-leftHand': { arr: new Array(18 * 2).fill(adcValue) } }
@@ -142,11 +142,11 @@ test('backend threshold follows the converted display metric', () => {
     gauss: 0,
     coherent: 1,
   })['endi-leftHand']
-  assert.ok(pressureFiltered.arr.every((value) => value === 0))
-  assert.ok(pressureFiltered.pressureArr.every((value) => value === 0))
-  assert.ok(pressureFiltered.forceArr.every((value) => value === 0))
+  assert.deepEqual(pressureFiltered.arr, unfiltered.arr)
+  assert.deepEqual(pressureFiltered.pressureArr, unfiltered.pressureArr)
+  assert.deepEqual(pressureFiltered.forceArr, unfiltered.forceArr)
   assert.equal(pressureFiltered.processing.filterMode, PRESSURE_FILTER_MODE)
-  assert.equal(pressureFiltered.processing.filterStage, 'converted-display-matrix')
+  assert.equal(pressureFiltered.processing.filterStage, 'render-only')
 
   const pressureRetained = processFrame(source, {
     filter: samplePressure / 2,
@@ -162,8 +162,8 @@ test('backend threshold follows the converted display metric', () => {
     gauss: 0,
     coherent: 1,
   })['endi-leftHand']
-  assert.ok(forceFiltered.pressureArr.every((value) => value === 0))
-  assert.ok(forceFiltered.forceArr.every((value) => value === 0))
+  assert.deepEqual(forceFiltered.pressureArr, unfiltered.pressureArr)
+  assert.deepEqual(forceFiltered.forceArr, unfiltered.forceArr)
 
   const adcFiltered = processFrame(source, {
     filter: adcValue + 1,
@@ -171,8 +171,11 @@ test('backend threshold follows the converted display metric', () => {
     gauss: 0,
     coherent: 1,
   })['endi-leftHand']
-  assert.ok(adcFiltered.arr.every((value) => value === 0))
-  assert.ok(adcFiltered.pressureArr.every((value) => value === 0))
+  assert.deepEqual(adcFiltered.arr, unfiltered.arr)
+  assert.deepEqual(adcFiltered.pressureArr, unfiltered.pressureArr)
+  const smoothed = processFrame(source, { filter: 4095, gauss: 4, coherent: 10 })['endi-leftHand']
+  assert.deepEqual(smoothed.pressureArr, unfiltered.pressureArr)
+  assert.deepEqual(smoothed.forceArr, unfiltered.forceArr)
 })
 
 test('dummy processing starts with pressure filtering disabled', () => {
@@ -180,7 +183,7 @@ test('dummy processing starts with pressure filtering disabled', () => {
   assert.equal(DEFAULT_FRAME_PROCESSING_CONFIG.filterMode, PRESSURE_FILTER_MODE)
 })
 
-test('raw ADC keeps the normalized line-order matrix before zeroing and filtering', () => {
+test('raw ADC takes precedence over previously zeroed display values', () => {
   const source = Array.from({ length: 18 * 2 }, (_, index) => index + 1)
   const expected = interpolateEndiWearSource('endi-leftHand', source)
   const item = processFrame({
@@ -190,9 +193,11 @@ test('raw ADC keeps the normalized line-order matrix before zeroing and filterin
     },
   }, { filter: 200, filterMode: ADC_FILTER_MODE, gauss: 2, coherent: 1 })['endi-leftHand']
 
-  assert.deepEqual(item.rawAdcArr, expected)
-  assert.ok(item.pressureArr.every((value) => value === 0))
-  assert.ok(item.forceArr.every((value) => value === 0))
+  const direct = processFrame({ 'endi-leftHand': { arr: source } })['endi-leftHand']
+  assert.deepEqual(item.physicalAdcArr, source)
+  assert.deepEqual(item.rawAdcArr, direct.rawAdcArr)
+  assert.deepEqual(item.pressureArr, direct.pressureArr)
+  assert.deepEqual(item.forceArr, direct.forceArr)
 })
 
 test('dummy matrices ignore configured direction flips and keep source line order', () => {
@@ -261,6 +266,8 @@ test('CSV export is pressure-only and preserves three-decimal elapsed seconds', 
 
   const frame = processFrame({
     'endi-leftHand': { arr: new Array(18 * 2).fill(176.36) },
+    'endi-leftFoot': { arr: Array.from({ length: 6 * 32 }, (_, index) => 110.75 + index % 140) },
+    'endi-rightFoot': { arr: Array.from({ length: 6 * 32 }, (_, index) => 140.25 + index % 110) },
   }, { filter: 0, gauss: 0, coherent: 1 })
   await run(db, 'INSERT INTO matrix (data, timestamp, date) VALUES (?, ?, ?)', [JSON.stringify(frame), 1000, 'sample'])
   await run(db, 'INSERT INTO matrix (data, timestamp, date) VALUES (?, ?, ?)', [JSON.stringify(frame), 1125, 'sample'])
@@ -268,7 +275,7 @@ test('CSV export is pressure-only and preserves three-decimal elapsed seconds', 
   const pressureFields = await getExportFieldOptions({
     db,
     params: ['sample'],
-    exportOptions: { metricMode: 'pressure' },
+    exportOptions: { pressureUnit: 'kPa', metricMode: 'pressure' },
   })
   assert.ok(pressureFields.fields.some((field) => field.label === '秒数(s)'))
   assert.ok(pressureFields.fields.some((field) => field.label === '压强数据(kPa)'))
@@ -279,12 +286,12 @@ test('CSV export is pressure-only and preserves three-decimal elapsed seconds', 
     params: ['sample'],
     file: 'endi',
     customDownloadPath: pressureDir,
-    exportOptions: { metricMode: 'pressure', format: 'csv', fields: [] },
+    exportOptions: { pressureUnit: 'kPa', metricMode: 'pressure', format: 'csv', fields: [] },
   })
   const pressureRows = await getCsvData(pressureResult.filePath)
   const pressureHeaders = Object.keys(pressureRows[0])
-  const pressureDataHeader = pressureHeaders.find((header) => header.includes('压强数据(kPa)'))
-  const totalForceHeader = pressureHeaders.find((header) => header.includes('压力总和(N)'))
+  const pressureDataHeader = pressureHeaders.find((header) => header.includes('左臂') && header.includes('压强数据(kPa)'))
+  const totalForceHeader = pressureHeaders.find((header) => header.includes('左臂') && header.includes('压力总和(N)'))
 
   assert.equal(pressureRows[0]['秒数(s)'], '0.000')
   assert.equal(pressureRows[1]['秒数(s)'], '0.125')
@@ -297,11 +304,20 @@ test('CSV export is pressure-only and preserves three-decimal elapsed seconds', 
   const pressurePlayback = buildCsvPlaybackData(pressureRows)
   const importedPressureItem = JSON.parse(pressurePlayback.rows[0].data)['endi-leftHand']
   assert.deepEqual(importedPressureItem.pressureArr, frame['endi-leftHand'].pressureArr)
+  const importedLegs = JSON.parse(pressurePlayback.rows[0].data)['endi-foot']
+  const expectedLegs = []
+  for (let row = 0; row < 64; row++) {
+    expectedLegs.push(
+      ...frame['endi-leftFoot'].pressureArr.slice(row * 12, row * 12 + 12),
+      ...frame['endi-rightFoot'].pressureArr.slice(row * 12, row * 12 + 12),
+    )
+  }
+  assert.deepEqual(importedLegs.pressureArr, expectedLegs)
 
   const legacyModeFields = await getExportFieldOptions({
     db,
     params: ['sample'],
-    exportOptions: { metricMode: 'adc' },
+    exportOptions: { pressureUnit: 'kPa', metricMode: 'adc' },
   })
   assert.ok(legacyModeFields.fields.some((field) => field.label === '压强数据(kPa)'))
   assert.ok(!legacyModeFields.fields.some((field) => /原始ADC数据|压力数据\(N\)/.test(field.label)))

@@ -9,7 +9,6 @@ const { timeStampTo_Date } = require("./time");
 const constantObj = require("./config");
 const { loadPressureConfig, loadPressureFormula } = require("../server/services/PressureConfig");
 const { DEVICE_MATRIX_CONFIG } = require("./deviceMatrixConfig");
-const { interpolateEndiWearSource } = require("./line");
 const {
   PROCESSING_VERSION,
   ensureProcessedFrame,
@@ -52,15 +51,6 @@ const validImportMatrixLengths = new Set([
   4096,
 ])
 
-function normalizeEndiFootArray(key, arr) {
-  if (!Array.isArray(arr)) return arr
-  if (arr.length === ENDI_FOOT_SINGLE_LENGTH) return arr
-  if ((key === ENDI_FOOT_LEFT_KEY || key === ENDI_FOOT_RIGHT_KEY) && arr.length === ENDI_FOOT_LEGACY_LENGTH) {
-    return interpolateEndiWearSource(key, arr)
-  }
-  return arr
-}
-
 function combineEndiFootRows(leftArr = [], rightArr = []) {
   const left = Array.isArray(leftArr) && leftArr.length === ENDI_FOOT_SINGLE_LENGTH
     ? leftArr
@@ -83,11 +73,11 @@ function combineEndiFootRows(leftArr = [], rightArr = []) {
 
 function normalizeEndiFootFrame(frame) {
   if (!frame || typeof frame !== 'object') return frame
-  const next = { ...frame }
+  const next = ensureProcessedFrame(frame)
   const leftItem = next[ENDI_FOOT_LEFT_KEY]
   const rightItem = next[ENDI_FOOT_RIGHT_KEY]
-  const leftArr = normalizeEndiFootArray(ENDI_FOOT_LEFT_KEY, leftItem?.arr)
-  const rightArr = normalizeEndiFootArray(ENDI_FOOT_RIGHT_KEY, rightItem?.arr)
+  const leftArr = leftItem?.arr
+  const rightArr = rightItem?.arr
   const hasLeft = Array.isArray(leftArr) && leftArr.length === ENDI_FOOT_SINGLE_LENGTH
   const hasRight = Array.isArray(rightArr) && rightArr.length === ENDI_FOOT_SINGLE_LENGTH
 
@@ -108,6 +98,22 @@ function normalizeEndiFootFrame(frame) {
       point_count: arr.length,
     },
     sourceMatrixKeys: [ENDI_FOOT_LEFT_KEY, ENDI_FOOT_RIGHT_KEY],
+  }
+
+  const combined = next[ENDI_FOOT_COMBINED_KEY]
+  delete combined.physicalAdcArr
+  for (const [field, sourceField] of [
+    ['arr', 'sourceMatrices'], ['rawAdcArr', 'sourceRawAdcMatrices'],
+    ['pressureArr', 'sourcePressureMatrices'], ['forceArr', 'sourceForceMatrices'],
+  ]) {
+    const left = leftItem?.[field] || new Array(ENDI_FOOT_SINGLE_LENGTH).fill(0)
+    const right = rightItem?.[field] || new Array(ENDI_FOOT_SINGLE_LENGTH).fill(0)
+    combined[field] = combineEndiFootRows(left, right)
+    combined[sourceField] = { [ENDI_FOOT_LEFT_KEY]: left, [ENDI_FOOT_RIGHT_KEY]: right }
+  }
+  combined.sourcePhysicalAdcMatrices = {
+    [ENDI_FOOT_LEFT_KEY]: leftItem?.physicalAdcArr || new Array(ENDI_FOOT_LEGACY_LENGTH).fill(0),
+    [ENDI_FOOT_RIGHT_KEY]: rightItem?.physicalAdcArr || new Array(ENDI_FOOT_LEGACY_LENGTH).fill(0),
   }
 
   return next

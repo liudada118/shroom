@@ -14,11 +14,10 @@ const { readEncryptedSystemConfig } = require('../../util/systemConfig')
 const { state } = require('../state')
 const { broadcast } = require('../websocket')
 const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
-const { colAndSendData, sendData, clearPlayTimer, ensureRealtimeTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot, saveDataDirection } = require('../services/DataService')
+const { colAndSendData, sendData, clearPlayTimer, ensureRealtimeTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot, saveDataDirection, combineEndiFootMatrices } = require('../services/DataService')
 const { loadPressureConfig, savePressureConfig, listPressureFormulaFiles } = require('../services/PressureConfig')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES } = require('../../util/deviceConfigValidation')
-const { interpolateEndiWearSource } = require('../../util/line')
 const {
   ensureProcessedFrame,
   normalizeFrameProcessingConfig,
@@ -99,88 +98,9 @@ function getComparableKeys(frame) {
     .sort()
 }
 
-function normalizeEndiFootContrastArray(key, arr) {
-  if (!Array.isArray(arr)) return arr
-  if (arr.length === ENDI_FOOT_SINGLE_LENGTH) return arr
-  if ((key === ENDI_FOOT_LEFT_KEY || key === ENDI_FOOT_RIGHT_KEY) && arr.length === ENDI_FOOT_LEGACY_LENGTH) {
-    return interpolateEndiWearSource(key, arr)
-  }
-  return arr
-}
-
-function makeZeroMatrix(length) {
-  return new Array(length).fill(0)
-}
-
-function combineEndiFootRows(leftArr = [], rightArr = []) {
-  const left = Array.isArray(leftArr) && leftArr.length === ENDI_FOOT_SINGLE_LENGTH ? leftArr : makeZeroMatrix(ENDI_FOOT_SINGLE_LENGTH)
-  const right = Array.isArray(rightArr) && rightArr.length === ENDI_FOOT_SINGLE_LENGTH ? rightArr : makeZeroMatrix(ENDI_FOOT_SINGLE_LENGTH)
-  const combined = []
-
-  for (let row = 0; row < ENDI_FOOT_HEIGHT; row++) {
-    const start = row * ENDI_SINGLE_FOOT_WIDTH
-    combined.push(
-      ...left.slice(start, start + ENDI_SINGLE_FOOT_WIDTH),
-      ...right.slice(start, start + ENDI_SINGLE_FOOT_WIDTH)
-    )
-  }
-
-  return combined
-}
-
 function normalizeEndiFootContrastFrame(frame) {
   if (!frame || typeof frame !== 'object') return frame
-  const next = { ...frame }
-  const combinedItem = next[ENDI_FOOT_COMBINED_KEY]
-  const combinedArr = normalizeEndiFootContrastArray(ENDI_FOOT_COMBINED_KEY, combinedItem?.arr)
-
-  if (Array.isArray(combinedArr) && combinedArr.length === ENDI_FOOT_SINGLE_LENGTH * 2) {
-    next[ENDI_FOOT_COMBINED_KEY] = {
-      ...(combinedItem || {}),
-      arr: combinedArr,
-      width: 24,
-      height: 64,
-      matrixMeta: combinedItem?.matrixMeta || {
-        matrix_key: ENDI_FOOT_COMBINED_KEY,
-        width: 24,
-        height: 64,
-        point_count: combinedArr.length,
-      },
-    }
-    delete next[ENDI_FOOT_LEFT_KEY]
-    delete next[ENDI_FOOT_RIGHT_KEY]
-    return next
-  }
-
-  const leftItem = next[ENDI_FOOT_LEFT_KEY]
-  const rightItem = next[ENDI_FOOT_RIGHT_KEY]
-  const leftArr = normalizeEndiFootContrastArray(ENDI_FOOT_LEFT_KEY, leftItem?.arr)
-  const rightArr = normalizeEndiFootContrastArray(ENDI_FOOT_RIGHT_KEY, rightItem?.arr)
-  const hasLeft = Array.isArray(leftArr) && leftArr.length === ENDI_FOOT_SINGLE_LENGTH
-  const hasRight = Array.isArray(rightArr) && rightArr.length === ENDI_FOOT_SINGLE_LENGTH
-
-  delete next[ENDI_FOOT_LEFT_KEY]
-  delete next[ENDI_FOOT_RIGHT_KEY]
-
-  if (!hasLeft && !hasRight) return next
-
-  const sourceItem = hasLeft ? leftItem : rightItem
-  const arr = combineEndiFootRows(leftArr, rightArr)
-  next[ENDI_FOOT_COMBINED_KEY] = {
-    ...(sourceItem || {}),
-    arr,
-    width: 24,
-    height: 64,
-    matrixMeta: {
-      matrix_key: ENDI_FOOT_COMBINED_KEY,
-      width: 24,
-      height: 64,
-      point_count: arr.length,
-    },
-    sourceMatrixKeys: [ENDI_FOOT_LEFT_KEY, ENDI_FOOT_RIGHT_KEY],
-  }
-
-  return next
+  return combineEndiFootMatrices(ensureProcessedFrame(frame))
 }
 
 function getCanonicalContrastKey(key) {

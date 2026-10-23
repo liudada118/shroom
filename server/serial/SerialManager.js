@@ -29,6 +29,7 @@ const { default: axios } = require('axios')
 const { state } = require('../state')
 const { getTypeFromCache, setTypeToCache } = require('../../util/serialCache')
 const { getBackValueMultiplier } = require('../services/PressureConfig')
+const { DUMMY_MATRIX_CONFIG } = require('../../util/pressureFrameProcessor')
 
 // ═══════════════════════════════════════════════════════════
 //  Constants
@@ -267,7 +268,8 @@ function recordGoodFrame(portPath, dataItem, frameLength, pointCount, receivedAt
 }
 
 function validateMatrixPointCount(portPath, dataItem, arr, broadcastFn) {
-  const expected = MATRIX_POINT_COUNTS[dataItem.type]
+  const physical = DUMMY_MATRIX_CONFIG[dataItem.type]
+  const expected = physical ? physical.sourceWidth * physical.sourceHeight : MATRIX_POINT_COUNTS[dataItem.type]
   if (!expected || !Array.isArray(arr)) return true
   if (arr.length === expected) return true
   recordBadFrame(portPath, dataItem, broadcastFn, 'matrix_size_mismatch', {

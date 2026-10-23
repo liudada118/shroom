@@ -1,6 +1,6 @@
 const { loadPressureConfig, loadDummyPressureFormula } = require('../server/services/PressureConfig')
 
-const PROCESSING_VERSION = 'dummy-backend-spatial-v1'
+const PROCESSING_VERSION = 'dummy-raw-algorithm-v2.10.28'
 const DISPLAY_DIGITS = 1
 const GAUSSIAN_SIGMA_FACTOR = 0.5
 const DUMMY_POINT_SPACING_CM = 1.25
@@ -252,135 +252,47 @@ function interpolatePhysicalMatrix(key, values) {
 function processPhysicalAdcMatrix(key, values, processingConfig) {
   const config = DUMMY_MATRIX_CONFIG[key]
   if (!config || values.length !== config.sourceWidth * config.sourceHeight) return []
-  const settings = normalizeFrameProcessingConfig(processingConfig)
-  let result = values.map((value, index) => {
+  // 试验版：可视化调节只影响渲染，不影响数值。
+  // 原来这里会按「图像润滑」参数对 ADC 做空间高斯平滑再进公式，
+  // 导致面板滑块改变显示的 kPa。现在只保留结构掩码，ADC 原值直接进公式；
+  // 画面的平滑交给前端渲染层（3D 人体的 WebGL blur / 2D 的显示模糊）。
+  return values.map((value, index) => {
     const numeric = Number(value)
     const row = Math.floor(index / config.sourceWidth)
     const col = index % config.sourceWidth
     if (!isPhysicalCellValid(key, row, col) || !Number.isFinite(numeric)) return 0
     return Math.max(0, numeric)
   })
-
-  result = gaussianBlur(
-    result,
-    config.sourceWidth,
-    config.sourceHeight,
-    settings.gauss * GAUSSIAN_SIGMA_FACTOR,
-  )
-  result = result.map((value, index) => {
-    const row = Math.floor(index / config.sourceWidth)
-    const col = index % config.sourceWidth
-    if (!isPhysicalCellValid(key, row, col)) return 0
-    return value
-  })
-  return result
 }
 
 function applyDisplayMetricFilter(adcValues, pressureValues, processingConfig) {
-  const settings = normalizeFrameProcessingConfig(processingConfig)
+  // 试验版：噪点消除同样只影响渲染。后端不再按阈值清零 kPa/N 矩阵，
+  // 统计（平均/最大/点数/面积）始终基于未过滤数值；
+  // 前端渲染层自己按 filter 隐藏低值点（shouldHideDisplayPoint / 2D 数字过滤）。
   const length = Math.max(adcValues.length, pressureValues.length)
   const adc = Array.from({ length }, (_, index) => Math.max(0, Number(adcValues[index]) || 0))
   const pressure = Array.from({ length }, (_, index) => Math.max(0, Number(pressureValues[index]) || 0))
   const force = pressure.map((value) => value * FORCE_PER_KPA)
-
-  if (settings.filter <= 0) {
-    return { adc, pressure, force }
-  }
-
-  const activeValues = settings.filterMode === ADC_FILTER_MODE
-    ? adc
-    : settings.filterMode === PRESSURE_FILTER_MODE
-      ? pressure
-      : force
-  const keepPoint = activeValues.map((value) => value >= settings.filter)
-
-  return {
-    adc: adc.map((value, index) => keepPoint[index] ? value : 0),
-    pressure: pressure.map((value, index) => keepPoint[index] ? value : 0),
-    force: force.map((value, index) => keepPoint[index] ? value : 0),
-  }
+  return { adc, pressure, force }
 }
 
-function buildTopAveragePointPressures(values, validIndexes, stats) {
-  const result = new Array(values.length).fill(0)
-  if (!validIndexes.length || !Number.isFinite(stats?.avgKpa) || !Number.isFinite(stats?.maxKpa)) {
-    return result
-  }
-
-  const validValues = validIndexes.map((index) => values[index])
-  const meanAdc = validValues.reduce((sum, value) => sum + value, 0) / validValues.length
-  const maxAdc = Math.max(...validValues)
-  const targetAverage = Math.max(0, Number(stats.avgKpa))
-  const targetMaximum = Math.max(targetAverage, Number(stats.maxKpa))
-
-  if (Math.abs(maxAdc - meanAdc) < 1e-9) {
-    validIndexes.forEach((index) => {
-      result[index] = targetAverage
-    })
-    return result
-  }
-
-  const slope = (targetMaximum - targetAverage) / (maxAdc - meanAdc)
-  const intercept = targetAverage - slope * meanAdc
-  validIndexes.forEach((index) => {
-    result[index] = Math.max(0, slope * values[index] + intercept)
-  })
-  return result
+// The package receives physical ADC values unchanged, before any display transforms.
+function calculateRawDummyFrame(key, physicalAdc) {
+  const dimensions = DUMMY_MATRIX_CONFIG[key]
+  if (!dimensions || physicalAdc.length !== dimensions.sourceWidth * dimensions.sourceHeight) return null
+  const matrix = Array.from({ length: dimensions.sourceHeight }, (_, row) =>
+    physicalAdc.slice(row * dimensions.sourceWidth, (row + 1) * dimensions.sourceWidth))
+  return loadDummyPressureFormula().calculateDummyRawPressureFrame(matrix, dimensions.sensorType)
 }
 
-/**
- * ADC 矩阵按压强公式换算成 kPa 矩阵。
- * 传实际点网格（sourceWidth × sourceHeight）或插值后的显示网格（displayWidth × displayHeight）都可以，
- * 按数组长度自动认网格并选对应的遮罩。现在调用方传的是插值后的显示网格：
- * 公式统计的点数（150 阈值、Top50）和屏幕上画的格子是同一批，面板数值不再和公式内部口径打架
- */
+function positionAlgorithmOutput(key, matrix) {
+  const flat = matrix.flat()
+  return key === 'endi-jacket' ? centerJacketHead(flat) : flat
+}
+
 function convertPhysicalPressureMatrix(key, adcValues) {
-  const config = DUMMY_MATRIX_CONFIG[key]
-  if (!config || !adcValues.length) return []
-  const formula = loadDummyPressureFormula()
-  const validThreshold = Number(formula.DUMMY_VALID_ADC_THRESHOLD) || 10
-  const isDisplayGrid = adcValues.length === config.displayWidth * config.displayHeight
-  const gridWidth = isDisplayGrid ? config.displayWidth : config.sourceWidth
-  const isCellValid = isDisplayGrid ? isDisplayCellValid : isPhysicalCellValid
-  const validIndexes = []
-  const validValues = []
-
-  adcValues.forEach((value, index) => {
-    const row = Math.floor(index / gridWidth)
-    const col = index % gridWidth
-    if (isCellValid(key, row, col) && Number(value) > validThreshold) {
-      validIndexes.push(index)
-      validValues.push(Number(value))
-    }
-  })
-
-  const stats = formula.calculateDummyValuesPressure(validValues, config.sensorType)
-  if (!stats || stats.mode === 'none') return new Array(adcValues.length).fill(0)
-
-  // v2.10.27 起公式自己按输入顺序返回逐点 kPa，直接用它的值。
-  // 老公式（v2.10.4）只给 avg/max，才退回下面两条反推路径。
-  if (Array.isArray(stats.pressureValuesKpa)
-    && stats.pressureValuesKpa.length === validIndexes.length) {
-    const pointResult = new Array(adcValues.length).fill(0)
-    validIndexes.forEach((index, order) => {
-      pointResult[index] = Math.max(0, Number(stats.pressureValuesKpa[order]) || 0)
-    })
-    return pointResult
-  }
-
-  if (stats.mode === 'top50') {
-    return buildTopAveragePointPressures(adcValues, validIndexes, stats)
-  }
-
-  const masterRaw = config.sensorType.includes('leg')
-    ? formula.legAdcToKpaRaw
-    : formula.bodyAdcToKpaRaw
-  const multiplier = Number(formula.DUMMY_POINTWISE_MULTIPLIER) || 2
-  const result = new Array(adcValues.length).fill(0)
-  validIndexes.forEach((index) => {
-    result[index] = Math.max(0, masterRaw(adcValues[index]) * multiplier)
-  })
-  return result
+  const result = calculateRawDummyFrame(key, recoverPhysicalMatrix(key, adcValues))
+  return result ? positionAlgorithmOutput(key, result.pressureMatrixKpa) : []
 }
 
 function buildProcessingMetadata(config) {
@@ -390,10 +302,13 @@ function buildProcessingMetadata(config) {
     version: PROCESSING_VERSION,
     filter: config.filter,
     filterMode: config.filterMode,
-    filterStage: 'converted-display-matrix',
+    filterStage: 'render-only',
+    inputStage: 'raw-physical-adc',
+    interpolationStage: 'algorithm-package',
+    zeroBaselineApplied: false,
     gauss: config.gauss,
     coherent: config.coherent,
-    gaussianSigma: Number((config.gauss * GAUSSIAN_SIGMA_FACTOR).toFixed(3)),
+    gaussianSigma: 0,
     temporal: false,
     outputDigits: DISPLAY_DIGITS,
     formulaFile: pressureConfig.dummyPressureFormulaFile,
@@ -405,24 +320,20 @@ function buildProcessingMetadata(config) {
 
 function processSingleDummyMatrix(key, sourceValues, processingConfig) {
   const config = normalizeFrameProcessingConfig(processingConfig)
-  const physicalSource = recoverPhysicalMatrix(key, sourceValues)
-  if (!physicalSource.length) return null
-  const rawAdcArr = normalizeRawAdcMatrix(key, sourceValues)
-  const physicalAdc = processPhysicalAdcMatrix(key, physicalSource, config)
-  const displayAdcRaw = interpolatePhysicalMatrix(key, physicalAdc)
-  // 先插值再换算：公式和屏幕显示走同一批点（原来是在实际点上换算完再插值，
-  // 插值出来的中间格是「压强的线性插值」，公式统计的点数也和屏幕上的格子数不一致）
-  const displayPressureRaw = convertPhysicalPressureMatrix(key, displayAdcRaw)
-  const filtered = applyDisplayMetricFilter(displayAdcRaw, displayPressureRaw, config)
-  const displayAdc = filtered.adc.map((value) => roundValue(value, 2))
-  const pressureArr = filtered.pressure.map((value) => roundValue(value))
-  const forceArr = filtered.force.map((value) => roundValue(value))
-
+  const physicalAdcArr = recoverPhysicalMatrix(key, sourceValues)
+  const result = calculateRawDummyFrame(key, physicalAdcArr)
+  if (!result) return null
+  // Geometry and interpolation are supplied by the unchanged package. Only position
+  // the returned head/neck cells for display, after all pressure calculations.
+  const displayAdc = positionAlgorithmOutput(key, result.interpolatedAdcMatrix.map((row, y) =>
+    row.map((value, x) => result.interpolatedValidMask[y][x] ? value : 0)))
+  const pressureValues = positionAlgorithmOutput(key, result.pressureMatrixKpa)
   return {
-    rawAdcArr,
+    physicalAdcArr,
+    rawAdcArr: [...displayAdc],
     arr: displayAdc,
-    pressureArr,
-    forceArr,
+    pressureArr: pressureValues.map((value) => roundValue(value)),
+    forceArr: pressureValues.map((value) => roundValue(value * FORCE_PER_KPA)),
     processing: buildProcessingMetadata(config),
   }
 }
@@ -458,64 +369,40 @@ function combineFootRows(leftValues, rightValues) {
 }
 
 function processFootMatrixItem(item, processingConfig) {
-  const source = Array.isArray(item.arr) ? item.arr : []
-  const rawSource = Array.isArray(item.rawAdcArr) && item.rawAdcArr.length === source.length
-    ? item.rawAdcArr
-    : source
+  const source = Array.isArray(item.rawAdcArr) ? item.rawAdcArr : item.arr
   const { left, right } = splitFootRows(source)
-  const { left: rawLeft, right: rawRight } = splitFootRows(rawSource)
-  const leftResult = processSingleDummyMatrix(ENDI_LEFT_FOOT_KEY, left, processingConfig)
-  const rightResult = processSingleDummyMatrix(ENDI_RIGHT_FOOT_KEY, right, processingConfig)
+  const physical = item.sourcePhysicalAdcMatrices || {}
+  const leftResult = processSingleDummyMatrix(ENDI_LEFT_FOOT_KEY, physical[ENDI_LEFT_FOOT_KEY] || left, processingConfig)
+  const rightResult = processSingleDummyMatrix(ENDI_RIGHT_FOOT_KEY, physical[ENDI_RIGHT_FOOT_KEY] || right, processingConfig)
   if (!leftResult || !rightResult) return { ...item }
-  const leftRawAdc = normalizeRawAdcMatrix(ENDI_LEFT_FOOT_KEY, rawLeft)
-  const rightRawAdc = normalizeRawAdcMatrix(ENDI_RIGHT_FOOT_KEY, rawRight)
-
-  return {
-    ...item,
-    rawAdcArr: combineFootRows(leftRawAdc, rightRawAdc),
-    arr: combineFootRows(leftResult.arr, rightResult.arr),
-    pressureArr: combineFootRows(leftResult.pressureArr, rightResult.pressureArr),
-    forceArr: combineFootRows(leftResult.forceArr, rightResult.forceArr),
-    sourceMatrices: {
-      [ENDI_LEFT_FOOT_KEY]: leftResult.arr,
-      [ENDI_RIGHT_FOOT_KEY]: rightResult.arr,
-    },
-    sourceRawAdcMatrices: {
-      [ENDI_LEFT_FOOT_KEY]: leftRawAdc,
-      [ENDI_RIGHT_FOOT_KEY]: rightRawAdc,
-    },
-    sourcePressureMatrices: {
-      [ENDI_LEFT_FOOT_KEY]: leftResult.pressureArr,
-      [ENDI_RIGHT_FOOT_KEY]: rightResult.pressureArr,
-    },
-    sourceForceMatrices: {
-      [ENDI_LEFT_FOOT_KEY]: leftResult.forceArr,
-      [ENDI_RIGHT_FOOT_KEY]: rightResult.forceArr,
-    },
-    processing: leftResult.processing,
+  const result = { ...item, processing: leftResult.processing }
+  delete result.physicalAdcArr
+  for (const [field, sourceField] of [
+    ['arr', 'sourceMatrices'], ['rawAdcArr', 'sourceRawAdcMatrices'],
+    ['pressureArr', 'sourcePressureMatrices'], ['forceArr', 'sourceForceMatrices'],
+  ]) {
+    result[field] = combineFootRows(leftResult[field], rightResult[field])
+    result[sourceField] = { [ENDI_LEFT_FOOT_KEY]: leftResult[field], [ENDI_RIGHT_FOOT_KEY]: rightResult[field] }
   }
+  result.sourcePhysicalAdcMatrices = {
+    [ENDI_LEFT_FOOT_KEY]: leftResult.physicalAdcArr,
+    [ENDI_RIGHT_FOOT_KEY]: rightResult.physicalAdcArr,
+  }
+  return result
 }
 
 function processMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG) {
   if (!isDummyMatrixKey(key)) return { ...item }
   if (key === ENDI_FOOT_KEY) return processFootMatrixItem(item, processingConfig)
-
-  const source = Array.isArray(item.arr) ? item.arr : []
+  const source = item.physicalAdcArr || item.rawAdcArr || item.arr || []
   const result = processSingleDummyMatrix(key, source, processingConfig)
-  if (!result) return { ...item }
-  const rawAdcArr = Array.isArray(item.rawAdcArr)
-    ? normalizeRawAdcMatrix(key, item.rawAdcArr)
-    : result.rawAdcArr
-  return {
-    ...item,
-    ...result,
-    rawAdcArr,
-  }
+  return result ? { ...item, ...result } : { ...item }
 }
 
 function hasCanonicalMetricArrays(item = {}) {
   const length = Array.isArray(item.arr) ? item.arr.length : 0
-  return item.processing?.version === PROCESSING_VERSION
+  return (item.processing?.importedMetric || (item.processing?.version === PROCESSING_VERSION
+    && item.processing?.formulaFile === loadPressureConfig().dummyPressureFormulaFile))
     && length > 0
     && Array.isArray(item.pressureArr)
     && item.pressureArr.length === length

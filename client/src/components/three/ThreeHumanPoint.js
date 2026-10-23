@@ -155,6 +155,67 @@ function getFrameMax(values) {
   }, 0)
 }
 
+// 图像润滑 / 噪点消除只作用在这份渲染副本上，sitData 里的压强原值（统计、2D 数字、导出）不受影响
+const RENDER_MATRIX_WIDTHS = { jacket: 24, leftHand: 36, rightHand: 36, leftFoot: 12, rightFoot: 12 }
+
+function gaussianBlur(values, width, height, sigma) {
+  if (!values.length || width * height !== values.length || sigma <= 0.01) return values
+
+  const radius = Math.max(1, Math.ceil(sigma * 2.57))
+  const kernel = Array.from(
+    { length: radius * 2 + 1 },
+    (_, index) => Math.exp(-((index - radius) ** 2) / (2 * sigma * sigma)),
+  )
+  const weightSum = kernel.reduce((sum, weight) => sum + weight, 0)
+  const horizontal = new Array(values.length).fill(0)
+  const result = new Array(values.length).fill(0)
+
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      let total = 0
+      for (let offset = -radius; offset <= radius; offset++) {
+        const sourceCol = Math.min(width - 1, Math.max(0, col + offset))
+        total += values[row * width + sourceCol] * kernel[offset + radius]
+      }
+      horizontal[row * width + col] = total / weightSum
+    }
+  }
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      let total = 0
+      for (let offset = -radius; offset <= radius; offset++) {
+        const sourceRow = Math.min(height - 1, Math.max(0, row + offset))
+        total += horizontal[sourceRow * width + col] * kernel[offset + radius]
+      }
+      result[row * width + col] = total / weightSum
+    }
+  }
+  return result
+}
+
+function buildRenderFrame(frame, settingValue) {
+  if (!frame || typeof frame !== 'object') return frame
+  // 后端原来在实际点网格上按 sigma = gauss × 0.5 平滑；这里拿到的是 2 倍插值后的显示网格，sigma 跟着翻倍
+  const sigma = Number(settingValue?.gauss) || 0
+  const filter = Number(settingValue?.filter)
+  const threshold = Number.isFinite(filter) && filter > 0 ? filter : 0
+  const result = {}
+  Object.keys(frame).forEach((key) => {
+    const source = frame[key]
+    if (!Array.isArray(source) && !ArrayBuffer.isView(source)) {
+      result[key] = source
+      return
+    }
+    let values = Array.from(source, (value) => Number(value) || 0)
+    const width = RENDER_MATRIX_WIDTHS[key.replace(/^endi-/, '')]
+    if (width && values.length % width === 0) {
+      values = gaussianBlur(values, width, values.length / width, sigma)
+    }
+    result[key] = threshold > 0 ? values.map((value) => (value < threshold ? 0 : value)) : values
+  })
+  return result
+}
+
 function paintTextureBase(ctx) {
   ctx.clearRect(0, 0, UV_CANVAS_SIZE, UV_CANVAS_SIZE)
   ctx.fillStyle = TEXTURE_BASE_COLOR
@@ -222,8 +283,9 @@ function drawHumanHeatmap(canvas, frame, webglHeatmap, regionMap) {
   const ctx = canvas.getContext?.('2d')
   if (!ctx) return
   const settingValue = getSettingValue?.() || {}
+  const renderFrame = buildRenderFrame(frame, settingValue)
   const fallbackMax = Number(settingValue.color) > 0 ? Number(settingValue.color) : DEFAULT_COLOR_MAX
-  const values = getFrameValues(frame)
+  const values = getFrameValues(renderFrame)
   const frameMax = getFrameMax(values)
   const colorMax = Boolean(settingValue.autoColor) && frameMax > 0 ? frameMax : fallbackMax
 
@@ -244,7 +306,7 @@ function drawHumanHeatmap(canvas, frame, webglHeatmap, regionMap) {
       blurFactor: 0.46,
       class: 'endi-human-atlas',
     },
-    buildHumanAtlasHeatmapData(frame, settingValue.height, regionMap),
+    buildHumanAtlasHeatmapData(renderFrame, settingValue.height, regionMap),
     'endi-human-atlas-webgl'
   )?.[0]
 

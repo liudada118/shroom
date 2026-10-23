@@ -571,11 +571,12 @@ function interpolateEndiWearSource(type, matrix) {
     return interpolated
 }
 
+// Serial input: wiring order only. Interpolation and calibration belong to the algorithm package.
 function endiWear1024(arr, type) {
-    if (type === 'endi-jacket') return interpolateEndiWearSource(type, endiJacketWear1024(arr))
-    if (type === 'endi-leftFoot') return interpolateEndiWearSource(type, endiLeftFootWear1024(arr))
-    if (type === 'endi-rightFoot') return interpolateEndiWearSource(type, endiRightFootWear1024(arr))
-    if (type === 'endi-leftHand' || type === 'endi-rightHand') return interpolateEndiWearSource(type, endiSleeveWear1024(arr))
+    if (type === 'endi-jacket') return endiJacketWear1024(arr)
+    if (type === 'endi-leftFoot') return endiLeftFootWear1024(arr)
+    if (type === 'endi-rightFoot') return endiRightFootWear1024(arr)
+    if (type === 'endi-leftHand' || type === 'endi-rightHand') return endiSleeveWear1024(arr)
     return mapIndexMatrix(arr, [])
 }
 

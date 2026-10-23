@@ -463,6 +463,11 @@ export default function NumThree(props) {
       // 这里画的是压强(kPa)，动态配色的量程下限/保护值要按压强那一套走
       setDynamicColorValueScale(rawAdcMode);
       data = prepareDisplayData(data, gridSize1, gridSize2, rawAdcMode);
+      // 噪点消除只在画面上隐藏低值格，sitData 里的原值不动，统计照常
+      const filterValue = Number(filter);
+      if (!rawAdcMode && Number.isFinite(filterValue) && filterValue > 0) {
+        data = data.map((value) => (value < filterValue ? 0 : value));
+      }
       data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}-g${gauss}-f${filter}-${currentMetricMode}`, rawAdcMode);
       const nullMask = createEndiNullMask(systemType, displayType, gridSize1, gridSize2);
       dataRef.current = data;

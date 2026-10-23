@@ -4,7 +4,7 @@ const { state } = require('../state')
 
 const DEFAULT_PRESSURE_CONFIG = {
   backValueMultiplier: 3,
-  dummyPressureFormulaFile: 'dummyPressure_v2.10.27.js',
+  dummyPressureFormulaFile: 'dummyPressure.v2.10.28.js',
   pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
   pressureFormulaProfile: 'V2.7.38中英文logo',
 }
@@ -33,6 +33,10 @@ function normalizeFormulaFile(fileName) {
 
 function normalizeDummyFormulaFile(fileName) {
   const baseName = path.basename(String(fileName || DEFAULT_PRESSURE_CONFIG.dummyPressureFormulaFile))
+  // Upgrade persisted selections of bundled legacy formulas with the application.
+  if (/^dummyPressure[_.]v2\.10\.(3|4|27)\.js$/i.test(baseName)) {
+    return DEFAULT_PRESSURE_CONFIG.dummyPressureFormulaFile
+  }
   return /^dummyPressure.*\.js$/i.test(baseName)
     ? baseName
     : DEFAULT_PRESSURE_CONFIG.dummyPressureFormulaFile
@@ -148,6 +152,7 @@ function requireDummyPressureFormula(formulaPath, formulaFile) {
   delete require.cache[resolvedPath]
   const moduleValue = require(resolvedPath)
   const requiredExports = [
+    'calculateDummyRawPressureFrame',
     'calculateDummyValuesPressure',
     'calculateDummyMatrixPressure',
     'bodyAdcToKpaRaw',

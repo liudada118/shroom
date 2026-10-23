@@ -7,8 +7,8 @@ const fs = require('fs')
 const path = require('path')
 const constantObj = require('../../util/config')
 const { MATRIX_DIMENSIONS } = require('../../util/deviceMatrixConfig')
-const { interpolateEndiWearSource } = require('../../util/line')
 const {
+  DUMMY_MATRIX_CONFIG,
   ensureProcessedFrame,
   isDummyMatrixKey,
   normalizeFrameProcessingConfig,
@@ -166,6 +166,10 @@ function getDirectionForKey(directionState, key) {
 }
 
 function getMatrixDimensions(key, arr) {
+  const physical = DUMMY_MATRIX_CONFIG[key]
+  if (physical && arr?.length === physical.sourceWidth * physical.sourceHeight) {
+    return { width: physical.sourceWidth, height: physical.sourceHeight }
+  }
   if (MATRIX_DIMENSIONS[key]) {
     return MATRIX_DIMENSIONS[key]
   }
@@ -222,35 +226,9 @@ const ENDI_FOOT_COMBINED_KEY = 'endi-foot'
 const ENDI_SINGLE_FOOT_WIDTH = 12
 const ENDI_FOOT_HEIGHT = 64
 
-function normalizeEndiWearMatrixSource(type, arr) {
-  if (!Array.isArray(arr)) return arr
-  if (isValidMatrix(type, arr)) return arr
-
-  const legacyDimensions = ENDI_WEAR_LEGACY_DIMENSIONS[type]
-  if (!legacyDimensions || arr.length !== legacyDimensions.width * legacyDimensions.height) {
-    return arr
-  }
-
-  return interpolateEndiWearSource(type, arr)
-}
-
 function normalizeFrameMatrixSources(frame) {
   if (!frame || typeof frame !== 'object') return frame
-  const normalizedFrame = { ...frame }
-
-  Object.keys(normalizedFrame).forEach((key) => {
-    const item = normalizedFrame[key]
-    if (!item || typeof item !== 'object' || !Array.isArray(item.arr)) return
-    const arr = normalizeEndiWearMatrixSource(key, item.arr)
-    if (arr === item.arr) return
-    normalizedFrame[key] = {
-      ...item,
-      arr,
-      matrixMeta: buildMatrixMeta(key, arr),
-    }
-  })
-
-  return combineEndiFootMatrices(normalizedFrame)
+  return combineEndiFootMatrices(ensureProcessedFrame(frame))
 }
 
 function makeZeroMatrix(length) {
@@ -302,8 +280,8 @@ function combineEndiFootMatrices(frame) {
   if (!frame || typeof frame !== 'object') return frame
   const leftItem = frame[ENDI_FOOT_LEFT_KEY]
   const rightItem = frame[ENDI_FOOT_RIGHT_KEY]
-  const leftArr = normalizeEndiWearMatrixSource(ENDI_FOOT_LEFT_KEY, leftItem?.arr)
-  const rightArr = normalizeEndiWearMatrixSource(ENDI_FOOT_RIGHT_KEY, rightItem?.arr)
+  const leftArr = leftItem?.arr
+  const rightArr = rightItem?.arr
   const hasLeft = Array.isArray(leftArr) && leftArr.length === ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT
   const hasRight = Array.isArray(rightArr) && rightArr.length === ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT
 
@@ -330,6 +308,18 @@ function combineEndiFootMatrices(frame) {
     sourceMatrixKeys: [ENDI_FOOT_LEFT_KEY, ENDI_FOOT_RIGHT_KEY],
   }
 
+  const combined = frame[ENDI_FOOT_COMBINED_KEY]
+  delete combined.physicalAdcArr
+  for (const [field, sourceField] of [
+    ['rawAdcArr', 'sourceRawAdcMatrices'], ['pressureArr', 'sourcePressureMatrices'], ['forceArr', 'sourceForceMatrices'],
+  ]) {
+    combined[field] = combineFootRows(leftItem?.[field], rightItem?.[field])
+    combined[sourceField] = buildFootSourceMap(combined[field])
+  }
+  combined.sourcePhysicalAdcMatrices = {
+    [ENDI_FOOT_LEFT_KEY]: leftItem?.physicalAdcArr || makeZeroMatrix(6 * 32),
+    [ENDI_FOOT_RIGHT_KEY]: rightItem?.physicalAdcArr || makeZeroMatrix(6 * 32),
+  }
   return frame
 }
 
@@ -400,7 +390,7 @@ function applyCollectionDirection(key, arr, direction) {
 function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAULT_DATA_DIRECTION) {
   const normalizedState = normalizeDataDirectionState(directionState)
   const directedFrame = {}
-  const sourceFrame = combineEndiFootMatrices({ ...(frame || {}) })
+  const sourceFrame = { ...(frame || {}) }
 
   Object.keys(sourceFrame || {}).forEach((key) => {
     const item = sourceFrame[key]
@@ -410,9 +400,6 @@ function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAU
     }
 
     const nextItem = { ...item }
-    if (Array.isArray(nextItem.arr)) {
-      nextItem.arr = normalizeEndiWearMatrixSource(key, nextItem.arr)
-    }
     if (Array.isArray(nextItem.arr) && isValidMatrix(key, nextItem.arr)) {
       const direction = getDirectionForKey(normalizedState, key)
       nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
@@ -452,7 +439,7 @@ function getActiveFrameProcessingConfig() {
 }
 
 function prepareProcessedFrame(frame) {
-  const sourceFrame = combineEndiFootMatrices({ ...(frame || {}) })
+  const sourceFrame = { ...(frame || {}) }
   const zeroedFrame = {}
 
   Object.keys(sourceFrame).forEach((key) => {
@@ -461,7 +448,14 @@ function prepareProcessedFrame(frame) {
       zeroedFrame[key] = item
       return
     }
-    const normalizedArr = normalizeEndiWearMatrixSource(key, item.arr)
+    if (isDummyMatrixKey(key)) {
+      zeroedFrame[key] = {
+        ...item,
+        zeroState: { enabled: false, zero_enabled: false, zero_time: null, has_baseline: false },
+      }
+      return
+    }
+    const normalizedArr = item.arr
     const rawAdcArr = Array.isArray(item.rawAdcArr) && item.rawAdcArr.length === normalizedArr.length
       ? [...item.rawAdcArr]
       : [...normalizedArr]
@@ -473,7 +467,7 @@ function prepareProcessedFrame(frame) {
     }
   })
 
-  return processFrame(zeroedFrame, getActiveFrameProcessingConfig())
+  return combineEndiFootMatrices(processFrame(zeroedFrame, getActiveFrameProcessingConfig()))
 }
 
 function applyZeroBaseline(key, arr, zeroState) {
@@ -568,7 +562,7 @@ function parseData(parserArr, objs, type) {
     }
   })
 
-  return combineEndiFootMatrices(json)
+  return json
 }
 
 /**
@@ -956,4 +950,5 @@ module.exports = {
   saveDataDirection,
   loadPersistedDataDirection,
   prepareProcessedFrame,
+  combineEndiFootMatrices,
 }

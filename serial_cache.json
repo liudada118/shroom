@@ -3,45 +3,75 @@
     "504330390250435E45": {
       "type": "endi-jacket",
       "deviceClass": "foot",
-      "lastSeen": "2026-09-11T08:35:43.816Z",
+      "lastSeen": "2026-10-10T05:40:23.225Z",
       "alias": ""
     },
     "464134391150431A9A": {
       "type": "endi-rightHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-09-11T08:35:43.823Z",
+      "lastSeen": "2026-10-10T05:40:23.232Z",
       "alias": ""
     },
     "46413439115043190B": {
       "type": "endi-leftHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-09-11T08:35:43.828Z",
+      "lastSeen": "2026-10-12T06:21:15.940Z",
       "alias": ""
     },
     "344637301550321301": {
       "type": "endi-leftFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-09-14T01:42:57.112Z",
+      "lastSeen": "2026-10-10T05:40:23.241Z",
       "alias": ""
     },
     "554635300E5043598D": {
       "type": "endi-rightFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-09-11T08:35:43.838Z",
+      "lastSeen": "2026-10-10T05:40:23.247Z",
       "alias": ""
     },
     "46413439115043198B": {
       "type": "endi-leftFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-09-14T05:42:25.460Z",
+      "lastSeen": "2026-10-10T05:40:23.251Z",
       "alias": ""
     },
     "314631310550457130": {
       "type": "endi-rightFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-09-14T05:42:24.947Z",
+      "lastSeen": "2026-10-10T05:40:23.256Z",
+      "alias": ""
+    },
+    "344637301550321444": {
+      "type": "endi-jacket",
+      "deviceClass": "foot",
+      "lastSeen": "2026-10-15T12:36:30.561Z",
+      "alias": ""
+    },
+    "504330390250435F14": {
+      "type": "endi-rightFoot",
+      "deviceClass": "foot",
+      "lastSeen": "2026-10-15T13:51:06.017Z",
+      "alias": ""
+    },
+    "52313935115046700A": {
+      "type": "endi-rightHand",
+      "deviceClass": "foot",
+      "lastSeen": "2026-10-12T06:25:28.416Z",
+      "alias": ""
+    },
+    "504330390250435E40": {
+      "type": "endi-leftHand",
+      "deviceClass": "foot",
+      "lastSeen": "2026-10-12T06:25:27.904Z",
+      "alias": ""
+    },
+    "34463730155032141C": {
+      "type": "endi-leftFoot",
+      "deviceClass": "foot",
+      "lastSeen": "2026-10-15T13:51:06.535Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-09-14T05:42:25.460Z"
+  "updatedAt": "2026-10-15T13:51:06.535Z"
 }
