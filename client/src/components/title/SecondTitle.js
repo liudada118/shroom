@@ -12,7 +12,7 @@ import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
 import { getMatrixPartFromDisplayType, localAddress, pointConfig, systemPointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
-import { normalizeVisualSettingMax, saveVisualSettingValue } from '../../util/visualSettingStorage'
+import { getRestoredVisualSettingValue, normalizeVisualSettingMax, saveVisualSettingValue, VISUAL_ADC_COLOR_SETTING_DEFAULT, VISUAL_ADC_FILTER_SETTING_DEFAULT, VISUAL_ADC_SETTING_MAX } from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import { getPressureMetricDisplay, PRESSURE_METRIC_MODE } from '../../util/pressureMetrics'
 
@@ -39,14 +39,22 @@ function SecondTitle(props) {
     const currentDisplayType = useEquipStore(s => s.displayType, shallow);
     const activeDisplayType = pageInfo.displayType || currentDisplayType;
     const displayStatus = useEquipStore(s => s.displayStatus, shallow);
+    const metricStatus = useEquipStore(s => s.metricStatus, shallow);
     const collecting = useEquipStore(s => s.collecting);
     const pressureUnit = useEquipStore(s => s.pressureUnit);
     const pressureMetricDisplay = getPressureMetricDisplay(PRESSURE_METRIC_MODE, t, i18n?.language, pressureUnit);
-    const pressureFilterDisplay = pressureMetricDisplay;
+    const isMannequin3D = systemType === 'endi' && display === 'point3D';
+    const colorMetricDisplay = isMannequin3D ? {
+        unit: 'ADC', valueScale: 1, formatValue: value => Number(value).toFixed(2),
+    } : pressureMetricDisplay;
+    const pressureFilterDisplay = colorMetricDisplay;
+    const showMannequinAutoColorHint = isMannequin3D && Boolean(settingValue.autoColor);
 
     const setSettingValue = useEquipStore.getState().setSettingValue
 
     const getSettingKey = (a) => {
+        if (isMannequin3D && a.type === 'color') return 'adcColor'
+        if (isMannequin3D && a.type === 'filter') return 'adcFilter'
         return a.type
     }
 
@@ -54,6 +62,8 @@ function SecondTitle(props) {
         const key = getSettingKey(a)
         const value = Number(settingValue[key])
         if (Number.isFinite(value)) return value
+        if (key === 'adcColor') return VISUAL_ADC_COLOR_SETTING_DEFAULT
+        if (key === 'adcFilter') return VISUAL_ADC_FILTER_SETTING_DEFAULT
         return Number(settingValue[a.type]) || 0
     }
 
@@ -65,7 +75,6 @@ function SecondTitle(props) {
         const key = getSettingKey(a)
         let obj = { ...settingValue }
         obj[key] = Math.max(a.min, Math.min(a.max, numericValue))
-        obj[a.type] = obj[key]
 
         saveVisualSettingValue(systemType || getSysType(), obj)
         setSettingValue(obj);
@@ -95,22 +104,23 @@ function SecondTitle(props) {
     }
 
     const currentDataMax = useMemo(() => {
-        const getMax = (arr) => Array.isArray(arr)
+        const getMax = (arr) => Array.isArray(arr) || ArrayBuffer.isView(arr)
             ? arr.reduce((max, value) => Math.max(max, Number(value) || 0), 0)
             : null
-        if (Array.isArray(displayStatus)) return getMax(displayStatus)
-        if (!displayStatus || typeof displayStatus !== 'object') return null
-        const values = Object.entries(displayStatus)
-        if (!values.length) return null
-        const target = getMatrixPartFromDisplayType(activeDisplayType)
+        const currentData = isMannequin3D ? metricStatus?.adc || {} : displayStatus
+        if (Array.isArray(currentData) || ArrayBuffer.isView(currentData)) return getMax(currentData)
+        if (!currentData || typeof currentData !== 'object') return isMannequin3D ? 0 : null
+        const values = Object.entries(currentData)
+        if (!values.length) return isMannequin3D ? 0 : null
+        const target = isMannequin3D ? null : getMatrixPartFromDisplayType(activeDisplayType)
         const matched = target
             ? values.filter(([key]) => key === target || key.endsWith(`-${target}`))
             : values
         const maxList = (matched.length ? matched : values)
-            .map(([, arr]) => Array.isArray(arr) ? getMax(arr) : null)
+            .map(([, arr]) => getMax(arr))
             .filter((value) => value !== null)
-        return maxList.length ? Math.max(...maxList) : null
-    }, [displayStatus, activeDisplayType, systemType])
+        return maxList.length ? Math.max(...maxList) : isMannequin3D ? 0 : null
+    }, [displayStatus, metricStatus, isMannequin3D, activeDisplayType, systemType])
 
 
 
@@ -127,22 +137,22 @@ function SecondTitle(props) {
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoUniform')}</div>
         },
         {
-            // 色彩调节 / 降噪 两项都是压强阈值：存的是 kPa，按当前压强单位显示
+            // 假人3D使用独立ADC参考值；其他视图的压强参考值仍存kPa并按当前单位显示
             title: t('colorAdj'),
             type: 'color',
-            max: 60,
+            max: isMannequin3D ? VISUAL_ADC_SETTING_MAX : 60,
             min: 0.01,
             step: 0.01,
-            sliderScale: pressureMetricDisplay.valueScale,
-            content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoRedBlue')}</div>
+            sliderScale: colorMetricDisplay.valueScale,
+            content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t(showMannequinAutoColorHint ? 'mannequinAutoColorHint' : 'algoRedBlue')}</div>
         },
         {
             title: t('denoise'),
             type: 'filter',
-            max: 60,
+            max: isMannequin3D ? VISUAL_ADC_SETTING_MAX : 60,
             min: 0,
             step: 0.1,
-            sliderScale: pressureMetricDisplay.valueScale,
+            sliderScale: colorMetricDisplay.valueScale,
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('filterNoise')}</div>
         },
         {
@@ -427,7 +437,7 @@ function SecondTitle(props) {
                                         <div className="setItemLabel">
                                             <span>{a.title}</span>
                                             {a.type === 'color' ? (
-                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : `${pressureMetricDisplay.formatValue(currentDataMax)} ${pressureMetricDisplay.unit}`}</em>
+                                                <em>{t('currentDataMax')}: {currentDataMax === null ? '--' : `${colorMetricDisplay.formatValue(currentDataMax)} ${colorMetricDisplay.unit}`}</em>
                                             ) : a.type === 'filter' ? <em>{pressureFilterDisplay.unit}</em> : null}
                                         </div>
                                     </Popover>
@@ -484,6 +494,9 @@ function SecondTitle(props) {
                                             <span>{t('autoColorAdj')}</span>
                                         </div>
                                     ) : null}
+                                    {a.type === 'color' && showMannequinAutoColorHint ? (
+                                        <div className="autoColorHint">{t('mannequinAutoColorHint')}</div>
+                                    ) : null}
 
                                 </div>
                             )
@@ -492,9 +505,10 @@ function SecondTitle(props) {
 
                     <div style={{ display: 'flex', justifyContent: 'end' }}>
                         <div onClick={() => {
-                            const optimalObj = getSettingValueOptimal()
+                            const restoreSystem = systemType || getSysType()
+                            const optimalObj = getRestoredVisualSettingValue(restoreSystem, getSettingValueOptimal())
                             useEquipStore.getState().setSettingValue(optimalObj)
-                            saveVisualSettingValue(systemType || getSysType(), optimalObj)
+                            saveVisualSettingValue(restoreSystem, optimalObj)
                         }} className='connectPort cursor'>{t('restore')}</div>
                     </div>
                 </div>

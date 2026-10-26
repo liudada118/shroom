@@ -1,11 +1,11 @@
 import { create } from 'zustand'
 import { maxObj } from '../assets/util/constant'
-import { loadVisualSettingValue, normalizeVisualSettingMax } from '../util/visualSettingStorage'
+import { loadVisualSettingValue, normalizeVisualSettingMax, VISUAL_AUTO_COLOR_SETTING_DEFAULT, VISUAL_COLOR_SETTING_DEFAULT } from '../util/visualSettingStorage'
 import { PRESSURE_METRIC_MODE, PRESSURE_UNIT_N_CM2 } from '../util/pressureMetrics'
 import { GRADIENT_UNIT_PA_CM, normalizeGradientUnit } from '../util/gradientMetrics'
 
 // ─── 持久化设置值 ────────────────────────────────────────
-const DEFAULT_SETTINGS = { gauss: 2, color: 5, filter: 0, height: 80, coherent: 1, autoColor: 1 }
+const DEFAULT_SETTINGS = { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 0, height: 80, coherent: 1, autoColor: VISUAL_AUTO_COLOR_SETTING_DEFAULT }
 const PRESSURE_METRIC_MODE_STORAGE_KEY = 'pressureMetricMode'
 const GRADIENT_UNIT_STORAGE_KEY = 'gradientUnit'
 const PRESSURE_UNIT_STORAGE_KEY = 'pressureUnit'

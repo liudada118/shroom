@@ -15,6 +15,7 @@ import {
 } from '../../util/pressureMetrics'
 import { useEquipStore } from '../../store/equipStore'
 import { jetWhite3NoWhite } from '../../assets/util/line'
+import { calculateAreaForceN, getAreaValuesCm2, isDummyAreaItem } from '../../util/areaMetrics'
 import './CopReport.scss'
 
 const COP_REPORT_SELECTION_PREFIX = 'copReportSelection:'
@@ -23,8 +24,14 @@ const POINT_AREA_CM2 = 1.5625
 const POINT_SPACING_MM = 12.5
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
-const formatNumber = (value, digits = 2) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '-'
+const formatNumber = (value, digits = 2) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '-'
 const safeArray = (value) => Array.isArray(value) ? value : []
+const averageArea = (metrics) => metrics.length && metrics.every((item) => Number.isFinite(item.effectiveArea))
+  ? metrics.reduce((sum, item) => sum + item.effectiveArea, 0) / metrics.length
+  : null
+const averageForce = (metrics) => metrics.length && metrics.every((item) => Number.isFinite(item.forceSum))
+  ? metrics.reduce((sum, item) => sum + item.forceSum, 0) / metrics.length
+  : null
 const getMatrixMetricValues = (matrix, metricMode = PRESSURE_METRIC_MODE) => {
   const source = metricMode === ADC_METRIC_MODE
     ? (matrix?.rawAdcArr || matrix?.arr)
@@ -190,6 +197,8 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = PRES
   const pressureValues = getMatrixMetricValues(matrix, 'pressure')
   const forceValues = getMatrixMetricValues(matrix, FORCE_METRIC_MODE)
   const metricValues = getMatrixMetricValues(matrix, metricMode)
+  const areaValues = getAreaValuesCm2(matrix)
+  const usesDummyArea = isDummyAreaItem(matrix, matrixKey)
   const { width, height } = inferSize(matrix)
   const scope = rect || { xStart: 0, yStart: 0, xEnd: width, yEnd: height }
   let pMax = 0
@@ -200,12 +209,14 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = PRES
   let weightSum = 0
   let xWeighted = 0
   let yWeighted = 0
+  let effectiveArea = usesDummyArea ? (areaValues === null ? null : 0) : 0
 
   for (let y = scope.yStart; y < scope.yEnd; y++) {
     for (let x = scope.xStart; x < scope.xEnd; x++) {
       const index = y * width + x
       const adcValue = Number(adcValues[index]) || 0
       const metricValue = Number(metricValues[index]) || 0
+      if (usesDummyArea && effectiveArea !== null) effectiveArea += areaValues[index] || 0
       pMax = Math.max(pMax, metricValue)
       adcMax = Math.max(adcMax, adcValue)
       adcSum += adcValue
@@ -219,16 +230,26 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = PRES
     }
   }
 
-  let forceSum = 0
+  let legacyForceSum = 0
+  let pressureSum = 0
+  let pressurePoints = 0
   let pressureMax = 0
   for (let y = scope.yStart; y < scope.yEnd; y++) {
     for (let x = scope.xStart; x < scope.xEnd; x++) {
       const index = y * width + x
-      forceSum += Number(forceValues[index]) || 0
-      pressureMax = Math.max(pressureMax, Number(pressureValues[index]) || 0)
+      if (!usesDummyArea) legacyForceSum += Number(forceValues[index]) || 0
+      const pressureValue = Number(pressureValues[index]) || 0
+      pressureMax = Math.max(pressureMax, pressureValue)
+      if (pressureValue > 0) {
+        pressureSum += pressureValue
+        pressurePoints++
+      }
     }
   }
   const pAvg = effectivePoints ? pSum / effectivePoints : 0
+  const forceSum = usesDummyArea
+    ? calculateAreaForceN(pressurePoints ? pressureSum / pressurePoints : 0, effectiveArea)
+    : legacyForceSum
   const copXIndex = weightSum ? xWeighted / weightSum : width / 2
   const copYIndex = weightSum ? yWeighted / weightSum : height / 2
   return {
@@ -240,7 +261,7 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = PRES
     adcSum,
     adcMax,
     effectivePoints,
-    effectiveArea: effectivePoints * getPressurePointAreaCm2(matrixKey),
+    effectiveArea: usesDummyArea ? effectiveArea : effectivePoints * getPressurePointAreaCm2(matrixKey),
     copX: (copXIndex - (width - 1) / 2) * POINT_SPACING_MM,
     copY: ((height - 1) / 2 - copYIndex) * POINT_SPACING_MM,
   }
@@ -284,10 +305,10 @@ const buildSingleAnalysis = (payload, matrixKey, metricMode = PRESSURE_METRIC_MO
     pMax: Math.max(...metrics.map((item) => item.pMax), 0),
     pAvg: metrics.length ? metrics.reduce((sum, item) => sum + item.pAvg, 0) / metrics.length : 0,
     pSum: metrics.length ? metrics.reduce((sum, item) => sum + item.pSum, 0) / metrics.length : 0,
-    forceSum: metrics.length ? metrics.reduce((sum, item) => sum + item.forceSum, 0) / metrics.length : 0,
+    forceSum: averageForce(metrics),
     adcSum: metrics.length ? metrics.reduce((sum, item) => sum + item.adcSum, 0) / metrics.length : 0,
     adcMax: Math.max(...metrics.map((item) => item.adcMax), 0),
-    effectiveArea: metrics.length ? metrics.reduce((sum, item) => sum + item.effectiveArea, 0) / metrics.length : 0,
+    effectiveArea: averageArea(metrics),
     effectivePoints: metrics.length ? metrics.reduce((sum, item) => sum + item.effectivePoints, 0) / metrics.length : 0,
     copX: avgCopX,
     copY: avgCopY,
@@ -307,12 +328,16 @@ const buildSingleAnalysis = (payload, matrixKey, metricMode = PRESSURE_METRIC_MO
       return sum + Math.hypot(item.copX - prev.copX, item.copY - prev.copY)
     }, 0)
     const pSum = series.length ? series.reduce((sum, item) => sum + item.pSum, 0) / series.length : 0
-    const forceSum = series.length ? series.reduce((sum, item) => sum + item.forceSum, 0) / series.length : 0
-    const ratio = totalSummary.forceSum ? forceSum / totalSummary.forceSum * 100 : 0
+    const forceSum = averageForce(series)
+    const ratio = Number.isFinite(forceSum) && Number.isFinite(totalSummary.forceSum)
+      ? (totalSummary.forceSum ? forceSum / totalSummary.forceSum * 100 : 0) : null
     const risk = ratio >= 30 || Math.max(...series.map((item) => item.pressureMax), 0) >= 70 ? '高' : ratio >= 12 ? '中' : '低'
     return {
       ...selection,
       series,
+      areaCm2: isDummyAreaItem(frames[0]?.data?.[matrixKey], matrixKey)
+        ? averageArea(series)
+        : selection.rect.width * selection.rect.height * POINT_AREA_CM2,
       summary: {
         pMax: Math.max(...series.map((item) => item.pMax), 0),
         pAvg: series.length ? series.reduce((sum, item) => sum + item.pAvg, 0) / series.length : 0,
@@ -321,7 +346,7 @@ const buildSingleAnalysis = (payload, matrixKey, metricMode = PRESSURE_METRIC_MO
         pressureRatio: ratio,
         adcSum: series.length ? series.reduce((sum, item) => sum + item.adcSum, 0) / series.length : 0,
         adcMax: Math.max(...series.map((item) => item.adcMax), 0),
-        effectiveArea: series.length ? series.reduce((sum, item) => sum + item.effectiveArea, 0) / series.length : 0,
+        effectiveArea: averageArea(series),
         effectivePoints: series.length ? series.reduce((sum, item) => sum + item.effectivePoints, 0) / series.length : 0,
         copX: regionCop.length ? regionCop.reduce((sum, item) => sum + item.copX, 0) / regionCop.length : 0,
         copY: regionCop.length ? regionCop.reduce((sum, item) => sum + item.copY, 0) / regionCop.length : 0,
@@ -369,8 +394,7 @@ const FORCE_TREND_DESCRIPTION = 'X轴表示采集时间，单位为 s；Y轴表�
 const COP_DX_TREND_DESCRIPTION = 'X轴表示采集时间，单位为 s；Y轴表示压力中心左右偏移距离，单位为 mm。'
 
 const getForceTotalSeries = (items) => safeArray(items)
-  .map((item) => Number(item?.forceSum ?? item?.pSum))
-  .filter(Number.isFinite)
+  .map((item) => Number.isFinite(item?.forceSum) ? item.forceSum : null)
 
 function Heatmap({ matrix, matrixKey = '', selections = [], activeSelection = null, title, description = HEATMAP_DESCRIPTION }) {
   const { arr, width, height } = getReportDisplayMatrix(matrix, matrixKey)
@@ -469,7 +493,7 @@ function LineChart({
   description = '',
 }) {
   const source = series
-    .map((value, index) => ({ value: Number(value), index }))
+    .map((value, index) => ({ value: value === null || value === undefined || value === '' ? null : Number(value), index }))
     .filter((item) => Number.isFinite(item.value))
   const sampled = downsample(source, 180)
   const sampleRateValue = Number(sampleRate)
@@ -831,7 +855,7 @@ function CopReport() {
                 index + 1,
                 selection.name,
                 selection.shapeType,
-                formatNumber(selection.rect.width * selection.rect.height * POINT_AREA_CM2),
+                formatNumber(selection.areaCm2),
                 formatNumber(selection.summary.forceSum),
                 formatNumber(selection.summary.pressureRatio, 1),
                 formatMetric(selection.summary.pMax),

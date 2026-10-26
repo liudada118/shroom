@@ -2,22 +2,47 @@ const VISUAL_SETTING_MAP_KEY = 'visualSettingValueBySystemV1'
 const LEGACY_SETTING_KEY = 'setValueData'
 const VISUAL_DEFAULT_VERSION_KEY = 'visualDefaultVersion'
 const VISUAL_DEFAULT_VERSION = '2026-08-03-pressure-filter-zero-default'
+const MANNEQUIN_ADC_DEFAULT_VERSION_KEY = 'mannequinAdcDefaultVersion'
+const MANNEQUIN_ADC_DEFAULT_VERSION = '2026-10-23-adc-600'
 const DEFAULT_SYSTEM_KEY = 'default'
 export const VISUAL_COLOR_SETTING_MIN = 0.01
 export const VISUAL_COLOR_SETTING_MAX = 60
-export const VISUAL_COLOR_SETTING_DEFAULT = 5
-const VISUAL_SETTING_DEFAULTS = { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 0, height: 80, autoColor: 1 }
+export const VISUAL_COLOR_SETTING_DEFAULT = 4.6
+export const VISUAL_AUTO_COLOR_SETTING_DEFAULT = 0
+export const VISUAL_ADC_COLOR_SETTING_DEFAULT = 600
+export const VISUAL_ADC_FILTER_SETTING_DEFAULT = 0
+export const VISUAL_ADC_SETTING_MAX = 1000
+const VISUAL_SETTING_DEFAULTS = {
+  gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 0, height: 80, autoColor: VISUAL_AUTO_COLOR_SETTING_DEFAULT,
+  adcColor: VISUAL_ADC_COLOR_SETTING_DEFAULT, adcFilter: VISUAL_ADC_FILTER_SETTING_DEFAULT,
+}
+// The mannequin panel displays pressure in N/cm²: 2.00 N/cm² is stored as 20 kPa.
+const MANNEQUIN_RESTORE_DEFAULTS = Object.freeze({
+  gauss: 1.6, color: 20, filter: 0, height: 245.1, autoColor: 0,
+  adcColor: VISUAL_ADC_COLOR_SETTING_DEFAULT, adcFilter: VISUAL_ADC_FILTER_SETTING_DEFAULT,
+})
 const LEGACY_DEFAULT_COLORS = new Set([50, 120, 180, 200, 255, 355, 495])
 const LEGACY_DEFAULT_VALUES = {
   gauss: new Set([1, 2, 2.6, 3]),
   color: LEGACY_DEFAULT_COLORS,
   filter: new Set([0, 0.1, 1, 6, 30]),
   height: new Set([1, 2.02, 3.36, 10, 150]),
-  autoColor: new Set([0]),
 }
-const SETTING_KEYS = ['gauss', 'color', 'filter', 'height', 'coherent', 'autoColor']
+const SETTING_KEYS = ['gauss', 'color', 'filter', 'height', 'coherent', 'autoColor', 'adcColor', 'adcFilter']
 export const DEFAULT_HEIGHT_SETTING_MAX = 400
 export const DEFAULT_FILTER_SETTING_MAX = 200
+
+/** Restore the mannequin's requested panel preset while retaining other systems' defaults. */
+export function getRestoredVisualSettingValue(system, fallback = {}) {
+  const restored = {
+    ...fallback,
+    color: VISUAL_COLOR_SETTING_DEFAULT,
+    autoColor: VISUAL_AUTO_COLOR_SETTING_DEFAULT,
+    ...(system === 'endi' ? MANNEQUIN_RESTORE_DEFAULTS : {}),
+  }
+  delete restored.heatmapUsePressure
+  return restored
+}
 
 export function normalizeVisualSettingMax(maxValue = {}) {
   const heightMax = Number(maxValue?.height)
@@ -31,6 +56,8 @@ export function normalizeVisualSettingMax(maxValue = {}) {
     height: Number.isFinite(heightMax)
       ? Math.max(heightMax, DEFAULT_HEIGHT_SETTING_MAX)
       : DEFAULT_HEIGHT_SETTING_MAX,
+    adcColor: VISUAL_ADC_SETTING_MAX,
+    adcFilter: VISUAL_ADC_SETTING_MAX,
   }
 }
 
@@ -45,9 +72,7 @@ function safeParse(value, fallback) {
 function normalizeSettingValue(value = {}, fallback = {}, maxValue = {}) {
   const normalizedMax = normalizeVisualSettingMax(maxValue)
   const result = {
-    // 后端 optimalObj 里没有 autoColor（只有 gauss/color/filter/height/coherent），
-    // 直接拿它当兜底会让 autoColor 变成 undefined，开关看着就是「默认关闭」。
-    // 先垫一层默认值，再让 fallback / 本地存档往上盖。
+    // 默认值兜底后再合并后端配置和用户存档，保留明确保存的自动调节选择。
     ...VISUAL_SETTING_DEFAULTS,
     ...fallback,
   }
@@ -63,8 +88,11 @@ function normalizeSettingValue(value = {}, fallback = {}, maxValue = {}) {
     if (key === 'color') {
       result[key] = Math.max(VISUAL_COLOR_SETTING_MIN, result[key])
     }
+    if (key === 'adcColor') result[key] = Math.max(VISUAL_COLOR_SETTING_MIN, result[key])
+    if (key === 'adcFilter') result[key] = Math.max(0, result[key])
   })
 
+  delete result.heatmapUsePressure
   return result
 }
 
@@ -129,12 +157,36 @@ function migrateVisualDefaultMap() {
   return nextMap
 }
 
+/** Upgrade the previous ADC preset once, without resetting custom color or pressure controls. */
+function migrateMannequinAdcDefaultMap(map) {
+  if (localStorage.getItem(MANNEQUIN_ADC_DEFAULT_VERSION_KEY) === MANNEQUIN_ADC_DEFAULT_VERSION) return map
+
+  const migrate = value => value && typeof value === 'object' && [255, 367].includes(Number(value.adcColor))
+    ? { ...value, adcColor: VISUAL_ADC_COLOR_SETTING_DEFAULT }
+    : value
+  const nextMap = { ...map }
+  let changed = false
+  for (const key of ['endi', DEFAULT_SYSTEM_KEY]) {
+    const migrated = migrate(nextMap[key])
+    if (migrated === nextMap[key]) continue
+    nextMap[key] = migrated
+    changed = true
+  }
+  if (changed) localStorage.setItem(VISUAL_SETTING_MAP_KEY, JSON.stringify(nextMap))
+
+  const legacyValue = safeParse(localStorage.getItem(LEGACY_SETTING_KEY), null)
+  const migratedLegacy = migrate(legacyValue)
+  if (migratedLegacy !== legacyValue) localStorage.setItem(LEGACY_SETTING_KEY, JSON.stringify(migratedLegacy))
+  localStorage.setItem(MANNEQUIN_ADC_DEFAULT_VERSION_KEY, MANNEQUIN_ADC_DEFAULT_VERSION)
+  return nextMap
+}
+
 export function loadVisualSettingValue(system, fallback = {}, maxValue = {}) {
   if (typeof localStorage === 'undefined') {
     return normalizeSettingValue(fallback, fallback, maxValue)
   }
 
-  const map = migrateVisualDefaultMap()
+  const map = migrateMannequinAdcDefaultMap(migrateVisualDefaultMap())
   if (system && map?.[system]) {
     return normalizeSettingValue(map[system], fallback, maxValue)
   }
@@ -157,9 +209,11 @@ export function saveVisualSettingValue(system, value) {
   const nextValue = { ...(value || {}) }
   delete nextValue.color3D
   delete nextValue.color2D
+  delete nextValue.heatmapUsePressure
   map[normalizedSystem] = nextValue
   map[DEFAULT_SYSTEM_KEY] = nextValue
   localStorage.setItem(VISUAL_SETTING_MAP_KEY, JSON.stringify(map))
   localStorage.setItem(LEGACY_SETTING_KEY, JSON.stringify(nextValue))
   localStorage.setItem(VISUAL_DEFAULT_VERSION_KEY, VISUAL_DEFAULT_VERSION)
+  localStorage.setItem(MANNEQUIN_ADC_DEFAULT_VERSION_KEY, MANNEQUIN_ADC_DEFAULT_VERSION)
 }

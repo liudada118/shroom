@@ -8,6 +8,7 @@ const path = require('path')
 const HttpResult = require('../HttpResult')
 const constantObj = require('../../util/config')
 const { MATRIX_DIMENSIONS } = require('../../util/deviceMatrixConfig')
+const { calculateAreaForceN } = require('../../util/areaMetrics')
 const { initDb, dbLoadCsv, getExportFieldOptions, deleteDbData, dbGetData, getCsvData, buildCsvPlaybackData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir, validateImportedCsv, listSelectionTemplates, replaceSelectionTemplates } = require('../../util/db')
 const module2 = require('../../util/aes_ecb')
 const { readEncryptedSystemConfig } = require('../../util/systemConfig')
@@ -16,10 +17,13 @@ const { broadcast } = require('../websocket')
 const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
 const { colAndSendData, sendData, clearPlayTimer, ensureRealtimeTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot, saveDataDirection, combineEndiFootMatrices } = require('../services/DataService')
 const { loadPressureConfig, savePressureConfig, listPressureFormulaFiles } = require('../services/PressureConfig')
+const { withAreaFormulaSnapshot } = require('../services/AreaFormula')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES } = require('../../util/deviceConfigValidation')
 const {
+  DUMMY_POINT_AREA_CM2,
   ensureProcessedFrame,
+  isDummyMatrixKey,
   normalizeFrameProcessingConfig,
 } = require('../../util/pressureFrameProcessor')
 
@@ -28,10 +32,10 @@ const historyIndexReady = new WeakSet()
 const VISUAL_COLOR_MAX = 60
 const VISUAL_SETTING_DEFAULTS = {
   gauss: 2,
-  color: 5,
+  color: 4.6,
   filter: 0,
   height: 80,
-  autoColor: 1,
+  autoColor: 0,
 }
 const VISUAL_SETTING_MAXIMUMS = {
   color: VISUAL_COLOR_MAX,
@@ -745,7 +749,7 @@ function resolveZeroState(req) {
 // ─── 通用错误处理包装器 ──────────────────────────────────
 function asyncHandler(fn) {
   return (req, res, next) => {
-    Promise.resolve(fn(req, res, next)).catch((err) => {
+    return Promise.resolve(withAreaFormulaSnapshot(() => fn(req, res, next))).catch((err) => {
       console.error('[Server] Route error:', err)
       res.json(new HttpResult(1, {}, err.message || 'Internal server error'))
     })
@@ -1426,6 +1430,8 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
   const forceAreaBucket = {}
   const bucketCount = {}
   const bucketSize = Math.max(1, Math.ceil(rows.length / PLAYBACK_CHART_TARGET_POINTS))
+  const addAreaSample = (current, value) => current === null || value === null ? null : current + value
+  const averageArea = (total, count) => total === null ? null : total / count
   keyArr.forEach((key) => {
     pressArr[key] = []
     areaArr[key] = []
@@ -1453,6 +1459,9 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
       const adcValues = Array.isArray(item?.rawAdcArr) ? item.rawAdcArr : item?.arr || []
       const pressureValues = Array.isArray(item?.pressureArr) ? item.pressureArr : []
       const forceValues = Array.isArray(item?.forceArr) ? item.forceArr : []
+      const dummyArea = isDummyMatrixKey(key)
+      const areaValuesCm2 = Array.isArray(item?.areaValuesCm2)
+        && item.areaValuesCm2.length === item.arr?.length ? item.areaValuesCm2 : null
       const sel = getFirstSelectionRegion(getSelectionForMatrixKey(selectJson, key))
 
       let press = 0
@@ -1461,6 +1470,7 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
       let adcArea = 0
       let pressure = 0
       let pressureArea = 0
+      let fittedArea = areaValuesCm2 ? 0 : null
       if (sel && typeof sel === 'object') {
         const { xStart, xEnd, yStart, yEnd, width } = sel
         if ([xStart, xEnd, yStart, yEnd, width].every((v) => typeof v === 'number')) {
@@ -1472,33 +1482,42 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
               const forceValue = Number(forceValues[index]) || 0
               adc += adcValue
               pressure += pressureValue
-              press += forceValue
+              if (!dummyArea) press += forceValue
               if (adcValue > 0) adcArea++
               if (pressureValue > 0) pressureArea++
               if (forceValue > 0) area++
+              if (areaValuesCm2) fittedArea += (Number(areaValuesCm2[index]) || 0) / DUMMY_POINT_AREA_CM2
             }
           }
         }
       }
+      if (dummyArea) {
+        const pressureAverage = pressureArea > 0 ? pressure / pressureArea : 0
+        press = calculateAreaForceN(
+          pressureAverage,
+          fittedArea === null ? null : fittedArea * DUMMY_POINT_AREA_CM2,
+        )
+        area = adcArea = pressureArea = fittedArea
+      }
 
-      pressBucket[key] += press
-      areaBucket[key] += area
+      pressBucket[key] = addAreaSample(pressBucket[key], press)
+      areaBucket[key] = addAreaSample(areaBucket[key], area)
       adcBucket[key] += adc
-      adcAreaBucket[key] += adcArea
+      adcAreaBucket[key] = addAreaSample(adcAreaBucket[key], adcArea)
       pressureBucket[key] += pressure
-      forceBucket[key] += press
-      pressureAreaBucket[key] += pressureArea
-      forceAreaBucket[key] += area
+      forceBucket[key] = addAreaSample(forceBucket[key], press)
+      pressureAreaBucket[key] = addAreaSample(pressureAreaBucket[key], pressureArea)
+      forceAreaBucket[key] = addAreaSample(forceAreaBucket[key], area)
       bucketCount[key]++
       if (bucketCount[key] >= bucketSize) {
-        pressArr[key].push(pressBucket[key] / bucketCount[key])
-        areaArr[key].push(areaBucket[key] / bucketCount[key])
+        pressArr[key].push(averageArea(pressBucket[key], bucketCount[key]))
+        areaArr[key].push(averageArea(areaBucket[key], bucketCount[key]))
         adcArr[key].push(adcBucket[key] / bucketCount[key])
-        adcAreaArr[key].push(adcAreaBucket[key] / bucketCount[key])
+        adcAreaArr[key].push(averageArea(adcAreaBucket[key], bucketCount[key]))
         pressureArr[key].push(pressureBucket[key] / bucketCount[key])
-        forceArr[key].push(forceBucket[key] / bucketCount[key])
-        pressureAreaArr[key].push(pressureAreaBucket[key] / bucketCount[key])
-        forceAreaArr[key].push(forceAreaBucket[key] / bucketCount[key])
+        forceArr[key].push(averageArea(forceBucket[key], bucketCount[key]))
+        pressureAreaArr[key].push(averageArea(pressureAreaBucket[key], bucketCount[key]))
+        forceAreaArr[key].push(averageArea(forceAreaBucket[key], bucketCount[key]))
         pressBucket[key] = 0
         areaBucket[key] = 0
         adcBucket[key] = 0
@@ -1515,14 +1534,14 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
   // flush 尾部
   for (const key of keyArr) {
     if (bucketCount[key] > 0) {
-      pressArr[key].push(pressBucket[key] / bucketCount[key])
-      areaArr[key].push(areaBucket[key] / bucketCount[key])
+      pressArr[key].push(averageArea(pressBucket[key], bucketCount[key]))
+      areaArr[key].push(averageArea(areaBucket[key], bucketCount[key]))
       adcArr[key].push(adcBucket[key] / bucketCount[key])
-      adcAreaArr[key].push(adcAreaBucket[key] / bucketCount[key])
+      adcAreaArr[key].push(averageArea(adcAreaBucket[key], bucketCount[key]))
       pressureArr[key].push(pressureBucket[key] / bucketCount[key])
-      forceArr[key].push(forceBucket[key] / bucketCount[key])
-      pressureAreaArr[key].push(pressureAreaBucket[key] / bucketCount[key])
-      forceAreaArr[key].push(forceAreaBucket[key] / bucketCount[key])
+      forceArr[key].push(averageArea(forceBucket[key], bucketCount[key]))
+      pressureAreaArr[key].push(averageArea(pressureAreaBucket[key], bucketCount[key]))
+      forceAreaArr[key].push(averageArea(forceAreaBucket[key], bucketCount[key]))
     }
   }
   // ─── [PERF-PLAYBACK-OPT] 结束 ──────────────────────────────────

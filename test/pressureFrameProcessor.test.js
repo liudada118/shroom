@@ -298,7 +298,9 @@ test('CSV export is pressure-only and preserves three-decimal elapsed seconds', 
   assert.ok(pressureDataHeader)
   assert.ok(totalForceHeader)
   assert.ok(JSON.parse(pressureRows[0][pressureDataHeader]).some((value) => value > 0))
-  assert.equal(Number(pressureRows[0][totalForceHeader]), Number(frame['endi-leftHand'].forceArr.reduce((sum, value) => sum + value, 0).toFixed(1)))
+  const positivePressures = frame['endi-leftHand'].pressureArr.filter(value => value > 0)
+  const meanPressure = positivePressures.reduce((sum, value) => sum + value, 0) / positivePressures.length
+  assert.equal(Number(pressureRows[0][totalForceHeader]), Number((meanPressure * frame['endi-leftHand'].areaCm2 * 0.1).toFixed(1)))
   assert.equal((await validateImportedCsv(pressureResult.filePath)).valid, true)
 
   const pressurePlayback = buildCsvPlaybackData(pressureRows)

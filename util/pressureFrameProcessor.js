@@ -1,4 +1,5 @@
 const { loadPressureConfig, loadDummyPressureFormula } = require('../server/services/PressureConfig')
+const { loadAreaFormula } = require('../server/services/AreaFormula')
 
 const PROCESSING_VERSION = 'dummy-raw-algorithm-v2.10.28'
 const DISPLAY_DIGITS = 1
@@ -290,12 +291,37 @@ function positionAlgorithmOutput(key, matrix) {
   return key === 'endi-jacket' ? centerJacketHead(flat) : flat
 }
 
+// Keep the area fit on the original physical ADC grid, before display positioning.
+function calculateRawDummyArea(key, physicalAdc, physicalMask, formula) {
+  const dimensions = DUMMY_MATRIX_CONFIG[key]
+  if (!dimensions || physicalAdc.length !== dimensions.sourceWidth * dimensions.sourceHeight) return null
+  const rawMatrix = Array.from({ length: dimensions.sourceHeight }, (_, row) =>
+    physicalAdc.slice(row * dimensions.sourceWidth, (row + 1) * dimensions.sourceWidth))
+  return formula.api.calculateDummyRawAreaFrame(rawMatrix, dimensions.sensorType, physicalMask)
+}
+
+function buildAreaFields(key, physicalAdc, physicalMask, formula) {
+  const area = calculateRawDummyArea(key, physicalAdc, physicalMask, formula)
+  return {
+    areaCm2: area === null ? null : area.areaCm2,
+    areaValuesCm2: area === null ? null : positionAlgorithmOutput(key, area.areaMatrixCm2),
+  }
+}
+
+function buildAreaMetadata(formula) {
+  return {
+    areaFormulaFile: formula.fileName,
+    areaFormulaVersion: formula.version,
+    areaFormulaRevision: formula.revision,
+  }
+}
+
 function convertPhysicalPressureMatrix(key, adcValues) {
   const result = calculateRawDummyFrame(key, recoverPhysicalMatrix(key, adcValues))
   return result ? positionAlgorithmOutput(key, result.pressureMatrixKpa) : []
 }
 
-function buildProcessingMetadata(config) {
+function buildProcessingMetadata(config, areaFormula) {
   const pressureConfig = loadPressureConfig()
   const versionMatch = String(pressureConfig.dummyPressureFormulaFile || '').match(/v(\d+(?:\.\d+)*)/i)
   return {
@@ -312,13 +338,14 @@ function buildProcessingMetadata(config) {
     temporal: false,
     outputDigits: DISPLAY_DIGITS,
     formulaFile: pressureConfig.dummyPressureFormulaFile,
+    ...buildAreaMetadata(areaFormula),
     formulaProfile: versionMatch ? `dummy-v${versionMatch[1]}` : 'dummy',
     pointSpacingCm: DUMMY_POINT_SPACING_CM,
     pointAreaCm2: DUMMY_POINT_AREA_CM2,
   }
 }
 
-function processSingleDummyMatrix(key, sourceValues, processingConfig) {
+function processSingleDummyMatrix(key, sourceValues, processingConfig, physicalMask, areaFormula = loadAreaFormula()) {
   const config = normalizeFrameProcessingConfig(processingConfig)
   const physicalAdcArr = recoverPhysicalMatrix(key, sourceValues)
   const result = calculateRawDummyFrame(key, physicalAdcArr)
@@ -334,7 +361,8 @@ function processSingleDummyMatrix(key, sourceValues, processingConfig) {
     arr: displayAdc,
     pressureArr: pressureValues.map((value) => roundValue(value)),
     forceArr: pressureValues.map((value) => roundValue(value * FORCE_PER_KPA)),
-    processing: buildProcessingMetadata(config),
+    ...buildAreaFields(key, physicalAdcArr, physicalMask, areaFormula),
+    processing: buildProcessingMetadata(config, areaFormula),
   }
 }
 
@@ -368,18 +396,20 @@ function combineFootRows(leftValues, rightValues) {
   return combined
 }
 
-function processFootMatrixItem(item, processingConfig) {
+function processFootMatrixItem(item, processingConfig, areaFormula) {
   const source = Array.isArray(item.rawAdcArr) ? item.rawAdcArr : item.arr
   const { left, right } = splitFootRows(source)
   const physical = item.sourcePhysicalAdcMatrices || {}
-  const leftResult = processSingleDummyMatrix(ENDI_LEFT_FOOT_KEY, physical[ENDI_LEFT_FOOT_KEY] || left, processingConfig)
-  const rightResult = processSingleDummyMatrix(ENDI_RIGHT_FOOT_KEY, physical[ENDI_RIGHT_FOOT_KEY] || right, processingConfig)
+  const masks = item.sourcePhysicalMasks || {}
+  const leftResult = processSingleDummyMatrix(ENDI_LEFT_FOOT_KEY, physical[ENDI_LEFT_FOOT_KEY] || left, processingConfig, masks[ENDI_LEFT_FOOT_KEY], areaFormula)
+  const rightResult = processSingleDummyMatrix(ENDI_RIGHT_FOOT_KEY, physical[ENDI_RIGHT_FOOT_KEY] || right, processingConfig, masks[ENDI_RIGHT_FOOT_KEY], areaFormula)
   if (!leftResult || !rightResult) return { ...item }
   const result = { ...item, processing: leftResult.processing }
   delete result.physicalAdcArr
   for (const [field, sourceField] of [
     ['arr', 'sourceMatrices'], ['rawAdcArr', 'sourceRawAdcMatrices'],
     ['pressureArr', 'sourcePressureMatrices'], ['forceArr', 'sourceForceMatrices'],
+    ['areaValuesCm2', 'sourceAreaMatrices'],
   ]) {
     result[field] = combineFootRows(leftResult[field], rightResult[field])
     result[sourceField] = { [ENDI_LEFT_FOOT_KEY]: leftResult[field], [ENDI_RIGHT_FOOT_KEY]: rightResult[field] }
@@ -388,14 +418,16 @@ function processFootMatrixItem(item, processingConfig) {
     [ENDI_LEFT_FOOT_KEY]: leftResult.physicalAdcArr,
     [ENDI_RIGHT_FOOT_KEY]: rightResult.physicalAdcArr,
   }
+  result.areaCm2 = leftResult.areaCm2 + rightResult.areaCm2
   return result
 }
 
-function processMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG) {
-  if (!isDummyMatrixKey(key)) return { ...item }
-  if (key === ENDI_FOOT_KEY) return processFootMatrixItem(item, processingConfig)
+function processMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG, areaFormula) {
+  if (!isDummyMatrixKey(key) || item.processing?.importedMetric) return { ...item }
+  areaFormula = areaFormula || loadAreaFormula()
+  if (key === ENDI_FOOT_KEY) return processFootMatrixItem(item, processingConfig, areaFormula)
   const source = item.physicalAdcArr || item.rawAdcArr || item.arr || []
-  const result = processSingleDummyMatrix(key, source, processingConfig)
+  const result = processSingleDummyMatrix(key, source, processingConfig, item.physicalMask, areaFormula)
   return result ? { ...item, ...result } : { ...item }
 }
 
@@ -410,26 +442,71 @@ function hasCanonicalMetricArrays(item = {}) {
     && item.forceArr.length === length
 }
 
-function ensureProcessedMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG) {
-  if (!isDummyMatrixKey(key) || hasCanonicalMetricArrays(item)) return { ...item }
+function ensureProcessedMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG, areaFormula) {
+  if (!isDummyMatrixKey(key) || item.processing?.importedMetric) return { ...item }
+  areaFormula = areaFormula || loadAreaFormula()
+  if (hasCanonicalMetricArrays(item)) {
+    if (item.processing?.areaFormulaRevision === areaFormula.revision
+      && (item.areaValuesCm2 === null
+        || (Array.isArray(item.areaValuesCm2) && item.areaValuesCm2.length === item.arr.length))) return { ...item }
+    if (key === ENDI_FOOT_KEY) return refreshFootArea(item, areaFormula)
+    const source = item.physicalAdcArr || item.rawAdcArr || item.arr || []
+    return {
+      ...item,
+      ...buildAreaFields(key, recoverPhysicalMatrix(key, source), item.physicalMask, areaFormula),
+      processing: {
+        ...item.processing,
+        ...buildAreaMetadata(areaFormula),
+      },
+    }
+  }
   const source = Array.isArray(item.rawAdcArr) ? item.rawAdcArr : item.arr
-  return processMatrixItem(key, { ...item, arr: source }, item.processing || processingConfig)
+  return processMatrixItem(key, { ...item, arr: source }, item.processing || processingConfig, areaFormula)
+}
+
+function refreshFootArea(item, formula) {
+  const { left, right } = splitFootRows(item.rawAdcArr || item.arr)
+  const physical = item.sourcePhysicalAdcMatrices || {}
+  const masks = item.sourcePhysicalMasks || {}
+  const leftArea = buildAreaFields(ENDI_LEFT_FOOT_KEY,
+    recoverPhysicalMatrix(ENDI_LEFT_FOOT_KEY, physical[ENDI_LEFT_FOOT_KEY] || left), masks[ENDI_LEFT_FOOT_KEY], formula)
+  const rightArea = buildAreaFields(ENDI_RIGHT_FOOT_KEY,
+    recoverPhysicalMatrix(ENDI_RIGHT_FOOT_KEY, physical[ENDI_RIGHT_FOOT_KEY] || right), masks[ENDI_RIGHT_FOOT_KEY], formula)
+  return {
+    ...item,
+    areaCm2: leftArea.areaCm2 === null || rightArea.areaCm2 === null ? null : leftArea.areaCm2 + rightArea.areaCm2,
+    areaValuesCm2: leftArea.areaValuesCm2 && rightArea.areaValuesCm2
+      ? combineFootRows(leftArea.areaValuesCm2, rightArea.areaValuesCm2) : null,
+    sourceAreaMatrices: {
+      [ENDI_LEFT_FOOT_KEY]: leftArea.areaValuesCm2,
+      [ENDI_RIGHT_FOOT_KEY]: rightArea.areaValuesCm2,
+    },
+    processing: { ...item.processing, ...buildAreaMetadata(formula) },
+  }
+}
+
+function getFrameAreaFormula(frame) {
+  return Object.entries(frame).some(([key, item]) =>
+    isDummyMatrixKey(key) && item && typeof item === 'object' && !item.processing?.importedMetric)
+    ? loadAreaFormula() : undefined
 }
 
 function processFrame(frame = {}, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG) {
+  const areaFormula = getFrameAreaFormula(frame)
   return Object.fromEntries(Object.entries(frame).map(([key, item]) => [
     key,
     item && typeof item === 'object'
-      ? processMatrixItem(key, item, processingConfig)
+      ? processMatrixItem(key, item, processingConfig, areaFormula)
       : item,
   ]))
 }
 
 function ensureProcessedFrame(frame = {}, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG) {
+  const areaFormula = getFrameAreaFormula(frame)
   return Object.fromEntries(Object.entries(frame).map(([key, item]) => [
     key,
     item && typeof item === 'object'
-      ? ensureProcessedMatrixItem(key, item, processingConfig)
+      ? ensureProcessedMatrixItem(key, item, processingConfig, areaFormula)
       : item,
   ]))
 }

@@ -1,628 +1,283 @@
 import React, { memo, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls'
-import { WebGLCanvas } from '../webgl/WebGL.HeatMap copy 2'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { getSettingValue } from '../../store/equipStore'
-import { cleanupThree } from '../../util/disposeThree'
-import { animateCameraZoom, applyZoomBounds, bindZoomValueSync, getZoomValueFromCamera } from '../../util/threeZoom'
+import { cleanupThree, disposeObject } from '../../util/disposeThree'
+import { buildMannequinSensorLayout, readMannequinSensorValues } from '../../util/mannequinSensorLayout'
+import { getMannequinHeatmapFrame, getMannequinHeatmapMode, getMannequinHeatmapRenderSettings } from '../../util/mannequinHeatmapSource'
+import { createMannequinHeatField } from './mannequinHeatField'
+import { createMannequinCamera, MANNEQUIN_REGION_VIEWS } from './mannequinCamera'
+import { alignMannequinHeadToDisplay } from './mannequinSensorPositions'
+import './ThreeHumanPoint.scss'
 
-const MODEL_PATH = './model/human_matrix_atlas_rectangular_less_spike_long_legs_vfixed_arm_hflip_swap_lr.glb'
-const UV_CANVAS_SIZE = 512
-const HEATMAP_FRAME_MS = 100
-const DEFAULT_COLOR_MAX = 120
-const HUMAN_HEATMAP_MATERIAL_NAMES = ['Posterior_Matrix_Atlas']
-const TEXTURE_BASE_COLOR = '#ffffff'
-const DEFAULT_HEAT_RADIUS_SCALE = 0.64
-const HUMAN_POSITION_LIMIT = 80
-const HUMAN_POSITION_STEP = 0.1
-const HUMAN_POSITION_AXES = ['x', 'y', 'z']
-const DEFAULT_HUMAN_POSITION = { x: 0, y: -54.7, z: -39 }
+const MODEL_PATH = './model/human3-low.glb'
+const LAYOUT_PATH = './model/mannequin_sensor_layout_637.json'
+const SCENE_BACKGROUND = '#000000'
+const FRAME_INTERVAL = 1000 / 30
 
-function formatDisplacementValue(value) {
-  const numericValue = Number(value)
-  return Number.isFinite(numericValue) ? numericValue.toFixed(1) : '0.0'
+/** 固定加载参考项目的低模，加载失败时由界面提示重试。 */
+async function loadHumanModel() {
+  return new GLTFLoader().loadAsync(MODEL_PATH)
 }
 
-const HUMAN_ATLAS_GRID_SIZE = 40
-const HUMAN_ATLAS_UV_LAYOUT = {
-  back_head: { x: 26, y: 0, w: 9, h: 5 },
-  back_torso: { x: 12, y: 0, w: 12, h: 22 },
-  left_back_arm: { x: 12, y: 24, w: 18, h: 2 },
-  right_back_arm: { x: 12, y: 28, w: 18, h: 2 },
-  left_back_leg: { x: 0, y: 0, w: 4, h: 32 },
-  right_back_leg: { x: 6, y: 0, w: 4, h: 32 },
-  posterior_other: { x: 26, y: 7, w: 4, h: 4 },
-  front_compressed_uv: { x: 36, y: 36, w: 4, h: 4 },
+/** 使用与参考项目一致的高度 8 世界坐标，保持点表与模型原点一致。 */
+function normalizeHumanModel(source) {
+  source.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(source)
+  const size = box.getSize(new THREE.Vector3())
+  const center = box.getCenter(new THREE.Vector3())
+  const scale = 8 / Math.max(size.x, size.y, size.z)
+  if (!Number.isFinite(scale) || scale <= 0) throw new Error('人体模型尺寸无效')
+  const group = new THREE.Group()
+  group.add(source)
+  group.scale.setScalar(scale)
+  group.position.set(-center.x * scale, -center.y * scale + size.y * scale / 2, -center.z * scale)
+  group.updateMatrixWorld(true)
+  return group
 }
 
-function toCanvasAtlasRegion(region) {
-    return {
-        left: region.x,
-        top: region.y,
-        width: region.w,
-        height: region.h,
-    }
-}
-
-const HUMAN_ATLAS_UV_REGIONS = Object.fromEntries(
-  Object.entries(HUMAN_ATLAS_UV_LAYOUT).map(([key, region]) => [key, toCanvasAtlasRegion(region)])
-)
-
-function getSmoothUvRegion(regionName, regionMap = HUMAN_ATLAS_UV_REGIONS) {
-  const region = regionMap[regionName] || HUMAN_ATLAS_UV_REGIONS[regionName]
-  if (!region) return { x: 0, y: 0, w: 0, h: 0 }
-  return {
-    x: region.left / HUMAN_ATLAS_GRID_SIZE * UV_CANVAS_SIZE,
-    y: region.top / HUMAN_ATLAS_GRID_SIZE * UV_CANVAS_SIZE,
-    w: region.width / HUMAN_ATLAS_GRID_SIZE * UV_CANVAS_SIZE,
-    h: region.height / HUMAN_ATLAS_GRID_SIZE * UV_CANVAS_SIZE,
-  }
-}
-
-const HUMAN_TEXTURE_PARTS = [
-  { key: 'head', dataKey: 'jacket', sourceWidth: 24, sourceX: 3, sourceY: 0, width: 18, height: 10, regionName: 'back_head' },
-  { key: 'backTorso', dataKey: 'jacket', sourceWidth: 24, sourceX: 0, sourceY: 10, width: 24, height: 44, regionName: 'back_torso' },
-  { key: 'leftHand', width: 36, height: 4, regionName: 'left_back_arm' },
-  { key: 'rightHand', width: 36, height: 4, regionName: 'right_back_arm' },
-  {
-    key: 'leftFoot',
-    width: 8,
-    height: 64,
-    regionName: 'left_back_leg',
-    sources: [
-      { dataKey: 'leftFoot', sourceWidth: 12, sourceX: 0, sourceY: 0 },
-      { dataKey: 'foot', sourceWidth: 24, sourceX: 0, sourceY: 0 },
-    ],
-  },
-  {
-    key: 'rightFoot',
-    width: 8,
-    height: 64,
-    regionName: 'right_back_leg',
-    sources: [
-      { dataKey: 'rightFoot', sourceWidth: 12, sourceX: 4, sourceY: 0 },
-      { dataKey: 'foot', sourceWidth: 24, sourceX: 16, sourceY: 0 },
-    ],
-  },
-]
-
-function normalizeMatrixData(source, size) {
-  const raw = source?.arr ?? source?.data ?? source?.default ?? source
-  const arr = Array.isArray(raw) || ArrayBuffer.isView(raw) ? raw : []
-  return Array.from({ length: size }, (_, index) => {
-    const value = Number(arr[index])
-    return Number.isFinite(value) ? value : 0
-  })
-}
-
-function getPartFrameSource(frame, part, sourceConfig = part) {
-  if (!frame || !part?.key) return []
-  const key = sourceConfig.dataKey || part.dataKey || part.key
-  return frame[key]
-    ?? frame[`endi-${key}`]
-    ?? frame[part.key]
-    ?? frame[`endi-${part.key}`]
-    ?? frame[part.labelKey]
-    ?? frame[part.fullKey]
-    ?? []
-}
-
-function hasMatrixSource(source) {
-  const raw = source?.arr ?? source?.data ?? source?.default ?? source
-  return (Array.isArray(raw) || ArrayBuffer.isView(raw)) && raw.length > 0
-}
-
-function extractPartMatrixData(source, part, sourceConfig = part) {
-  const sourceWidth = Number(sourceConfig.sourceWidth) || Number(part.sourceWidth) || part.width
-  const sourceX = Number(sourceConfig.sourceX ?? part.sourceX) || 0
-  const sourceY = Number(sourceConfig.sourceY ?? part.sourceY) || 0
-  const sourceHeight = sourceY + part.height
-  const sourceMatrix = normalizeMatrixData(source, sourceWidth * sourceHeight)
-
-  if (sourceWidth === part.width && sourceX === 0 && sourceY === 0) {
-    return sourceMatrix.slice(0, part.width * part.height)
-  }
-
-  const data = []
-  for (let row = 0; row < part.height; row++) {
-    for (let col = 0; col < part.width; col++) {
-      data.push(sourceMatrix[(sourceY + row) * sourceWidth + sourceX + col] || 0)
-    }
-  }
-  return data
-}
-
-function getPartMatrixData(frame, part) {
-  const sources = Array.isArray(part.sources) && part.sources.length ? part.sources : [part]
-  for (const sourceConfig of sources) {
-    const source = getPartFrameSource(frame, part, sourceConfig)
-    if (hasMatrixSource(source)) {
-      return extractPartMatrixData(source, part, sourceConfig)
-    }
-  }
-  return new Array(part.width * part.height).fill(0)
-}
-
-function getFrameValues(frame) {
-  return HUMAN_TEXTURE_PARTS.flatMap((part) => getPartMatrixData(frame, part))
-}
-
-function getFrameMax(values) {
-  return values.reduce((max, value) => {
-    const numericValue = Number(value)
-    return Number.isFinite(numericValue) ? Math.max(max, numericValue) : max
-  }, 0)
-}
-
-// 图像润滑 / 噪点消除只作用在这份渲染副本上，sitData 里的压强原值（统计、2D 数字、导出）不受影响
-const RENDER_MATRIX_WIDTHS = { jacket: 24, leftHand: 36, rightHand: 36, leftFoot: 12, rightFoot: 12 }
-
-function gaussianBlur(values, width, height, sigma) {
-  if (!values.length || width * height !== values.length || sigma <= 0.01) return values
-
-  const radius = Math.max(1, Math.ceil(sigma * 2.57))
-  const kernel = Array.from(
-    { length: radius * 2 + 1 },
-    (_, index) => Math.exp(-((index - radius) ** 2) / (2 * sigma * sigma)),
-  )
-  const weightSum = kernel.reduce((sum, weight) => sum + weight, 0)
-  const horizontal = new Array(values.length).fill(0)
-  const result = new Array(values.length).fill(0)
-
-  for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-      let total = 0
-      for (let offset = -radius; offset <= radius; offset++) {
-        const sourceCol = Math.min(width - 1, Math.max(0, col + offset))
-        total += values[row * width + sourceCol] * kernel[offset + radius]
-      }
-      horizontal[row * width + col] = total / weightSum
-    }
-  }
-  for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-      let total = 0
-      for (let offset = -radius; offset <= radius; offset++) {
-        const sourceRow = Math.min(height - 1, Math.max(0, row + offset))
-        total += horizontal[sourceRow * width + col] * kernel[offset + radius]
-      }
-      result[row * width + col] = total / weightSum
-    }
-  }
-  return result
-}
-
-function buildRenderFrame(frame, settingValue) {
-  if (!frame || typeof frame !== 'object') return frame
-  // 后端原来在实际点网格上按 sigma = gauss × 0.5 平滑；这里拿到的是 2 倍插值后的显示网格，sigma 跟着翻倍
-  const sigma = Number(settingValue?.gauss) || 0
-  const filter = Number(settingValue?.filter)
-  const threshold = Number.isFinite(filter) && filter > 0 ? filter : 0
-  const result = {}
-  Object.keys(frame).forEach((key) => {
-    const source = frame[key]
-    if (!Array.isArray(source) && !ArrayBuffer.isView(source)) {
-      result[key] = source
-      return
-    }
-    let values = Array.from(source, (value) => Number(value) || 0)
-    const width = RENDER_MATRIX_WIDTHS[key.replace(/^endi-/, '')]
-    if (width && values.length % width === 0) {
-      values = gaussianBlur(values, width, values.length / width, sigma)
-    }
-    result[key] = threshold > 0 ? values.map((value) => (value < threshold ? 0 : value)) : values
-  })
-  return result
-}
-
-function paintTextureBase(ctx) {
-  ctx.clearRect(0, 0, UV_CANVAS_SIZE, UV_CANVAS_SIZE)
-  ctx.fillStyle = TEXTURE_BASE_COLOR
-  ctx.fillRect(0, 0, UV_CANVAS_SIZE, UV_CANVAS_SIZE)
-}
-
-function createCanvasTexture(canvas) {
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.flipY = false
-  texture.wrapS = THREE.ClampToEdgeWrapping
-  texture.wrapT = THREE.ClampToEdgeWrapping
-  texture.needsUpdate = true
-  return texture
-}
-
-function createWhiteBaseTexture() {
-  const canvas = document.createElement('canvas')
-  canvas.width = UV_CANVAS_SIZE
-  canvas.height = UV_CANVAS_SIZE
-  const ctx = canvas.getContext('2d')
-  if (ctx) {
-    paintTextureBase(ctx)
-  }
-  return createCanvasTexture(canvas)
-}
-
-function getAtlasPointRadius(part, width, matrixHeight, heightValue, regionMap) {
-  const region = getSmoothUvRegion(part.regionName, regionMap)
-  const cellW = region.w / width
-  const cellH = region.h / matrixHeight
-  const settingHeight = Number(heightValue)
-  const heightRatio = Number.isFinite(settingHeight) && settingHeight > 0 ? Math.max(0.5, Math.min(3, settingHeight / 80)) : 1
-  return Math.max(cellW, cellH) * DEFAULT_HEAT_RADIUS_SCALE * heightRatio
-}
-
-function buildHumanAtlasHeatmapData(frame, heightValue, regionMap) {
-  const data = []
-  HUMAN_TEXTURE_PARTS.forEach((part) => {
-    const matrix = getPartMatrixData(frame, part)
-    const { width, height } = part
-    const region = getSmoothUvRegion(part.regionName, regionMap)
-    if (!region.w || !region.h) return
-    const cellW = region.w / width
-    const cellH = region.h / height
-    const radius = getAtlasPointRadius(part, width, height, heightValue, regionMap)
-
-    for (let row = 0; row < height; row++) {
-      for (let col = 0; col < width; col++) {
-        const value = matrix[row * width + col]
-        data.push([
-          region.x + col * cellW + cellW / 2,
-          region.y + row * cellH + cellH / 2,
-          value,
-          radius + 1,
-        ])
-      }
+/** 替换 GLB 材质时释放旧材质和贴图，网格本身继续用于体表热力。 */
+function releaseModelMaterials(model) {
+  const materials = new Set()
+  const textures = new Set()
+  model.traverse(object => {
+    if (!object.isMesh) return
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      if (!material || materials.has(material)) continue
+      materials.add(material)
+      for (const value of Object.values(material)) if (value?.isTexture) textures.add(value)
     }
   })
-  return data
+  textures.forEach(texture => texture.dispose())
+  materials.forEach(material => material.dispose())
 }
 
-function drawHumanHeatmap(canvas, frame, webglHeatmap, regionMap) {
-  if (!canvas || !webglHeatmap) return
-  const ctx = canvas.getContext?.('2d')
-  if (!ctx) return
-  const settingValue = getSettingValue?.() || {}
-  const renderFrame = buildRenderFrame(frame, settingValue)
-  const fallbackMax = Number(settingValue.color) > 0 ? Number(settingValue.color) : DEFAULT_COLOR_MAX
-  const values = getFrameValues(renderFrame)
-  const frameMax = getFrameMax(values)
-  const colorMax = Boolean(settingValue.autoColor) && frameMax > 0 ? frameMax : fallbackMax
-
-  const sourceCanvas = webglHeatmap.render(
-    {
-      width: UV_CANVAS_SIZE,
-      height: UV_CANVAS_SIZE,
-      radius: getAtlasPointRadius(
-        HUMAN_TEXTURE_PARTS[0],
-        HUMAN_TEXTURE_PARTS[0].width,
-        HUMAN_TEXTURE_PARTS[0].height,
-        settingValue.height,
-        regionMap
-      ),
-      max: colorMax,
-      min: 0,
-      filter: 0,
-      blurFactor: 0.46,
-      class: 'endi-human-atlas',
-    },
-    buildHumanAtlasHeatmapData(renderFrame, settingValue.height, regionMap),
-    'endi-human-atlas-webgl'
-  )?.[0]
-
-  paintTextureBase(ctx)
-  if (sourceCanvas) {
-    ctx.drawImage(sourceCanvas, 0, 0, UV_CANVAS_SIZE, UV_CANVAS_SIZE)
-  }
-}
-
-function applyTextureToModel(model, heatmapTexture, baseTexture) {
-  const applyTextureToMaterial = (material, texture) => {
-    if (!material) return
-    material.map = texture
-    material.color?.set?.(0xffffff)
-    material.metalness = 0
-    material.roughness = 1
-    material.envMapIntensity = 0
-    material.side = THREE.DoubleSide
-    material.needsUpdate = true
-  }
-
-  const allMaterials = []
-  const targetMaterials = []
-  model.traverse((obj) => {
-    if (!obj.isMesh || !obj.material) return
-    const materials = Array.isArray(obj.material) ? obj.material : [obj.material]
-    materials.forEach((material) => {
-      if (material && !allMaterials.includes(material)) {
-        allMaterials.push(material)
-      }
-      if (HUMAN_HEATMAP_MATERIAL_NAMES.includes(material?.name)) {
-        targetMaterials.push(material)
-      }
-    })
+/** 可选点位只标记真实坐标，不添加模拟读数。 */
+function createSensorMarkers(sensors) {
+  const positions = new Float32Array(sensors.length * 3)
+  sensors.forEach((sensor, index) => {
+    const point = sensor.position || sensor
+    positions.set([point.x, point.y, point.z - 0.012], index * 3)
   })
-
-  if (targetMaterials.length) {
-    allMaterials.forEach((material) => {
-      applyTextureToMaterial(
-        material,
-        targetMaterials.includes(material) ? heatmapTexture : baseTexture
-      )
-    })
-    return
-  }
-
-  allMaterials.forEach((material) => applyTextureToMaterial(material, heatmapTexture))
-}
-
-function fitModelToScene(model) {
-  const box = new THREE.Box3().setFromObject(model)
-  const size = new THREE.Vector3()
-  const center = new THREE.Vector3()
-  box.getSize(size)
-  box.getCenter(center)
-  model.position.sub(center)
-  const maxAxis = Math.max(size.x, size.y, size.z) || 1
-  const scale = 82 / maxAxis
-  model.scale.setScalar(scale)
-  model.rotation.y = Math.PI
-  model.position.set(DEFAULT_HUMAN_POSITION.x, DEFAULT_HUMAN_POSITION.y, DEFAULT_HUMAN_POSITION.z)
-  model.traverse((obj) => {
-    if (!obj.isMesh) return
-    obj.castShadow = false
-    obj.receiveShadow = false
-    if (obj.material) {
-      obj.material.side = THREE.DoubleSide
-      obj.material.needsUpdate = true
-    }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const material = new THREE.PointsMaterial({
+    color: 0xe2e8f0, size: 0.018, sizeAttenuation: true, transparent: true, opacity: 0.65,
+    depthTest: true, depthWrite: false,
   })
+  const points = new THREE.Points(geometry, material)
+  points.visible = false
+  points.name = 'mannequin-sensor-markers'
+  points.renderOrder = 11
+  return points
 }
 
-const ThreeHumanPoint = memo(React.forwardRef((props, ref) => {
-  const { changeViewProp, sitData } = props
-  const [humanDisplacement, setHumanDisplacement] = useState(DEFAULT_HUMAN_POSITION)
-  const [isDisplacementPanelCollapsed, setIsDisplacementPanelCollapsed] = useState(true)
+const ThreeHumanPoint = memo(React.forwardRef(({ metricData, changeViewProp }, ref) => {
   const mountRef = useRef(null)
-  const cameraRef = useRef(null)
-  const controlsRef = useRef(null)
-  const frameRef = useRef(null)
-  const cleanupZoomRef = useRef(null)
-  const baseDistanceRef = useRef(120)
-  const textureCanvasRef = useRef(null)
-  const textureRef = useRef(null)
-  const whiteTextureRef = useRef(null)
-  const lastHeatmapAtRef = useRef(0)
-  const webglHeatmapRef = useRef(null)
-  const modelRef = useRef(null)
-  const uvRegionsRef = useRef(HUMAN_ATLAS_UV_REGIONS)
+  const runtimeRef = useRef(null)
+  const dataRef = useRef(metricData)
+  const zoomCallbackRef = useRef(changeViewProp)
+  const [status, setStatus] = useState({ state: 'loading', message: '', count: 0 })
+  const [view, setView] = useState('overview')
+  const [overviewAutoRotate, setOverviewAutoRotate] = useState(false)
+  const [showSensors, setShowSensors] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  dataRef.current = metricData
+  zoomCallbackRef.current = changeViewProp
 
-  const updateHumanDisplacement = (axis, value) => {
-    const numericValue = Number(value)
-    if (!Number.isFinite(numericValue)) return
-    setHumanDisplacement((prev) => {
-      const next = { ...prev, [axis]: numericValue }
-      if (modelRef.current) {
-        modelRef.current.position.set(next.x, next.y, next.z)
-      }
-      return next
-    })
+  /** 只移动相机，模型和传感点始终共用点表的世界坐标。 */
+  function selectView(key) {
+    runtimeRef.current?.navigation.goTo(key)
   }
 
   useImperativeHandle(ref, () => ({
     changeCamera(value, options = {}) {
-      const camera = cameraRef.current
-      const controls = controlsRef.current
-      animateCameraZoom({
-        camera,
-        controls,
-        baseDistance: baseDistanceRef.current,
-        zoomValue: value,
-        duration: options.duration ?? 0,
-      })
-      controls?.update?.()
+      runtimeRef.current?.navigation.setZoom(value, options)
     },
-    reset3D() {
-      const camera = cameraRef.current
-      const controls = controlsRef.current
-      if (!camera || !controls) return
-      camera.position.set(0, 8, 120)
-      controls.target.set(0, 0, 0)
-      controls.reset()
-      controls.update()
-      changeViewProp?.(getZoomValueFromCamera(camera, controls, baseDistanceRef.current))
-    },
-    actionSit() {
-      const camera = cameraRef.current
-      const controls = controlsRef.current
-      if (!camera || !controls) return
-      controls.target.set(0, 0, 0)
-      controls.update()
-    },
-    changePointRotation() {},
-  }), [changeViewProp])
+    reset3D() { selectView('overview') },
+    actionSit(type) { selectView(type === 'jacket' ? 'upper' : type === 'foot' ? 'lower' : 'overview') },
+    changePointRotation(index) { selectView(['overview', 'upper', 'lower'][Number(index) % 3] || 'overview') },
+  }))
 
   useEffect(() => {
     const mount = mountRef.current
     if (!mount) return undefined
-
-    const width = window.innerWidth
-    const height = window.innerHeight
-    const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x000000)
-    const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 2000)
-    camera.position.set(0, 8, 120)
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
-    renderer.setSize(width, height)
-    renderer.outputColorSpace = THREE.SRGBColorSpace
-    mount.appendChild(renderer.domElement)
-
-    const controls = new TrackballControls(camera, renderer.domElement)
-    controls.rotateSpeed = 2.2
-    controls.zoomSpeed = 1.1
-    controls.panSpeed = 0.6
-    controls.staticMoving = false
-    controls.dynamicDampingFactor = 0.12
-    controls.target.set(0, 0, 0)
-    controls.update()
-
-    baseDistanceRef.current = camera.position.distanceTo(controls.target)
-    applyZoomBounds(controls, baseDistanceRef.current)
-    cleanupZoomRef.current = bindZoomValueSync({
-      camera,
-      controls,
-      baseDistance: baseDistanceRef.current,
-      onChange: changeViewProp,
-    })
-
-    scene.add(new THREE.AmbientLight(0xffffff, 1.4))
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.8)
-    keyLight.position.set(30, 80, 120)
-    scene.add(keyLight)
-    const fillLight = new THREE.DirectionalLight(0x8fbfff, 0.8)
-    fillLight.position.set(-80, 20, 60)
-    scene.add(fillLight)
-
-    const loader = new GLTFLoader()
-    webglHeatmapRef.current = new WebGLCanvas()
     let disposed = false
+    let animationId = 0
+    let field = null
+    let model = null
+    let markerPoints = null
+    const overlayMeshes = []
+    let sensors = []
+    let renderer
+    let controls
+    let navigation = null
+    let resizeObserver
+    const abort = new AbortController()
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(SCENE_BACKGROUND)
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 100)
+    setStatus({ state: 'loading', message: '', count: 0 })
+    setView('overview')
+    setOverviewAutoRotate(false)
+    setShowSensors(false)
 
-    loader.load(MODEL_PATH, (gltf) => {
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
+      renderer.outputColorSpace = THREE.SRGBColorSpace
+      renderer.toneMapping = THREE.NoToneMapping
+      renderer.toneMappingExposure = 1
+      renderer.domElement.setAttribute('aria-label', '假人全身体表热力三维视图')
+      renderer.domElement.setAttribute('data-model-state', 'loading')
+      mount.appendChild(renderer.domElement)
+      controls = new OrbitControls(camera, renderer.domElement)
+      controls.enableDamping = true
+      controls.dampingFactor = 0.06
+      controls.enablePan = false
+      navigation = createMannequinCamera({ camera, controls, onRegionChange: setView, onZoomChange: value => zoomCallbackRef.current?.(value) })
+      runtimeRef.current = { camera, controls, navigation }
+    } catch (error) {
+      setStatus({ state: 'error', message: `无法启动 3D 显示：${error.message}`, count: 0 })
+      navigation?.dispose()
+      runtimeRef.current = null
+      cleanupThree({ scene, renderer, controls })
+      return undefined
+    }
+
+    /** 画布跟随实际容器尺寸，兼容窗口缩放和软件视图切换。 */
+    const resize = () => {
+      const width = Math.max(1, mount.clientWidth)
+      const height = Math.max(1, mount.clientHeight)
+      camera.aspect = width / height
+      camera.updateProjectionMatrix()
+      renderer.setSize(width, height, false)
+    }
+    resize()
+    window.addEventListener('resize', resize)
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(resize)
+      resizeObserver.observe(mount)
+    }
+
+    const load = async () => {
+      let source = null
+      try {
+        const response = await fetch(LAYOUT_PATH, { signal: abort.signal })
+        if (!response.ok) throw new Error(`点位文件加载失败（${response.status}）`)
+        sensors = buildMannequinSensorLayout(await response.json())
+        if (disposed) return
+        const gltf = await loadHumanModel()
+        source = gltf.scene
+        if (disposed) { disposeObject(source); return }
+        model = normalizeHumanModel(source)
+        scene.add(model)
+        sensors = alignMannequinHeadToDisplay(sensors, model)
+        field = createMannequinHeatField(sensors, model)
+        releaseModelMaterials(model)
+        const modelMeshes = []
+        model.traverse(object => {
+          if (object.isMesh) modelMeshes.push(object)
+        })
+        modelMeshes.forEach(object => {
+          object.material = field.material
+          object.renderOrder = 9
+          object.castShadow = false
+          object.receiveShadow = false
+          field.heatMaterials.forEach((material, index) => {
+            const overlay = new THREE.Mesh(object.geometry, material)
+            overlay.name = `mannequin-heat-${index === 0 ? 'back' : 'front'}`
+            overlay.renderOrder = index === 0 ? 8 : 10
+            object.add(overlay)
+            overlayMeshes.push(overlay)
+          })
+        })
+        markerPoints = createSensorMarkers(sensors)
+        scene.add(markerPoints)
+        runtimeRef.current.markers = markerPoints
+        renderer.domElement.setAttribute('data-model-state', 'ready')
+        renderer.domElement.setAttribute('data-model-source', MODEL_PATH)
+        renderer.domElement.setAttribute('data-sensor-count', String(sensors.length))
+        setStatus({ state: 'ready', message: '', count: sensors.length })
+      } catch (error) {
+        if (disposed || error.name === 'AbortError') return
+        if (source && !model) disposeObject(source)
+        renderer.domElement.setAttribute('data-model-state', 'error')
+        setStatus({ state: 'error', message: error.message || '人体模型加载失败', count: 0 })
+      }
+    }
+    load()
+
+    let lastFrameAt = -Infinity
+    const animate = now => {
       if (disposed) return
-      const model = gltf.scene
-      fitModelToScene(model)
-      modelRef.current = model
-      setHumanDisplacement({
-        x: model.position.x,
-        y: model.position.y,
-        z: model.position.z,
-      })
-      const textureCanvas = document.createElement('canvas')
-      textureCanvas.width = UV_CANVAS_SIZE
-      textureCanvas.height = UV_CANVAS_SIZE
-      drawHumanHeatmap(textureCanvas, sitData?.current, webglHeatmapRef.current, uvRegionsRef.current)
-
-      const texture = createCanvasTexture(textureCanvas)
-      const whiteTexture = createWhiteBaseTexture()
-      textureCanvasRef.current = textureCanvas
-      textureRef.current = texture
-      whiteTextureRef.current = whiteTexture
-      applyTextureToModel(model, texture, whiteTexture)
-      scene.add(model)
-    })
-
-    cameraRef.current = camera
-    controlsRef.current = controls
-
-    const animate = () => {
-      controls.update()
-      const now = performance.now()
-      if (textureCanvasRef.current && textureRef.current && now - lastHeatmapAtRef.current >= HEATMAP_FRAME_MS) {
-        drawHumanHeatmap(textureCanvasRef.current, sitData?.current, webglHeatmapRef.current, uvRegionsRef.current)
-        textureRef.current.needsUpdate = true
-        lastHeatmapAtRef.current = now
+      animationId = requestAnimationFrame(animate)
+      if (document.hidden || now - lastFrameAt < FRAME_INTERVAL) return
+      navigation.update(now)
+      if (field) {
+        const settings = getSettingValue?.() || {}
+        const mode = getMannequinHeatmapMode()
+        const frame = getMannequinHeatmapFrame(dataRef.current?.current)
+        const values = readMannequinSensorValues(sensors, frame)
+        field.update(values, getMannequinHeatmapRenderSettings(settings))
+        if (renderer.domElement.getAttribute('data-heatmap-source') !== mode) renderer.domElement.setAttribute('data-heatmap-source', mode)
       }
       renderer.render(scene, camera)
-      frameRef.current = requestAnimationFrame(animate)
+      lastFrameAt = now
     }
-    animate()
-
-    const handleResize = () => {
-      const nextWidth = window.innerWidth
-      const nextHeight = window.innerHeight
-      camera.aspect = nextWidth / nextHeight
-      camera.updateProjectionMatrix()
-      renderer.setSize(nextWidth, nextHeight)
-      controls.handleResize?.()
-      controls.update()
-    }
-    window.addEventListener('resize', handleResize)
+    animationId = requestAnimationFrame(animate)
 
     return () => {
       disposed = true
-      window.removeEventListener('resize', handleResize)
-      if (frameRef.current) cancelAnimationFrame(frameRef.current)
-      cleanupZoomRef.current?.()
-      textureRef.current?.dispose?.()
-      whiteTextureRef.current?.dispose?.()
-      textureRef.current = null
-      whiteTextureRef.current = null
-      textureCanvasRef.current = null
-      webglHeatmapRef.current = null
-      modelRef.current = null
+      abort.abort()
+      cancelAnimationFrame(animationId)
+      window.removeEventListener('resize', resize)
+      resizeObserver?.disconnect()
+      navigation?.dispose()
+      runtimeRef.current = null
+      // Overlay geometry belongs to the original model; field materials own their textures.
+      overlayMeshes.forEach(overlay => {
+        overlay.removeFromParent()
+        overlay.geometry = null
+        overlay.material = null
+      })
+      overlayMeshes.length = 0
+      if (field) scene.traverse(object => { if (object.material === field.material) object.material = null })
+      field?.dispose()
       cleanupThree({ scene, renderer, controls })
-      if (renderer.domElement?.parentNode === mount) {
-        mount.removeChild(renderer.domElement)
-      }
     }
-  }, [changeViewProp])
+  }, [loadAttempt])
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-      <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
-      <div
-        style={{
-          position: 'fixed',
-          right: 16,
-          bottom: 16,
-          zIndex: 20,
-          width: 236,
-          padding: '10px 12px',
-          borderRadius: 6,
-          border: '1px solid rgba(80, 145, 255, 0.36)',
-          background: 'rgba(8, 15, 26, 0.78)',
-          color: '#e8f1ff',
-          fontSize: 12,
-          lineHeight: 1.6,
-          pointerEvents: 'auto',
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)',
-          backdropFilter: 'blur(8px)',
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setIsDisplacementPanelCollapsed((value) => !value)}
-          style={{
-            width: '100%',
-            padding: 0,
-            border: 0,
-            outline: 'none',
-            background: 'transparent',
-            color: '#e8f1ff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-            font: 'inherit',
-            fontWeight: 600,
-          }}
-        >
-          <span>假人位移</span>
-          <span style={{ color: '#8fbfff', fontSize: 11 }}>{isDisplacementPanelCollapsed ? '展开' : '收起'}</span>
-        </button>
-        {!isDisplacementPanelCollapsed && (
-          <div style={{ marginTop: 8 }}>
-            {HUMAN_POSITION_AXES.map((axis) => (
-              <div key={axis} style={{ marginTop: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <span>{axis.toUpperCase()}</span>
-                  <span>{formatDisplacementValue(humanDisplacement[axis])}</span>
-                </div>
-                <input
-                  type="range"
-                  min={-HUMAN_POSITION_LIMIT}
-                  max={HUMAN_POSITION_LIMIT}
-                  step={HUMAN_POSITION_STEP}
-                  value={humanDisplacement[axis]}
-                  onChange={(event) => updateHumanDisplacement(axis, event.target.value)}
-                  style={{ width: '100%' }}
-                />
-              </div>
-            ))}
-          </div>
-        )}
+    <div className="human-scene" data-human-state={status.state}>
+      <div className="human-scene__canvas" ref={mountRef} />
+      {status.state !== 'ready' && (
+        <div className="human-scene__status" role={status.state === 'error' ? 'alert' : 'status'}>
+          <span>{status.state === 'loading' ? '正在加载全身模型与点位…' : status.message}</span>
+          {status.state === 'error' && <button type="button" onClick={() => setLoadAttempt(value => value + 1)}>重新加载</button>}
+        </div>
+      )}
+      <div className="human-scene__views" aria-label="人体区域视角">
+        <div className="human-scene__caption">全身传感{status.count > 0 ? ` · ${status.count} 点位` : ''}</div>
+        <div className="human-scene__view-buttons">
+          {Object.entries(MANNEQUIN_REGION_VIEWS).map(([key, preset]) => (
+            <button key={key} type="button" data-human-view={key} disabled={status.state !== 'ready'} aria-pressed={view === key} onClick={() => selectView(key)}>{preset.label}</button>
+          ))}
+        </div>
+        {view === 'overview' && <button className="human-scene__auto-rotate" type="button" disabled={status.state !== 'ready'} aria-pressed={overviewAutoRotate} onClick={() => {
+          const enabled = !overviewAutoRotate
+          setOverviewAutoRotate(enabled)
+          runtimeRef.current?.navigation.setAutoRotate(enabled)
+        }}>{overviewAutoRotate ? '暂停旋转' : '自动旋转'}</button>}
+        <label className="human-scene__sensor-toggle">
+          <input type="checkbox" checked={showSensors} disabled={status.state !== 'ready'} onChange={event => {
+            const visible = event.target.checked
+            setShowSensors(visible)
+            if (runtimeRef.current?.markers) runtimeRef.current.markers.visible = visible
+          }} />显示点位
+        </label>
+        <div className="human-scene__hint">拖动旋转 · 滚轮缩放</div>
       </div>
     </div>
   )

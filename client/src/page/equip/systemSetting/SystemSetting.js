@@ -59,12 +59,12 @@ const paramConfig = [
 /* ────── 前端硬编码的默认值（后端不可用时的兜底） ────── */
 const fallbackConfig = {
     optimalObj: {
-        bed:     { gauss: 2, color: 120, filter: 0, height: 80, coherent: 1, autoColor: 1 },
-        car:     { gauss: 2, color: 120, filter: 0, height: 80, coherent: 1, autoColor: 1 },
-        endi:    { gauss: 2, color: 120, filter: 0, height: 80, coherent: 1, autoColor: 1 },
-        carY:    { gauss: 2, color: 120, filter: 0, height: 80, coherent: 1, autoColor: 1 },
-        bigHand: { gauss: 2, color: 120, filter: 0, height: 80, coherent: 1, autoColor: 1 },
-        hand:    { gauss: 2, color: 120, filter: 0, height: 80, coherent: 1, autoColor: 1 }
+        bed:     { gauss: 2, color: 4.6, filter: 0, height: 80, coherent: 1, autoColor: 0 },
+        car:     { gauss: 2, color: 4.6, filter: 0, height: 80, coherent: 1, autoColor: 0 },
+        endi:    { gauss: 2, color: 4.6, filter: 0, height: 80, coherent: 1, autoColor: 0 },
+        carY:    { gauss: 2, color: 4.6, filter: 0, height: 80, coherent: 1, autoColor: 0 },
+        bigHand: { gauss: 2, color: 4.6, filter: 0, height: 80, coherent: 1, autoColor: 0 },
+        hand:    { gauss: 2, color: 4.6, filter: 0, height: 80, coherent: 1, autoColor: 0 }
     },
     maxObj: {
         bed:     { gauss: 4, color: 255, filter: 200, height: 400, coherent: 10, autoColor: 1 },

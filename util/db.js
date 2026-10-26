@@ -1,4 +1,4 @@
-﻿const sqlite3 = require("sqlite3").verbose();
+const sqlite3 = require("sqlite3").verbose();
 const csv = require("csv-parser");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 const XLSX = require("xlsx");
@@ -8,11 +8,15 @@ const path = require('path');
 const { timeStampTo_Date } = require("./time");
 const constantObj = require("./config");
 const { loadPressureConfig, loadPressureFormula } = require("../server/services/PressureConfig");
+const { withAreaFormulaSnapshot } = require('../server/services/AreaFormula');
+const { calculateAreaForceN } = require('./areaMetrics');
 const { DEVICE_MATRIX_CONFIG } = require("./deviceMatrixConfig");
 const {
   PROCESSING_VERSION,
+  DUMMY_POINT_AREA_CM2,
   ensureProcessedFrame,
   ensureProcessedMatrixItem,
+  isDummyMatrixKey,
 } = require("./pressureFrameProcessor");
 const {
   GRADIENT_UNIT_PA_CM,
@@ -112,8 +116,32 @@ function normalizeEndiFootFrame(frame) {
     combined[sourceField] = { [ENDI_FOOT_LEFT_KEY]: left, [ENDI_FOOT_RIGHT_KEY]: right }
   }
   combined.sourcePhysicalAdcMatrices = {
-    [ENDI_FOOT_LEFT_KEY]: leftItem?.physicalAdcArr || new Array(ENDI_FOOT_LEGACY_LENGTH).fill(0),
-    [ENDI_FOOT_RIGHT_KEY]: rightItem?.physicalAdcArr || new Array(ENDI_FOOT_LEGACY_LENGTH).fill(0),
+    [ENDI_FOOT_LEFT_KEY]: hasLeft ? leftItem.physicalAdcArr : new Array(ENDI_FOOT_LEGACY_LENGTH).fill(0),
+    [ENDI_FOOT_RIGHT_KEY]: hasRight ? rightItem.physicalAdcArr : new Array(ENDI_FOOT_LEGACY_LENGTH).fill(0),
+  }
+  delete combined.physicalMask
+  if (leftItem?.physicalMask || rightItem?.physicalMask) {
+    combined.sourcePhysicalMasks = {
+      [ENDI_FOOT_LEFT_KEY]: leftItem?.physicalMask,
+      [ENDI_FOOT_RIGHT_KEY]: rightItem?.physicalMask,
+    }
+  }
+
+  const zeroArea = new Array(ENDI_FOOT_SINGLE_LENGTH).fill(0)
+  const leftArea = hasLeft ? leftItem.areaValuesCm2 : zeroArea
+  const rightArea = hasRight ? rightItem.areaValuesCm2 : zeroArea
+  combined.sourceAreaMatrices = {
+    [ENDI_FOOT_LEFT_KEY]: leftArea ?? null,
+    [ENDI_FOOT_RIGHT_KEY]: rightArea ?? null,
+  }
+  combined.areaValuesCm2 = Array.isArray(leftArea) && Array.isArray(rightArea)
+    ? combineEndiFootRows(leftArea, rightArea)
+    : null
+  combined.areaCm2 = combined.areaValuesCm2
+    ? combined.areaValuesCm2.reduce((sum, value) => sum + value, 0)
+    : null
+  if (leftItem?.processing?.importedMetric || rightItem?.processing?.importedMetric) {
+    combined.processing = { ...combined.processing, importedMetric: true }
   }
 
   return next
@@ -180,6 +208,28 @@ function normalizeMetricValues(values, length) {
   })
 }
 
+// History charts keep their existing cell-count transport unit. Dummy areas are
+// fitted once from raw ADC; each metric mode carries the same equivalent count.
+function getAreaTrendCounts(key, item, adcValues, pressureValues, forceValues) {
+  if (!isDummyMatrixKey(key)) {
+    return [adcValues, pressureValues, forceValues]
+      .map((values) => values.filter((value) => Number(value) > 0).length)
+  }
+  const area = Array.isArray(item.areaValuesCm2)
+    && item.areaValuesCm2.length === item.arr?.length
+    ? item.areaValuesCm2.reduce((sum, value) => sum + (Number(value) || 0), 0) / DUMMY_POINT_AREA_CM2
+    : null
+  return [area, area, area]
+}
+
+function addAreaSample(current, value) {
+  return current === null || value === null ? null : current + value
+}
+
+function averageAreaSamples(total, count) {
+  return total === null ? null : total / count
+}
+
 function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1) {
   const processedItem = ensureProcessedMatrixItem(key, item)
   const length = Array.isArray(processedItem.arr) ? processedItem.arr.length : 0
@@ -233,11 +283,24 @@ function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1) {
   }
 
   const areaFactor = Number(pointAreaCm2) || 1
+  const areaValuesCm2 = Array.isArray(processedItem.areaValuesCm2)
+    && processedItem.areaValuesCm2.length === length
+    ? normalizeMetricValues(processedItem.areaValuesCm2, length)
+    : (isDummyMatrixKey(key) || processedItem.areaValuesCm2 === null ? null : undefined)
+  const fittedArea = Array.isArray(areaValuesCm2)
+    ? areaValuesCm2.reduce((sum, value) => sum + value, 0)
+    : areaValuesCm2
+  const pressureAverage = pressureActiveCount ? pressureTotal / pressureActiveCount : 0
+  const pointForceTotal = forceTotal
+  // The fitted area and existing pressure average are independent inputs. Do not
+  // sum point forces or restrict the pressure average to the retained area cells.
+  if (fittedArea !== undefined) forceTotal = calculateAreaForceN(pressureAverage, fittedArea)
   return {
     processedItem,
     adcValues,
     pressureValues,
     forceValues,
+    areaValuesCm2,
     adcTotal,
     pressureTotal,
     forceTotal,
@@ -251,23 +314,24 @@ function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1) {
     pressureMin,
     forceMin,
     adcAverage: adcActiveCount ? adcTotal / adcActiveCount : 0,
-    pressureAverage: pressureActiveCount ? pressureTotal / pressureActiveCount : 0,
-    forceAverage: forceActiveCount ? forceTotal / forceActiveCount : 0,
+    pressureAverage,
+    forceAverage: forceActiveCount ? pointForceTotal / forceActiveCount : 0,
     adcActiveCount,
     pressureActiveCount,
     forceActiveCount,
-    adcEffectiveArea: adcActiveCount * areaFactor,
-    pressureEffectiveArea: pressureActiveCount * areaFactor,
-    forceEffectiveArea: forceActiveCount * areaFactor,
+    adcEffectiveArea: fittedArea === undefined ? adcActiveCount * areaFactor : fittedArea,
+    pressureEffectiveArea: fittedArea === undefined ? pressureActiveCount * areaFactor : fittedArea,
+    forceEffectiveArea: fittedArea === undefined ? forceActiveCount * areaFactor : fittedArea,
   }
 }
 
-function getMetricStatsFromValues(adcValues, pressureValues, forceValues, pointAreaCm2 = 1) {
+function getMetricStatsFromValues(adcValues, pressureValues, forceValues, pointAreaCm2 = 1, areaValuesCm2) {
   return getCanonicalMetricStats('__selection__', {
     arr: new Array(Math.max(adcValues.length, pressureValues.length, forceValues.length)).fill(0),
     rawAdcArr: adcValues,
     pressureArr: pressureValues,
     forceArr: forceValues,
+    ...(areaValuesCm2 === undefined ? {} : { areaValuesCm2 }),
     processing: { version: PROCESSING_VERSION },
   }, pointAreaCm2)
 }
@@ -280,7 +344,7 @@ function getExportMetricStats(stats) {
   return {
     max: Number(stats.pressureMax) || 0,
     aver: Number(stats.pressureAverage) || 0,
-    total: Number(stats.forceTotal) || 0,
+    total: stats.forceTotal === null ? null : Number(stats.forceTotal) || 0,
     min: Number(stats.pressureMin) || 0,
   }
 }
@@ -288,7 +352,7 @@ function getExportMetricStats(stats) {
 function getExportMetricActiveStats(stats) {
   return {
     count: Number(stats.pressureActiveCount) || 0,
-    area: Number(stats.pressureEffectiveArea) || 0,
+    area: stats.pressureEffectiveArea === null ? null : (Number(stats.pressureEffectiveArea) || 0),
     maxIndex: stats.pressureMaxIndex,
   }
 }
@@ -914,32 +978,34 @@ async function dbGetData({ db, params }) {
       const forceValues = Array.isArray(item.forceArr) ? item.forceArr : []
       const adcTotal = adcValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
       const pressureTotal = pressureValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
-      const forceTotal = forceValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
-      const adcArea = adcValues.filter((value) => Number(value) > 0).length
-      const pressureArea = pressureValues.filter((value) => Number(value) > 0).length
-      const forceArea = forceValues.filter((value) => Number(value) > 0).length
+      const [adcArea, pressureArea, forceArea] = getAreaTrendCounts(key, item, adcValues, pressureValues, forceValues)
+      const pressureCount = pressureValues.filter((value) => Number(value) > 0).length
+      const forceTotal = isDummyMatrixKey(key)
+        ? calculateAreaForceN(pressureCount ? pressureTotal / pressureCount : 0,
+          forceArea === null ? null : forceArea * DUMMY_POINT_AREA_CM2)
+        : forceValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
 
       // [PERF-PLAYBACK-OPT] 累加到当前 bucket
-      pressBucket[key] += forceTotal
-      areaBucket[key] += forceArea
+      pressBucket[key] = addAreaSample(pressBucket[key], forceTotal)
+      areaBucket[key] = addAreaSample(areaBucket[key], forceArea)
       adcBucket[key] += adcTotal
-      adcAreaBucket[key] += adcArea
+      adcAreaBucket[key] = addAreaSample(adcAreaBucket[key], adcArea)
       pressureBucket[key] += pressureTotal
-      forceBucket[key] += forceTotal
-      pressureAreaBucket[key] += pressureArea
-      forceAreaBucket[key] += forceArea
+      forceBucket[key] = addAreaSample(forceBucket[key], forceTotal)
+      pressureAreaBucket[key] = addAreaSample(pressureAreaBucket[key], pressureArea)
+      forceAreaBucket[key] = addAreaSample(forceAreaBucket[key], forceArea)
       bucketCount[key]++
 
       // bucket 满了，写出平均值
       if (bucketCount[key] >= bucketSize) {
-        pressValue[key].push(pressBucket[key] / bucketCount[key])
-        areaValue[key].push(areaBucket[key] / bucketCount[key])
+        pressValue[key].push(averageAreaSamples(pressBucket[key], bucketCount[key]))
+        areaValue[key].push(averageAreaSamples(areaBucket[key], bucketCount[key]))
         adcValue[key].push(adcBucket[key] / bucketCount[key])
-        adcAreaValue[key].push(adcAreaBucket[key] / bucketCount[key])
+        adcAreaValue[key].push(averageAreaSamples(adcAreaBucket[key], bucketCount[key]))
         pressureValue[key].push(pressureBucket[key] / bucketCount[key])
-        forceValue[key].push(forceBucket[key] / bucketCount[key])
-        pressureAreaValue[key].push(pressureAreaBucket[key] / bucketCount[key])
-        forceAreaValue[key].push(forceAreaBucket[key] / bucketCount[key])
+        forceValue[key].push(averageAreaSamples(forceBucket[key], bucketCount[key]))
+        pressureAreaValue[key].push(averageAreaSamples(pressureAreaBucket[key], bucketCount[key]))
+        forceAreaValue[key].push(averageAreaSamples(forceAreaBucket[key], bucketCount[key]))
         pressBucket[key] = 0
         areaBucket[key] = 0
         adcBucket[key] = 0
@@ -956,14 +1022,14 @@ async function dbGetData({ db, params }) {
   // [PERF-PLAYBACK-OPT] flush 剩余不满一个 bucket 的尾部
   for (const key of keyArr) {
     if (bucketCount[key] > 0) {
-      pressValue[key].push(pressBucket[key] / bucketCount[key])
-      areaValue[key].push(areaBucket[key] / bucketCount[key])
+      pressValue[key].push(averageAreaSamples(pressBucket[key], bucketCount[key]))
+      areaValue[key].push(averageAreaSamples(areaBucket[key], bucketCount[key]))
       adcValue[key].push(adcBucket[key] / bucketCount[key])
-      adcAreaValue[key].push(adcAreaBucket[key] / bucketCount[key])
+      adcAreaValue[key].push(averageAreaSamples(adcAreaBucket[key], bucketCount[key]))
       pressureValue[key].push(pressureBucket[key] / bucketCount[key])
-      forceValue[key].push(forceBucket[key] / bucketCount[key])
-      pressureAreaValue[key].push(pressureAreaBucket[key] / bucketCount[key])
-      forceAreaValue[key].push(forceAreaBucket[key] / bucketCount[key])
+      forceValue[key].push(averageAreaSamples(forceBucket[key], bucketCount[key]))
+      pressureAreaValue[key].push(averageAreaSamples(pressureAreaBucket[key], bucketCount[key]))
+      forceAreaValue[key].push(averageAreaSamples(forceAreaBucket[key], bucketCount[key]))
     }
   }
 
@@ -1076,6 +1142,7 @@ async function isEndiExportRequest(db, params = []) {
 }
 
 function formatExportDecimal(value, digits = 1) {
+  if (value === null) return ''
   const num = Number(value)
   return Number.isFinite(num) ? num.toFixed(digits) : Number(0).toFixed(digits)
 }
@@ -1591,6 +1658,9 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             selectPressureValues,
             selectForceValues,
             pointAreaCm2,
+            Array.isArray(canonicalStats.areaValuesCm2)
+              ? (obj ? sliceSelectionData(canonicalStats.areaValuesCm2, obj) : [])
+              : canonicalStats.areaValuesCm2,
           )
           const selectMetricStats = getExportMetricStats(selectCanonicalStats, metricMode)
           const selectActiveStats = getExportMetricActiveStats(selectCanonicalStats, metricMode)
@@ -1730,6 +1800,9 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
               regionPressureValues,
               regionForceValues,
               pointAreaCm2,
+              Array.isArray(canonicalStats.areaValuesCm2)
+                ? sliceSelectionData(canonicalStats.areaValuesCm2, region)
+                : canonicalStats.areaValuesCm2,
             )
             const regionMetricStats = getExportMetricStats(regionCanonicalStats, metricMode)
             const regionActiveStats = getExportMetricActiveStats(regionCanonicalStats, metricMode)
@@ -2798,30 +2871,32 @@ function buildCsvPlaybackData(csvRows) {
       const forceValues = Array.isArray(item.forceArr) ? item.forceArr : []
       const adcTotal = adcValues.reduce((sum, value) => sum + Number(value || 0), 0)
       const pressureTotal = pressureValues.reduce((sum, value) => sum + Number(value || 0), 0)
-      const forceTotal = forceValues.reduce((sum, value) => sum + Number(value || 0), 0)
-      const adcArea = adcValues.filter((value) => Number(value) > 0).length
-      const pressureArea = pressureValues.filter((value) => Number(value) > 0).length
-      const forceArea = forceValues.filter((value) => Number(value) > 0).length
+      const [adcArea, pressureArea, forceArea] = getAreaTrendCounts(key, item, adcValues, pressureValues, forceValues)
+      const pressureCount = pressureValues.filter((value) => Number(value) > 0).length
+      const forceTotal = isDummyMatrixKey(key)
+        ? calculateAreaForceN(pressureCount ? pressureTotal / pressureCount : 0,
+          forceArea === null ? null : forceArea * DUMMY_POINT_AREA_CM2)
+        : forceValues.reduce((sum, value) => sum + Number(value || 0), 0)
 
-      pressBucket[key] += forceTotal
-      areaBucket[key] += forceArea
+      pressBucket[key] = addAreaSample(pressBucket[key], forceTotal)
+      areaBucket[key] = addAreaSample(areaBucket[key], forceArea)
       adcBucket[key] += adcTotal
-      adcAreaBucket[key] += adcArea
+      adcAreaBucket[key] = addAreaSample(adcAreaBucket[key], adcArea)
       pressureBucket[key] += pressureTotal
-      forceBucket[key] += forceTotal
-      pressureAreaBucket[key] += pressureArea
-      forceAreaBucket[key] += forceArea
+      forceBucket[key] = addAreaSample(forceBucket[key], forceTotal)
+      pressureAreaBucket[key] = addAreaSample(pressureAreaBucket[key], pressureArea)
+      forceAreaBucket[key] = addAreaSample(forceAreaBucket[key], forceArea)
       bucketCount[key] += 1
 
       if (bucketCount[key] >= bucketSize) {
-        pressArr[key].push(pressBucket[key] / bucketCount[key])
-        areaArr[key].push(areaBucket[key] / bucketCount[key])
+        pressArr[key].push(averageAreaSamples(pressBucket[key], bucketCount[key]))
+        areaArr[key].push(averageAreaSamples(areaBucket[key], bucketCount[key]))
         adcArr[key].push(adcBucket[key] / bucketCount[key])
-        adcAreaArr[key].push(adcAreaBucket[key] / bucketCount[key])
+        adcAreaArr[key].push(averageAreaSamples(adcAreaBucket[key], bucketCount[key]))
         pressureArr[key].push(pressureBucket[key] / bucketCount[key])
-        forceArr[key].push(forceBucket[key] / bucketCount[key])
-        pressureAreaArr[key].push(pressureAreaBucket[key] / bucketCount[key])
-        forceAreaArr[key].push(forceAreaBucket[key] / bucketCount[key])
+        forceArr[key].push(averageAreaSamples(forceBucket[key], bucketCount[key]))
+        pressureAreaArr[key].push(averageAreaSamples(pressureAreaBucket[key], bucketCount[key]))
+        forceAreaArr[key].push(averageAreaSamples(forceAreaBucket[key], bucketCount[key]))
         pressBucket[key] = 0
         areaBucket[key] = 0
         adcBucket[key] = 0
@@ -2837,14 +2912,14 @@ function buildCsvPlaybackData(csvRows) {
 
   keyArr.forEach((key) => {
     if (bucketCount[key] > 0) {
-      pressArr[key].push(pressBucket[key] / bucketCount[key])
-      areaArr[key].push(areaBucket[key] / bucketCount[key])
+      pressArr[key].push(averageAreaSamples(pressBucket[key], bucketCount[key]))
+      areaArr[key].push(averageAreaSamples(areaBucket[key], bucketCount[key]))
       adcArr[key].push(adcBucket[key] / bucketCount[key])
-      adcAreaArr[key].push(adcAreaBucket[key] / bucketCount[key])
+      adcAreaArr[key].push(averageAreaSamples(adcAreaBucket[key], bucketCount[key]))
       pressureArr[key].push(pressureBucket[key] / bucketCount[key])
-      forceArr[key].push(forceBucket[key] / bucketCount[key])
-      pressureAreaArr[key].push(pressureAreaBucket[key] / bucketCount[key])
-      forceAreaArr[key].push(forceAreaBucket[key] / bucketCount[key])
+      forceArr[key].push(averageAreaSamples(forceBucket[key], bucketCount[key]))
+      pressureAreaArr[key].push(averageAreaSamples(pressureAreaBucket[key], bucketCount[key]))
+      forceAreaArr[key].push(averageAreaSamples(forceAreaBucket[key], bucketCount[key]))
     }
   })
 
@@ -2866,13 +2941,13 @@ function buildCsvPlaybackData(csvRows) {
 module.exports = {
   initDb,
   closeDb,
-  dbLoadCsv,
+  dbLoadCsv: (...args) => withAreaFormulaSnapshot(() => dbLoadCsv(...args)),
   getExportFieldOptions,
   ensureWritableDir,
   deleteDbData,
-  dbGetData,
+  dbGetData: (...args) => withAreaFormulaSnapshot(() => dbGetData(...args)),
   getCsvData,
-  buildCsvPlaybackData,
+  buildCsvPlaybackData: (...args) => withAreaFormulaSnapshot(() => buildCsvPlaybackData(...args)),
   changeDbDataName,
   changeDbName,
   upsertRemark,

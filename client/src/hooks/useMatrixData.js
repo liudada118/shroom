@@ -15,6 +15,7 @@ import {
   summarizeMetricValues,
 } from '../util/pressureMetrics'
 import { calcPartShapeMetrics, calcRegionShapeMetrics } from '../util/gradientMetrics'
+import { calculateAreaForceN, getAreaValuesCm2, sumAreaValuesCm2, getAreaCellCount, isDummyAreaItem } from '../util/areaMetrics'
 
 /**
  * 矩阵数据处理 Hook
@@ -317,14 +318,20 @@ export function useMatrixData() {
   /**
    * 计算单个数据集的统计指标
    */
-  function computeSingleStats(adcValues, pressureValues, forceValues, mode) {
+  function computeSingleStats(adcValues, pressureValues, forceValues, mode, areaValuesCm2, isDummy = false) {
     const summary = getCanonicalMetricSummary(pressureValues, forceValues, mode, adcValues)
+    const areaCm2 = isDummy ? sumAreaValuesCm2(areaValuesCm2) : undefined
+    summary.forceTotal = isDummy
+      ? calculateAreaForceN(summary.pressureSummary.average, areaCm2)
+      : summary.forceSummary.total
+    const displayedForceTotal = summary.forceTotal === null ? null : summary.forceTotal.toFixed(1)
     const positiveValues = summary.metricValues.filter((value) => value > 0)
     const minimum = positiveValues.length ? Math.min(...positiveValues) : 0
     const stats = {
       metricMode: summary.mode,
       metricUnit: summary.unit,
       areaTotal: summary.activeCount,
+      ...(isDummy ? { areaCm2 } : {}),
       pressMax: summary.max.toFixed(1),
       pressAver: summary.average.toFixed(1),
       pressMin: minimum.toFixed(1),
@@ -336,17 +343,18 @@ export function useMatrixData() {
       pressureTotal: summary.pressureSummary.total.toFixed(1),
       forceMax: summary.forceSummary.max.toFixed(1),
       forceAver: summary.forceSummary.average.toFixed(1),
-      forceTotal: summary.forceSummary.total.toFixed(1),
-      pressTotal: summary.forceSummary.total.toFixed(1),
-      total: summary.forceSummary.total,
+      forceTotal: displayedForceTotal,
+      pressTotal: displayedForceTotal,
+      total: summary.forceTotal,
     }
 
     // carY 类型压力转换
     return {
       area: summary.activeCount,
-      press: summary.total,
+      press: isDummy ? summary.forceTotal : summary.total,
       stats,
       summary,
+      areaCellCount: isDummy ? getAreaCellCount(areaValuesCm2) : summary.activeCount,
     }
   }
 
@@ -410,14 +418,19 @@ export function useMatrixData() {
     const adcSelectResult = metricData.adcSelectResult || { default: [], boxes: [] }
     const pressureSelectResult = metricData.pressureSelectResult || { default: [], boxes: [] }
     const forceSelectResult = metricData.forceSelectResult || { default: [], boxes: [] }
+    const areaSelectResult = metricData.areaSelectResult
+    const isDummy = metricData.isDummy
     const {
       summary: activeSummary,
       stats: activeStats,
+      areaCellCount,
     } = computeSingleStats(
       adcSelectResult.default,
       pressureSelectResult.default,
       forceSelectResult.default,
       metricMode,
+      areaSelectResult?.default,
+      isDummy,
     )
     const adcSummary = activeSummary.adcSummary
     const pressureSummary = activeSummary.pressureSummary
@@ -448,19 +461,17 @@ export function useMatrixData() {
     }
 
     // 默认统计（全部数据或第一个框）
-    setTrendValue(data[key].areaArr, activeSummary.activeCount, options)
-    setTrendValue(data[key].adcAreaArr, adcSummary.activeCount, options)
-    setTrendValue(data[key].pressureAreaArr, pressureSummary.activeCount, options)
-    setTrendValue(data[key].forceAreaArr, forceSummary.activeCount, options)
-    setTrendValue(data[key].pressArr, Number(forceSummary.total.toFixed(1)), options)
+    setTrendValue(data[key].areaArr, areaCellCount, options)
+    setTrendValue(data[key].adcAreaArr, isDummy ? areaCellCount : adcSummary.activeCount, options)
+    setTrendValue(data[key].pressureAreaArr, isDummy ? areaCellCount : pressureSummary.activeCount, options)
+    setTrendValue(data[key].forceAreaArr, isDummy ? areaCellCount : forceSummary.activeCount, options)
+    const roundedForceTotal = activeSummary.forceTotal === null ? null : Number(activeSummary.forceTotal.toFixed(1))
+    setTrendValue(data[key].pressArr, roundedForceTotal, options)
     setTrendValue(data[key].adcArr, Number(adcSummary.total.toFixed(1)), options)
     setTrendValue(data[key].pressureArr, Number(pressureSummary.total.toFixed(1)), options)
-    setTrendValue(data[key].forceArr, Number(forceSummary.total.toFixed(1)), options)
+    setTrendValue(data[key].forceArr, roundedForceTotal, options)
 
     data[key].data = activeStats
-
-    // carY 类型压力转换
-    data[key].data.pressTotal = forceSummary.total.toFixed(1)
 
     // 对称系数 / 压力梯度：始终基于整块部位的压强矩阵（kPa），不受框选影响
     data[key].shape = calcPartShapeMetrics(
@@ -508,7 +519,8 @@ export function useMatrixData() {
         const {
           summary: boxSummary,
           stats,
-        } = computeSingleStats(adcBox, pressureBox, forceBox, metricMode)
+          areaCellCount: boxAreaCellCount,
+        } = computeSingleStats(adcBox, pressureBox, forceBox, metricMode, areaSelectResult?.boxes[i]?.data, isDummy)
         boxStat.data = stats
         const boxWidth = Math.max(1, Number(box.matrix?.xEnd) - Number(box.matrix?.xStart) || width)
         const boxHeight = Math.max(1, Number(box.matrix?.yEnd) - Number(box.matrix?.yStart) || height)
@@ -539,14 +551,15 @@ export function useMatrixData() {
           fullKey || key,
         )
 
-        setTrendValue(boxStat.pressArr, Number(boxSummary.forceSummary.total.toFixed(1)), options)
+        const roundedBoxForceTotal = boxSummary.forceTotal === null ? null : Number(boxSummary.forceTotal.toFixed(1))
+        setTrendValue(boxStat.pressArr, roundedBoxForceTotal, options)
         setTrendValue(boxStat.adcArr, Number(boxSummary.adcSummary.total.toFixed(1)), options)
         setTrendValue(boxStat.pressureArr, Number(boxSummary.pressureSummary.total.toFixed(1)), options)
-        setTrendValue(boxStat.forceArr, Number(boxSummary.forceSummary.total.toFixed(1)), options)
-        setTrendValue(boxStat.areaArr, boxSummary.activeCount, options)
-        setTrendValue(boxStat.adcAreaArr, boxSummary.adcSummary.activeCount, options)
-        setTrendValue(boxStat.pressureAreaArr, boxSummary.pressureSummary.activeCount, options)
-        setTrendValue(boxStat.forceAreaArr, boxSummary.forceSummary.activeCount, options)
+        setTrendValue(boxStat.forceArr, roundedBoxForceTotal, options)
+        setTrendValue(boxStat.areaArr, boxAreaCellCount, options)
+        setTrendValue(boxStat.adcAreaArr, isDummy ? boxAreaCellCount : boxSummary.adcSummary.activeCount, options)
+        setTrendValue(boxStat.pressureAreaArr, isDummy ? boxAreaCellCount : boxSummary.pressureSummary.activeCount, options)
+        setTrendValue(boxStat.forceAreaArr, isDummy ? boxAreaCellCount : boxSummary.forceSummary.activeCount, options)
       }
     } else {
       // 无框选时清空 boxStats
@@ -861,6 +874,10 @@ export function useMatrixData() {
         displayType,
         sitData[fullKey],
       )
+      const areaValuesCm2 = getAreaValuesCm2(sitData[fullKey])
+      const areaSelectResult = areaValuesCm2 === null ? null : computeSelectArr(
+        areaValuesCm2, key, fullKey, select, displayType, sitData[fullKey],
+      )
       const selectResult = metricMode === ADC_METRIC_MODE
         ? adcSelectResult
         : metricMode === PRESSURE_METRIC_MODE
@@ -874,6 +891,8 @@ export function useMatrixData() {
         pressureSelectResult,
         forceSelectResult,
         pressureValues,
+        areaSelectResult,
+        isDummy: isDummyAreaItem(sitData[fullKey], fullKey),
       })
     }
 

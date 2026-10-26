@@ -310,6 +310,7 @@ function combineEndiFootMatrices(frame) {
 
   const combined = frame[ENDI_FOOT_COMBINED_KEY]
   delete combined.physicalAdcArr
+  delete combined.physicalMask
   for (const [field, sourceField] of [
     ['rawAdcArr', 'sourceRawAdcMatrices'], ['pressureArr', 'sourcePressureMatrices'], ['forceArr', 'sourceForceMatrices'],
   ]) {
@@ -317,8 +318,27 @@ function combineEndiFootMatrices(frame) {
     combined[sourceField] = buildFootSourceMap(combined[field])
   }
   combined.sourcePhysicalAdcMatrices = {
-    [ENDI_FOOT_LEFT_KEY]: leftItem?.physicalAdcArr || makeZeroMatrix(6 * 32),
-    [ENDI_FOOT_RIGHT_KEY]: rightItem?.physicalAdcArr || makeZeroMatrix(6 * 32),
+    [ENDI_FOOT_LEFT_KEY]: hasLeft ? leftItem.physicalAdcArr : makeZeroMatrix(6 * 32),
+    [ENDI_FOOT_RIGHT_KEY]: hasRight ? rightItem.physicalAdcArr : makeZeroMatrix(6 * 32),
+  }
+  const leftArea = hasLeft ? leftItem.areaValuesCm2 : makeZeroMatrix(ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT)
+  const rightArea = hasRight ? rightItem.areaValuesCm2 : makeZeroMatrix(ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT)
+  combined.sourceAreaMatrices = {
+    [ENDI_FOOT_LEFT_KEY]: leftArea ?? null,
+    [ENDI_FOOT_RIGHT_KEY]: rightArea ?? null,
+  }
+  combined.areaValuesCm2 = Array.isArray(leftArea) && Array.isArray(rightArea)
+    ? combineFootRows(leftArea, rightArea) : null
+  combined.areaCm2 = combined.areaValuesCm2 === null ? null
+    : combined.areaValuesCm2.reduce((sum, value) => sum + value, 0)
+  if (leftItem?.processing?.importedMetric || rightItem?.processing?.importedMetric) {
+    combined.processing = { ...combined.processing, importedMetric: true }
+  }
+  if (leftItem?.physicalMask || rightItem?.physicalMask) {
+    combined.sourcePhysicalMasks = {
+      [ENDI_FOOT_LEFT_KEY]: leftItem?.physicalMask,
+      [ENDI_FOOT_RIGHT_KEY]: rightItem?.physicalMask,
+    }
   }
   return frame
 }
@@ -403,7 +423,7 @@ function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAU
     if (Array.isArray(nextItem.arr) && isValidMatrix(key, nextItem.arr)) {
       const direction = getDirectionForKey(normalizedState, key)
       nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
-      for (const field of ['rawAdcArr', 'pressureArr', 'forceArr']) {
+      for (const field of ['rawAdcArr', 'pressureArr', 'forceArr', 'areaValuesCm2']) {
         if (Array.isArray(nextItem[field]) && nextItem[field].length === nextItem.arr.length) {
           nextItem[field] = applyCollectionDirection(key, nextItem[field], direction)
         }
@@ -413,6 +433,9 @@ function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAU
         nextItem.sourceRawAdcMatrices = buildFootSourceMap(nextItem.rawAdcArr)
         nextItem.sourcePressureMatrices = buildFootSourceMap(nextItem.pressureArr)
         nextItem.sourceForceMatrices = buildFootSourceMap(nextItem.forceArr)
+        if (Array.isArray(nextItem.areaValuesCm2)) {
+          nextItem.sourceAreaMatrices = buildFootSourceMap(nextItem.areaValuesCm2)
+        }
       }
       nextItem.dataDirection = direction
       const directedDimensions = getDirectedDimensions(key, nextItem.arr, direction)
@@ -643,12 +666,29 @@ function storageData(data) {
 /**
  * 采集数据并发送到前端 (定时器回调)
  */
+let lastFrameProcessingError = null
+
+function reportFrameProcessingError(error) {
+  const message = error?.message || String(error)
+  if (lastFrameProcessingError !== message) {
+    console.error('[FrameProcessing] 帧计算失败，后续帧将重试:', message)
+    lastFrameProcessingError = message
+  }
+}
+
 function colAndSendData() {
   if (state.historyFlag || !Object.keys(state.parserArr).length) return
 
-  const obj = sendData()
-  if (state.colFlag) {
-    storageData(obj)
+  try {
+    const obj = sendData()
+    lastFrameProcessingError = null
+    if (state.colFlag) {
+      storageData(obj)
+    }
+  } catch (error) {
+    // An external formula can briefly be incomplete while being copied. Skip the
+    // affected frame and retry next tick instead of terminating serial capture.
+    reportFrameProcessingError(error)
   }
 }
 
@@ -861,7 +901,14 @@ function getPlaybackIntervalMs() {
 function runPlaybackTick() {
   if (!state.historyPlayFlag) return
 
-  const snapshot = getPlaybackSnapshot()
+  let snapshot
+  try {
+    snapshot = getPlaybackSnapshot()
+    lastFrameProcessingError = null
+  } catch (error) {
+    reportFrameProcessingError(error)
+    return
+  }
   if (!snapshot) {
     finishPlayback()
     return

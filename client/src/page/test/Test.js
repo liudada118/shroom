@@ -97,6 +97,7 @@ function Test() {
     const {
         sitDataRef,
         disPlayDataRef,
+        renderedMetricDataRef,
         chartRef,
         dataDirection,
         setDataDirection,
@@ -349,7 +350,7 @@ function Test() {
     // ─── 状态 ────────────────────────────────────────────
     const [sitData, setSitData] = useState([])
     const [equipStatus, setStatus] = useState({ back: 'offline', sit: 'offline', data: new Array(4096).fill(0) })
-    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 2, color: 5, filter: 0, height: 80, coherent: 1, autoColor: 1 }
+    const setValueData = localStorage.getItem('setValueData') ? JSON.parse(localStorage.getItem('setValueData')) : { gauss: 2, color: 4.6, filter: 0, height: 80, coherent: 1, autoColor: 0 }
     const [settingValue, setSettingValue] = useState(setValueData)
     const [selectArr, setSelectArr] = useState([])
     const [wsLocalData, setWsLocalData] = useState(new Array(4096).fill(0))
@@ -431,7 +432,7 @@ function Test() {
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 4, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
         />,
-        endi: <ThreeHumanPoint key="endi-human" sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef} />,
+        endi: <ThreeHumanPoint key="endi-human" metricData={renderedMetricDataRef} changeViewProp={handleChangeViewProp} ref={threeRef} />,
         carY: <Endi1 key="carY" sitData={disPlayDataRef} changeViewProp={handleChangeViewProp} ref={threeRef}
             backConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}
             sitConfig={{ sitnum1: 32, sitnum2: 32, sitInterp: 2, sitInterp1: 2, sitOrder: 3 }}

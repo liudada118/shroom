@@ -39,6 +39,9 @@
       "index.js",
       "preload.js",
       "server/**/*",
+      "!server/kpa/dummyArea*.js",
+      "!server/kpa/area_formula.json",
+      "!server/kpa/AREA_FORMULA_README.md",
       "util/**/*",
       "config.txt",
       "logo.ico",
@@ -47,6 +50,15 @@
       "node_modules/**/*"
     ],
     "extraResources": [
+      {
+        "from": "server/kpa",
+        "to": "kpa",
+        "filter": [
+          "dummyArea*.js",
+          "area_formula.json",
+          "AREA_FORMULA_README.md"
+        ]
+      },
       {
         "from": "db",
         "to": "db"

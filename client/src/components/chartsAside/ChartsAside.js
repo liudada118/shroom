@@ -250,10 +250,13 @@ function ChartsAside(props) {
         const dataField = type === 'press' ? getMetricTrendField() : getMetricAreaTrendField()
         const onlyBoxStats = !isHistory && useBoxStats && getBoxStats().length > 0
         // 压强曲线按当前显示单位换算（非压强指标 valueScale 恒为 1）
-        const valueScale = type === 'press' ? getMetricDisplay().valueScale : 1
-        const scaleLine = (line) => {
+        const scaleLine = (line, key) => {
+            const partConfig = pointConfig[getSysType()]?.[getPartKey(key)]
+            const valueScale = type === 'press' ? getMetricDisplay().valueScale
+                : (partConfig?.pointWidthDistance || 10) * (partConfig?.pointHeightDistance || 10) / 100
             if (valueScale === 1 || !Array.isArray(line)) return line || []
             return line.map((item) => {
+                if (item === null || item === undefined) return null
                 const numeric = Number(item)
                 return Number.isFinite(numeric) ? numeric * valueScale : item
             })
@@ -276,7 +279,7 @@ function ChartsAside(props) {
                     const seriesName = `${formatSelectionName(box.name, b + 1, props.t)}${keyArr.length > 1 ? `-${deviceLabel}` : ''}`
                     series.push({
                         symbol: 'none',
-                        data: scaleLine(box[dataField]),
+                        data: scaleLine(box[dataField], key),
                         type: 'line',
                         smooth: true,
                         color: box.bgc || SELECT_COLORS[box.colorIndex] || SELECT_COLORS[b],
@@ -290,7 +293,7 @@ function ChartsAside(props) {
                 const color = getDeviceChartColor(key, colorMap, i)
                 series.push({
                     symbol: 'none',
-                    data: scaleLine(historyLine || dataMap[key]),
+                    data: scaleLine(historyLine || dataMap[key], key),
                     type: 'line',
                     smooth: true,
                     color: color,
@@ -431,9 +434,9 @@ function ChartsAside(props) {
             series,
             xData: Array.from({ length: xLength }, (_, i) => i + 1),
             myChart: myChart2.current,
-            yMax: getChartYMax(value),
+            yMax: getChartYMax(Math.max(0, ...series.flatMap(item => item.data).filter(Number.isFinite))),
             xName: props.t('timeFrame'),
-            yName: props.t('pointsAxis'),
+            yName: `${props.t('areaTotal')} (cm²)`,
         });
     }
 
@@ -753,12 +756,15 @@ function ChartsAside(props) {
                         const widthDistance = sysConfig[key].pointWidthDistance || 1
                         const heightDistance = sysConfig[key].pointHeightDistance || 1
                         dataObj[key].pointTotal = chartData[key].data.areaTotal
-                        const preciseAreaTotal = chartData[key].data.areaTotal * widthDistance * heightDistance / 100
-                        dataObj[key].areaTotal = Math.round(preciseAreaTotal)
+                        const preciseAreaTotal = Object.hasOwn(chartData[key].data, 'areaCm2')
+                            ? chartData[key].data.areaCm2
+                            : chartData[key].data.areaTotal * widthDistance * heightDistance / 100
+                        dataObj[key].areaTotal = preciseAreaTotal === null ? null : Number(preciseAreaTotal.toFixed(2))
                         dataObj[key].pressAver = Number(chartData[key].data.pressAver || 0).toFixed(1)
                         dataObj[key].pressMax = Number(chartData[key].data.pressMax || 0).toFixed(1)
                         dataObj[key].pressTotal = chartData[key].data.pressTotal
-                        dataObj[key].total = Number(chartData[key].data.pressTotal ?? preciseAreaTotal * dataObj[key].pressAver).toFixed(1)
+                        dataObj[key].total = chartData[key].data.pressTotal === null ? null
+                            : Number(chartData[key].data.pressTotal ?? preciseAreaTotal * dataObj[key].pressAver).toFixed(1)
 
                         dataObj[key].μ = chartData[key].normalDis.μ
                         dataObj[key].Var = chartData[key].normalDis.Var
@@ -777,17 +783,19 @@ function ChartsAside(props) {
                             dataObj[key].boxStats = chartData[key].boxStats.map((box, idx) => {
                                 const bWidthDistance = widthDistance
                                 const bHeightDistance = heightDistance
-                                const bPreciseArea = (box.data.areaTotal || 0) * bWidthDistance * bHeightDistance / 100
+                                const bPreciseArea = Object.hasOwn(box.data, 'areaCm2') ? box.data.areaCm2
+                                    : (box.data.areaTotal || 0) * bWidthDistance * bHeightDistance / 100
                                 return {
                                     colorIndex: box.colorIndex,
                                     bgc: box.bgc,
                                     name: formatSelectionName(box.name, idx + 1, props.t),
                                     pointTotal: box.data.areaTotal || 0,
-                                    areaTotal: Math.round(bPreciseArea),
+                                    areaTotal: bPreciseArea === null ? null : Number(bPreciseArea.toFixed(2)),
                                     pressAver: Number(box.data.pressAver || 0).toFixed(1),
                                     pressMax: Number(box.data.pressMax || 0).toFixed(1),
-                                    pressTotal: box.data.pressTotal || 0,
-                                    total: Number(box.data.pressTotal ?? bPreciseArea * Number(box.data.pressAver || 0)).toFixed(1),
+                                    pressTotal: box.data.pressTotal === null ? null : box.data.pressTotal || 0,
+                                    total: box.data.pressTotal === null ? null
+                                        : Number(box.data.pressTotal ?? bPreciseArea * Number(box.data.pressAver || 0)).toFixed(1),
                                     // 每个框自己的对称系数 / 压力梯度（梯度原始值单位 pa/cm）
                                     symmetry: box.shape?.symmetry ?? null,
                                     avgGradient: box.shape?.avgGradient ?? null,
