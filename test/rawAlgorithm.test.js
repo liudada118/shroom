@@ -104,8 +104,10 @@ test('live parsing, zero baseline bypass, combined legs and saved physical ADC s
 })
 
 test('persisted legacy formula selections upgrade to the new raw-frame package', () => {
-  for (const version of ['3', '4', '27']) {
-    assert.equal(normalizePressureConfig({ dummyPressureFormulaFile: `dummyPressure_v2.10.${version}.js` }).dummyPressureFormulaFile, 'dummyPressure.v2.10.28.js')
+  for (const version of ['3', '4', '27', '28']) {
+    for (const separator of ['_', '.']) {
+      assert.equal(normalizePressureConfig({ dummyPressureFormulaFile: `dummyPressure${separator}v2.10.${version}.js` }).dummyPressureFormulaFile, 'dummyPressure.v2.10.34.js')
+    }
   }
 })
 

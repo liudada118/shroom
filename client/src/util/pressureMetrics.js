@@ -254,6 +254,13 @@ export function formatPressureValue(kpaValue, unit) {
   return converted.toFixed(getPressureUnitDigits(unit))
 }
 
+/** Reference summaries retain 0.01 kPa; individual grid labels keep their own precision. */
+export function formatPressureSummaryValue(kpaValue, unit) {
+  const converted = convertPressureValue(kpaValue, unit)
+  if (converted === null) return '-'
+  return converted.toFixed(normalizePressureUnit(unit) === PRESSURE_UNIT_N_CM2 ? 3 : 2)
+}
+
 export function getPressureMetricMeta(mode) {
   const normalizedMode = normalizePressureMetricMode(mode)
   if (normalizedMode === ADC_METRIC_MODE) {
@@ -359,7 +366,7 @@ const PRESSURE_METRIC_DISPLAY = {
 
 // pressureUnit 只作用于压强指标：adc / 压力(N) 模式下恒为原单位、系数 1，
 // 所以不传第 4 个参数的老调用点行为完全不变。
-export function getPressureMetricDisplay(mode, _t, language = 'zh', pressureUnit) {
+export function getPressureMetricDisplay(mode, _t, language = 'zh', pressureUnit, summaryDigits) {
   const normalizedMode = normalizePressureMetricMode(mode)
   const config = PRESSURE_METRIC_DISPLAY[normalizedMode]
   const labels = String(language || '').toLowerCase().startsWith('en') ? config.en : config.zh
@@ -367,7 +374,9 @@ export function getPressureMetricDisplay(mode, _t, language = 'zh', pressureUnit
   const usePressureUnit = normalizedMode === PRESSURE_METRIC_MODE && pressureUnit !== undefined
   const unit = usePressureUnit ? normalizePressureUnit(pressureUnit) : config.unit
   const valueScale = usePressureUnit ? getPressureUnitScale(pressureUnit) : 1
-  const valueDigits = usePressureUnit ? getPressureUnitDigits(pressureUnit) : 1
+  const valueDigits = normalizedMode === PRESSURE_METRIC_MODE && Number.isInteger(summaryDigits)
+    ? summaryDigits + (usePressureUnit && normalizePressureUnit(pressureUnit) === PRESSURE_UNIT_N_CM2 ? 1 : 0)
+    : (usePressureUnit ? getPressureUnitDigits(pressureUnit) : 1)
   return {
     mode: normalizedMode,
     nextMode: PRESSURE_METRIC_MODE_SEQUENCE[(currentIndex + 1) % PRESSURE_METRIC_MODE_SEQUENCE.length],
@@ -422,10 +431,16 @@ export function summarizeMetricValues(values = []) {
   }
 }
 
-export function getCanonicalMetricSummary(pressureValues, forceValues, mode, adcValues = []) {
+export function getCanonicalMetricSummary(pressureValues, forceValues, mode, adcValues = [], referencePressureResult = null) {
   const normalizedMode = normalizePressureMetricMode(mode)
   const adcSummary = summarizeMetricValues(adcValues)
-  const pressureSummary = summarizeMetricValues(pressureValues)
+  const pressureSummary = summarizeMetricValues(referencePressureResult?.pressureValuesKpa || pressureValues)
+  if (referencePressureResult) {
+    pressureSummary.activeCount = referencePressureResult.nonZeroCount
+    pressureSummary.average = referencePressureResult.avgKpa ?? 0
+    pressureSummary.max = referencePressureResult.maxKpa ?? 0
+    pressureSummary.total = referencePressureResult.pressureSumKpa
+  }
   const forceSummary = summarizeMetricValues(forceValues)
   const activeSummary = normalizedMode === ADC_METRIC_MODE
     ? adcSummary

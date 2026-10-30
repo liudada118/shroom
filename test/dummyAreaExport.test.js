@@ -12,11 +12,6 @@ const run = (db, sql, params = []) => new Promise((resolve, reject) => {
   db.run(sql, params, (error) => error ? reject(error) : resolve())
 })
 
-function averagePressure(values) {
-  const positive = values.filter(value => Number.isFinite(value) && value > 0)
-  return positive.length ? positive.reduce((sum, value) => sum + value, 0) / positive.length : 0
-}
-
 async function createHistory(t, frame, selection = {}) {
   const db = new sqlite3.Database(':memory:')
   t.after(() => new Promise((resolve, reject) => db.close((error) => error ? reject(error) : resolve())))
@@ -43,13 +38,17 @@ test('recorded raw ADC history uses the area package equally in every metric mod
     for (const field of ['areaArr', 'adcAreaArr', 'pressureAreaArr', 'forceAreaArr']) {
       assert.deepEqual(history[field][key], [expected[key]], `${key} ${field}`)
     }
-    const pressure = key === 'endi-foot'
-      ? [...canonical['endi-leftFoot'].pressureArr, ...canonical['endi-rightFoot'].pressureArr]
-      : canonical[key].pressureArr
+    const summaries = key === 'endi-foot'
+      ? [canonical['endi-leftFoot'].pressureSummary, canonical['endi-rightFoot'].pressureSummary]
+      : [canonical[key].pressureSummary]
+    const pressure = Number((summaries.reduce((sum, value) => sum + value.pressureSumKpa, 0)
+      / summaries.reduce((sum, value) => sum + value.nonZeroCount, 0)).toFixed(2))
     const areaCm2 = expected[key] * DUMMY_POINT_AREA_CM2
-    const force = averagePressure(pressure) * areaCm2 * 0.1
-    assert.deepEqual(history.forceArr[key], [force])
-    assert.deepEqual(history.pressArr[key], [force])
+    const force = pressure * areaCm2 * 0.1
+    for (const field of ['forceArr', 'pressArr']) {
+      assert.equal(history[field][key].length, 1, `${key} ${field}`)
+      assert.ok(Math.abs(history[field][key][0] - force) <= 1e-10 * Math.max(1, Math.abs(force)), `${key} ${field}`)
+    }
   }
 })
 
@@ -83,8 +82,10 @@ test('CSV full and selected areas sum the canonical area cells and preserve unkn
   assert.equal(forceHeaders.length, 2)
   const fullForce = forceHeaders.find(header => !header.includes('框选'))
   const selectedForce = forceHeaders.find(header => header.includes('框选'))
-  assert.equal(Number(rows[0][fullForce]), Number((averagePressure(item.pressureArr) * item.areaCm2 * 0.1).toFixed(1)))
-  assert.equal(Number(rows[0][selectedForce]), Number((item.pressureArr[0] * DUMMY_POINT_AREA_CM2 * 0.1).toFixed(1)))
+  assert.equal(Number(rows[0][fullForce]), Number((item.pressureSummary.avgKpa * item.areaCm2 * 0.1).toFixed(1)))
+  // Pressure follows the backup's cropped-ADC calculation: a single-cell contact
+  // is below its three-cell minimum, while the original fitted area stays known.
+  assert.equal(Number(rows[0][selectedForce]), 0)
 
   const imported = buildCsvPlaybackData(rows)
   for (const field of ['areaArr', 'adcAreaArr', 'pressureAreaArr', 'forceAreaArr']) {

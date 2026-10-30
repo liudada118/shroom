@@ -7,9 +7,11 @@ const os = require('os');
 const path = require('path');
 const { timeStampTo_Date } = require("./time");
 const constantObj = require("./config");
-const { loadPressureConfig, loadPressureFormula } = require("../server/services/PressureConfig");
+const { loadPressureConfig, loadPressureFormula, loadDummyPressureFormula } = require("../server/services/PressureConfig");
 const { withAreaFormulaSnapshot } = require('../server/services/AreaFormula');
 const { calculateAreaForceN } = require('./areaMetrics');
+const { createDummyPressureStatistics, combinePressureSummaries } = require('./dummyPressureStatistics');
+const { getDummyPressureResult, getPressureValues } = createDummyPressureStatistics(loadDummyPressureFormula);
 const { DEVICE_MATRIX_CONFIG } = require("./deviceMatrixConfig");
 const {
   PROCESSING_VERSION,
@@ -118,6 +120,33 @@ function normalizeEndiFootFrame(frame) {
   combined.sourcePhysicalAdcMatrices = {
     [ENDI_FOOT_LEFT_KEY]: hasLeft ? leftItem.physicalAdcArr : new Array(ENDI_FOOT_LEGACY_LENGTH).fill(0),
     [ENDI_FOOT_RIGHT_KEY]: hasRight ? rightItem.physicalAdcArr : new Array(ENDI_FOOT_LEGACY_LENGTH).fill(0),
+  }
+  if ((!hasLeft || Array.isArray(leftItem.pressureValuesKpa))
+    && (!hasRight || Array.isArray(rightItem.pressureValuesKpa))) {
+    const leftPrecise = hasLeft ? leftItem.pressureValuesKpa : new Array(ENDI_FOOT_SINGLE_LENGTH).fill(0)
+    const rightPrecise = hasRight ? rightItem.pressureValuesKpa : new Array(ENDI_FOOT_SINGLE_LENGTH).fill(0)
+    combined.pressureValuesKpa = combineEndiFootRows(leftPrecise, rightPrecise)
+    combined.sourcePrecisePressureMatrices = {
+      [ENDI_FOOT_LEFT_KEY]: leftPrecise,
+      [ENDI_FOOT_RIGHT_KEY]: rightPrecise,
+    }
+    combined.sourcePressureSummaries = {
+      [ENDI_FOOT_LEFT_KEY]: hasLeft ? leftItem.pressureSummary : null,
+      [ENDI_FOOT_RIGHT_KEY]: hasRight ? rightItem.pressureSummary : null,
+    }
+    combined.pressureSummary = combinePressureSummaries(Object.values(combined.sourcePressureSummaries).filter(Boolean))
+    combined.sourcePhysicalPressureSummaries = {
+      [ENDI_FOOT_LEFT_KEY]: hasLeft ? leftItem.physicalPressureSummary : null,
+      [ENDI_FOOT_RIGHT_KEY]: hasRight ? rightItem.physicalPressureSummary : null,
+    }
+    combined.physicalPressureSummary = combinePressureSummaries(Object.values(combined.sourcePhysicalPressureSummaries).filter(Boolean))
+  } else {
+    delete combined.pressureValuesKpa
+    delete combined.pressureSummary
+    delete combined.physicalPressureSummary
+    delete combined.sourcePrecisePressureMatrices
+    delete combined.sourcePressureSummaries
+    delete combined.sourcePhysicalPressureSummaries
   }
   delete combined.physicalMask
   if (leftItem?.physicalMask || rightItem?.physicalMask) {
@@ -230,14 +259,15 @@ function averageAreaSamples(total, count) {
   return total === null ? null : total / count
 }
 
-function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1) {
+function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1, regionalPressureResult = null) {
   const processedItem = ensureProcessedMatrixItem(key, item)
+  const pressureResult = regionalPressureResult || getDummyPressureResult(key, processedItem)
   const length = Array.isArray(processedItem.arr) ? processedItem.arr.length : 0
   const adcValues = normalizeMetricValues(
     Array.isArray(processedItem.rawAdcArr) ? processedItem.rawAdcArr : processedItem.arr,
     length,
   )
-  const pressureValues = normalizeMetricValues(processedItem.pressureArr, length)
+  const pressureValues = normalizeMetricValues(pressureResult?.pressureValuesKpa || getPressureValues(processedItem), length)
   const forceValues = normalizeMetricValues(processedItem.forceArr, length)
   let adcActiveCount = 0
   let pressureActiveCount = 0
@@ -290,13 +320,23 @@ function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1) {
   const fittedArea = Array.isArray(areaValuesCm2)
     ? areaValuesCm2.reduce((sum, value) => sum + value, 0)
     : areaValuesCm2
-  const pressureAverage = pressureActiveCount ? pressureTotal / pressureActiveCount : 0
+  // The reference summary rounds only its final scalar metrics. Its full
+  // precision matrix must not be reconstructed from the one-decimal grid.
+  if (pressureResult) {
+    pressureActiveCount = Number(pressureResult.nonZeroCount) || 0
+    pressureTotal = Number(pressureResult.pressureSumKpa) || 0
+    pressureMax = Number(pressureResult.maxKpa) || 0
+  }
+  const pressureAverage = pressureResult
+    ? Number(pressureResult.avgKpa) || 0
+    : (pressureActiveCount ? pressureTotal / pressureActiveCount : 0)
   const pointForceTotal = forceTotal
   // The fitted area and existing pressure average are independent inputs. Do not
   // sum point forces or restrict the pressure average to the retained area cells.
   if (fittedArea !== undefined) forceTotal = calculateAreaForceN(pressureAverage, fittedArea)
   return {
     processedItem,
+    pressureResult,
     adcValues,
     pressureValues,
     forceValues,
@@ -325,7 +365,7 @@ function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1) {
   }
 }
 
-function getMetricStatsFromValues(adcValues, pressureValues, forceValues, pointAreaCm2 = 1, areaValuesCm2) {
+function getMetricStatsFromValues(adcValues, pressureValues, forceValues, pointAreaCm2 = 1, areaValuesCm2, pressureResult = null) {
   return getCanonicalMetricStats('__selection__', {
     arr: new Array(Math.max(adcValues.length, pressureValues.length, forceValues.length)).fill(0),
     rawAdcArr: adcValues,
@@ -333,7 +373,7 @@ function getMetricStatsFromValues(adcValues, pressureValues, forceValues, pointA
     forceArr: forceValues,
     ...(areaValuesCm2 === undefined ? {} : { areaValuesCm2 }),
     processing: { version: PROCESSING_VERSION },
-  }, pointAreaCm2)
+  }, pointAreaCm2, pressureResult)
 }
 
 function normalizePressureMetricMode() {
@@ -974,14 +1014,18 @@ async function dbGetData({ db, params }) {
       const item = dataObj[key]
       if (!item || !item.arr) continue
       const adcValues = Array.isArray(item.rawAdcArr) ? item.rawAdcArr : item.arr
-      const pressureValues = Array.isArray(item.pressureArr) ? item.pressureArr : []
+      const pressureValues = getPressureValues(item)
       const forceValues = Array.isArray(item.forceArr) ? item.forceArr : []
       const adcTotal = adcValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
-      const pressureTotal = pressureValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
+      const pressureResult = getDummyPressureResult(key, item)
+      const pressureTotal = pressureResult ? Number(pressureResult.pressureSumKpa) || 0
+        : pressureValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
       const [adcArea, pressureArea, forceArea] = getAreaTrendCounts(key, item, adcValues, pressureValues, forceValues)
       const pressureCount = pressureValues.filter((value) => Number(value) > 0).length
+      const pressureAverage = pressureResult ? Number(pressureResult.avgKpa) || 0
+        : (pressureCount ? pressureTotal / pressureCount : 0)
       const forceTotal = isDummyMatrixKey(key)
-        ? calculateAreaForceN(pressureCount ? pressureTotal / pressureCount : 0,
+        ? calculateAreaForceN(pressureAverage,
           forceArea === null ? null : forceArea * DUMMY_POINT_AREA_CM2)
         : forceValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
 
@@ -1583,7 +1627,10 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
       const isPressureExport = metricMode === 'pressure'
       const exportPressureScale = isPressureExport ? getPressureUnitScale(pressureUnit) : 1
       const exportPressureDigits = isPressureExport ? getPressureUnitDigits(pressureUnit) : 1
-      const formatExportPressure = (value) => formatExportDecimal(Number(value) * exportPressureScale, exportPressureDigits)
+      const formatExportPressure = (value, stats) => formatExportDecimal(
+        Number(value) * exportPressureScale,
+        exportPressureDigits + (stats?.pressureResult ? 1 : 0),
+      )
       // 矩阵列多留两位，保证导入时 ×10 还原不掉精度
       const scaleExportPressureData = (values) => {
         if (exportPressureScale === 1 || !Array.isArray(values)) return values
@@ -1661,6 +1708,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             Array.isArray(canonicalStats.areaValuesCm2)
               ? (obj ? sliceSelectionData(canonicalStats.areaValuesCm2, obj) : [])
               : canonicalStats.areaValuesCm2,
+            obj ? getDummyPressureResult(key, processedItem, obj) : null,
           )
           const selectMetricStats = getExportMetricStats(selectCanonicalStats, metricMode)
           const selectActiveStats = getExportMetricActiveStats(selectCanonicalStats, metricMode)
@@ -1768,9 +1816,9 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
           rowEntry.total_pressure_n = pointInfo ? rowEntry[`${key}pressTotal`] : press
           rowEntry.remark = remarkText
 
-          frameEntry[getExportKeyFieldId(key, 'max_pressure')] = formatExportPressure(exportMetricStats.max)
+          frameEntry[getExportKeyFieldId(key, 'max_pressure')] = formatExportPressure(exportMetricStats.max, canonicalStats)
           frameEntry[getExportKeyFieldId(key, 'max_pressure_coord')] = rowEntry[`${key}maxCoord`]
-          frameEntry[getExportKeyFieldId(key, 'avg_pressure')] = formatExportPressure(exportMetricStats.aver)
+          frameEntry[getExportKeyFieldId(key, 'avg_pressure')] = formatExportPressure(exportMetricStats.aver, canonicalStats)
           frameEntry[getExportKeyFieldId(key, 'contact_area')] = rowEntry[`${key}pressureArea`]
           frameEntry[getExportKeyFieldId(key, 'real_data')] = JSON.stringify(scaleExportPressureData(exportMetricData))
           frameEntry[getExportKeyFieldId(key, 'point_count')] = activePointCount
@@ -1803,6 +1851,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
               Array.isArray(canonicalStats.areaValuesCm2)
                 ? sliceSelectionData(canonicalStats.areaValuesCm2, region)
                 : canonicalStats.areaValuesCm2,
+              getDummyPressureResult(key, processedItem, region),
             )
             const regionMetricStats = getExportMetricStats(regionCanonicalStats, metricMode)
             const regionActiveStats = getExportMetricActiveStats(regionCanonicalStats, metricMode)
@@ -1818,9 +1867,9 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             })
             const regionTotalPressure = regionMetricStats.total
             const regionPrefix = `${key}_selection_${regionIndex + 1}`
-            frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure')] = formatExportPressure(regionMax)
+            frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure')] = formatExportPressure(regionMax, regionCanonicalStats)
             frameEntry[getExportKeyFieldId(regionPrefix, 'max_pressure_coord')] = regionCoord
-            frameEntry[getExportKeyFieldId(regionPrefix, 'avg_pressure')] = formatExportPressure(regionAver)
+            frameEntry[getExportKeyFieldId(regionPrefix, 'avg_pressure')] = formatExportPressure(regionAver, regionCanonicalStats)
             frameEntry[getExportKeyFieldId(regionPrefix, 'contact_area')] = regionAreaValue
             frameEntry[getExportKeyFieldId(regionPrefix, 'real_data')] = JSON.stringify(scaleExportPressureData(regionMetricData))
             frameEntry[getExportKeyFieldId(regionPrefix, 'point_count')] = regionActiveStats.count
@@ -2867,14 +2916,18 @@ function buildCsvPlaybackData(csvRows) {
     keyArr.forEach((key) => {
       const item = dataObj[key] || {}
       const adcValues = Array.isArray(item.rawAdcArr) ? item.rawAdcArr : item.arr || []
-      const pressureValues = Array.isArray(item.pressureArr) ? item.pressureArr : []
+      const pressureValues = getPressureValues(item)
       const forceValues = Array.isArray(item.forceArr) ? item.forceArr : []
       const adcTotal = adcValues.reduce((sum, value) => sum + Number(value || 0), 0)
-      const pressureTotal = pressureValues.reduce((sum, value) => sum + Number(value || 0), 0)
+      const pressureResult = getDummyPressureResult(key, item)
+      const pressureTotal = pressureResult ? Number(pressureResult.pressureSumKpa) || 0
+        : pressureValues.reduce((sum, value) => sum + Number(value || 0), 0)
       const [adcArea, pressureArea, forceArea] = getAreaTrendCounts(key, item, adcValues, pressureValues, forceValues)
       const pressureCount = pressureValues.filter((value) => Number(value) > 0).length
+      const pressureAverage = pressureResult ? Number(pressureResult.avgKpa) || 0
+        : (pressureCount ? pressureTotal / pressureCount : 0)
       const forceTotal = isDummyMatrixKey(key)
-        ? calculateAreaForceN(pressureCount ? pressureTotal / pressureCount : 0,
+        ? calculateAreaForceN(pressureAverage,
           forceArea === null ? null : forceArea * DUMMY_POINT_AREA_CM2)
         : forceValues.reduce((sum, value) => sum + Number(value || 0), 0)
 

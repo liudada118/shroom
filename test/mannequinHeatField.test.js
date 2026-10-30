@@ -52,7 +52,7 @@ function heatValues(field) {
   return Array.from({ length: field.texture.image.width }, (_, index) => field.texture.image.data[index * 4 + 3])
 }
 
-test('reference crystal shaders and heat colors remain exact with the requested white shell', async () => {
+test('opaque white model writes depth while preserving the reference heat colors', async () => {
   const { THREE, field } = await createFixture()
   const { createReferenceHumanShaders, REFERENCE_CRYSTAL_DEFAULTS } = await import(pathToFileURL(path.resolve(__dirname, '../client/src/components/three/mannequinReferenceShaders.js')).href)
   const reference = createReferenceHumanShaders(2)
@@ -67,23 +67,27 @@ test('reference crystal shaders and heat colors remain exact with the requested 
   for (const material of [field.material, back, front]) {
     assert.equal(sha256(material.vertexShader), REFERENCE_SHADER_SHA256.vertex)
   }
-  assert.equal(sha256(field.material.fragmentShader), REFERENCE_SHADER_SHA256.shell)
+  assert.equal(field.material.fragmentShader, reference.opaqueWhiteShellFragmentShader)
+  assert.match(field.material.fragmentShader, /gl_FragColor = vec4\(uModelColor \* shade, 1\.0\)/)
   for (const material of [back, front]) {
     assert.equal(sha256(material.fragmentShader), REFERENCE_SHADER_SHA256.heat)
     assert.equal(material.uniforms.uIntensity.value, 0.8)
     assert.equal(material.uniforms.uColorScheme.value, 0)
   }
   assert.equal(field.material.side, THREE.FrontSide)
-  assert.equal(field.material.uniforms.uTransparency.value, 0.8)
+  assert.equal(field.material.transparent, false)
+  assert.equal(field.material.opacity, 1)
+  assert.equal(field.material.depthWrite, true)
   assert.deepEqual(field.material.uniforms.uModelColor.value.toArray(), [1, 1, 1],
-    'the app uses a white crystal shell while preserving the archived reference defaults')
+    'the app uses an opaque white model while preserving the archived reference heat palette')
   assert.equal(back.side, THREE.BackSide)
   assert.equal(front.side, THREE.FrontSide)
   assert.equal(back.uniforms.uHeatAlpha.value, 0.35)
-  assert.equal(front.uniforms.uHeatAlpha.value, 0.65)
-  for (const material of [field.material, back, front]) assert.equal(material.depthWrite, false)
-  assert.equal(back.depthTest, false)
-  assert.equal(front.depthTest, false)
+  assert.equal(front.uniforms.uHeatAlpha.value, 1, 'full heat retains its palette over an opaque white surface')
+  for (const material of [back, front]) {
+    assert.equal(material.depthWrite, false)
+    assert.equal(material.depthTest, true, 'the opaque body must hide heat on occluded surfaces')
+  }
   field.dispose()
 })
 

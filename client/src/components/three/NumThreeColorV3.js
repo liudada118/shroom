@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { pageContext } from '../../page/test/Test';
 import './canvas.scss'
 import { cleanupThree } from '../../util/disposeThree'
-import { getDisplayType, getPressureUnit, getSettingValue, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
+import { getDisplayType, getPressureUnit, getVisualRenderSettings, getVisualRenderMetricMode, getStatus, getSysType, useEquipStore } from '../../store/equipStore';
 import { isMoreMatrix } from '../../assets/util/util';
 import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicColorValueScale, setDynamicGammaColorEnabled, syncDynamicColorRange } from '../../assets/util/line';
 import { getMatrixPartFromDisplayType } from '../../util/constant';
@@ -322,8 +322,8 @@ export default function NumThree(props) {
       camera.updateProjectionMatrix();
     };
 
-    let currentTextureMax = getTextureColorMax(getSettingValue()?.color)
-    let currentTextureMode = useEquipStore.getState().pressureMetricMode
+    let currentTextureMax = getTextureColorMax(getVisualRenderSettings()?.color)
+    let currentTextureMode = getVisualRenderMetricMode()
     let currentTextureUnit = getPressureUnit()
     const texture = createDigitSpriteSheetWithJet(currentTextureMax, currentTextureMode === ADC_METRIC_MODE, currentTextureUnit);
     textureMaxRef.current = currentTextureMax;
@@ -452,11 +452,11 @@ export default function NumThree(props) {
       // data = newArr
 
 
-      const settingValue = getSettingValue()
+      const settingValue = getVisualRenderSettings()
       const {
         gauss, color, filter, height, coherent, autoColor,
       } = settingValue //pageRef.current.settingValue
-      const currentMetricMode = useEquipStore.getState().pressureMetricMode;
+      const currentMetricMode = getVisualRenderMetricMode();
       const rawAdcMode = currentMetricMode === ADC_METRIC_MODE;
       rawAdcModeRef.current = rawAdcMode;
       setDynamicGammaColorEnabled(Boolean(autoColor));
@@ -465,7 +465,7 @@ export default function NumThree(props) {
       data = prepareDisplayData(data, gridSize1, gridSize2, rawAdcMode);
       // 噪点消除只在画面上隐藏低值格，sitData 里的原值不动，统计照常
       const filterValue = Number(filter);
-      if (!rawAdcMode && Number.isFinite(filterValue) && filterValue > 0) {
+      if (Number.isFinite(filterValue) && filterValue > 0) {
         data = data.map((value) => (value < filterValue ? 0 : value));
       }
       data = stabilizeDisplayData(data, stableDataRef, `${systemType}-${displayType}-${gridSize1}x${gridSize2}-g${gauss}-f${filter}-${currentMetricMode}`, rawAdcMode);

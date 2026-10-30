@@ -80,6 +80,8 @@ const fallbackPressureConfig = {
     backValueMultiplier: 1.8,
     pressureFormulaFile: 'pressureFormula_V2.7.38.js',
     pressureFormulaProfile: 'V2.7.38',
+    dummyAdcThreshold: 0,
+    dummyResultScale: 1,
 };
 
 function getPressureFormulaProfileFromFile(fileName) {
@@ -493,6 +495,29 @@ export default function SystemSetting() {
                                 onChange={(event) => handlePressureConfigChange('pressureFormulaProfile', event.target.value)}
                             />
                         </div>
+                        <div className="setting-row">
+                            <Text className="setting-label">{t('dummyAdcThreshold')}</Text>
+                            <InputNumber
+                                value={pressureConfig.dummyAdcThreshold}
+                                min={0}
+                                max={255}
+                                step={1}
+                                style={{ width: 220 }}
+                                onChange={(value) => handlePressureConfigChange('dummyAdcThreshold', value ?? 0)}
+                            />
+                        </div>
+                        <div className="setting-row">
+                            <Text className="setting-label">{t('dummyResultScale')}</Text>
+                            <InputNumber
+                                value={pressureConfig.dummyResultScale}
+                                min={0.01}
+                                max={100}
+                                step={0.1}
+                                style={{ width: 220 }}
+                                onChange={(value) => handlePressureConfigChange('dummyResultScale', value ?? 1)}
+                            />
+                        </div>
+                        <Text type="secondary">{t('dummyPressureInputHelp')}</Text>
                         <div className="setting-row">
                             <Text className="setting-label" />
                             <Button type="primary" icon={<SaveOutlined />} loading={pressureSaving} onClick={handleSavePressureConfig}>

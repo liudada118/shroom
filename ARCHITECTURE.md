@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-10-23
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-10-30
 
 ## 1. 项目概述
 
@@ -49,8 +49,11 @@ shroom/
 │   │   └── SerialManager.js    # 串口管理（含 rescanPort/僵尸检测/帧验证）
 │   ├── services/
 │   │   ├── DataService.js      # 数据采集/回放/导出（~201 行）
+│   │   ├── PressureConfig.js   # 压强公式配置、校验与缓存加载
 │   │   └── AreaFormula.js      # 外置 Dummy 面积公式发现、热加载与修订标识
 │   ├── equipMap.js             # 设备映射配置
+│   ├── kpa/dummyPressure.v2.10.34.js # 当前完整备份算法，兼容 V2.10.28 函数输出格式
+│   ├── kpa/dummyPressure.v2.10.28.js # 保留的历史 V2.10.28 实现
 │   ├── kpa/dummyArea_v2.10.36.js # 独立 Dummy 原始 ADC 面积公式（原文件）
 │   ├── kpa/area_formula.json  # 面积公式选择：auto 或指定 dummyArea*.js
 │   ├── kpa/AREA_FORMULA_README.md # 安装后更换面积公式说明
@@ -64,6 +67,7 @@ shroom/
 │   ├── deviceMatrixConfig.js   # 后端共享设备矩阵尺寸/点距配置
 │   ├── areaMetrics.js          # 现有平均压强 × 规范面积换算 Dummy 总压力
 │   ├── pressureFrameProcessor.js # 原始 ADC 生成规范压强、压力及面积矩阵
+│   ├── dummyPressureStatistics.js # 前后端共用的精准摘要与裁 ADC 框选标定适配器
 │   ├── line.js                 # 数据转换工具
 │   ├── aes_ecb.js              # AES-ECB 加密
 │   ├── parseData.js            # 数据解析
@@ -92,7 +96,7 @@ shroom/
 │   │   │   │   ├── mannequinCamera.js # 上身/下身/整体镜头、飞行、自转与缩放
 │   │   │   │   ├── mannequinHeatField.js # 637 点世界空间逐片元压力热场
 │   │   │   │   ├── mannequinSensorPositions.js # 头部 2D 排列适配与低模表面投影
-│   │   │   │   └── mannequinReferenceShaders.js # 参考项目原版 exact 水晶 GLSL
+│   │   │   │   └── mannequinReferenceShaders.js # 原版 exact 热场、参考水晶归档与不透明白色壳 GLSL
 │   │   │   ├── chartsAside/    # ECharts 图表侧边栏
 │   │   │   ├── ColAndHistory/  # 采集历史组件
 │   │   │   ├── viewSetting/    # 视图设置
@@ -131,6 +135,9 @@ shroom/
 ├── test/
 │   ├── portFinder.test.js      # 端口分配单元测试
 │   ├── areaForce.test.js       # 前后端总压力公式、空值与组合/选区一致性
+│   ├── dummyPressureMasterAlignment.test.js # 备份 master/区域 oracle、物理掩码与 V2.10.28 接口兼容
+│   ├── fixtures/dummyPressureMasterV2.10.34.json # 备份基础 master 的 255 点独立参考数据
+│   ├── fixtures/dummyPressureRegionsV2.10.34.json # 备份原始/预插值帧、峰谷拆分及区域压强分配参考
 │   ├── mannequinSensorLayout.test.js # 637 点采样、合并腿与缺帧隔离
 │   ├── mannequinHeatField.test.js # 原版着色器、分区量程、单行纹理与资源释放
 │   ├── mannequinModel.test.js  # 原模型指纹、实际模型归一化及全部 637 点射线验证
@@ -389,13 +396,15 @@ graph TD
 - `ThreeHumanPoint.js` 参考 `C:/code/shroom1.0` 的人体全身渲染方式，替换原来的 UV 图集贴图链路，固定加载 `client/public/model/human3-low.glb` 与用户提供的 `mannequin_sensor_layout_637.json`；低模加载失败时进入错误/重试流程。模型按最大维度 `8` 归一化，保留 JSON 的 `normalized-world` 原始坐标；头部 `45` 点经 `mannequinSensorPositions.js` 生成与 2D 排列一致的运行时 `position` 并贴合低模，其余 `592` 点直接使用 JSON 坐标，详见 4.13。JSON 的 `modelFingerprint` 继续对应原始基准模型 `human3.glb`，低精度模型的点位兼容性通过独立几何验证确认。
 - 点位共 `637` 个：头部 `45`、背部 `264`、左臂/右臂各 `36`、左腿/右腿各 `128`。`mannequinSensorLayout.js` 保留每点的 `index`、区域、行列与三维坐标，预计算其在现有物理矩阵和 2x 规范显示矩阵中的取样位置，不对整组 637 点重新拉伸或插值。
 - JSON 行列为 1 基；适配到现有物理矩阵时使用统一转置：头部取上衣前 `5` 行的有效 `9` 列，背部取上衣第 `6..27` 行，双臂取各自 `2x18` 物理矩阵；左腿取基础 `0..3` 列，右腿取基础 `2..5` 列。2x 显示矩阵只读取原物理采样点，头部同步扣除既有居中偏移；支持短 key、`endi-*` key、单腿矩阵、合并 `foot` 及 `sourcePressureMatrices`，对象优先读取 `pressureArr`，缺失或非法值置零。方向按现有线序保持单调，不套用参考项目旧协议的翻转规则，实际受压方向仍需硬件验证。
-- 假人 3D 通过 `mannequinHeatmapSource.js` 固定从 `renderedMetricDataRef` 读取 ADC 热图数据，原“压强数据渲染”开关及其参数已移除；全局 `pressureMetricMode`、二维、图表和统计继续使用压强。ADC 源缺失时清零，不回退到压强，完整数据流见 4.16。
-- `mannequinHeatField.js` 将全部 `637` 个点的世界 XYZ 坐标与归一化 ADC 数值写入一张单行 `RGBA FloatType DataTexture`，坐标优先读取运行时 `sensor.position`，缺省时使用保留的 JSON 原始 XYZ；可选点位标记读取同一坐标来源。调用 `mannequinReferenceShaders.js` 中从参考项目逐字提取的原版 exact 水晶着色器，逐片元对全部传感点连续累计世界空间高斯热量。自动色域按六区各自的本帧有效最大值乘以 `adcColor/600` 作为量程，左右腿保持独立；手动色域共用 ADC 颜色量程，默认及恢复值为 `600`，见 4.14。显示参数只控制渲染半径、量程与输入副本，不改原始 ADC、压强、统计、面积或导出数据。
-- 全身视图通过 `mannequinCamera.js` 提供上身、下身、整体三种区域视角，镜头与目标点同步过渡；整体初始镜头位于负 Z 方向，背面朝向屏幕，默认缩放 `90%` 并使模型在画面中略向下移，上身/下身默认 `100%`。所有视角默认静止，仅在用户显式开启后整体视角可自动旋转，局部视角保持关闭自转。保留 `10..300%` 缩放、按区域默认值复位和可选点位显示，镜头调整不改变模型或传感点世界坐标，具体参数见 4.12。渲染上限为 `30 fps`，像素比上限 `1.5`；加载、卸载与重新挂载时清理动画、事件、控制器、纹理、材质及几何资源。
+- 假人 2D 数字与 3D 热力图通过 `mannequinHeatmapSource.js` 固定使用精准压强 map，读取未舍入的 `pressureValuesKpa`，组合腿优先使用 `sourcePrecisePressureMatrices`。左下 ADC / 压强按钮已移除，旧 ADC 偏好被归一为 `pressure`；压强源缺失时清空，不回退到 ADC。当前展示配置见 4.21，精准统计链路见 4.19。
+- `mannequinHeatField.js` 将全部 `637` 个点的世界 XYZ 坐标与归一化压强数值写入一张单行 `RGBA FloatType DataTexture`，坐标优先读取运行时 `sensor.position`，缺省时使用保留的 JSON 原始 XYZ。热图继续调用参考项目原版 exact 逐片元全点世界空间高斯及 `heatColor()` 色阶；人体主体改用独立的不透明白色壳 shader。自动色域保持六区独立，使用 `本区最大值 × (color/20)` 作为量程，自动参考保持 `20 kPa`；手动模式使用共同压强色域，最新恢复值为 `20.2 kPa = 2.02 N/cm²`。显示参数只控制渲染半径、量程与输入副本，不改原始 ADC、压强标定、统计、面积或导出数据。
+- 全身视图通过 `mannequinCamera.js` 保留上身、下身、整体镜头的命令接口，镜头与目标点同步过渡；整体初始镜头位于负 Z 方向，背面朝向屏幕，默认缩放 `90%` 并使模型在画面中略向下移，上身/下身默认 `100%`。右下区域视角、自转和点位显示面板已移除，默认不旋转；左下视图切换与复位、拖动旋转和滚轮缩放继续工作。镜头调整不改变模型或传感点世界坐标，具体参数见 4.12、当前界面见 4.21。渲染上限为 `30 fps`，像素比上限 `1.5`；加载、卸载与重新挂载时清理动画、事件、控制器、纹理、材质及几何资源。
 - 用户提供的 637 点布局不包含双腿各 `7` 行额外 `2` 列、合计 `28` 个腿侧物理点，因此这些点不额外加入 3D。现有完整传感矩阵、二维显示、统计、面积公式、历史与 CSV 继续沿用原链路。
-- `scripts/preview-mannequin.mjs` 提供独立 Vite `5174` 预览，以合成 ADC 覆盖六个区域，固定 ADC 并移除选源控件，避免连接实际后端或改写数据库。专项测试包括 `mannequinSensorLayout.test.js`、`mannequinHeatField.test.js`、`mannequinModel.test.js`、`mannequinCamera.test.js`、`mannequinHeatmapSource.test.js` 和 `visualSettingStorage.test.js`，现有合计 `34` 项；模型测试校验原始 GLB 指纹，并根据组件实际 `MODEL_PATH` 检查归一化、全部 `637` 个原始点的射线贴合及头部运行时方向适配。模型、exact 热场、参考默认外观、区域镜头、头部方向、分区自动色域、恢复预设及固定 ADC 的验收状态分别见 4.7、4.9、4.11、4.12、4.13、4.14、4.15、4.16，真实设备上的传感位置与方向仍待真机确认。
+- `scripts/preview-mannequin.mjs` 提供独立 Vite 预览，默认端口 `5174`、可用 `MANNEQUIN_PREVIEW_PORT` 指定独立端口；以合成压强覆盖六个区域，固定压强且使用恢复预设，避免连接实际后端或改写数据库。专项测试包括 `mannequinSensorLayout.test.js`、`mannequinHeatField.test.js`、`mannequinModel.test.js`、`mannequinCamera.test.js`、`mannequinHeatmapSource.test.js` 和 `visualSettingStorage.test.js`；模型测试校验原始 GLB 指纹，并根据组件实际 `MODEL_PATH` 检查归一化、全部 `637` 个原始点的射线贴合及头部运行时方向适配。当前白色实心模型、压强源、恢复预设和界面简化的验收见 4.21，先前阶段的记录继续保留；真实设备上的传感位置与方向仍待真机确认。
 
 ### 4.6. 人体水晶模式（2026-10-23）
+
+> 本节保留透明水晶阶段的材质与验收记录。2026-10-30 起人体主体已改为不透明白色，当前行为以 4.21 为准。
 
 - `ThreeHumanPoint.js` 的全身人体使用参考 exact 热场；当前水晶模型主体按用户要求使用白色 `#ffffff`，由 `mannequinHeatField.js` 的本地 `CRYSTAL_MODEL_COLOR` 覆盖壳材质 `uModelColor`。场景与画布容器保持纯黑 `#000000`，通过组件本地 `SCENE_BACKGROUND` 覆盖；`mannequinReferenceShaders.js` 的 `REFERENCE_CRYSTAL_DEFAULTS` 继续保留参考原始背景 `#afacac` 与灰蓝模型色 `#718096`，配色覆盖及颜色版本兼容记录见 4.11。
 - `mannequinHeatField.js` 将水晶外壳与压力热场分开渲染。外壳使用 `FrontSide`、`transparent=true`、`depthWrite=false`，运行参考原版水晶壳 GLSL，`uTransparency=0.8` 对应壳片元 `alpha` 约为 `0.2`，保留原版 Fresnel 轮廓。
@@ -510,7 +519,7 @@ graph TD
 
 ### 4.16. 假人 3D 固定 ADC 热图与独立参数（2026-10-23）
 
-> 本节保留此前双源切换和 ADC 上限调整的阶段验收记录。当前用户要求固定 ADC，已移除压强渲染开关、对应文案和旧选源参数；以下当前行为以固定 ADC 及默认颜色 `600` 为准。
+> 本节保留截至 2026-10-23 的固定 ADC 阶段及此前双源切换、ADC 上限调整验收记录。2026-10-27 已按新需求在主界面重新提供 ADC / 压强按钮，当前行为以 4.20 为准；旧 `heatmapUsePressure` 参数仍不恢复。
 
 - Endi 人体点状 3D 固定显示原始 ADC 热图，界面不再提供“压强数据渲染”开关。全局 `pressureMetricMode` 继续为 `pressure`，二维、图表、统计、面积和导出沿用原压强链路。
 - `useMatrixData` 的 `renderedMetricDataRef` 继续维护已有 metric map，ADC 通过 `rawAdcArr` 与腿部 `sourceRawAdcMatrices` 通路构造。`Test.js` 只将该 ref 传给 `ThreeHumanPoint` 的 `metricData`，人体 RAF 每帧固定读取 ADC、采样 637 点并更新原热场；画布 `data-heatmap-source` 固定标识 `adc`，模型无需因旧源设置重新加载。
@@ -537,9 +546,65 @@ graph TD
 - 平均压强的有效点、过滤和求平均方法不变，面积仍直接累计同一对象的规范 `areaValuesCm2`，不通过面积保留掩码重新筛选平均压强。每个部位、组合对象或选区使用其自身现有平均值与自身面积；合并 `foot` 使用合并后的平均压强和左右腿面积之和，不将左右腿各自总压力再相加。
 - `useMatrixData.js` 统一实时/回放侧栏与框选的总压力；`CopReport.js` 的总压力摘要和趋势、`NumThresContrast.js` 的对比数值，以及后端 `util/db.js` 的历史曲线、CSV 导入回放、整面/框选 CSV 导出使用同一公式。`server/api/routes.js` 的 `/getDbHistorySelect` 独立计算首个选区曲线：在面积计数被规范面积替换前保留选区有效压强计数，计算选区平均压强，再乘选区规范面积。
 - 规范面积未知时总压力为 `null`，保持未知展示和导出空值；已知零面积时总压力为 `0`。历史、CSV 与框选先逐帧计算乘积，再对总压力降采样求平均；桶累加和平均均保留 `null`，不使用平均压强乘平均面积替代逐帧结果。换算保留计算精度，界面及既有 CSV 总压力字段仅在最终格式化时保留一位小数。
-- `pressureFrameProcessor`、压强公式、面积公式、处理版本和单点矩阵输出保持原样；`forceArr` 仍可作为兼容数据和单点压力指标保留。当前所有 Dummy 总压力消费入口在读取统计时重新换算，外置面积公式刷新后随新面积重新得到总压力，旧历史无需回写单点压力矩阵。此前历史日志中的逐点压力求和为前阶段实现，当前 Dummy 总压力以本节为准。
+- 本节总压力改动保留独立面积算法与单点压力兼容字段；`forceArr` 仍可作为兼容数据和单点压力指标保留。当前所有 Dummy 总压力消费入口在读取统计时重新换算，外置面积公式刷新后随新面积重新得到总压力，旧历史无需回写单点压力矩阵。此前历史日志中的逐点压力求和为前阶段实现，当前 Dummy 总压力以本节为准；压强来源现已按 4.18 完整升级为备份 V2.10.34 算法，标量总压力公式保持。
 - 本轮 `areaForce`、`dummyAreaRealtime`、`frontendAreaMetrics`、`dummyAreaExport`、`dummyAreaHistoryRoute`、`areaFormulaIntegration`、`pressureFrameProcessor`、`dummyArea` 八个专项测试文件共 `41/41` 通过，前端生产构建通过，仅保留既有构建提示；本轮相关文件的差异空白检查和路由语法检查通过。
 - 回归覆盖逐帧乘积再分桶、零/未知面积、CSV 空值、合并腿自身平均值、面积筛选不改变平均压强，以及旧 `forceArr` 不影响总压力。热替换面积公式后总压力随面积变化，压强和旧单点压力矩阵保持。测试使用内存/替身数据库及临时公式目录；本轮未进行浏览器实屏或真机验收。
+
+### 4.18. 完整备份 V2.10.34 算法与 V2.10.28 接口兼容（2026-10-26）
+
+> 此前只同步基础 master、继续整帧分配的实现为过渡阶段。当前用户明确要求完整采用备份项目算法，仅保留 V2.10.28 的函数输出格式；当前行为以本节为准，既有进度与验收记录保留为历史。
+
+- 当前 Dummy 默认入口为独立 UMD 文件 `server/kpa/dummyPressure.v2.10.34.js`，完整采用用户备份 `C:/Users/23823/Downloads/备份数格子/备份数格子` 中的 V2.10.34 压强计算和接触区拆分方法；旧 `dummyPressure.v2.10.28.js` 还原并作为历史文件保留。算法内嵌所需代码，运行时不依赖备份目录或 TypeScript 模块。
+- 基础 master 来自 `client/src/lib/dummyPressure.ts`，接触区拆分来自 `client/src/lib/bodyPressureRegions.ts`；基础来源文件 SHA-256 为 `b02af65068451bec0bb8572bce68192a79c4a2b1787fdeb05daea47cd03ec99d`，拆分来源 SHA-256 为 `5939938a16cb36b7fae9082a1208810d19103783e12c55b81b7acb9533b8c6ec`。兼容的是 `calculateDummyRawPressureFrame()` 等函数签名、返回字段和矩阵形状，算法版本和实际分配规则均使用 V2.10.34。
+
+| 元数据 | 当前值与含义 |
+| :--- | :--- |
+| `VERSION` / `RULE_VERSION` | `2.10.34` / `V2.10.34`，当前公式与计算规则 |
+| `SOURCE_ALGORITHM_VERSION` / `MASTER_SOURCE_VERSION` / `CALIBRATION_VERSION` | `V2.10.34`，完整算法及基础 master 来源 |
+| `RULE_SCOPE` / `processing.ruleScope` | `contact-region`，按独立接触区计算 |
+| `CONTACT_SPLIT_SOURCE_VERSION` / `processing.contactSplitSourceVersion` | `V2.10.34`，四连通及峰谷拆分来源 |
+| `MASTER_SOURCE_FILE` / `MASTER_SOURCE_SHA256` | 备份基础来源文件及上述完整 SHA-256 |
+| `CONTACT_SPLIT_SOURCE_FILE` / `CONTACT_SPLIT_SOURCE_SHA256` | 备份接触区拆分文件及上述完整 SHA-256 |
+| `processing.version` | `dummy-raw-algorithm-v2.10.34-statistics-v2`，当前精准统计缓存版本，见 4.19 |
+
+- `pressureFrameProcessor` 将 `physicalMask` 作为 `calculateDummyRawPressureFrame(rawMatrix, sensorType, physicalMask)` 的第三参数传入；固有无效物理格与用户掩码排除格均在插值、分区前排除，面积仍走原独立通路。物理 ADC 入口继续提供原 2x 插值与矩阵形状，插值后以 `ADC>30` 和有效掩码构建四连通区域，再通过峰谷方法拆开相连落点。上衣、袖子、左腿、右腿全部统一为每个接触区至少 `3` 个有效点；不足 `3` 点的区域排除，整帧有效点数只累计被接受区域。
+- 每个区域独立取本部位 Top50 ADC，经本部位 master 得到目标压强，并按逐点 master 权重守恒分配到该区。所有类型和所有点数均使用区域 Top50，不再使用 `N>=100` 逐点乘 `2`；旧点数阈值/倍率常量仅作为接口兼容字段保留，不参与 V2.10.34 计算。整帧平均压强为 `Σ(区域均压×区域有效点数)/Σ区域有效点数`；两份独立接触不共用 Top50 池，也不会因合计跨越 `100` 点产生翻倍，单个大区域同样不触发翻倍。
+- `PressureConfig` 默认选择新 `dummyPressure.v2.10.34.js`，加载时将旧 `2.10.3/4/27/28` 文件选择归一化到 `2.10.34`，无需回写用户配置。`pressureFrameProcessor` 记录基础来源、规则、`ruleScope`、`contactSplitSourceVersion` 及来源哈希；缓存有效性核对公式文件、处理版本、`masterSourceSha256`、`ruleVersion`、`ruleScope` 和 `contactSplitSourceVersion`。旧缓存缺失或不匹配时按原始 ADC 通路重新计算，纯压强导入保持原处理方式。
+- 基础标量曲线保持备份原配置，新的接触区划分、最小点数及区域分配会改变旧整帧算法的结果。噪点调节仍只影响画面，独立 `dummyArea` 面积、`平均压强×面积×0.1` 总压力、假人 ADC 热图及默认色值 `600`、压强单位和人体外观保持既有约定；备份项目保持只读。
+- 本轮后端 `18` 个测试文件共 `125/125` 通过，其中相关专项 `54/54` 覆盖独立备份 `27` 帧 oracle、物理掩码、分区分配、旧配置/缓存升级及 V2.10.28 函数输出/矩阵形状兼容；既有面积与总压力回归保持通过。未运行无关的 `integration` 与 `portFinder` 测试，避免前者初始化用户数据库。
+- 独立原始帧对照 `10` 例、共 `12960` 个输出格，与备份结果差异为 `0`；五种单/双接触形状的对应均压保持一致，合计跨 `100` 点也不翻倍。公式自检 `25/25`、CommonJS 与浏览器 VM 独立加载验证通过，后端处理器及 `PressureConfig` 语法检查和本轮文件差异空白检查通过。
+- 本轮仅修改后端，未重建前端、未重启现有采集服务，也未进行浏览器或真机验收；软件或后端重启后加载新公式。
+
+### 4.19. 备份项目完整统计链路、双摘要与选区重标定（2026-10-27）
+
+- `calculateDummyPreparedPressureFrame(matrix, sensorType, validMask, options)` 接受物理矩阵、插值矩阵及任意大小的裁剪矩阵，直接调用内嵌备份算法，不隐式插值或套用整图几何。已有 raw/auto 入口继续保留 V2.10.28 的函数参数、返回字段和输出矩阵形状。
+- 同一帧分别保留 `physicalPressureSummary`（物理 ADC 直接标定）和 `pressureSummary`（2×插值后标定）。整图标定在头部显示居中前完成；前端主统计明确标注“插值后”，并提供可收起的“原始矩阵 · 插值前 ADC”均压/最大值。备份截图黄色物理小卡与主图统计使用不同分辨率，面积相同不代表两组压强应相同。
+- 新 `pressureValuesKpa` 保留算法未舍入的逐点浮点压强，`pressureSummary` 使用备份算法最终保留两位小数的 `avgKpa`/`maxKpa` 和接受区域的 `nonZeroCount`；旧 `pressureArr`/`forceArr` 仍保留一位小数的兼容输出。实时、历史、报告、对比和导出从精准数组与摘要读取，不通过兼容数组重新计算均压或点数。kPa 摘要显示两位、N/cm² 摘要显示三位，2D 单格显示精度保持独立。
+- `util/dummyPressureStatistics.js` 是无依赖的共享适配器：整图读取标定摘要，框选先按显示坐标裁 `rawAdcArr`，再对选区独立分区、标定。前端 Vite 的 `virtual:dummy-pressure` 将服务端同一份 UMD 算法及共享适配器编入浏览器包，不复制算法，不在浏览器运行时读取文件或执行动态字符串。左右腿在合并显示及跨腿框选中保持设备区域独立，再按有效点数合并均压。
+- 上衣头部居中只是显示平移，框选涉及前 `10` 行时，适配器先把可见头部列 `3..20` 还原到传感器列 `6..23`，并用掩码排除显示补空格；在还原后的传感器坐标中分区，再将结果移回框选显示坐标。跨头颈选区因此保持原有邻接关系，不会把显示平移误认为接触区断开或连接。框选恰好覆盖整个规范矩阵时直接复用整图 `pressureSummary` 与精准数组，保证全范围框选和未框选走同一统计结果，避免再次分区造成差异。
+- `PressureConfig` 新增独立的 `dummyAdcThreshold=0` 与 `dummyResultScale=1`。执行顺序与备份相同：按原 ADC 阈值和掩码过滤，再 `Math.round(ADC×resultScale)`，然后进行压强标定；两项可在系统设置的压强配置中调整。它们与画面噪点参数分开，后者继续只影响渲染。记录使用的两个计算参数、`pressurePrecision=float64`、`statisticsRevision=backup-v2.10.34-prepared-float64-v1`，历史缓存缺少精准矩阵/双摘要或参数不符时从保留的 ADC 重算；纯压强导入继续兼容处理。
+- `DataService`、数据库规范化、历史框选路由、实时框选、报告和对比全部传递精准数组与摘要，合并腿同时保留各腿来源。CSV 摘要采用两位 kPa / 三位 N/cm²，格点输出仍保留一位 kPa 的格式。面积继续累计外置 `dummyArea` 的规范面积格，框选只重新标定压强，不重新拟合面积；总压力继续为当前对象的参考均压 × 规范面积 × 0.1，降采样仍逐帧计算后求平均。
+- 独立测试数据来自只读备份 TypeScript。截图可读物理接触区的直接计算为 9.07 / 17.48 kPa；重建的插值主接触区为 10.86 / 30.06 kPa、77 点。这是两种输入的回归用例，未把两张非冻结截图宣称为完全相同的一帧。最终回归共 `19` 个文件、`141/141` 项通过；前端在隔离临时目录的生产构建通过，耗时 `10.34` 秒，未覆盖现有 `client/build`。
+
+### 4.20. 主界面 ADC / 压强显示切换（2026-10-27）
+
+> 本节保留双源切换阶段的实现与验收记录。2026-10-30 按用户要求移除切换按钮并固定压强渲染，当前实现见 4.21。
+
+- 假人系统 `ViewSetting` 在左下角视图切换旁直接显示 ADC / 压强按钮，使用原生按钮、`aria-pressed`、当前项样式和键盘焦点提示。新偏好 `settingValue.visualDataMode` 只接受 `adc` / `pressure`，缺省及恢复默认值均为 ADC；主动选择会持久化，旧 `heatmapUsePressure` 存档继续丢弃，不能自动启用压强。
+- `equipStore` 的 `getVisualRenderMetricMode()` / `getVisualRenderSettings()` 将显示数据源和统计口径分开。`useMatrixData` 持续生成原始 ADC 与精准压强两套 metric map，仅按显示选择更新 `disPlayDataRef` 和 `displayStatus`；`pressureMetricMode` 继续固定为 `pressure`。`Test.js` 在源偏好变化时刷新最后一帧，因此实时、暂停和回放视图均可即时切换，校准、统计、选区重标定、面积、总压力、报告和导出不随显示按钮改变。
+- `NumThreeColorV3` 的 2D 数字及 `ThreeHumanPoint` 的 3D 热力图同步选用 `metricMaps.adc` 或 `metricMaps.pressure`。压强 map 来自未舍入的 `pressureValuesKpa`，组合腿优先使用 `sourcePrecisePressureMatrices`；单格文字仍沿用原显示精度。缺少选定源时显示空值或清空热图，不回退到另一个量纲，模型无需重新加载。
+- `SecondTitle` 按显示源切换颜色、噪点控件和最大值单位：ADC 使用独立 `adcColor` / `adcFilter`，默认与恢复值 `600/0`、调节上限 `1000`、自动颜色中性参考 `600`；压强使用原 `color` / `filter`，内部保存 kPa、面板显示 N/cm²，恢复颜色为 `20 kPa = 2.00 N/cm²`、自动颜色中性参考 `20 kPa`。切换数据源保留两套参数及自动颜色选择，原有头、背、左右臂、左右腿各自自动量程继续生效，噪点始终只影响画面。
+- 数据源、存储及实时回归覆盖默认 ADC、忽略旧开关、显式切源及保存重载、独立颜色范围、精准压强采样、缺源清零，以及切换后统计和源矩阵保持一致；这些用例包含在 4.19 的 `141/141` 最终回归中。
+- 隔离预览挂载真实 `ViewSetting` 后，通过界面点击验证 ADC / 压强可双向切换：默认 ADC 的颜色范围为 `600`，压强恢复独立范围 `20 kPa`；按钮选中态与显示源同步。完整 2D/3D 数据读取和统计不变由上述回归覆盖。
+
+### 4.21. 白色实心模型、固定压强与恢复预设（2026-10-30）
+
+- `mannequinReferenceShaders.js` 新增 `opaqueWhiteShellFragmentShader`，主体使用 `#ffffff` 基色与 `0.78 + 0.22 × facing` 的视线相关柔和明暗，保持白色同时呈现曲面体积，片元 `alpha` 固定为 `1`。`mannequinHeatField.js` 的壳材质为 `FrontSide`、`transparent=false`、`depthWrite=true`。旧 `crystalShellFragmentShader` 与 `REFERENCE_CRYSTAL_DEFAULTS` 继续作为参考来源归档，不再控制当前主体外观。
+- 热图保留参考 `heatColor()` 色阶、世界空间连续全点高斯、`uIntensity=0.8` 及六区各自自动量程。正面热层 `uHeatAlpha=1`，避免高热值与白色主体混合为粉色；背面/正面热层均启用 `depthTest=true`、保持 `depthWrite=false`，由实心主体深度遮挡后表面，不再穿透显示。热图数据和数值统计不受材质变化影响。
+- `ThreeHumanPoint.js` 删除右下完整人体区域视角面板、自动旋转按钮、点位显示选项及对应 UI/marker 状态，样式同步清理。左下视图命令接口 `reset3D()`、`actionSit()`、`changePointRotation()` 与缩放接口继续保留，拖动旋转、滚轮缩放仍可用；整体仍默认背面、`90%`、略向下、不自动旋转。
+- 假人 2D/3D 固定读取精准压强数据。`ViewSetting` 删除 ADC / 压强交换按钮及其样式，store 删除选源 action；`mannequinHeatmapSource` 恒定返回 `pressure`，存储加载/保存将旧 `visualDataMode='adc'` 归一为 `pressure`，旧 `heatmapUsePressure` 不再起作用。颜色与噪点控件继续使用压强量纲，内部保存 kPa、界面显示 N/cm²，缺少压强源时清空显示而不回退到 ADC。ADC map 仍可作为内部诊断数据保留，不改变 4.19 的标定、框选、报告或导出链路。
+- Endi 的“恢复默认值”最新预设为：图像润滑 `1.3`、颜色 `20.2 kPa = 2.02 N/cm²`、噪点消除 `0`、大小 `100`、自动颜色关闭。恢复操作沿用原持久化流程；其他系统的预设与用户自定义存档保持既有语义。热场 `height` 输入上限仍为 `400`，半径保持既有 `0.035..0.2` 限制；自动颜色开启时仍可调节颜色强弱，中性自动参考继续为 `20 kPa`，不随此次恢复色值改为 `20.2`。
+- 白色实心模型与界面简化阶段的 `19` 个测试文件共 `141/141` 项通过，覆盖固定压强、旧 ADC 偏好兼容、当时恢复参数、材质不透明及热色 shader 契约等。该阶段独立端口 `5178` 的真实 GLB/637 点组件预览已验证白色主体、六区饱和色阶和右下控件移除；输入为合成压强，不连接实际设备或数据库。该阶段前端生产构建在隔离临时目录 `shroom-white-model-build-972a3150dc5d4ab9a1441839605683d8` 通过，耗时 `9.30` 秒，未覆盖现有 `client/build`。上述全套测试和构建是前一轮记录；本次恢复预设数值微调仅运行 `test/visualSettingStorage.test.js`，`8/8` 项通过，包含 `2.02 N/cm²` 换算及保存重载。预览脚本直接复用 `getRestoredVisualSettingValue('endi')` 并通过语法检查，本轮未重复构建或浏览器验收。
 
 ## 5. API 端点 (Endpoints)
 
@@ -761,6 +826,15 @@ graph TD
 | 2026-10-23 | 假人 3D 固定 ADC 与默认色值 600 | 移除源开关并固定 ADC，默认/恢复颜色与自动参考统一为 600，一次性迁移旧默认及过渡色值，保留自定义设置及其他系统行为 |
 | 2026-10-23 | Dummy 总压力按平均压强乘规范面积统一 | 实时、框选、历史、报告、对比和导出使用各自平均压强 × dummyArea 面积 × 0.1，保留原压强/面积算法、未知值和其他产品逻辑 |
 | 2026-10-23 | Dummy 总压力全链路回归验证 | 八个专项文件 41 项与生产构建通过，覆盖逐帧降采样、组合/选区、未知值和面积公式热替换，测试使用内存/替身数据库及临时公式 |
+| 2026-10-26 | 基础 master 来源对齐并保留 V2.10.28 规则 | 内嵌备份 V2.10.34 基础配置/求值方法并记录源码哈希，继续使用整矩阵 Top50/点数分支，面积、总压力与显示设置保持 |
+| 2026-10-26 | 完整采用备份 V2.10.34 压强算法 | 按四连通与峰谷接触区独立计算，每区至少 3 点且始终 Top50，兼容 V2.10.28 函数输出并自动升级旧公式选择及缓存 |
+| 2026-10-26 | V2.10.34 完整算法与接口回归验证 | 后端 18 文件 125 项通过，独立备份原始帧 12960 格零差异，验证掩码、分区、旧缓存及 V2.10.28 输出兼容，未重启现有采集服务 |
+| 2026-10-27 | 备份压强统计链路与精度对齐 | 原始/插值双摘要、未舍入压强与精准点数、裁 ADC 后选区重标定、前后端共享算法、独立 ADC 计算参数与旧缓存迁移，保留面积和标量总压力 |
+| 2026-10-27 | 假人主界面 ADC / 压强显示按钮 | 左下工具条提供默认 ADC 的显式切换，2D/3D 同步读取独立数据源，颜色参数分开保存且校准统计保持不变 |
+| 2026-10-27 | 完整统计与显示切换最终回归 | 19 文件 141 项及隔离临时目录生产构建通过；头颈选区还原传感器坐标，全范围框选直接复用整图摘要 |
+| 2026-10-30 | 假人白色实心模型与固定压强显示 | 主体不透明并保留原热色，移除 ADC 交换和右下视角控件；恢复润滑 1.6、颜色 2 N/cm²、噪点 0、大小 400 与自动颜色关闭 |
+| 2026-10-30 | 白色模型与压强显示回归验证 | 19 文件 141 项及隔离生产构建 9.30 秒通过，真实 GLB 与六区合成压强预览确认白色主体、热色和右下控件移除 |
+| 2026-10-30 | Endi 恢复预设数值微调 | 恢复润滑 1.3、颜色 2.02 N/cm²（内部 20.2 kPa）、噪点 0、大小 100 与自动颜色关闭，自动参考仍为 20 kPa；8 项相关存储测试与预览脚本语法检查通过 |
 
 ## 9. 更新日志
 
@@ -945,6 +1019,15 @@ graph TD
 | 2026-10-23 | 需求调整 | 固定假人 3D 使用 ADC 并移除压强切换入口，将 ADC 默认及恢复色值改为 600，同步中性自动参考并仅迁移旧默认配置 |
 | 2026-10-23 | 需求调整 | 将所有 Dummy 总压力入口改为现有平均压强乘规范面积换算 N，移除总压力对旧逐点压力和的依赖，保留未知面积、零面积和末端一位小数格式 |
 | 2026-10-23 | 文档更新 | 补齐 Dummy 总压力八文件 41 项回归与生产构建结果，记录分桶、空值、组合对象及热替换验证，明确未进行实屏或真机验收 |
+| 2026-10-26 | 优化重构 | 分别记录 Dummy 基础 master 的 V2.10.34 来源和 V2.10.28 运行规则，补充来源哈希与历史缓存校验，保留现有分配和面积/总压力逻辑 |
+| 2026-10-26 | 需求调整 | 完整采用备份 V2.10.34 分区和压强分配，仅兼容 V2.10.28 接口格式；取消点数跨 100 翻倍，统一所有部位每区至少 3 点与 Top50，并刷新旧配置和缓存 |
+| 2026-10-26 | 文档更新 | 补齐 V2.10.34 后端 125 项回归和独立备份 12960 格零差异结果，说明插值前物理掩码、函数输出兼容及重启后生效范围，保留此前过渡阶段历史记录 |
+| 2026-10-27 | 修复缺陷 | 对齐备份物理/插值统计与选区重新标定，保留浮点矩阵和两位 kPa 摘要；同步实时、历史、CSV、报告和对比，新增独立 ADC 过滤/倍率并刷新旧精度缓存 |
+| 2026-10-27 | 新增功能 | 将 ADC / 压强按钮放到假人主界面，默认 ADC 并同步 2D/3D 显示；独立保存颜色和噪点参数，显示切换不改变校准统计与导出 |
+| 2026-10-27 | 文档更新 | 补充头部框选坐标还原与全范围框选复用整图路径，记录 19 文件 141 项回归和隔离生产构建 10.34 秒通过结果 |
+| 2026-10-30 | 需求调整 | 将假人主体改为不透明白色并保留 exact 热图色阶，固定精准压强渲染，移除 ADC / 压强交换及右下完整视角控件，更新恢复默认预设 |
+| 2026-10-30 | 文档更新 | 更新当前热场数据流、材质深度和控制接口说明，保留透明水晶及双源切换历史，记录 141 项回归、隔离生产构建 9.30 秒及合成压强预览验收 |
+| 2026-10-30 | 配置变更 | 按最新要求将 Endi 恢复默认参数调整为 1.3 / 2.02 N/cm² / 0 / 100，自动颜色保持关闭及 20 kPa 中性参考；本次 8 项相关存储单测和预览脚本语法检查通过，未重复构建或浏览器验收 |
 
 *变更类型：`新增功能` / `优化重构` / `修复缺陷` / `配置变更` / `文档更新` / `依赖升级` / `初始化`*
 

@@ -1,0 +1,1736 @@
+{
+  "description": "One-time raw and rounded master expectations evaluated directly from the supplied V2.10.34 TypeScript. Region-frame expectations are frozen separately.",
+  "sourceFile": "client/src/lib/dummyPressure.ts",
+  "sourceVersion": "V2.10.34",
+  "sourceSha256": "b02af65068451bec0bb8572bce68192a79c4a2b1787fdeb05daea47cd03ec99d",
+  "ruleVersion": "V2.10.34",
+  "sourceFunctions": "function pchipEndpointSlope(h0: number, h1: number, delta0: number, delta1: number): number {\r\n  let slope = ((2 * h0 + h1) * delta0 - h0 * delta1) / (h0 + h1);\r\n  if (Math.sign(slope) !== Math.sign(delta0)) return 0;\r\n  if (Math.sign(delta0) !== Math.sign(delta1) && Math.abs(slope) > 3 * Math.abs(delta0)) {\r\n    slope = 3 * delta0;\r\n  }\r\n  return slope;\r\n}\r\n\r\nfunction pchipSlopes(nodes: readonly CalibrationNode[]): number[] {\r\n  if (nodes.length < 2) return nodes.map(() => 0);\r\n  if (nodes.length === 2) {\r\n    const delta = (nodes[1].pressureKpa - nodes[0].pressureKpa) / (nodes[1].adc - nodes[0].adc);\r\n    return [delta, delta];\r\n  }\r\n\r\n  const h = nodes.slice(0, -1).map((node, index) => nodes[index + 1].adc - node.adc);\r\n  const delta = nodes.slice(0, -1).map(\r\n    (node, index) => (nodes[index + 1].pressureKpa - node.pressureKpa) / h[index],\r\n  );\r\n  const slopes = new Array<number>(nodes.length).fill(0);\r\n  slopes[0] = pchipEndpointSlope(h[0], h[1], delta[0], delta[1]);\r\n  slopes[nodes.length - 1] = pchipEndpointSlope(\r\n    h[h.length - 1],\r\n    h[h.length - 2],\r\n    delta[delta.length - 1],\r\n    delta[delta.length - 2],\r\n  );\r\n  for (let index = 1; index < nodes.length - 1; index += 1) {\r\n    const previous = delta[index - 1];\r\n    const next = delta[index];\r\n    if (previous === 0 || next === 0 || Math.sign(previous) !== Math.sign(next)) {\r\n      slopes[index] = 0;\r\n      continue;\r\n    }\r\n    const weight1 = 2 * h[index] + h[index - 1];\r\n    const weight2 = h[index] + 2 * h[index - 1];\r\n    slopes[index] = (weight1 + weight2) / (weight1 / previous + weight2 / next);\r\n  }\r\n  return slopes;\r\n}\r\n\r\nfunction monotonePchip(adc: number, nodes: readonly CalibrationNode[]): number {\r\n  if (nodes.length === 0) return 0;\r\n  const first = nodes[0];\r\n  if (adc <= first.adc) return Math.max(0, (first.pressureKpa / first.adc) * adc);\r\n  const last = nodes[nodes.length - 1];\r\n  if (adc >= last.adc) return last.pressureKpa;\r\n\r\n  let segmentIndex = 0;\r\n  while (segmentIndex < nodes.length - 2 && adc > nodes[segmentIndex + 1].adc) {\r\n    segmentIndex += 1;\r\n  }\r\n  const left = nodes[segmentIndex];\r\n  const right = nodes[segmentIndex + 1];\r\n  const h = right.adc - left.adc;\r\n  const delta = (right.pressureKpa - left.pressureKpa) / h;\r\n  const slopes = pchipSlopes(nodes);\r\n  const dx = adc - left.adc;\r\n  const c2 = (3 * delta - 2 * slopes[segmentIndex] - slopes[segmentIndex + 1]) / h;\r\n  const c3 = (slopes[segmentIndex] + slopes[segmentIndex + 1] - 2 * delta) / (h * h);\r\n  return Math.max(\r\n    0,\r\n    left.pressureKpa + slopes[segmentIndex] * dx + c2 * dx * dx + c3 * dx * dx * dx,\r\n  );\r\n}\r\n\r\n/**\r\n * 单个 ADC 点按连续 master 转换为基础压强（kPa）：\r\n * 1) 最高实测 ADC 及以下：上衣/袖子使用中位节点PCHIP；腿部20 kPa前使用锚定指数，20~25 kPa使用局部PCHIP；\r\n * 2) 随后 6 ADC：从本部位最高实测锚点线性升至配置的续接压强；\r\n * 3) 更高 ADC：以线性终点为连续锚点，保持本部位拟合 D 的指数增长率。\r\n */\r\nexport function adcToDummyKpa(adc: number, config: FormulaConfig): number {\r\n  if (!Number.isFinite(adc) || adc <= 0) return 0;\r\n  const linearEndAdc = config.measuredMaxAdc + config.linearExtensionAdc;\r\n  if (adc <= config.measuredMaxAdc) {\r\n    if (config.model === \"anchored_exponential_pchip_linear_exponential\" && config.pchipNodes) {\r\n      const firstLocalNode = config.pchipNodes[0];\r\n      if (adc > firstLocalNode.adc) return monotonePchip(adc, config.pchipNodes);\r\n      return firstLocalNode.pressureKpa * Math.pow(\r\n        2,\r\n        (adc - firstLocalNode.adc) / config.doublingAdcIncrement,\r\n      );\r\n    }\r\n    if ((config.model === \"median_pchip_linear_exponential\" || config.model === \"median_pchip_exponential\") && config.pchipNodes) {\r\n      return monotonePchip(adc, config.pchipNodes);\r\n    }\r\n    return config.measuredMaxPressureKpa * Math.pow(\r\n      2,\r\n      (adc - config.measuredMaxAdc) / config.doublingAdcIncrement,\r\n    );\r\n  }\r\n  if (adc <= linearEndAdc) {\r\n    const progress = (adc - config.measuredMaxAdc) / config.linearExtensionAdc;\r\n    return config.measuredMaxPressureKpa\r\n      + progress * (config.linearEndPressureKpa - config.measuredMaxPressureKpa);\r\n  }\r\n  return config.linearEndPressureKpa * Math.pow(\r\n    2,\r\n    (adc - linearEndAdc) / config.doublingAdcIncrement,\r\n  );\r\n}\r\n\r\nexport function bodyAdcToKpaRaw(adc: number): number {\r\n  return adcToDummyKpa(adc, DUMMY_BODY_MASTER_CONFIG);\r\n}\r\n\r\nexport function bodyAdcToKpa(adc: number): number {\r\n  return round(bodyAdcToKpaRaw(adc));\r\n}\r\n\r\nexport function sleeveAdcToKpaRaw(adc: number): number {\r\n  return adcToDummyKpa(adc, DUMMY_SLEEVE_MASTER_CONFIG);\r\n}\r\n\r\nexport function sleeveAdcToKpa(adc: number): number {\r\n  return round(sleeveAdcToKpaRaw(adc));\r\n}\r\n\r\n/** @deprecated 使用 bodyAdcToKpa；保留旧名称以兼容既有调用。 */\r\nexport function masterAdcToKpa(adc: number): number {\r\n  return bodyAdcToKpa(adc);\r\n}\r\n\r\nexport function legAdcToKpaRaw(adc: number): number {\r\n  return adcToDummyKpa(adc, DUMMY_LEG_MASTER_CONFIG);\r\n}\r\n\r\nexport function legAdcToKpa(adc: number): number {\r\n  return round(legAdcToKpaRaw(adc));\r\n}",
+  "curves": {
+    "body": {
+      "configName": "DUMMY_BODY_MASTER_CONFIG",
+      "config": {
+        "name": "上衣压力等级中位 ADC 单调三次 PCHIP + 6 ADC 线性过渡 master (V2.10.22，第9节点-2 ADC)",
+        "model": "median_pchip_linear_exponential",
+        "pchipNodes": [
+          {
+            "adc": 89.28,
+            "pressureKpa": 2.5
+          },
+          {
+            "adc": 118.54,
+            "pressureKpa": 5
+          },
+          {
+            "adc": 132.12,
+            "pressureKpa": 7.5
+          },
+          {
+            "adc": 142.41,
+            "pressureKpa": 10
+          },
+          {
+            "adc": 148.85,
+            "pressureKpa": 12.5
+          },
+          {
+            "adc": 153.84,
+            "pressureKpa": 15
+          },
+          {
+            "adc": 158.15,
+            "pressureKpa": 17.5
+          },
+          {
+            "adc": 162.67,
+            "pressureKpa": 20
+          },
+          {
+            "adc": 164.03,
+            "pressureKpa": 22.5
+          },
+          {
+            "adc": 167.59,
+            "pressureKpa": 25
+          },
+          {
+            "adc": 176.6,
+            "pressureKpa": 27
+          }
+        ],
+        "measuredMaxAdc": 176.6,
+        "measuredMaxPressureKpa": 27,
+        "linearExtensionAdc": 6,
+        "linearEndPressureKpa": 29,
+        "doublingAdcIncrement": 25.029777726248,
+        "sourceFitX0AdcAt20Kpa": 165.483291566698,
+        "sourceFitLogSlope": 0.027692901956,
+        "sourceFitLogIntercept": -1.586980295202,
+        "sampleCount": 40,
+        "measuredAdcRange": [
+          82.94,
+          176.6
+        ],
+        "measuredPressureRangeKpa": [
+          2.5,
+          25
+        ],
+        "trainingMaeKpa": 1.687391549158,
+        "trainingRmseKpa": 2.707131489027,
+        "trainingR2": 0.857870334082,
+        "highPressureCap": null
+      },
+      "samples": [
+        [
+          -10,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          1e-8,
+          2.800179211469534e-10,
+          0
+        ],
+        [
+          5,
+          0.1400089605734767,
+          0.14
+        ],
+        [
+          10,
+          0.2800179211469534,
+          0.28
+        ],
+        [
+          15,
+          0.4200268817204301,
+          0.42
+        ],
+        [
+          20,
+          0.5600358422939068,
+          0.56
+        ],
+        [
+          25,
+          0.7000448028673836,
+          0.7
+        ],
+        [
+          29.99999999,
+          0.8400537631608422,
+          0.84
+        ],
+        [
+          30,
+          0.8400537634408602,
+          0.84
+        ],
+        [
+          30.00000001,
+          0.8400537637208781,
+          0.84
+        ],
+        [
+          35,
+          0.9800627240143369,
+          0.98
+        ],
+        [
+          40,
+          1.1200716845878136,
+          1.12
+        ],
+        [
+          45,
+          1.2600806451612903,
+          1.26
+        ],
+        [
+          50,
+          1.4000896057347672,
+          1.4
+        ],
+        [
+          55,
+          1.5400985663082438,
+          1.54
+        ],
+        [
+          60,
+          1.6801075268817205,
+          1.68
+        ],
+        [
+          65,
+          1.8201164874551972,
+          1.82
+        ],
+        [
+          70,
+          1.9601254480286738,
+          1.96
+        ],
+        [
+          75,
+          2.1001344086021505,
+          2.1
+        ],
+        [
+          80,
+          2.240143369175627,
+          2.24
+        ],
+        [
+          85,
+          2.380152329749104,
+          2.38
+        ],
+        [
+          89.27999999000001,
+          2.499999999719982,
+          2.5
+        ],
+        [
+          89.28,
+          2.5,
+          2.5
+        ],
+        [
+          89.28000001,
+          2.5000000001805995,
+          2.5
+        ],
+        [
+          90,
+          2.514726683177598,
+          2.51
+        ],
+        [
+          95,
+          2.7062234808462406,
+          2.71
+        ],
+        [
+          100,
+          3.03452297561044,
+          3.03
+        ],
+        [
+          103.91,
+          3.369221868895042,
+          3.37
+        ],
+        [
+          105,
+          3.472772652355102,
+          3.47
+        ],
+        [
+          110,
+          3.9941199959651335,
+          3.99
+        ],
+        [
+          115,
+          4.571712491325441,
+          4.57
+        ],
+        [
+          118.53999999000001,
+          4.999999998778313,
+          5
+        ],
+        [
+          118.54,
+          5.000000000000001,
+          5
+        ],
+        [
+          118.54000001,
+          5.000000001221688,
+          5
+        ],
+        [
+          120,
+          5.193020226654816,
+          5.19
+        ],
+        [
+          125,
+          6.036249524762262,
+          6.04
+        ],
+        [
+          125.33000000000001,
+          6.099543772881081,
+          6.1
+        ],
+        [
+          130,
+          7.052101647430837,
+          7.05
+        ],
+        [
+          132.11999999,
+          7.49999999789197,
+          7.5
+        ],
+        [
+          132.12,
+          7.500000000000001,
+          7.5
+        ],
+        [
+          132.12000001,
+          7.50000000210803,
+          7.5
+        ],
+        [
+          135,
+          8.116120078000296,
+          8.12
+        ],
+        [
+          137.265,
+          8.62982306930203,
+          8.63
+        ],
+        [
+          140,
+          9.313974135113414,
+          9.31
+        ],
+        [
+          142.40999999,
+          9.99999999695765,
+          10
+        ],
+        [
+          142.41,
+          9.999999999999998,
+          10
+        ],
+        [
+          142.41000001,
+          10.00000000304235,
+          10
+        ],
+        [
+          145,
+          10.895577427830354,
+          10.9
+        ],
+        [
+          145.63,
+          11.140866338263795,
+          11.14
+        ],
+        [
+          148.84999999,
+          12.49999999560195,
+          12.5
+        ],
+        [
+          148.85,
+          12.5,
+          12.5
+        ],
+        [
+          148.85000001,
+          12.50000000439805,
+          12.5
+        ],
+        [
+          150,
+          13.026808749273076,
+          13.03
+        ],
+        [
+          151.345,
+          13.688379973944341,
+          13.69
+        ],
+        [
+          153.83999999,
+          14.999999994614052,
+          15
+        ],
+        [
+          153.84,
+          15,
+          15
+        ],
+        [
+          153.84000001,
+          15.000000005385946,
+          15
+        ],
+        [
+          155,
+          15.650292621921874,
+          15.65
+        ],
+        [
+          155.995,
+          16.235042166205393,
+          16.24
+        ],
+        [
+          158.14999999,
+          17.499999994336413,
+          17.5
+        ],
+        [
+          158.15,
+          17.5,
+          17.5
+        ],
+        [
+          158.15000001,
+          17.500000005663587,
+          17.5
+        ],
+        [
+          160,
+          18.35832372618108,
+          18.36
+        ],
+        [
+          160.41,
+          18.53837006422951,
+          18.54
+        ],
+        [
+          162.66999998999998,
+          19.999999990590748,
+          20
+        ],
+        [
+          162.67,
+          19.999999999999996,
+          20
+        ],
+        [
+          162.67000001,
+          20.000000009409252,
+          20
+        ],
+        [
+          163.35,
+          21.22485612305445,
+          21.22
+        ],
+        [
+          164.02999999,
+          22.499999989111693,
+          22.5
+        ],
+        [
+          164.03,
+          22.5,
+          22.5
+        ],
+        [
+          164.03000001,
+          22.500000010888304,
+          22.5
+        ],
+        [
+          165,
+          23.444560124372337,
+          23.44
+        ],
+        [
+          165.81,
+          24.072230637609795,
+          24.07
+        ],
+        [
+          167.58999999,
+          24.99999999635284,
+          25
+        ],
+        [
+          167.59,
+          25,
+          25
+        ],
+        [
+          167.59000001,
+          25.000000003647163,
+          25
+        ],
+        [
+          170,
+          25.82436588571095,
+          25.82
+        ],
+        [
+          172.095,
+          26.410761191219315,
+          26.41
+        ],
+        [
+          175,
+          26.918415192573722,
+          26.92
+        ],
+        [
+          176.59999999,
+          27.000000000000004,
+          27
+        ],
+        [
+          176.6,
+          27,
+          27
+        ],
+        [
+          176.60000001,
+          27.000000003333337,
+          27
+        ],
+        [
+          180,
+          28.133333333333336,
+          28.13
+        ],
+        [
+          182.59999999,
+          28.999999996666663,
+          29
+        ],
+        [
+          182.6,
+          29,
+          29
+        ],
+        [
+          182.60000001,
+          29.000000008030945,
+          29
+        ],
+        [
+          185,
+          30.99292010467638,
+          30.99
+        ],
+        [
+          190,
+          35.595645197505455,
+          35.6
+        ],
+        [
+          195,
+          40.88191602299242,
+          40.88
+        ],
+        [
+          200,
+          46.95324521967456,
+          46.95
+        ],
+        [
+          205,
+          53.92622095840608,
+          53.93
+        ],
+        [
+          210,
+          61.93474579338122,
+          61.93
+        ],
+        [
+          215,
+          71.13260800250468,
+          71.13
+        ],
+        [
+          220,
+          81.69643479474367,
+          81.7
+        ],
+        [
+          225,
+          93.82908409511418,
+          93.83
+        ],
+        [
+          230,
+          107.76354003999268,
+          107.76
+        ],
+        [
+          235,
+          123.76738698822923,
+          123.77
+        ],
+        [
+          240,
+          142.14794796281953,
+          142.15
+        ],
+        [
+          245,
+          163.25818619699976,
+          163.26
+        ],
+        [
+          250,
+          187.5034831125786,
+          187.5
+        ],
+        [
+          255,
+          215.3494228885115,
+          215.35
+        ],
+        [
+          300,
+          748.7779814762873,
+          748.78
+        ],
+        [
+          600,
+          3036794.591862755,
+          3036794.59
+        ],
+        [
+          1000,
+          196410734764.34787,
+          196410734764.35
+        ]
+      ]
+    },
+    "sleeve": {
+      "configName": "DUMMY_SLEEVE_MASTER_CONFIG",
+      "config": {
+        "name": "袖子 F/G 四节点中位 PCHIP + 最高真实点线性衔接 + 连续指数续接 master (V2.10.21)",
+        "model": "median_pchip_linear_exponential",
+        "pchipNodes": [
+          {
+            "adc": 98.75,
+            "pressureKpa": 2.5
+          },
+          {
+            "adc": 128.39,
+            "pressureKpa": 5
+          },
+          {
+            "adc": 141.55,
+            "pressureKpa": 7.5
+          },
+          {
+            "adc": 150.41,
+            "pressureKpa": 10
+          }
+        ],
+        "measuredMaxAdc": 150.41,
+        "measuredMaxPressureKpa": 10,
+        "linearExtensionAdc": 9.39,
+        "linearEndPressureKpa": 12.5,
+        "doublingAdcIncrement": 26.234349786138,
+        "sourceFitX0AdcAt20Kpa": 176.474492594458,
+        "sourceFitLogSlope": 0.026421359256489,
+        "sourceFitLogIntercept": -1.666963694890764,
+        "sampleCount": 20,
+        "measuredAdcRange": [
+          89.52,
+          159.8
+        ],
+        "measuredPressureRangeKpa": [
+          2.5,
+          12.5
+        ],
+        "trainingMaeKpa": 0.715897690274,
+        "trainingRmseKpa": 1.035500855627,
+        "trainingR2": 0.91421903824,
+        "highPressureCap": null
+      },
+      "samples": [
+        [
+          -10,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          1e-8,
+          2.531645569620253e-10,
+          0
+        ],
+        [
+          5,
+          0.12658227848101267,
+          0.13
+        ],
+        [
+          10,
+          0.25316455696202533,
+          0.25
+        ],
+        [
+          15,
+          0.37974683544303794,
+          0.38
+        ],
+        [
+          20,
+          0.5063291139240507,
+          0.51
+        ],
+        [
+          25,
+          0.6329113924050633,
+          0.63
+        ],
+        [
+          29.99999999,
+          0.7594936706329114,
+          0.76
+        ],
+        [
+          30,
+          0.7594936708860759,
+          0.76
+        ],
+        [
+          30.00000001,
+          0.7594936711392405,
+          0.76
+        ],
+        [
+          35,
+          0.8860759493670886,
+          0.89
+        ],
+        [
+          40,
+          1.0126582278481013,
+          1.01
+        ],
+        [
+          45,
+          1.139240506329114,
+          1.14
+        ],
+        [
+          50,
+          1.2658227848101267,
+          1.27
+        ],
+        [
+          55,
+          1.3924050632911391,
+          1.39
+        ],
+        [
+          60,
+          1.5189873417721518,
+          1.52
+        ],
+        [
+          65,
+          1.6455696202531644,
+          1.65
+        ],
+        [
+          70,
+          1.7721518987341771,
+          1.77
+        ],
+        [
+          75,
+          1.8987341772151898,
+          1.9
+        ],
+        [
+          80,
+          2.0253164556962027,
+          2.03
+        ],
+        [
+          85,
+          2.151898734177215,
+          2.15
+        ],
+        [
+          90,
+          2.278481012658228,
+          2.28
+        ],
+        [
+          95,
+          2.4050632911392404,
+          2.41
+        ],
+        [
+          98.74999999,
+          2.4999999997468354,
+          2.5
+        ],
+        [
+          98.75,
+          2.5,
+          2.5
+        ],
+        [
+          98.75000001,
+          2.500000000111983,
+          2.5
+        ],
+        [
+          100,
+          2.5196007817929638,
+          2.52
+        ],
+        [
+          105,
+          2.7023704980017964,
+          2.7
+        ],
+        [
+          110,
+          3.029975398867774,
+          3.03
+        ],
+        [
+          113.57,
+          3.3361600737520285,
+          3.34
+        ],
+        [
+          115,
+          3.4728803406548696,
+          3.47
+        ],
+        [
+          120,
+          4.001550179627059,
+          4
+        ],
+        [
+          125,
+          4.586449772048317,
+          4.59
+        ],
+        [
+          128.38999998999998,
+          4.999999998771039,
+          5
+        ],
+        [
+          128.39,
+          5,
+          5
+        ],
+        [
+          128.39000001,
+          5.000000001228961,
+          5
+        ],
+        [
+          130,
+          5.215750670439893,
+          5.22
+        ],
+        [
+          134.97,
+          6.073830828350973,
+          6.07
+        ],
+        [
+          135,
+          6.079736475610874,
+          6.08
+        ],
+        [
+          140,
+          7.146464850270264,
+          7.15
+        ],
+        [
+          141.54999999,
+          7.499999997700101,
+          7.5
+        ],
+        [
+          141.55,
+          7.499999999999999,
+          7.5
+        ],
+        [
+          141.55000001000002,
+          7.500000002299899,
+          7.5
+        ],
+        [
+          145,
+          8.375929899466561,
+          8.38
+        ],
+        [
+          145.98000000000002,
+          8.651129011778293,
+          8.65
+        ],
+        [
+          150,
+          9.869532815382886,
+          9.87
+        ],
+        [
+          150.40999999,
+          9.999999996807361,
+          10
+        ],
+        [
+          150.41,
+          10,
+          10
+        ],
+        [
+          150.41000001,
+          10.000000002662409,
+          10
+        ],
+        [
+          155,
+          11.222044728434506,
+          11.22
+        ],
+        [
+          159.79999999,
+          12.499999997337595,
+          12.5
+        ],
+        [
+          159.8,
+          12.500000000000004,
+          12.5
+        ],
+        [
+          159.80000001000002,
+          12.500000003302672,
+          12.5
+        ],
+        [
+          160,
+          12.566228228011326,
+          12.57
+        ],
+        [
+          165,
+          14.34095905212834,
+          14.34
+        ],
+        [
+          170,
+          16.366335451108476,
+          16.37
+        ],
+        [
+          175,
+          18.67775614758885,
+          18.68
+        ],
+        [
+          180,
+          21.315619232597683,
+          21.32
+        ],
+        [
+          185,
+          24.32602822731155,
+          24.33
+        ],
+        [
+          190,
+          27.76159786205012,
+          27.76
+        ],
+        [
+          195,
+          31.68237365559295,
+          31.68
+        ],
+        [
+          200,
+          36.15688136685963,
+          36.16
+        ],
+        [
+          205,
+          41.26332466085215,
+          41.26
+        ],
+        [
+          210,
+          47.09095192118812,
+          47.09
+        ],
+        [
+          215,
+          53.74161609783032,
+          53.74
+        ],
+        [
+          220,
+          61.33155485241052,
+          61.33
+        ],
+        [
+          225,
+          69.99342211381884,
+          69.99
+        ],
+        [
+          230,
+          79.87860655077907,
+          79.88
+        ],
+        [
+          235,
+          91.15987748275049,
+          91.16
+        ],
+        [
+          240,
+          104.03440447333432,
+          104.03
+        ],
+        [
+          245,
+          118.72720338143617,
+          118.73
+        ],
+        [
+          250,
+          135.49506909889584,
+          135.5
+        ],
+        [
+          255,
+          154.6310637094068,
+          154.63
+        ],
+        [
+          300,
+          507.75711444355414,
+          507.76
+        ],
+        [
+          600,
+          1406213.2187182584,
+          1406213.22
+        ],
+        [
+          1000,
+          54690436280.558815,
+          54690436280.56
+        ]
+      ]
+    },
+    "leg": {
+      "configName": "DUMMY_LEG_MASTER_CONFIG",
+      "config": {
+        "name": "裤子/左右腿 C/D 锚定指数 + 20/22.5/25 kPa局部PCHIP + 6 ADC线性过渡 master (V2.10.25，第10点178 ADC)",
+        "model": "anchored_exponential_pchip_linear_exponential",
+        "pchipNodes": [
+          {
+            "adc": 172.841043963987,
+            "pressureKpa": 20
+          },
+          {
+            "adc": 175.105401868358,
+            "pressureKpa": 22.5
+          },
+          {
+            "adc": 178,
+            "pressureKpa": 25
+          }
+        ],
+        "measuredMaxAdc": 178,
+        "measuredMaxPressureKpa": 25,
+        "linearExtensionAdc": 6,
+        "linearEndPressureKpa": 27,
+        "doublingAdcIncrement": 25.095529605267,
+        "sourceFitX0AdcAt20Kpa": 175.454766882345,
+        "sourceFitLogSlope": 0.027620344797,
+        "sourceFitLogIntercept": -1.850388884008,
+        "sampleCount": 30,
+        "measuredAdcRange": [
+          88.58,
+          182.92
+        ],
+        "measuredPressureRangeKpa": [
+          2.5,
+          25
+        ],
+        "trainingMaeKpa": 1.969298356806,
+        "trainingRmseKpa": 2.233360203062,
+        "trainingR2": 0.903265012429,
+        "highPressureCap": null
+      },
+      "samples": [
+        [
+          -10,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          1e-8,
+          0.16894248363224046,
+          0.17
+        ],
+        [
+          5,
+          0.19396157009915393,
+          0.19
+        ],
+        [
+          10,
+          0.22268579150058498,
+          0.22
+        ],
+        [
+          15,
+          0.25566384985897944,
+          0.26
+        ],
+        [
+          20,
+          0.2935257058129056,
+          0.29
+        ],
+        [
+          25,
+          0.33699461234150874,
+          0.34
+        ],
+        [
+          29.99999999,
+          0.38690093053800056,
+          0.39
+        ],
+        [
+          30,
+          0.38690093064486397,
+          0.39
+        ],
+        [
+          30.00000001,
+          0.38690093075172743,
+          0.39
+        ],
+        [
+          35,
+          0.44419799205028354,
+          0.44
+        ],
+        [
+          40,
+          0.5099803089453308,
+          0.51
+        ],
+        [
+          45,
+          0.585504482610389,
+          0.59
+        ],
+        [
+          50,
+          0.6722132073409305,
+          0.67
+        ],
+        [
+          55,
+          0.7717628293962492,
+          0.77
+        ],
+        [
+          60,
+          0.8860549872172041,
+          0.89
+        ],
+        [
+          65,
+          1.0172729373176201,
+          1.02
+        ],
+        [
+          70,
+          1.1679232597616893,
+          1.17
+        ],
+        [
+          75,
+          1.3408837399028128,
+          1.34
+        ],
+        [
+          80,
+          1.5394583410408518,
+          1.54
+        ],
+        [
+          85,
+          1.767440318108432,
+          1.77
+        ],
+        [
+          90,
+          2.02918467801029,
+          2.03
+        ],
+        [
+          95,
+          2.3296913707833107,
+          2.33
+        ],
+        [
+          100,
+          2.6747008007295325,
+          2.67
+        ],
+        [
+          105,
+          3.0708034820156493,
+          3.07
+        ],
+        [
+          110,
+          3.5255659334260567,
+          3.53
+        ],
+        [
+          115,
+          4.047675217163572,
+          4.05
+        ],
+        [
+          120,
+          4.647104882738336,
+          4.65
+        ],
+        [
+          125,
+          5.335305485874357,
+          5.34
+        ],
+        [
+          130,
+          6.125423321805368,
+          6.13
+        ],
+        [
+          135,
+          7.032551551294752,
+          7.03
+        ],
+        [
+          140,
+          8.074018516493593,
+          8.07
+        ],
+        [
+          145,
+          9.269718754166744,
+          9.27
+        ],
+        [
+          150,
+          10.642493029439763,
+          10.64
+        ],
+        [
+          155,
+          12.218564649629995,
+          12.22
+        ],
+        [
+          160,
+          14.028040392810741,
+          14.03
+        ],
+        [
+          165,
+          16.10548562005512,
+          16.11
+        ],
+        [
+          170,
+          18.490584557393767,
+          18.49
+        ],
+        [
+          172.841043953987,
+          19.999999994475928,
+          20
+        ],
+        [
+          172.841043963987,
+          20,
+          20
+        ],
+        [
+          172.841043973987,
+          20.00000001209577,
+          20
+        ],
+        [
+          173.97322291617252,
+          21.316669055551824,
+          21.32
+        ],
+        [
+          175,
+          22.39658233120515,
+          22.4
+        ],
+        [
+          175.105401858358,
+          22.499999990259656,
+          22.5
+        ],
+        [
+          175.105401868358,
+          22.5,
+          22.5
+        ],
+        [
+          175.105401878358,
+          22.500000009740347,
+          22.5
+        ],
+        [
+          176.552700934179,
+          23.838731564042035,
+          23.84
+        ],
+        [
+          177.99999999,
+          24.99999999271199,
+          25
+        ],
+        [
+          178,
+          25,
+          25
+        ],
+        [
+          178.00000001,
+          25.000000003333337,
+          25
+        ],
+        [
+          180,
+          25.666666666666668,
+          25.67
+        ],
+        [
+          183.99999999,
+          26.999999996666663,
+          27
+        ],
+        [
+          184,
+          27,
+          27
+        ],
+        [
+          184.00000001,
+          27.0000000074575,
+          27
+        ],
+        [
+          185,
+          27.756143714389438,
+          27.76
+        ],
+        [
+          190,
+          31.866615788287852,
+          31.87
+        ],
+        [
+          195,
+          36.58581726077125,
+          36.59
+        ],
+        [
+          200,
+          42.003896288557364,
+          42
+        ],
+        [
+          205,
+          48.22435127919539,
+          48.22
+        ],
+        [
+          210,
+          55.36600796085594,
+          55.37
+        ],
+        [
+          215,
+          63.56528924099833,
+          63.57
+        ],
+        [
+          220,
+          72.97882121370328,
+          72.98
+        ],
+        [
+          225,
+          83.78642509671089,
+          83.79
+        ],
+        [
+          230,
+          96.19455225139431,
+          96.19
+        ],
+        [
+          235,
+          110.44022790285487,
+          110.44
+        ],
+        [
+          240,
+          126.79557889472616,
+          126.8
+        ],
+        [
+          245,
+          145.5730319697496,
+          145.57
+        ],
+        [
+          250,
+          167.13128187584752,
+          167.13
+        ],
+        [
+          255,
+          191.88214330294713,
+          191.88
+        ],
+        [
+          300,
+          665.0065315267769,
+          665.01
+        ],
+        [
+          600,
+          2638972.7816441804,
+          2638972.78
+        ],
+        [
+          1000,
+          165798365332.97934,
+          165798365332.98
+        ]
+      ]
+    }
+  },
+  "genericModels": [
+    {
+      "config": {
+        "name": "上衣压力等级中位 ADC 单调三次 PCHIP + 6 ADC 线性过渡 master (V2.10.22，第9节点-2 ADC)",
+        "model": "anchored_exponential_linear_exponential",
+        "measuredMaxAdc": 20,
+        "measuredMaxPressureKpa": 4,
+        "linearExtensionAdc": 6,
+        "linearEndPressureKpa": 5,
+        "doublingAdcIncrement": 25.029777726248,
+        "sourceFitX0AdcAt20Kpa": 165.483291566698,
+        "sourceFitLogSlope": 0.027692901956,
+        "sourceFitLogIntercept": -1.586980295202,
+        "sampleCount": 40,
+        "measuredAdcRange": [
+          82.94,
+          176.6
+        ],
+        "measuredPressureRangeKpa": [
+          2.5,
+          25
+        ],
+        "trainingMaeKpa": 1.687391549158,
+        "trainingRmseKpa": 2.707131489027,
+        "trainingR2": 0.857870334082,
+        "highPressureCap": null
+      },
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          5,
+          2.6403218742111223
+        ],
+        [
+          10,
+          3.0324332242398455
+        ],
+        [
+          15,
+          3.4827766073866098
+        ],
+        [
+          20,
+          4
+        ],
+        [
+          23,
+          4.5
+        ],
+        [
+          26,
+          5
+        ],
+        [
+          30,
+          5.585698658712487
+        ],
+        [
+          600,
+          40030956.90289194
+        ]
+      ]
+    },
+    {
+      "config": {
+        "name": "上衣压力等级中位 ADC 单调三次 PCHIP + 6 ADC 线性过渡 master (V2.10.22，第9节点-2 ADC)",
+        "model": "median_pchip_exponential",
+        "pchipNodes": [],
+        "measuredMaxAdc": 20,
+        "measuredMaxPressureKpa": 4,
+        "linearExtensionAdc": 6,
+        "linearEndPressureKpa": 5,
+        "doublingAdcIncrement": 25.029777726248,
+        "sourceFitX0AdcAt20Kpa": 165.483291566698,
+        "sourceFitLogSlope": 0.027692901956,
+        "sourceFitLogIntercept": -1.586980295202,
+        "sampleCount": 40,
+        "measuredAdcRange": [
+          82.94,
+          176.6
+        ],
+        "measuredPressureRangeKpa": [
+          2.5,
+          25
+        ],
+        "trainingMaeKpa": 1.687391549158,
+        "trainingRmseKpa": 2.707131489027,
+        "trainingR2": 0.857870334082,
+        "highPressureCap": null
+      },
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          5,
+          0
+        ],
+        [
+          10,
+          0
+        ],
+        [
+          15,
+          0
+        ],
+        [
+          20,
+          0
+        ],
+        [
+          23,
+          4.5
+        ],
+        [
+          26,
+          5
+        ],
+        [
+          30,
+          5.585698658712487
+        ],
+        [
+          600,
+          40030956.90289194
+        ]
+      ]
+    },
+    {
+      "config": {
+        "name": "上衣压力等级中位 ADC 单调三次 PCHIP + 6 ADC 线性过渡 master (V2.10.22，第9节点-2 ADC)",
+        "model": "median_pchip_exponential",
+        "pchipNodes": [
+          {
+            "adc": 10,
+            "pressureKpa": 2
+          },
+          {
+            "adc": 20,
+            "pressureKpa": 4
+          }
+        ],
+        "measuredMaxAdc": 20,
+        "measuredMaxPressureKpa": 4,
+        "linearExtensionAdc": 6,
+        "linearEndPressureKpa": 5,
+        "doublingAdcIncrement": 25.029777726248,
+        "sourceFitX0AdcAt20Kpa": 165.483291566698,
+        "sourceFitLogSlope": 0.027692901956,
+        "sourceFitLogIntercept": -1.586980295202,
+        "sampleCount": 40,
+        "measuredAdcRange": [
+          82.94,
+          176.6
+        ],
+        "measuredPressureRangeKpa": [
+          2.5,
+          25
+        ],
+        "trainingMaeKpa": 1.687391549158,
+        "trainingRmseKpa": 2.707131489027,
+        "trainingR2": 0.857870334082,
+        "highPressureCap": null
+      },
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          5,
+          1
+        ],
+        [
+          10,
+          2
+        ],
+        [
+          15,
+          3
+        ],
+        [
+          20,
+          4
+        ],
+        [
+          23,
+          4.5
+        ],
+        [
+          26,
+          5
+        ],
+        [
+          30,
+          5.585698658712487
+        ],
+        [
+          600,
+          40030956.90289194
+        ]
+      ]
+    },
+    {
+      "config": {
+        "name": "上衣压力等级中位 ADC 单调三次 PCHIP + 6 ADC 线性过渡 master (V2.10.22，第9节点-2 ADC)",
+        "model": "anchored_exponential_pchip_linear_exponential",
+        "pchipNodes": [
+          {
+            "adc": 10,
+            "pressureKpa": 2
+          },
+          {
+            "adc": 20,
+            "pressureKpa": 4
+          }
+        ],
+        "measuredMaxAdc": 20,
+        "measuredMaxPressureKpa": 4,
+        "linearExtensionAdc": 6,
+        "linearEndPressureKpa": 5,
+        "doublingAdcIncrement": 25.029777726248,
+        "sourceFitX0AdcAt20Kpa": 165.483291566698,
+        "sourceFitLogSlope": 0.027692901956,
+        "sourceFitLogIntercept": -1.586980295202,
+        "sampleCount": 40,
+        "measuredAdcRange": [
+          82.94,
+          176.6
+        ],
+        "measuredPressureRangeKpa": [
+          2.5,
+          25
+        ],
+        "trainingMaeKpa": 1.687391549158,
+        "trainingRmseKpa": 2.707131489027,
+        "trainingR2": 0.857870334082,
+        "highPressureCap": null
+      },
+      "samples": [
+        [
+          0,
+          0
+        ],
+        [
+          5,
+          1.7413883036933049
+        ],
+        [
+          10,
+          2
+        ],
+        [
+          15,
+          3
+        ],
+        [
+          20,
+          4
+        ],
+        [
+          23,
+          4.5
+        ],
+        [
+          26,
+          5
+        ],
+        [
+          30,
+          5.585698658712487
+        ],
+        [
+          600,
+          40030956.90289194
+        ]
+      ]
+    }
+  ]
+}

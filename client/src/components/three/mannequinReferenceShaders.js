@@ -43,6 +43,19 @@ export function createReferenceHumanShaders(maxSensors) {
   }
 `;
 
+  // Opaque white surface with soft view-relative shading, independent of heat colors.
+  const opaqueWhiteShellFragmentShader = `
+  uniform vec3 uModelColor;
+  varying vec3 vWorldNormal;
+  varying vec3 vViewDirection;
+
+  void main() {
+    float facing = max(dot(normalize(vWorldNormal), normalize(vViewDirection)), 0.0);
+    float shade = 0.78 + 0.22 * facing;
+    gl_FragColor = vec4(uModelColor * shade, 1.0);
+  }
+`;
+
   const exactCrystalHeatOverlayFragmentShader = `
   uniform sampler2D uSensorData;
   uniform float uSensorCount;
@@ -88,5 +101,5 @@ export function createReferenceHumanShaders(maxSensors) {
     gl_FragColor = vec4(heatColor(heat), heatVisibility * uHeatAlpha);
   }
 `;
-  return { vertexShader, crystalShellFragmentShader, exactCrystalHeatOverlayFragmentShader }
+  return { vertexShader, crystalShellFragmentShader, opaqueWhiteShellFragmentShader, exactCrystalHeatOverlayFragmentShader }
 }

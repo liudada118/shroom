@@ -1,3 +1,12 @@
+.charts-panel .chartPressureComparison > summary .pressureCompareChevron {
+    display: inline-block;
+    transform: rotate(0deg);
+}
+
+.charts-panel .chartPressureComparison[open] > summary .pressureCompareChevron {
+    transform: rotate(90deg);
+}
+
 .charts-panel {
     // 一行要放得下四个部位的「色点 + 数值 + 单位」，不然会折成两行。
     // 里面的留白全部收紧过（内边距 2.5rem + 列间距 3 × 0.375rem），

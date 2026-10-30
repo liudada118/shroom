@@ -3,6 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
 const vm = require('node:vm')
+const { pathToFileURL } = require('node:url')
 
 const MAP_KEY = 'visualSettingValueBySystemV1'
 const LEGACY_KEY = 'setValueData'
@@ -30,8 +31,71 @@ test('missing visual preferences receive the manual 4.6 range without enabling a
   assert.equal(Object.hasOwn(settings, 'heatmapUsePressure'), false)
   assert.equal(settings.adcColor, 600)
   assert.equal(settings.adcFilter, 0)
+  assert.equal(settings.visualDataMode, 'pressure')
   assert.ok(fixture.entries.get(VERSION_KEY))
   assert.equal(fixture.entries.get(ADC_VERSION_KEY), ADC_VERSION)
+})
+
+test('legacy ADC display preferences are normalized to pressure through save and load', () => {
+  const fixture = createFixture({ [LEGACY_KEY]: JSON.stringify({ heatmapUsePressure: 1 }) })
+  const initial = fixture.loadVisualSettingValue('endi')
+  assert.equal(initial.visualDataMode, 'pressure')
+  for (const visualDataMode of ['pressure', 'adc']) {
+    fixture.saveVisualSettingValue('endi', { ...initial, visualDataMode, color: 20, adcColor: 600 })
+    const reloaded = createFixture(Object.fromEntries(fixture.entries)).loadVisualSettingValue('endi')
+    assert.equal(reloaded.visualDataMode, 'pressure')
+    assert.equal(reloaded.color, 20)
+    assert.equal(reloaded.adcColor, 600)
+  }
+  fixture.saveVisualSettingValue('endi', { ...initial, visualDataMode: 'unknown' })
+  assert.equal(fixture.loadVisualSettingValue('endi').visualDataMode, 'pressure')
+  for (const visualDataMode of ['adc', 'pressure', 'unknown']) {
+    const saved = { visualDataMode, heatmapUsePressure: 0, color: 18.5, gauss: 2.1, height: 312, autoColor: 1 }
+    for (const archived of [{ [MAP_KEY]: JSON.stringify({ endi: saved }) }, { [LEGACY_KEY]: JSON.stringify(saved) }]) {
+      const old = createFixture({ ...archived, [VERSION_KEY]: '2026-08-03-pressure-filter-zero-default', [ADC_VERSION_KEY]: ADC_VERSION })
+      const reloaded = old.loadVisualSettingValue('endi')
+      assert.equal(reloaded.visualDataMode, 'pressure', 'a directly stored pre-upgrade ADC preference cannot select ADC')
+      assert.equal(reloaded.color, 18.5)
+      assert.equal(reloaded.height, 312)
+      assert.equal(reloaded.autoColor, 1)
+      assert.equal(Object.hasOwn(reloaded, 'heatmapUsePressure'), false)
+    }
+  }
+})
+
+test('the equipment store always renders pressure despite stale ADC preferences and preserves statistics', async () => {
+  const storage = createFixture()
+  const render = await import(pathToFileURL(path.resolve(__dirname, '../client/src/util/mannequinHeatmapSource.js')).href)
+  let state
+  const create = initialize => {
+    state = initialize(update => Object.assign(state, typeof update === 'function' ? update(state) : update))
+    return { getState: () => state }
+  }
+  const source = fs.readFileSync(path.resolve(__dirname, '../client/src/store/equipStore.js'), 'utf8')
+    .replace(/^import.*\r?\n/gm, '').replace(/^export\s+/gm, '')
+  const scope = {
+    ...storage, ...render, create, maxObj: { bed: {} },
+    VISUAL_AUTO_COLOR_SETTING_DEFAULT: 0, VISUAL_COLOR_SETTING_DEFAULT: 4.6,
+    PRESSURE_METRIC_MODE: 'pressure', PRESSURE_UNIT_N_CM2: 'N/cm²',
+    GRADIENT_UNIT_PA_CM: 'pa/cm', normalizeGradientUnit: value => value,
+    localStorage: { getItem: key => storage.entries.get(key) ?? null, setItem: (key, value) => storage.entries.set(key, String(value)) },
+  }
+  const getters = vm.runInNewContext(`${source}\n;({ getVisualRenderMetricMode, getVisualRenderSettings })`, scope)
+  state.setSystemType('endi')
+  state.setSettingValue({ ...state.settingValue, color: 20, adcColor: 600 })
+  const metrics = { adc: { jacket: [100] }, pressure: { jacket: [9.07321] } }
+  state.setMetricStatus(metrics)
+  state.setStatus({ jacket: { pressureAverage: 9.07, pressureMax: 17.48 } })
+  const before = JSON.stringify({ status: state.status, metricStatus: state.metricStatus })
+  for (const mode of ['adc', 'pressure', 'adc']) {
+    state.setSettingValue({ ...state.settingValue, visualDataMode: mode })
+    assert.equal(getters.getVisualRenderMetricMode(), 'pressure')
+    assert.equal(getters.getVisualRenderSettings().color, 20)
+    assert.equal(state.pressureMetricMode, 'pressure')
+    assert.equal(JSON.stringify({ status: state.status, metricStatus: state.metricStatus }), before)
+    assert.equal(state.metricStatus, metrics)
+    assert.equal(Object.hasOwn(state, 'setVisualDataMode'), false, 'the retired display switch is no longer exposed')
+  }
 })
 
 test('legacy-default migration preserves explicitly disabled and enabled automatic color', () => {
@@ -69,14 +133,14 @@ test('explicit saved color and automatic preference override defaults through bo
   assert.equal(JSON.parse(fixture.entries.get(MAP_KEY)).endi.autoColor, 1)
 })
 
-test('restoring mannequin controls displays 2 N/cm² and persists its full preset without changing other systems', () => {
+test('restoring mannequin controls displays 2.02 N/cm² and persists its full preset without changing other systems', () => {
   const fixture = createFixture()
   const fallback = Object.freeze({ gauss: 2, color: 4.6, filter: 5, height: 80, coherent: 3, autoColor: 1 })
   const fallbackBefore = { ...fallback }
   const restored = fixture.getRestoredVisualSettingValue('endi', fallback)
   const expected = {
-    gauss: 1.6, color: 20, filter: 0, height: 245.1, coherent: 3, autoColor: 0,
-    adcColor: 600, adcFilter: 0,
+    gauss: 1.3, color: 20.2, filter: 0, height: 100, coherent: 3, autoColor: 0,
+    adcColor: 600, adcFilter: 0, visualDataMode: 'pressure',
   }
   assert.deepEqual({ ...restored }, expected)
 
@@ -86,8 +150,8 @@ test('restoring mannequin controls displays 2 N/cm² and persists its full prese
   )
   const display = getPressureMetricDisplay(PRESSURE_METRIC_MODE, undefined, 'zh', PRESSURE_UNIT_N_CM2)
   assert.equal(display.unit, 'N/cm²')
-  assert.equal(restored.color * display.valueScale, 2)
-  assert.equal(display.formatValue(restored.color), '2.00')
+  assert.equal(restored.color * display.valueScale, 2.02)
+  assert.equal(display.formatValue(restored.color), '2.02')
 
   fixture.saveVisualSettingValue('endi', restored)
   assert.deepEqual(JSON.parse(fixture.entries.get(MAP_KEY)).endi, expected)
@@ -95,7 +159,7 @@ test('restoring mannequin controls displays 2 N/cm² and persists its full prese
   const reopened = createFixture(Object.fromEntries(fixture.entries))
   assert.ok(reopened.normalizeVisualSettingMax({ height: 200 }).height >= 400)
   const reloaded = reopened.loadVisualSettingValue('endi', fallback, { height: 200 })
-  assert.deepEqual({ ...reloaded }, expected, 'backend height max 200 cannot truncate the restored 245.1 setting')
+  assert.deepEqual({ ...reloaded }, expected, 'the full restored preset survives saving and reloading')
   assert.equal(reloaded.autoColor, 0)
   assert.deepEqual(fallback, fallbackBefore)
 
@@ -108,7 +172,7 @@ test('restoring mannequin controls displays 2 N/cm² and persists its full prese
   }
 })
 
-test('ADC controls persist independently while legacy pressure selection is discarded and restore uses 600', () => {
+test('retained ADC parameters cannot re-enable ADC and restore uses the fixed pressure preset', () => {
   for (const heatmapUsePressure of [0, 1]) {
     const fixture = createFixture()
     const saved = {
@@ -117,6 +181,7 @@ test('ADC controls persist independently while legacy pressure selection is disc
     }
     const original = { ...saved }
     const { heatmapUsePressure: ignored, ...expected } = saved
+    expected.visualDataMode = 'pressure'
     fixture.saveVisualSettingValue('endi', saved)
     const reopened = createFixture(Object.fromEntries(fixture.entries))
     const perSystem = reopened.loadVisualSettingValue('endi')
@@ -152,9 +217,11 @@ test('ADC controls persist independently while legacy pressure selection is disc
     assert.equal(Object.hasOwn(restored, 'heatmapUsePressure'), false)
     assert.equal(restored.adcColor, 600)
     assert.equal(restored.adcFilter, 0)
-    assert.equal(restored.color, 20)
+    assert.equal(restored.color, 20.2)
     assert.equal(restored.filter, 0)
     assert.equal(restored.autoColor, 0)
+    assert.equal(restored.height, 100)
+    assert.equal(restored.visualDataMode, 'pressure')
     reopened.saveVisualSettingValue('endi', restored)
     assert.equal(reopened.loadVisualSettingValue('endi').adcColor, 600)
     assert.deepEqual({ ...pressureChanged }, beforeRestore)
@@ -169,6 +236,7 @@ test('the ADC 600 upgrade runs once for both previous defaults and preserves lat
   }
   const fixtures = []
   const { heatmapUsePressure: ignored, ...expected } = { ...previous, adcColor: 600 }
+  expected.visualDataMode = 'pressure'
   for (const adcColor of [255, 367]) {
     const oldSettings = { ...previous, adcColor }
     const fixture = createFixture({

@@ -3,8 +3,34 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import fs from 'fs/promises';
 
+// Bundle the same standalone pressure algorithm and statistic adapter used by
+// the server. The local CommonJS objects avoid browser globals and runtime eval.
+function dummyPressureModule() {
+  const virtualId = 'virtual:dummy-pressure';
+  const resolvedId = '\0' + virtualId;
+  const sources = [
+    path.resolve(__dirname, '../server/kpa/dummyPressure.v2.10.34.js'),
+    path.resolve(__dirname, '../util/dummyPressureStatistics.js'),
+  ];
+  return {
+    name: 'dummy-pressure-module',
+    resolveId(id) { if (id === virtualId) return resolvedId; },
+    async load(id) {
+      if (id !== resolvedId) return null;
+      sources.forEach(source => this.addWatchFile(source));
+      const [algorithm, statistics] = await Promise.all(sources.map(source => fs.readFile(source, 'utf8')));
+      return `const api = (() => { const module = { exports: {} };\n${algorithm}\nreturn module.exports; })();
+const statistics = (() => { const module = { exports: {} };\n${statistics}\nreturn module.exports; })();
+const adapter = statistics.createDummyPressureStatistics(api);
+export const getDummyPressureResult = adapter.getDummyPressureResult;
+export const getPressureValues = adapter.getPressureValues;
+export default api;`;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), dummyPressureModule()],
   root: '.',
   base: './',
   publicDir: 'public',

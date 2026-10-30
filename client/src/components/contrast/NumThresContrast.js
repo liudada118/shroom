@@ -15,6 +15,7 @@ import {
 } from '../../util/pressureMetrics'
 import { calcCentroidRatio } from '../../util/util'
 import { calculateAreaForceN, getAreaValuesCm2, isDummyAreaItem, sumAreaValuesCm2 } from '../../util/areaMetrics'
+import { getDummyPressureResult, getPressureValues } from 'virtual:dummy-pressure'
 import {
     calcPartShapeMetrics,
     formatGradientValue,
@@ -361,7 +362,7 @@ function getFrameMetricValues(data = {}, metricMode = PRESSURE_METRIC_MODE) {
         ? (data.rawAdcArr || data.arr)
         : metricMode === FORCE_METRIC_MODE
             ? data.forceArr
-            : data.pressureArr
+            : getPressureValues(data)
     const length = Array.isArray(data.arr) ? data.arr.length : (Array.isArray(source) ? source.length : 0)
     return Array.from({ length }, (_, index) => {
         const value = Number(source?.[index])
@@ -369,8 +370,8 @@ function getFrameMetricValues(data = {}, metricMode = PRESSURE_METRIC_MODE) {
     })
 }
 
-function calcMetrics(arr = [], width = 1, height = 1, matrixRect = null, matrixKey = '', forceArr = arr, pressureArr = null, areaValues) {
-    const values = arr.map((value) => {
+function calcMetrics(arr = [], width = 1, height = 1, matrixRect = null, matrixKey = '', forceArr = arr, pressureArr = null, areaValues, referencePressure = null, metricMode = PRESSURE_METRIC_MODE) {
+    const values = (referencePressure && metricMode === PRESSURE_METRIC_MODE ? referencePressure.pressureValuesKpa : arr).map((value) => {
         const numeric = Number(value)
         return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
     })
@@ -381,14 +382,14 @@ function calcMetrics(arr = [], width = 1, height = 1, matrixRect = null, matrixK
     const area = usesDummyArea
         ? sumAreaValuesCm2(areaValues)
         : points * getPressurePointAreaCm2(matrixKey)
-    const pressureValues = Array.isArray(pressureArr)
+    const pressureValues = referencePressure?.pressureValuesKpa || (Array.isArray(pressureArr)
         ? pressureArr.map((value) => {
             const numeric = Number(value)
             return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
-        }) : values
+        }) : values)
     const positivePressure = pressureValues.filter((value) => Number.isFinite(value) && value > 0)
-    const averagePressure = positivePressure.length
-        ? positivePressure.reduce((sum, value) => sum + value, 0) / positivePressure.length : 0
+    const averagePressure = referencePressure ? (referencePressure.avgKpa ?? 0) : (positivePressure.length
+        ? positivePressure.reduce((sum, value) => sum + value, 0) / positivePressure.length : 0)
     const forceTotal = usesDummyArea
         ? calculateAreaForceN(averagePressure, area)
         : forceArr.reduce((sum, value) => {
@@ -410,9 +411,9 @@ function calcMetrics(arr = [], width = 1, height = 1, matrixRect = null, matrixK
         press: forceTotal,
         metricTotal: total,
         area,
-        points,
-        max: points ? Math.max(...positive) : 0,
-        aver: points ? total / points : 0,
+        points: referencePressure && metricMode === PRESSURE_METRIC_MODE ? referencePressure.nonZeroCount : points,
+        max: referencePressure && metricMode === PRESSURE_METRIC_MODE ? (referencePressure.maxKpa ?? 0) : (points ? Math.max(...positive) : 0),
+        aver: referencePressure && metricMode === PRESSURE_METRIC_MODE ? (referencePressure.avgKpa ?? 0) : (points ? total / points : 0),
         center: points ? formatCenter(matrixCenter) : 'N/A',
         symmetry: shape.symmetry,
         avgGradient: shape.avgGradient,
@@ -572,7 +573,8 @@ function buildMetricSeriesFromFrames(frames = [], matrixKey, metricKey, matrixRe
         const metricWidth = matrixRect ? Math.max(1, matrixRect.xEnd - matrixRect.xStart) : width
         const metricHeight = matrixRect ? Math.max(1, matrixRect.yEnd - matrixRect.yStart) : height
         const areaValues = getRegionAreaValues(data, width, matrixRect)
-        const metric = calcMetrics(source, metricWidth, metricHeight, matrixRect, matrixKey, forceSource, pressureSource, areaValues)[metricKey]
+        const metric = calcMetrics(source, metricWidth, metricHeight, matrixRect, matrixKey, forceSource, pressureSource, areaValues,
+            getDummyPressureResult(matrixKey, data, matrixRect), metricMode)[metricKey]
         return Number.isFinite(metric) ? metric : null
     })
 }
@@ -696,7 +698,7 @@ export default function NumThresContrast() {
     const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
     const pressureUnit = useEquipStore(s => s.pressureUnit)
     const metricDisplay = useMemo(
-        () => getPressureMetricDisplay(pressureMetricMode, null, i18n.language, pressureUnit),
+        () => getPressureMetricDisplay(pressureMetricMode, null, i18n.language, pressureUnit, 2),
         [pressureMetricMode, i18n.language, pressureUnit],
     )
     const gradientUnit = useEquipStore(s => s.gradientUnit)
@@ -846,8 +848,8 @@ export default function NumThresContrast() {
         const metricHeight = activeSelect ? Math.max(1, activeSelect.yEnd - activeSelect.yStart) : height
         const pressureSourceA = getRegionArr(leftPressureArr, width, activeSelect)
         const pressureSourceB = getRegionArr(rightPressureArr, width, activeSelect)
-        const metricA = calcMetrics(sourceA, metricWidth, metricHeight, activeSelect, activeKey, forceSourceA, pressureSourceA, getRegionAreaValues(leftData, width, activeSelect))
-        const metricB = calcMetrics(sourceB, metricWidth, metricHeight, activeSelect, activeKey, forceSourceB, pressureSourceB, getRegionAreaValues(rightData, width, activeSelect))
+        const metricA = calcMetrics(sourceA, metricWidth, metricHeight, activeSelect, activeKey, forceSourceA, pressureSourceA, getRegionAreaValues(leftData, width, activeSelect), getDummyPressureResult(activeKey, leftData, activeSelect), pressureMetricMode)
+        const metricB = calcMetrics(sourceB, metricWidth, metricHeight, activeSelect, activeKey, forceSourceB, pressureSourceB, getRegionAreaValues(rightData, width, activeSelect), getDummyPressureResult(activeKey, rightData, activeSelect), pressureMetricMode)
         return metrics.map((item) => {
             const a = metricA[item.key]
             const b = metricB[item.key]
@@ -1037,8 +1039,8 @@ export default function NumThresContrast() {
             const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : rowWidth
             const rowHeight = leftFrameItem.height || rightFrameItem.height || Math.max(1, Math.ceil(Math.max(leftSource.length, rightSource.length) / metricWidth))
             const metricHeight = activeSelect ? Math.max(1, activeSelect.yEnd - activeSelect.yStart) : rowHeight
-            const metricA = calcMetrics(leftSource, metricWidth, metricHeight, activeSelect, activeKey, leftForceSource, leftPressureSource, getRegionAreaValues(leftFrameItem, rowWidth, activeSelect))
-            const metricB = calcMetrics(rightSource, metricWidth, metricHeight, activeSelect, activeKey, rightForceSource, rightPressureSource, getRegionAreaValues(rightFrameItem, rowWidth, activeSelect))
+            const metricA = calcMetrics(leftSource, metricWidth, metricHeight, activeSelect, activeKey, leftForceSource, leftPressureSource, getRegionAreaValues(leftFrameItem, rowWidth, activeSelect), getDummyPressureResult(activeKey, leftFrameItem, activeSelect), pressureMetricMode)
+            const metricB = calcMetrics(rightSource, metricWidth, metricHeight, activeSelect, activeKey, rightForceSource, rightPressureSource, getRegionAreaValues(rightFrameItem, rowWidth, activeSelect), getDummyPressureResult(activeKey, rightFrameItem, activeSelect), pressureMetricMode)
             const maxAbsDiff = buildDiffArr(leftSource, rightSource).reduce((max, value) => Math.max(max, Math.abs(Number(value) || 0)), 0)
             const rows = [{
                 frame_index: 0,
@@ -1077,8 +1079,8 @@ export default function NumThresContrast() {
             const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : rowWidth
             const rowHeight = leftFrameItem.height || rightFrameItem.height || Math.max(1, Math.ceil(Math.max(leftSource.length, rightSource.length) / metricWidth))
             const metricHeight = activeSelect ? Math.max(1, activeSelect.yEnd - activeSelect.yStart) : rowHeight
-            const metricA = calcMetrics(leftSource, metricWidth, metricHeight, activeSelect, activeKey, leftForceSource, leftPressureSource, getRegionAreaValues(leftFrameItem, rowWidth, activeSelect))
-            const metricB = calcMetrics(rightSource, metricWidth, metricHeight, activeSelect, activeKey, rightForceSource, rightPressureSource, getRegionAreaValues(rightFrameItem, rowWidth, activeSelect))
+            const metricA = calcMetrics(leftSource, metricWidth, metricHeight, activeSelect, activeKey, leftForceSource, leftPressureSource, getRegionAreaValues(leftFrameItem, rowWidth, activeSelect), getDummyPressureResult(activeKey, leftFrameItem, activeSelect), pressureMetricMode)
+            const metricB = calcMetrics(rightSource, metricWidth, metricHeight, activeSelect, activeKey, rightForceSource, rightPressureSource, getRegionAreaValues(rightFrameItem, rowWidth, activeSelect), getDummyPressureResult(activeKey, rightFrameItem, activeSelect), pressureMetricMode)
             const maxAbsDiff = buildDiffArr(leftSource, rightSource).reduce((max, value) => Math.max(max, Math.abs(Number(value) || 0)), 0)
 
             return {

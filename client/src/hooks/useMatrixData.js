@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { getDisplayType, getSelectArr, getSettingValue, getSysType, useEquipStore } from '../store/equipStore'
+import { getDisplayType, getSelectArr, getSettingValue, getSysType, getVisualRenderMetricMode, useEquipStore } from '../store/equipStore'
 import { getSystemMatrixParts, systemPointConfig } from '../util/constant'
 import { calcCentroidRatio, colSelectMatrix, kurtosis, mean, normalPDF, skewness, variance } from '../util/util'
 import { matrixGenBox, removeHistoryBox } from '../assets/util/selectMatrix'
@@ -16,6 +16,7 @@ import {
 } from '../util/pressureMetrics'
 import { calcPartShapeMetrics, calcRegionShapeMetrics } from '../util/gradientMetrics'
 import { calculateAreaForceN, getAreaValuesCm2, sumAreaValuesCm2, getAreaCellCount, isDummyAreaItem } from '../util/areaMetrics'
+import { getDummyPressureResult, getPressureValues } from 'virtual:dummy-pressure'
 
 /**
  * 矩阵数据处理 Hook
@@ -318,8 +319,9 @@ export function useMatrixData() {
   /**
    * 计算单个数据集的统计指标
    */
-  function computeSingleStats(adcValues, pressureValues, forceValues, mode, areaValuesCm2, isDummy = false) {
-    const summary = getCanonicalMetricSummary(pressureValues, forceValues, mode, adcValues)
+  function computeSingleStats(adcValues, pressureValues, forceValues, mode, areaValuesCm2, isDummy = false, referencePressureResult = null) {
+    const summary = getCanonicalMetricSummary(pressureValues, forceValues, mode, adcValues, referencePressureResult)
+    const pressureDigits = referencePressureResult ? 2 : 1
     const areaCm2 = isDummy ? sumAreaValuesCm2(areaValuesCm2) : undefined
     summary.forceTotal = isDummy
       ? calculateAreaForceN(summary.pressureSummary.average, areaCm2)
@@ -332,20 +334,21 @@ export function useMatrixData() {
       metricUnit: summary.unit,
       areaTotal: summary.activeCount,
       ...(isDummy ? { areaCm2 } : {}),
-      pressMax: summary.max.toFixed(1),
-      pressAver: summary.average.toFixed(1),
+      pressMax: summary.max.toFixed(pressureDigits),
+      pressAver: summary.average.toFixed(pressureDigits),
       pressMin: minimum.toFixed(1),
       adcMax: summary.adcSummary.max.toFixed(1),
       adcAver: summary.adcSummary.average.toFixed(1),
       adcTotal: summary.adcSummary.total.toFixed(1),
-      pressureMax: summary.pressureSummary.max.toFixed(1),
-      pressureAver: summary.pressureSummary.average.toFixed(1),
+      pressureMax: summary.pressureSummary.max.toFixed(pressureDigits),
+      pressureAver: summary.pressureSummary.average.toFixed(pressureDigits),
       pressureTotal: summary.pressureSummary.total.toFixed(1),
       forceMax: summary.forceSummary.max.toFixed(1),
       forceAver: summary.forceSummary.average.toFixed(1),
       forceTotal: displayedForceTotal,
       pressTotal: displayedForceTotal,
       total: summary.forceTotal,
+      referencePressure: Boolean(referencePressureResult),
     }
 
     // carY 类型压力转换
@@ -413,13 +416,18 @@ export function useMatrixData() {
     if (!data[key].data) data[key].data = {}
     if (!data[key].boxStats) data[key].boxStats = []
 
-    const selectedArr = selectResult.default
+    let selectedArr = selectResult.default
     const metricMode = normalizePressureMetricMode(metricData.mode)
     const adcSelectResult = metricData.adcSelectResult || { default: [], boxes: [] }
     const pressureSelectResult = metricData.pressureSelectResult || { default: [], boxes: [] }
     const forceSelectResult = metricData.forceSelectResult || { default: [], boxes: [] }
     const areaSelectResult = metricData.areaSelectResult
     const isDummy = metricData.isDummy
+    const firstBox = selectResult.boxes?.[0]
+    const referencePressureResult = getDummyPressureResult(fullKey, metricData.item, firstBox?.matrix)
+    if (referencePressureResult && metricMode === PRESSURE_METRIC_MODE) {
+      selectedArr = referencePressureResult.pressureValuesKpa
+    }
     const {
       summary: activeSummary,
       stats: activeStats,
@@ -431,11 +439,11 @@ export function useMatrixData() {
       metricMode,
       areaSelectResult?.default,
       isDummy,
+      referencePressureResult,
     )
     const adcSummary = activeSummary.adcSummary
     const pressureSummary = activeSummary.pressureSummary
     const forceSummary = activeSummary.forceSummary
-    const firstBox = selectResult.boxes?.[0]
     const firstBoxWidth = Math.max(1, Number(firstBox?.matrix?.xEnd) - Number(firstBox?.matrix?.xStart) || width)
     const firstBoxHeight = Math.max(1, Number(firstBox?.matrix?.yEnd) - Number(firstBox?.matrix?.yStart) || height)
     const selectedCenter = firstBox
@@ -471,7 +479,10 @@ export function useMatrixData() {
     setTrendValue(data[key].pressureArr, Number(pressureSummary.total.toFixed(1)), options)
     setTrendValue(data[key].forceArr, roundedForceTotal, options)
 
-    data[key].data = activeStats
+    data[key].data = {
+      ...activeStats,
+      physicalPressureSummary: firstBox ? null : metricData.item?.physicalPressureSummary,
+    }
 
     // 对称系数 / 压力梯度：始终基于整块部位的压强矩阵（kPa），不受框选影响
     data[key].shape = calcPartShapeMetrics(
@@ -520,23 +531,25 @@ export function useMatrixData() {
           summary: boxSummary,
           stats,
           areaCellCount: boxAreaCellCount,
-        } = computeSingleStats(adcBox, pressureBox, forceBox, metricMode, areaSelectResult?.boxes[i]?.data, isDummy)
+        } = computeSingleStats(adcBox, pressureBox, forceBox, metricMode, areaSelectResult?.boxes[i]?.data, isDummy,
+          getDummyPressureResult(fullKey, metricData.item, box.matrix))
         boxStat.data = stats
+        const boxValues = boxSummary.metricValues
         const boxWidth = Math.max(1, Number(box.matrix?.xEnd) - Number(box.matrix?.xStart) || width)
         const boxHeight = Math.max(1, Number(box.matrix?.yEnd) - Number(box.matrix?.yStart) || height)
-        const boxMu = mean(box.data)
-        const boxVariance = variance(box.data, boxMu)
+        const boxMu = mean(boxValues)
+        const boxVariance = variance(boxValues, boxMu)
         const boxSigma = Math.sqrt(boxVariance)
-        const boxMax = box.data.length ? Math.max(...box.data, 1) : 1
+        const boxMax = boxValues.length ? Math.max(...boxValues, 1) : 1
         const boxXData = Array.from({ length: 256 }, (_, index) => boxMax * index / 255)
-        const localCenter = calcCentroidRatio([...box.data], boxWidth, boxHeight)
+        const localCenter = calcCentroidRatio([...boxValues], boxWidth, boxHeight)
         boxStat.center = projectBoxCenterToMatrix(localCenter, box.matrix, width, height)
         boxStat.localCenter = localCenter
         boxStat.normalDis = {
           ['\u03bc']: boxMu.toFixed(3),
           Var: boxVariance.toFixed(3),
-          Skew: skewness(box.data, boxMu, boxSigma).toFixed(3),
-          Kurt: kurtosis(box.data, boxMu, boxSigma).toFixed(3),
+          Skew: skewness(boxValues, boxMu, boxSigma).toFixed(3),
+          Kurt: kurtosis(boxValues, boxMu, boxSigma).toFixed(3),
           xData: boxXData,
           yData: boxXData.map(x => normalPDF(x, boxMu, boxSigma)),
         }
@@ -759,6 +772,7 @@ export function useMatrixData() {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       const item = sitData[fullKey] || {}
       const rawAdcValues = Array.isArray(item.rawAdcArr) ? item.rawAdcArr : item.arr
+      const precisePressureValues = getPressureValues(item)
       const count = Math.max(
         Array.isArray(item.arr) ? item.arr.length : 0,
         Array.isArray(rawAdcValues) ? rawAdcValues.length : 0,
@@ -768,7 +782,7 @@ export function useMatrixData() {
         return Number.isFinite(value) && value > 0 ? value : 0
       })
       pressureMap[key] = Array.from({ length: count }, (_, index) => {
-        const value = Number(item.pressureArr?.[index])
+        const value = Number(precisePressureValues[index])
         return Number.isFinite(value) && value > 0 ? value : 0
       })
       forceMap[key] = Array.from({ length: count }, (_, index) => {
@@ -786,7 +800,7 @@ export function useMatrixData() {
       [PRESSURE_METRIC_MODE]: splitEndiFootDisplayParts(
         pressureMap,
         sitData,
-        'sourcePressureMatrices',
+        sitData?.['endi-foot']?.sourcePrecisePressureMatrices ? 'sourcePrecisePressureMatrices' : 'sourcePressureMatrices',
       ),
       [FORCE_METRIC_MODE]: splitEndiFootDisplayParts(
         forceMap,
@@ -839,6 +853,7 @@ export function useMatrixData() {
     const metricMode = normalizePressureMetricMode(useEquipStore.getState().pressureMetricMode)
     const metricMaps = buildCanonicalMetricMaps(sitData, keyArr)
     const activeMetricMap = metricMaps[metricMode]
+    const renderMetricMap = metricMaps[getVisualRenderMetricMode()]
 
     // 2. Compute selections, trends, and distribution from the canonical metric matrices.
     for (let i = 0; i < keyArr.length; i++) {
@@ -893,12 +908,13 @@ export function useMatrixData() {
         pressureValues,
         areaSelectResult,
         isDummy: isDummyAreaItem(sitData[fullKey], fullKey),
+        item: sitData[fullKey],
       })
     }
 
     chartRef.current = data
     sitDataRef.current = sourceAdcArr
-    disPlayDataRef.current = activeMetricMap
+    disPlayDataRef.current = renderMetricMap
 
     // 3. Update device status.
     let stamp, cop
@@ -971,8 +987,8 @@ export function useMatrixData() {
     useEquipStore.getState().setEquipStamp(stamp)
     if (cop) useEquipStore.getState().setEquipCop(cop)
 
-    disPlayDataRef.current = activeMetricMap
-    useEquipStore.getState().setDisplayStatus(activeMetricMap)
+    disPlayDataRef.current = renderMetricMap
+    useEquipStore.getState().setDisplayStatus(renderMetricMap)
   }
 
   /**

@@ -4,7 +4,9 @@ const { state } = require('../state')
 
 const DEFAULT_PRESSURE_CONFIG = {
   backValueMultiplier: 3,
-  dummyPressureFormulaFile: 'dummyPressure.v2.10.28.js',
+  dummyPressureFormulaFile: 'dummyPressure.v2.10.34.js',
+  dummyAdcThreshold: 0,
+  dummyResultScale: 1,
   pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
   pressureFormulaProfile: 'V2.7.38中英文logo',
 }
@@ -34,7 +36,7 @@ function normalizeFormulaFile(fileName) {
 function normalizeDummyFormulaFile(fileName) {
   const baseName = path.basename(String(fileName || DEFAULT_PRESSURE_CONFIG.dummyPressureFormulaFile))
   // Upgrade persisted selections of bundled legacy formulas with the application.
-  if (/^dummyPressure[_.]v2\.10\.(3|4|27)\.js$/i.test(baseName)) {
+  if (/^dummyPressure[_.]v2\.10\.(3|4|27|28)\.js$/i.test(baseName)) {
     return DEFAULT_PRESSURE_CONFIG.dummyPressureFormulaFile
   }
   return /^dummyPressure.*\.js$/i.test(baseName)
@@ -44,6 +46,8 @@ function normalizeDummyFormulaFile(fileName) {
 
 function normalizePressureConfig(config = {}) {
   const multiplier = Number(config.backValueMultiplier)
+  const dummyAdcThreshold = Number(config.dummyAdcThreshold)
+  const dummyResultScale = Number(config.dummyResultScale)
   const pressureFormulaFile = normalizeFormulaFile(config.pressureFormulaFile)
   const dummyPressureFormulaFile = normalizeDummyFormulaFile(config.dummyPressureFormulaFile)
   const formulaName = path.basename(pressureFormulaFile, '.js').replace(/^pressureFormula_?/i, '')
@@ -51,6 +55,8 @@ function normalizePressureConfig(config = {}) {
     ...DEFAULT_PRESSURE_CONFIG,
     ...config,
     backValueMultiplier: Number.isFinite(multiplier) && multiplier >= 0 ? multiplier : DEFAULT_PRESSURE_CONFIG.backValueMultiplier,
+    dummyAdcThreshold: Number.isFinite(dummyAdcThreshold) && dummyAdcThreshold >= 0 ? dummyAdcThreshold : DEFAULT_PRESSURE_CONFIG.dummyAdcThreshold,
+    dummyResultScale: Number.isFinite(dummyResultScale) && dummyResultScale > 0 ? dummyResultScale : DEFAULT_PRESSURE_CONFIG.dummyResultScale,
     pressureFormulaFile,
     dummyPressureFormulaFile,
     pressureFormulaProfile: String(config.pressureFormulaProfile || formulaName || DEFAULT_PRESSURE_CONFIG.pressureFormulaProfile),

@@ -14,12 +14,12 @@ export const VISUAL_ADC_FILTER_SETTING_DEFAULT = 0
 export const VISUAL_ADC_SETTING_MAX = 1000
 const VISUAL_SETTING_DEFAULTS = {
   gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 0, height: 80, autoColor: VISUAL_AUTO_COLOR_SETTING_DEFAULT,
-  adcColor: VISUAL_ADC_COLOR_SETTING_DEFAULT, adcFilter: VISUAL_ADC_FILTER_SETTING_DEFAULT,
+  adcColor: VISUAL_ADC_COLOR_SETTING_DEFAULT, adcFilter: VISUAL_ADC_FILTER_SETTING_DEFAULT, visualDataMode: 'pressure',
 }
-// The mannequin panel displays pressure in N/cm²: 2.00 N/cm² is stored as 20 kPa.
+// The mannequin panel displays pressure in N/cm²: 2.02 N/cm² is stored as 20.2 kPa.
 const MANNEQUIN_RESTORE_DEFAULTS = Object.freeze({
-  gauss: 1.6, color: 20, filter: 0, height: 245.1, autoColor: 0,
-  adcColor: VISUAL_ADC_COLOR_SETTING_DEFAULT, adcFilter: VISUAL_ADC_FILTER_SETTING_DEFAULT,
+  gauss: 1.3, color: 20.2, filter: 0, height: 100, autoColor: 0,
+  adcColor: VISUAL_ADC_COLOR_SETTING_DEFAULT, adcFilter: VISUAL_ADC_FILTER_SETTING_DEFAULT, visualDataMode: 'pressure',
 })
 const LEGACY_DEFAULT_COLORS = new Set([50, 120, 180, 200, 255, 355, 495])
 const LEGACY_DEFAULT_VALUES = {
@@ -93,6 +93,7 @@ function normalizeSettingValue(value = {}, fallback = {}, maxValue = {}) {
   })
 
   delete result.heatmapUsePressure
+  result.visualDataMode = 'pressure'
   return result
 }
 
@@ -210,6 +211,7 @@ export function saveVisualSettingValue(system, value) {
   delete nextValue.color3D
   delete nextValue.color2D
   delete nextValue.heatmapUsePressure
+  nextValue.visualDataMode = 'pressure'
   map[normalizedSystem] = nextValue
   map[DEFAULT_SYSTEM_KEY] = nextValue
   localStorage.setItem(VISUAL_SETTING_MAP_KEY, JSON.stringify(map))

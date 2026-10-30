@@ -21,62 +21,73 @@ function heatAt(field, sensors) {
   return sensors.map(sensor => field.texture.image.data[sensor.index * 4 + 3])
 }
 
-test('fixed 3D ADC rendering ignores legacy pressure selection at real physical and combined-leg cells', async () => {
+test('3D always uses precise pressure at physical and combined-leg cells despite old ADC preferences', async () => {
   const f = await createFixture()
   const point = (canvasId, row = 1) => f.sensors.find(sensor => sensor.canvasId === canvasId && sensor.row === row && sensor.col === 1)
   const selected = [point('head'), point('back'), point('left-leg'), point('left-leg', 2), point('right-leg'), point('right-leg', 2)]
   assert.deepEqual(selected.slice(0, 2).map(sensor => sensor.sourceIndex), [3, 60])
   assert.deepEqual(selected.slice(2).map(sensor => sensor.combinedDisplayIndex), [0, 2, 16, 18])
-  const adcJacket = new Array(27 * 12).fill(0)
-  const pressureJacket = new Array(27 * 12).fill(0)
-  adcJacket[3] = 100
-  adcJacket[60] = 200
-  pressureJacket[3] = 2
-  pressureJacket[60] = 5
-  const adcFoot = new Array(24 * 64).fill(0)
-  const pressureFoot = new Array(24 * 64).fill(0)
-  for (const [index, adc, pressure] of [[0, 10, 4], [2, 40, 8], [16, 100, 1], [18, 200, 2]]) {
-    adcFoot[index] = adc
-    pressureFoot[index] = pressure
-  }
+  const jacket = new Array(27 * 12).fill(0)
+  jacket[3] = 9.07321
+  jacket[60] = 17.48321
+  const foot = new Array(24 * 64).fill(0)
+  for (const [index, pressure] of [[0, 4], [2, 8], [16, 1], [18, 2]]) foot[index] = pressure
   const maps = {
-    adc: { jacket: adcJacket, foot: adcFoot },
-    pressure: { jacket: pressureJacket, foot: pressureFoot },
-    force: { jacket: new Array(27 * 12).fill(999) },
+    adc: { jacket: jacket.map(value => value * 10), foot: foot.map(value => value * 10) },
+    pressure: { jacket, foot }, force: { jacket: new Array(27 * 12).fill(999) },
   }
   const original = structuredClone(maps)
-  const settings = Object.freeze({ color: 20, filter: 80, adcFilter: 0, autoColor: 0 })
   const texture = f.field.texture
-  const readings = [100, 200, 10, 40, 100, 200]
-  for (const heatmapUsePressure of [undefined, 0, 1, '1']) {
-    const options = { ...settings, heatmapUsePressure }
-    assert.equal(f.getMannequinHeatmapMode(options), 'adc')
-    const frame = f.getMannequinHeatmapFrame(maps, options)
-    assert.equal(frame, maps.adc)
-    const values = f.readMannequinSensorValues(f.sensors, frame)
-    const valuesBefore = values.slice()
-    assert.deepEqual(selected.map(sensor => values[sensor.index]), readings)
-    f.field.update(values, f.getMannequinHeatmapRenderSettings(options))
-    assert.deepEqual(heatAt(f.field, selected), readings.map(value => Math.fround(value / 600)))
-    assert.equal(f.field.stats.activeCount, 6)
-    assert.equal(f.field.texture, texture)
-    assert.deepEqual(values, valuesBefore)
+  const readings = [9.07321, 17.48321, 4, 8, 1, 2].map(Math.fround)
+  for (const visualDataMode of [undefined, 'adc', 'pressure', 'force', 'unknown']) {
+    for (const heatmapUsePressure of [undefined, 0, 1, '1']) {
+      const options = Object.freeze({ color: 20, filter: 0, adcColor: 600, adcFilter: 255, autoColor: 0, visualDataMode, heatmapUsePressure })
+      assert.equal(f.getMannequinHeatmapMode(options), 'pressure')
+      const frame = f.getMannequinHeatmapFrame(maps, options)
+      assert.equal(frame, maps.pressure)
+      const values = f.readMannequinSensorValues(f.sensors, frame)
+      const before = values.slice()
+      assert.deepEqual(selected.map(sensor => values[sensor.index]), readings)
+      f.field.update(values, f.getMannequinHeatmapRenderSettings(options))
+      assert.deepEqual(heatAt(f.field, selected), readings.map(value => Math.fround(value / 20)))
+      assert.equal(f.field.stats.activeCount, 6)
+      assert.equal(f.field.texture, texture)
+      assert.deepEqual(values, before)
+    }
   }
-  assert.deepEqual(maps, original, 'fixed ADC rendering leaves pressure, ADC and force matrices unchanged')
+  assert.deepEqual(maps, original)
   f.field.dispose()
 })
 
-test('missing ADC clears stale heat and never falls back to pressure despite a saved pressure flag', async () => {
+test('old ADC color and noise settings cannot override calibrated-pressure rendering', async () => {
+  const f = await createFixture()
+  const sensor = f.sensors.find(point => point.canvasId === 'head' && point.row === 1 && point.col === 1)
+  const jacket = new Array(27 * 12).fill(0)
+  jacket[sensor.sourceIndex] = 9.07321
+  const settings = Object.freeze({ color: 20, filter: 1, adcColor: 1000, adcFilter: 1000, autoColor: 0, visualDataMode: 'adc' })
+  const options = f.getMannequinHeatmapRenderSettings(settings)
+  assert.equal(options.visualDataMode, 'pressure')
+  assert.equal(options.color, 20)
+  assert.equal(options.filter, 1)
+  assert.equal(options.autoColorReference, 20)
+  const values = f.readMannequinSensorValues(f.sensors, f.getMannequinHeatmapFrame({ pressure: { jacket } }, settings))
+  f.field.update(values, options)
+  assert.equal(f.field.stats.rangeMax, 20)
+  assert.equal(heatAt(f.field, [sensor])[0], Math.fround(Math.fround(9.07321) / 20))
+  assert.equal(settings.visualDataMode, 'adc', 'reading old settings does not mutate the caller')
+  assert.equal(settings.adcFilter, 1000)
+  f.field.dispose()
+})
+
+test('missing pressure clears stale heat and never falls back to raw ADC', async () => {
   const f = await createFixture()
   const jacket = new Array(27 * 12).fill(0)
-  jacket[3] = 100
-  const adc = { jacket }
-  const pressure = { jacket: jacket.map(value => value / 20) }
-  const settings = { color: 20, filter: 0, adcColor: 600, adcFilter: 0, autoColor: 0, heatmapUsePressure: 1 }
-  assert.equal(f.getMannequinHeatmapMode(), 'adc')
-  assert.equal(f.getMannequinHeatmapMode({ heatmapUsePressure: '1' }), 'adc')
-  assert.equal(f.getMannequinHeatmapMode({ heatmapUsePressure: 2 }), 'adc')
-  for (const available of [{ pressure }, { adc: null, pressure }, { force: pressure }, undefined]) {
+  jacket[3] = 5
+  const pressure = { jacket }
+  const adc = { jacket: jacket.map(value => value * 20) }
+  const settings = { color: 20, filter: 0, autoColor: 0, visualDataMode: 'adc' }
+  assert.equal(f.getMannequinHeatmapMode(), 'pressure')
+  for (const available of [{ adc }, { adc, pressure: null }, { force: pressure }, undefined]) {
     f.field.update(f.readMannequinSensorValues(f.sensors, f.getMannequinHeatmapFrame({ adc, pressure }, settings)),
       f.getMannequinHeatmapRenderSettings(settings))
     assert.equal(f.field.stats.activeCount, 1)
@@ -88,61 +99,41 @@ test('missing ADC clears stale heat and never falls back to pressure despite a s
     assert.equal(f.field.stats.activeCount, 0)
     assert.ok(f.sensors.every(sensor => f.field.texture.image.data[sensor.index * 4 + 3] === 0))
   }
-  assert.deepEqual(f.getMannequinHeatmapFrame(undefined), {})
-  assert.deepEqual(f.getMannequinHeatmapFrame({ adc: null, pressure }, {}), {})
   f.field.dispose()
 })
 
-test('ADC settings retain the 600 neutral reference and ignore legacy pressure controls without mutating inputs', async () => {
+test('pressure range keeps its 20 kPa neutral reference and each body part automatic adjustment', async () => {
   const sensors = ['head', 'head', 'back', 'back'].map((canvasId, index) => ({ index, canvasId, x: index * 0.1, y: 2, z: 0 }))
   const f = await createFixture({ sensors })
-  const settings = Object.freeze({ color: 20, filter: 1.25, adcColor: 128, adcFilter: 10, autoColor: 1, height: 245.1, gauss: 1.6 })
+  const settings = Object.freeze({ color: 20, filter: 0, adcColor: 600, adcFilter: 255, autoColor: 1, height: 400, gauss: 1.6, visualDataMode: 'adc' })
   const before = { ...settings }
-  const adcSettings = f.getMannequinHeatmapRenderSettings(settings)
-  assert.equal(adcSettings.color, 128)
-  assert.equal(adcSettings.filter, 10)
-  assert.equal(adcSettings.autoColorReference, 600)
-  const legacySettings = f.getMannequinHeatmapRenderSettings({ ...settings, heatmapUsePressure: 1 })
-  assert.equal(legacySettings.color, 128)
-  assert.equal(legacySettings.filter, 10)
-  assert.equal(legacySettings.autoColorReference, 600)
-  for (const effective of [adcSettings, legacySettings]) {
-    assert.equal(effective.autoColor, 1)
-    assert.equal(effective.height, 245.1)
-    assert.equal(effective.gauss, 1.6)
-  }
-  for (const [adcColor, adcFilter, color, filter] of [
-    [undefined, undefined, 600, 0], [0, NaN, 600, 0], [-1, -10, 600, 0],
-    [Infinity, Infinity, 600, 0], [300, 600, 300, 600], [600, 300, 600, 300],
-    [1000, 1000, 1000, 1000], [1024, 1200, 1000, 1000], [0.001, 0, 0.01, 0],
+  for (const [color, filter, expectedColor, expectedFilter] of [
+    [undefined, undefined, 20, 0], [0, NaN, 20, 0], [-1, -10, 20, 0],
+    [Infinity, Infinity, 20, 0], [20, 1.25, 20, 1.25], [100, 200, 60, 60], [0.001, 0, 0.01, 0],
   ]) {
-    const effective = f.getMannequinHeatmapRenderSettings({ ...settings, adcColor, adcFilter })
-    assert.equal(effective.color, color)
-    assert.equal(effective.filter, filter)
+    const effective = f.getMannequinHeatmapRenderSettings({ ...settings, color, filter })
+    assert.equal(effective.color, expectedColor)
+    assert.equal(effective.filter, expectedFilter)
+    assert.equal(effective.autoColorReference, 20)
   }
-  const adcValues = new Float32Array([64, 128, 127.5, 255])
-  const adcBefore = adcValues.slice()
+  const values = new Float32Array([2, 4, 1, 2])
+  const valuesBefore = values.slice()
   const xyz = [...f.field.texture.image.data].filter((_, index) => index % 4 !== 3)
-  const neutral = { ...settings, adcColor: 600, adcFilter: 0 }
-  for (const [options, values, heat] of [
-    [neutral, adcValues, [0.5, 1, 0.5, 1]],
-    [{ ...neutral, heatmapUsePressure: 1, color: 4.6, filter: 200 }, adcValues, [0.5, 1, 0.5, 1]],
-    [{ ...neutral, heatmapUsePressure: 1, adcColor: 900 }, adcValues,
-      [Math.fround(1 / 3), Math.fround(2 / 3), Math.fround(1 / 3), Math.fround(2 / 3)]],
-    [neutral, adcValues, [0.5, 1, 0.5, 1]],
+  for (const [color, heat] of [
+    [20, [0.5, 1, 0.5, 1]],
+    [40, [0.25, 0.5, 0.25, 0.5]],
+    [20, [0.5, 1, 0.5, 1]],
   ]) {
-    f.field.update(values, f.getMannequinHeatmapRenderSettings(options))
+    f.field.update(values, f.getMannequinHeatmapRenderSettings({ ...settings, color }))
     assert.deepEqual(heatAt(f.field, sensors), heat)
   }
-  for (const [adcColor, range] of [[300, 300], [600, 600], [1000, 1000], [1200, 1000]]) {
-    const effective = f.getMannequinHeatmapRenderSettings({ ...neutral, autoColor: 0, adcColor })
-    assert.equal(effective.autoColorReference, 600, 'the wider adjustment range retains the ADC neutral reference')
-    f.field.update(adcValues, effective)
+  for (const [color, range] of [[10, 10], [20, 20], [60, 60], [100, 60]]) {
+    f.field.update(values, f.getMannequinHeatmapRenderSettings({ ...settings, autoColor: 0, color }))
     assert.equal(f.field.stats.rangeMax, range)
-    assert.deepEqual(heatAt(f.field, sensors), [...adcValues].map(value => Math.fround(value / range)))
+    assert.deepEqual(heatAt(f.field, sensors), [...values].map(value => Math.fround(value / range)))
   }
   assert.deepEqual([...f.field.texture.image.data].filter((_, index) => index % 4 !== 3), xyz)
-  assert.deepEqual(adcValues, adcBefore)
+  assert.deepEqual(values, valuesBefore)
   assert.deepEqual(settings, before)
   f.field.dispose()
 })

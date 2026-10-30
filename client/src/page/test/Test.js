@@ -382,7 +382,7 @@ function Test() {
 
     useEffect(() => {
         refreshDisplayWithCurrentSettings(persistentDataRef.current)
-    }, [pressureMetricMode])
+    }, [pressureMetricMode, visualSettingValue.visualDataMode])
 
     useLayoutEffect(() => {
         const { setSystemType, setSystemTypeArr } = useEquipStore.getState()

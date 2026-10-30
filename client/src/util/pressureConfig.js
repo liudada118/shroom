@@ -6,6 +6,8 @@ const DEFAULT_PRESSURE_CONFIG = {
   backValueMultiplier: 1.8,
   pressureFormulaFile: 'pressureFormula_V2.7.38中英文logo.js',
   pressureFormulaProfile: 'V2.7.38中英文logo',
+  dummyAdcThreshold: 0,
+  dummyResultScale: 1,
 }
 
 let pressureConfigCache = DEFAULT_PRESSURE_CONFIG

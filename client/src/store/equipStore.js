@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { maxObj } from '../assets/util/constant'
 import { loadVisualSettingValue, normalizeVisualSettingMax, VISUAL_AUTO_COLOR_SETTING_DEFAULT, VISUAL_COLOR_SETTING_DEFAULT } from '../util/visualSettingStorage'
+import { getMannequinHeatmapMode, getMannequinHeatmapRenderSettings } from '../util/mannequinHeatmapSource'
 import { PRESSURE_METRIC_MODE, PRESSURE_UNIT_N_CM2 } from '../util/pressureMetrics'
 import { GRADIENT_UNIT_PA_CM, normalizeGradientUnit } from '../util/gradientMetrics'
 
@@ -152,6 +153,15 @@ export const getSettingValue = () => ({
   coherent: 1,
 })
 export const getFrameProcessingSettingValue = () => useEquipStore.getState().settingValue
+// Rendering and statistics share calibrated pressure; old ADC display preferences are ignored.
+export const getVisualRenderMetricMode = () => {
+  const state = useEquipStore.getState()
+  return state.systemType === 'endi' ? getMannequinHeatmapMode(state.settingValue) : state.pressureMetricMode
+}
+export const getVisualRenderSettings = () => {
+  const state = useEquipStore.getState()
+  return state.systemType === 'endi' ? getMannequinHeatmapRenderSettings(state.settingValue) : getSettingValue()
+}
 export const getDisplayType = () => useEquipStore.getState().displayType
 export const getSettingValueOptimal = () => useEquipStore.getState().settingValueOptimal
 export const getSelectArr = () => useEquipStore.getState().selectArr

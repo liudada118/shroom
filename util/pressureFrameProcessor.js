@@ -1,7 +1,8 @@
 const { loadPressureConfig, loadDummyPressureFormula } = require('../server/services/PressureConfig')
 const { loadAreaFormula } = require('../server/services/AreaFormula')
 
-const PROCESSING_VERSION = 'dummy-raw-algorithm-v2.10.28'
+const PROCESSING_VERSION = 'dummy-raw-algorithm-v2.10.34-statistics-v2'
+const STATISTICS_REVISION = 'backup-v2.10.34-prepared-float64-v1'
 const DISPLAY_DIGITS = 1
 const GAUSSIAN_SIGMA_FACTOR = 0.5
 const DUMMY_POINT_SPACING_CM = 1.25
@@ -278,12 +279,12 @@ function applyDisplayMetricFilter(adcValues, pressureValues, processingConfig) {
 }
 
 // The package receives physical ADC values unchanged, before any display transforms.
-function calculateRawDummyFrame(key, physicalAdc) {
+function calculateRawDummyFrame(key, physicalAdc, physicalMask) {
   const dimensions = DUMMY_MATRIX_CONFIG[key]
   if (!dimensions || physicalAdc.length !== dimensions.sourceWidth * dimensions.sourceHeight) return null
   const matrix = Array.from({ length: dimensions.sourceHeight }, (_, row) =>
     physicalAdc.slice(row * dimensions.sourceWidth, (row + 1) * dimensions.sourceWidth))
-  return loadDummyPressureFormula().calculateDummyRawPressureFrame(matrix, dimensions.sensorType)
+  return loadDummyPressureFormula().calculateDummyRawPressureFrame(matrix, dimensions.sensorType, physicalMask)
 }
 
 function positionAlgorithmOutput(key, matrix) {
@@ -316,6 +317,115 @@ function buildAreaMetadata(formula) {
   }
 }
 
+function getDummyCalibrationOptions(pressureConfig = loadPressureConfig()) {
+  return {
+    threshold: pressureConfig.dummyAdcThreshold,
+    resultScale: pressureConfig.dummyResultScale,
+  }
+}
+
+// Only scalar statistics travel with a frame; the precise matrix is carried once.
+function buildPressureSummary(result) {
+  if (!result) return null
+  const values = Array.isArray(result.pressureMatrixKpa) ? result.pressureMatrixKpa.flat() : []
+  const maxKpaRaw = values.reduce((maximum, value) => Math.max(maximum, Number(value) || 0), 0)
+  return {
+    unit: 'kPa',
+    avgKpa: result.avgKpa,
+    maxKpa: result.maxKpa,
+    maxKpaRaw,
+    nonZeroCount: result.nonZeroCount,
+    effectivePointCount: result.nonZeroCount,
+    pressureSumKpa: result.pressureSumKpa,
+    targetAvgKpaRaw: result.targetAvgKpaRaw,
+    inputPointCount: result.inputPointCount,
+    ignoredPointCount: result.ignoredPointCount,
+    regionCount: result.regionCount ?? result.regions?.length ?? 0,
+    topCount: result.topCount,
+    topAverageAdc: result.topAverageAdc,
+    distributionScale: result.distributionScale,
+    mode: result.mode,
+    allocationMode: result.allocationMode,
+    rows: result.rows,
+    cols: result.cols,
+  }
+}
+
+function combinePressureSummaries(summaries) {
+  const parts = summaries.filter(Boolean)
+  if (!parts.length) return null
+  const nonZeroCount = parts.reduce((sum, part) => sum + (Number(part.nonZeroCount) || 0), 0)
+  const pressureSumKpa = parts.reduce((sum, part) => sum + (Number(part.pressureSumKpa) || 0), 0)
+  const maxKpaRaw = parts.reduce((maximum, part) => Math.max(maximum, Number(part.maxKpaRaw ?? part.maxKpa) || 0), 0)
+  return {
+    unit: 'kPa',
+    avgKpa: nonZeroCount ? roundValue(pressureSumKpa / nonZeroCount, 2) : null,
+    maxKpa: nonZeroCount ? roundValue(maxKpaRaw, 2) : null,
+    maxKpaRaw,
+    nonZeroCount,
+    effectivePointCount: nonZeroCount,
+    pressureSumKpa,
+    targetAvgKpaRaw: nonZeroCount ? pressureSumKpa / nonZeroCount : null,
+    inputPointCount: parts.reduce((sum, part) => sum + (Number(part.inputPointCount) || 0), 0),
+    ignoredPointCount: parts.reduce((sum, part) => sum + (Number(part.ignoredPointCount) || 0), 0),
+    regionCount: parts.reduce((sum, part) => sum + (Number(part.regionCount) || 0), 0),
+    topCount: Math.max(...parts.map((part) => Number(part.topCount) || 0)),
+    topAverageAdc: null,
+    distributionScale: null,
+    mode: nonZeroCount ? 'region_top50' : 'none',
+    allocationMode: nonZeroCount ? 'regional_normalized_master_weights' : 'none',
+  }
+}
+
+function buildPhysicalValidMask(key, physicalMask) {
+  const dimensions = DUMMY_MATRIX_CONFIG[key]
+  return Array.from({ length: dimensions.sourceHeight }, (_, row) =>
+    Array.from({ length: dimensions.sourceWidth }, (_, col) => isPhysicalCellValid(key, row, col)
+      && !(physicalMask?.length === dimensions.sourceHeight && physicalMask[row]?.[col] === false)))
+}
+
+// Match the backup's physical ADC comparison card independently of pressure fitting.
+function buildPhysicalAdcStats(matrix, validMask, options) {
+  let total = 0
+  let sum = 0
+  let max = 0
+  let nonZeroCount = 0
+  let nonZeroMin = Infinity
+  let min = Infinity
+  let maxR = 0
+  let maxC = 0
+  for (let row = 0; row < matrix.length; row += 1) {
+    for (let col = 0; col < matrix[row].length; col += 1) {
+      if (validMask[row]?.[col] === false) continue
+      total += 1
+      const raw = Number(matrix[row][col]) || 0
+      let value = raw > 0 ? Math.max(0, Math.min(255, Math.round(raw * options.resultScale))) : 0
+      if (options.threshold > 0 && value > 0 && value <= options.threshold) value = 0
+      if (value > max) { max = value; maxR = row; maxC = col }
+      min = Math.min(min, value)
+      sum += value
+      if (value > 0) {
+        nonZeroCount += 1
+        nonZeroMin = Math.min(nonZeroMin, value)
+      }
+    }
+  }
+  return {
+    rows: matrix.length,
+    cols: matrix[0]?.length || 0,
+    total,
+    max,
+    min: Number.isFinite(min) ? min : 0,
+    sum,
+    nonZeroCount,
+    nonZeroMin: Number.isFinite(nonZeroMin) ? nonZeroMin : 0,
+    avg: total ? roundValue(sum / total, 2) : 0,
+    avgNonZero: nonZeroCount ? roundValue(sum / nonZeroCount, 2) : 0,
+    maxR,
+    maxC,
+  }
+}
+
 function convertPhysicalPressureMatrix(key, adcValues) {
   const result = calculateRawDummyFrame(key, recoverPhysicalMatrix(key, adcValues))
   return result ? positionAlgorithmOutput(key, result.pressureMatrixKpa) : []
@@ -323,6 +433,7 @@ function convertPhysicalPressureMatrix(key, adcValues) {
 
 function buildProcessingMetadata(config, areaFormula) {
   const pressureConfig = loadPressureConfig()
+  const pressureFormula = loadDummyPressureFormula()
   const versionMatch = String(pressureConfig.dummyPressureFormulaFile || '').match(/v(\d+(?:\.\d+)*)/i)
   return {
     version: PROCESSING_VERSION,
@@ -337,7 +448,18 @@ function buildProcessingMetadata(config, areaFormula) {
     gaussianSigma: 0,
     temporal: false,
     outputDigits: DISPLAY_DIGITS,
+    pressurePrecision: 'float64',
+    statisticsRevision: STATISTICS_REVISION,
+    summaryDigits: 2,
+    summaryStage: 'interpolated',
+    dummyAdcThreshold: pressureConfig.dummyAdcThreshold,
+    dummyResultScale: pressureConfig.dummyResultScale,
     formulaFile: pressureConfig.dummyPressureFormulaFile,
+    masterSourceVersion: pressureFormula.MASTER_SOURCE_VERSION,
+    ruleVersion: pressureFormula.RULE_VERSION,
+    ruleScope: pressureFormula.RULE_SCOPE,
+    contactSplitSourceVersion: pressureFormula.CONTACT_SPLIT_SOURCE_VERSION,
+    masterSourceSha256: pressureFormula.MASTER_SOURCE_SHA256,
     ...buildAreaMetadata(areaFormula),
     formulaProfile: versionMatch ? `dummy-v${versionMatch[1]}` : 'dummy',
     pointSpacingCm: DUMMY_POINT_SPACING_CM,
@@ -348,19 +470,39 @@ function buildProcessingMetadata(config, areaFormula) {
 function processSingleDummyMatrix(key, sourceValues, processingConfig, physicalMask, areaFormula = loadAreaFormula()) {
   const config = normalizeFrameProcessingConfig(processingConfig)
   const physicalAdcArr = recoverPhysicalMatrix(key, sourceValues)
-  const result = calculateRawDummyFrame(key, physicalAdcArr)
-  if (!result) return null
+  const interpolated = calculateRawDummyFrame(key, physicalAdcArr, physicalMask)
+  if (!interpolated) return null
+  const formula = loadDummyPressureFormula()
+  const options = getDummyCalibrationOptions()
+  const result = formula.calculateDummyPreparedPressureFrame(
+    interpolated.interpolatedAdcMatrix,
+    DUMMY_MATRIX_CONFIG[key].sensorType,
+    interpolated.interpolatedValidMask,
+    options,
+  )
+  const dimensions = DUMMY_MATRIX_CONFIG[key]
+  const physicalMatrix = Array.from({ length: dimensions.sourceHeight }, (_, row) =>
+    physicalAdcArr.slice(row * dimensions.sourceWidth, (row + 1) * dimensions.sourceWidth))
+  const physicalValidMask = buildPhysicalValidMask(key, physicalMask)
+  const physicalResult = formula.calculateDummyPreparedPressureFrame(
+    physicalMatrix, dimensions.sensorType, physicalValidMask, options,
+  )
   // Geometry and interpolation are supplied by the unchanged package. Only position
   // the returned head/neck cells for display, after all pressure calculations.
-  const displayAdc = positionAlgorithmOutput(key, result.interpolatedAdcMatrix.map((row, y) =>
-    row.map((value, x) => result.interpolatedValidMask[y][x] ? value : 0)))
+  const rawDisplayAdc = positionAlgorithmOutput(key, interpolated.interpolatedAdcMatrix.map((row, y) =>
+    row.map((value, x) => interpolated.interpolatedValidMask[y][x] ? value : 0)))
+  const displayAdc = positionAlgorithmOutput(key, result.preparedAdcMatrix)
   const pressureValues = positionAlgorithmOutput(key, result.pressureMatrixKpa)
   return {
     physicalAdcArr,
-    rawAdcArr: [...displayAdc],
+    rawAdcArr: rawDisplayAdc,
     arr: displayAdc,
     pressureArr: pressureValues.map((value) => roundValue(value)),
     forceArr: pressureValues.map((value) => roundValue(value * FORCE_PER_KPA)),
+    pressureValuesKpa: pressureValues,
+    pressureSummary: buildPressureSummary(result),
+    physicalPressureSummary: buildPressureSummary(physicalResult),
+    physicalAdcStats: buildPhysicalAdcStats(physicalMatrix, physicalValidMask, options),
     ...buildAreaFields(key, physicalAdcArr, physicalMask, areaFormula),
     processing: buildProcessingMetadata(config, areaFormula),
   }
@@ -409,6 +551,7 @@ function processFootMatrixItem(item, processingConfig, areaFormula) {
   for (const [field, sourceField] of [
     ['arr', 'sourceMatrices'], ['rawAdcArr', 'sourceRawAdcMatrices'],
     ['pressureArr', 'sourcePressureMatrices'], ['forceArr', 'sourceForceMatrices'],
+    ['pressureValuesKpa', 'sourcePrecisePressureMatrices'],
     ['areaValuesCm2', 'sourceAreaMatrices'],
   ]) {
     result[field] = combineFootRows(leftResult[field], rightResult[field])
@@ -418,7 +561,23 @@ function processFootMatrixItem(item, processingConfig, areaFormula) {
     [ENDI_LEFT_FOOT_KEY]: leftResult.physicalAdcArr,
     [ENDI_RIGHT_FOOT_KEY]: rightResult.physicalAdcArr,
   }
-  result.areaCm2 = leftResult.areaCm2 + rightResult.areaCm2
+  result.sourcePressureSummaries = {
+    [ENDI_LEFT_FOOT_KEY]: leftResult.pressureSummary,
+    [ENDI_RIGHT_FOOT_KEY]: rightResult.pressureSummary,
+  }
+  result.sourcePhysicalPressureSummaries = {
+    [ENDI_LEFT_FOOT_KEY]: leftResult.physicalPressureSummary,
+    [ENDI_RIGHT_FOOT_KEY]: rightResult.physicalPressureSummary,
+  }
+  result.sourcePhysicalAdcStats = {
+    [ENDI_LEFT_FOOT_KEY]: leftResult.physicalAdcStats,
+    [ENDI_RIGHT_FOOT_KEY]: rightResult.physicalAdcStats,
+  }
+  result.pressureSummary = combinePressureSummaries(Object.values(result.sourcePressureSummaries))
+  result.physicalPressureSummary = combinePressureSummaries(Object.values(result.sourcePhysicalPressureSummaries))
+  delete result.physicalAdcStats
+  result.areaCm2 = leftResult.areaCm2 === null || rightResult.areaCm2 === null
+    ? null : leftResult.areaCm2 + rightResult.areaCm2
   return result
 }
 
@@ -433,8 +592,25 @@ function processMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROC
 
 function hasCanonicalMetricArrays(item = {}) {
   const length = Array.isArray(item.arr) ? item.arr.length : 0
+  const pressureFormula = item.processing?.importedMetric ? null : loadDummyPressureFormula()
+  const pressureConfig = item.processing?.importedMetric ? null : loadPressureConfig()
+  const hasCurrentMaster = !pressureFormula?.MASTER_SOURCE_SHA256
+    || item.processing?.masterSourceSha256 === pressureFormula.MASTER_SOURCE_SHA256
+  const hasCurrentRule = !pressureFormula?.RULE_VERSION
+    || item.processing?.ruleVersion === pressureFormula.RULE_VERSION
+  const hasCurrentScope = !pressureFormula?.RULE_SCOPE
+    || item.processing?.ruleScope === pressureFormula.RULE_SCOPE
+  const hasCurrentContactSplit = !pressureFormula?.CONTACT_SPLIT_SOURCE_VERSION
+    || item.processing?.contactSplitSourceVersion === pressureFormula.CONTACT_SPLIT_SOURCE_VERSION
   return (item.processing?.importedMetric || (item.processing?.version === PROCESSING_VERSION
-    && item.processing?.formulaFile === loadPressureConfig().dummyPressureFormulaFile))
+    && item.processing?.formulaFile === pressureConfig.dummyPressureFormulaFile
+    && item.processing?.statisticsRevision === STATISTICS_REVISION
+    && item.processing?.pressurePrecision === 'float64'
+    && item.processing?.dummyAdcThreshold === pressureConfig.dummyAdcThreshold
+    && item.processing?.dummyResultScale === pressureConfig.dummyResultScale
+    && Array.isArray(item.pressureValuesKpa) && item.pressureValuesKpa.length === length
+    && item.pressureSummary && item.physicalPressureSummary
+    && hasCurrentMaster && hasCurrentRule && hasCurrentScope && hasCurrentContactSplit))
     && length > 0
     && Array.isArray(item.pressureArr)
     && item.pressureArr.length === length
@@ -513,6 +689,7 @@ function ensureProcessedFrame(frame = {}, processingConfig = DEFAULT_FRAME_PROCE
 
 module.exports = {
   PROCESSING_VERSION,
+  STATISTICS_REVISION,
   DISPLAY_DIGITS,
   GAUSSIAN_SIGMA_FACTOR,
   DUMMY_POINT_SPACING_CM,
@@ -524,6 +701,9 @@ module.exports = {
   DEFAULT_FRAME_PROCESSING_CONFIG,
   DUMMY_MATRIX_CONFIG,
   normalizeFrameProcessingConfig,
+  getDummyCalibrationOptions,
+  buildPressureSummary,
+  combinePressureSummaries,
   isDummyMatrixKey,
   gaussianBlur,
   recoverPhysicalMatrix,

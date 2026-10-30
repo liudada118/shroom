@@ -1,32 +1,28 @@
 import {
-  VISUAL_ADC_COLOR_SETTING_DEFAULT,
-  VISUAL_ADC_FILTER_SETTING_DEFAULT,
-  VISUAL_ADC_SETTING_MAX,
   VISUAL_COLOR_SETTING_MIN,
+  VISUAL_COLOR_SETTING_MAX,
 } from './visualSettingStorage.js'
 
-/** The 3D mannequin always renders ADC, including when older preferences selected pressure. */
+/** The mannequin always renders calibrated pressure, regardless of old ADC preferences. */
 export function getMannequinHeatmapMode() {
-  return 'adc'
+  return 'pressure'
 }
 
-/** Missing ADC stays blank rather than silently displaying pressure. */
+/** Missing calibrated data clears heat instead of falling back to raw ADC. */
 export function getMannequinHeatmapFrame(metricMaps) {
-  return metricMaps?.adc || {}
+  return metricMaps?.pressure || {}
 }
 
-/** ADC color/filter controls stay independent from pressure display settings. */
+/** Pressure colors and visual filtering are expressed in kPa internally. */
 export function getMannequinHeatmapRenderSettings(settings = {}) {
-  const color = Number(settings.adcColor)
-  const filter = Number(settings.adcFilter)
+  const color = Number(settings.color)
+  const filter = Number(settings.filter)
   return {
     ...settings,
+    visualDataMode: 'pressure',
     color: Number.isFinite(color) && color > 0
-      ? Math.max(VISUAL_COLOR_SETTING_MIN, Math.min(VISUAL_ADC_SETTING_MAX, color))
-      : VISUAL_ADC_COLOR_SETTING_DEFAULT,
-    filter: Number.isFinite(filter)
-      ? Math.max(0, Math.min(VISUAL_ADC_SETTING_MAX, filter))
-      : VISUAL_ADC_FILTER_SETTING_DEFAULT,
-    autoColorReference: VISUAL_ADC_COLOR_SETTING_DEFAULT,
+      ? Math.max(VISUAL_COLOR_SETTING_MIN, Math.min(VISUAL_COLOR_SETTING_MAX, color)) : 20,
+    filter: Number.isFinite(filter) ? Math.max(0, Math.min(VISUAL_COLOR_SETTING_MAX, filter)) : 0,
+    autoColorReference: 20,
   }
 }

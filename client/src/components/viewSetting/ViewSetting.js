@@ -611,7 +611,6 @@ const ViewSetting = (props) => {
                         </div>
                     </Popover>}
 
-
                     {/* {isMoreMatrix(systemType) ? <Dropdown 
                     // overlayStyle={{backgroundColor : '#32373e' , color : '#fff'}}
                      menu={{ items: carItems }}>

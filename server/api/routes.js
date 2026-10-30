@@ -9,6 +9,7 @@ const HttpResult = require('../HttpResult')
 const constantObj = require('../../util/config')
 const { MATRIX_DIMENSIONS } = require('../../util/deviceMatrixConfig')
 const { calculateAreaForceN } = require('../../util/areaMetrics')
+const { createDummyPressureStatistics } = require('../../util/dummyPressureStatistics')
 const { initDb, dbLoadCsv, getExportFieldOptions, deleteDbData, dbGetData, getCsvData, buildCsvPlaybackData, changeDbName, changeDbDataName, upsertRemark, getRemark, ensureWritableDir, resolveWritableDownloadDir, validateImportedCsv, listSelectionTemplates, replaceSelectionTemplates } = require('../../util/db')
 const module2 = require('../../util/aes_ecb')
 const { readEncryptedSystemConfig } = require('../../util/systemConfig')
@@ -16,7 +17,8 @@ const { state } = require('../state')
 const { broadcast } = require('../websocket')
 const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
 const { colAndSendData, sendData, clearPlayTimer, ensureRealtimeTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot, saveDataDirection, combineEndiFootMatrices } = require('../services/DataService')
-const { loadPressureConfig, savePressureConfig, listPressureFormulaFiles } = require('../services/PressureConfig')
+const { loadPressureConfig, savePressureConfig, listPressureFormulaFiles, loadDummyPressureFormula } = require('../services/PressureConfig')
+const { getDummyPressureResult, getPressureValues } = createDummyPressureStatistics(loadDummyPressureFormula)
 const { withAreaFormulaSnapshot } = require('../services/AreaFormula')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES } = require('../../util/deviceConfigValidation')
@@ -1457,7 +1459,7 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
     for (const key of keyArr) {
       const item = dataObj[key]
       const adcValues = Array.isArray(item?.rawAdcArr) ? item.rawAdcArr : item?.arr || []
-      const pressureValues = Array.isArray(item?.pressureArr) ? item.pressureArr : []
+      const pressureValues = getPressureValues(item)
       const forceValues = Array.isArray(item?.forceArr) ? item.forceArr : []
       const dummyArea = isDummyMatrixKey(key)
       const areaValuesCm2 = Array.isArray(item?.areaValuesCm2)
@@ -1470,10 +1472,12 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
       let adcArea = 0
       let pressure = 0
       let pressureArea = 0
+      let pressureResult = null
       let fittedArea = areaValuesCm2 ? 0 : null
       if (sel && typeof sel === 'object') {
         const { xStart, xEnd, yStart, yEnd, width } = sel
         if ([xStart, xEnd, yStart, yEnd, width].every((v) => typeof v === 'number')) {
+          pressureResult = getDummyPressureResult(key, item, sel)
           for (let y = yStart; y < yEnd; y++) {
             for (let x = xStart; x < xEnd; x++) {
               const index = y * width + x
@@ -1491,8 +1495,13 @@ router.post('/getDbHistorySelect', asyncHandler(async (req, res) => {
           }
         }
       }
+      if (pressureResult) {
+        pressure = Number(pressureResult.pressureSumKpa) || 0
+        pressureArea = Number(pressureResult.nonZeroCount) || 0
+      }
       if (dummyArea) {
-        const pressureAverage = pressureArea > 0 ? pressure / pressureArea : 0
+        const pressureAverage = pressureResult ? Number(pressureResult.avgKpa) || 0
+          : (pressureArea > 0 ? pressure / pressureArea : 0)
         press = calculateAreaForceN(
           pressureAverage,
           fittedArea === null ? null : fittedArea * DUMMY_POINT_AREA_CM2,

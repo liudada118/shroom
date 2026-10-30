@@ -9,6 +9,7 @@ const constantObj = require('../../util/config')
 const { MATRIX_DIMENSIONS } = require('../../util/deviceMatrixConfig')
 const {
   DUMMY_MATRIX_CONFIG,
+  combinePressureSummaries,
   ensureProcessedFrame,
   isDummyMatrixKey,
   normalizeFrameProcessingConfig,
@@ -313,6 +314,7 @@ function combineEndiFootMatrices(frame) {
   delete combined.physicalMask
   for (const [field, sourceField] of [
     ['rawAdcArr', 'sourceRawAdcMatrices'], ['pressureArr', 'sourcePressureMatrices'], ['forceArr', 'sourceForceMatrices'],
+    ['pressureValuesKpa', 'sourcePrecisePressureMatrices'],
   ]) {
     combined[field] = combineFootRows(leftItem?.[field], rightItem?.[field])
     combined[sourceField] = buildFootSourceMap(combined[field])
@@ -321,6 +323,21 @@ function combineEndiFootMatrices(frame) {
     [ENDI_FOOT_LEFT_KEY]: hasLeft ? leftItem.physicalAdcArr : makeZeroMatrix(6 * 32),
     [ENDI_FOOT_RIGHT_KEY]: hasRight ? rightItem.physicalAdcArr : makeZeroMatrix(6 * 32),
   }
+  combined.sourcePressureSummaries = {
+    [ENDI_FOOT_LEFT_KEY]: hasLeft ? leftItem.pressureSummary : null,
+    [ENDI_FOOT_RIGHT_KEY]: hasRight ? rightItem.pressureSummary : null,
+  }
+  combined.sourcePhysicalPressureSummaries = {
+    [ENDI_FOOT_LEFT_KEY]: hasLeft ? leftItem.physicalPressureSummary : null,
+    [ENDI_FOOT_RIGHT_KEY]: hasRight ? rightItem.physicalPressureSummary : null,
+  }
+  combined.sourcePhysicalAdcStats = {
+    [ENDI_FOOT_LEFT_KEY]: hasLeft ? leftItem.physicalAdcStats : null,
+    [ENDI_FOOT_RIGHT_KEY]: hasRight ? rightItem.physicalAdcStats : null,
+  }
+  combined.pressureSummary = combinePressureSummaries(Object.values(combined.sourcePressureSummaries))
+  combined.physicalPressureSummary = combinePressureSummaries(Object.values(combined.sourcePhysicalPressureSummaries))
+  delete combined.physicalAdcStats
   const leftArea = hasLeft ? leftItem.areaValuesCm2 : makeZeroMatrix(ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT)
   const rightArea = hasRight ? rightItem.areaValuesCm2 : makeZeroMatrix(ENDI_SINGLE_FOOT_WIDTH * ENDI_FOOT_HEIGHT)
   combined.sourceAreaMatrices = {
@@ -423,7 +440,7 @@ function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAU
     if (Array.isArray(nextItem.arr) && isValidMatrix(key, nextItem.arr)) {
       const direction = getDirectionForKey(normalizedState, key)
       nextItem.arr = applyCollectionDirection(key, nextItem.arr, direction)
-      for (const field of ['rawAdcArr', 'pressureArr', 'forceArr', 'areaValuesCm2']) {
+      for (const field of ['rawAdcArr', 'pressureArr', 'pressureValuesKpa', 'forceArr', 'areaValuesCm2']) {
         if (Array.isArray(nextItem[field]) && nextItem[field].length === nextItem.arr.length) {
           nextItem[field] = applyCollectionDirection(key, nextItem[field], direction)
         }
@@ -432,6 +449,9 @@ function buildDirectedFrame(frame, directionState = state.dataDirection || DEFAU
         nextItem.sourceMatrices = buildFootSourceMap(nextItem.arr)
         nextItem.sourceRawAdcMatrices = buildFootSourceMap(nextItem.rawAdcArr)
         nextItem.sourcePressureMatrices = buildFootSourceMap(nextItem.pressureArr)
+        if (Array.isArray(nextItem.pressureValuesKpa)) {
+          nextItem.sourcePrecisePressureMatrices = buildFootSourceMap(nextItem.pressureValuesKpa)
+        }
         nextItem.sourceForceMatrices = buildFootSourceMap(nextItem.forceArr)
         if (Array.isArray(nextItem.areaValuesCm2)) {
           nextItem.sourceAreaMatrices = buildFootSourceMap(nextItem.areaValuesCm2)

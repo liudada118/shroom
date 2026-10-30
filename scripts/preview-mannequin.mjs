@@ -10,20 +10,20 @@ import { createRoot } from 'react-dom/client';
 import ThreeHumanPoint from '/src/components/three/ThreeHumanPoint.js';
 import { useEquipStore } from '/src/store/equipStore.js';
 import { buildMannequinSensorLayout } from '/src/util/mannequinSensorLayout.js';
-import { VISUAL_ADC_COLOR_SETTING_DEFAULT } from '/src/util/visualSettingStorage.js';
+import { getRestoredVisualSettingValue } from '/src/util/visualSettingStorage.js';
 const archive = await fetch('/model/mannequin_sensor_layout_637.json').then(r => r.json());
 const sensors = buildMannequinSensorLayout(archive);
 const empty = () => ({ jacket: new Array(1296).fill(0), leftHand: new Array(144).fill(0), rightHand: new Array(144).fill(0), leftFoot: new Array(768).fill(0), rightFoot: new Array(768).fill(0) });
-const metricData = { current: { adc: empty() } };
+const metricData = { current: { pressure: empty() } };
 const component = React.createRef();
-useEquipStore.setState({ settingValue: { gauss: 2, height: 80, autoColor: 0, adcColor: VISUAL_ADC_COLOR_SETTING_DEFAULT, adcFilter: 0 } });
+useEquipStore.setState({ settingValue: getRestoredVisualSettingValue('endi') });
 const root = createRoot(document.getElementById('root'));
 const mount = () => root.render(React.createElement(ThreeHumanPoint, { metricData, ref: component }));
 mount();
 function activate(part) {
-  metricData.current = { adc: empty() };
+  metricData.current = { pressure: empty() };
   const activateSensor = sensor => {
-    metricData.current.adc[sensor.sourceKey][sensor.displayIndex] = 160;
+    metricData.current.pressure[sensor.sourceKey][sensor.displayIndex] = 16;
   };
   for (const sensor of sensors) {
     if (part === 'waist' || part === 'waist-dense') {
@@ -68,7 +68,7 @@ const server = await createServer({
     load(id) { if (id === fixtureId) return fixture },
     configureServer(vite) {
       vite.middlewares.use('/__mannequin-check', async (_request, response) => {
-        const html = await vite.transformIndexHtml('/__mannequin-check', `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><style>body{margin:0;background:#000;font-family:system-ui}#fixture-controls{position:fixed;top:10px;left:10px;z-index:1000;display:flex;gap:4px;flex-wrap:wrap;max-width:85vw}#fixture-controls button{padding:7px;border:1px solid #576579;background:#17212f;color:#fff;border-radius:3px;cursor:pointer}#fixture-status{position:fixed;top:52px;left:12px;z-index:1000;color:#ccd6e3;font-size:12px}</style></head><body><div id="root"></div><div id="fixture-controls"></div><div id="fixture-status">独立渲染测试 · 合成ADC帧，不连接设备或数据库</div><script type="module" src="/__mannequin-fixture.js"></script></body></html>`)
+        const html = await vite.transformIndexHtml('/__mannequin-check', `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><style>body{margin:0;background:#000;font-family:system-ui}#fixture-controls{position:fixed;top:10px;left:10px;z-index:1000;display:flex;gap:4px;flex-wrap:wrap;max-width:85vw}#fixture-controls button{padding:7px;border:1px solid #576579;background:#17212f;color:#fff;border-radius:3px;cursor:pointer}#fixture-status{position:fixed;top:52px;left:12px;z-index:1000;color:#ccd6e3;font-size:12px}</style></head><body><div id="root"></div><div id="fixture-controls"></div><div id="fixture-status">独立渲染测试 · 合成压强帧，不连接设备或数据库</div><script type="module" src="/__mannequin-fixture.js"></script></body></html>`)
         response.setHeader('Content-Type', 'text/html; charset=utf-8')
         response.end(html)
       })

@@ -16,6 +16,7 @@ import {
 import { useEquipStore } from '../../store/equipStore'
 import { jetWhite3NoWhite } from '../../assets/util/line'
 import { calculateAreaForceN, getAreaValuesCm2, isDummyAreaItem } from '../../util/areaMetrics'
+import { getDummyPressureResult, getPressureValues } from 'virtual:dummy-pressure'
 import './CopReport.scss'
 
 const COP_REPORT_SELECTION_PREFIX = 'copReportSelection:'
@@ -37,7 +38,7 @@ const getMatrixMetricValues = (matrix, metricMode = PRESSURE_METRIC_MODE) => {
     ? (matrix?.rawAdcArr || matrix?.arr)
     : metricMode === FORCE_METRIC_MODE
       ? matrix?.forceArr
-      : matrix?.pressureArr
+      : getPressureValues(matrix)
   const length = safeArray(matrix?.arr).length || safeArray(source).length
   return Array.from({ length }, (_, index) => {
     const value = Number(source?.[index])
@@ -201,6 +202,9 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = PRES
   const usesDummyArea = isDummyAreaItem(matrix, matrixKey)
   const { width, height } = inferSize(matrix)
   const scope = rect || { xStart: 0, yStart: 0, xEnd: width, yEnd: height }
+  const referencePressure = getDummyPressureResult(matrixKey, matrix, rect)
+  const selectedPressure = referencePressure?.pressureValuesKpa
+  const scopeWidth = scope.xEnd - scope.xStart
   let pMax = 0
   let pSum = 0
   let adcSum = 0
@@ -215,7 +219,9 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = PRES
     for (let x = scope.xStart; x < scope.xEnd; x++) {
       const index = y * width + x
       const adcValue = Number(adcValues[index]) || 0
-      const metricValue = Number(metricValues[index]) || 0
+      const localIndex = (y - scope.yStart) * scopeWidth + x - scope.xStart
+      const metricValue = Number(metricMode === PRESSURE_METRIC_MODE && selectedPressure
+        ? selectedPressure[localIndex] : metricValues[index]) || 0
       if (usesDummyArea && effectiveArea !== null) effectiveArea += areaValues[index] || 0
       pMax = Math.max(pMax, metricValue)
       adcMax = Math.max(adcMax, adcValue)
@@ -238,7 +244,8 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = PRES
     for (let x = scope.xStart; x < scope.xEnd; x++) {
       const index = y * width + x
       if (!usesDummyArea) legacyForceSum += Number(forceValues[index]) || 0
-      const pressureValue = Number(pressureValues[index]) || 0
+      const localIndex = (y - scope.yStart) * scopeWidth + x - scope.xStart
+      const pressureValue = Number(selectedPressure ? selectedPressure[localIndex] : pressureValues[index]) || 0
       pressureMax = Math.max(pressureMax, pressureValue)
       if (pressureValue > 0) {
         pressureSum += pressureValue
@@ -246,9 +253,16 @@ const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = PRES
       }
     }
   }
-  const pAvg = effectivePoints ? pSum / effectivePoints : 0
+  const pAvg = referencePressure && metricMode === PRESSURE_METRIC_MODE
+    ? (referencePressure.avgKpa ?? 0) : (effectivePoints ? pSum / effectivePoints : 0)
+  if (referencePressure && metricMode === PRESSURE_METRIC_MODE) {
+    pMax = referencePressure.maxKpa ?? 0
+    pressureMax = referencePressure.maxKpa ?? 0
+    effectivePoints = referencePressure.nonZeroCount
+  }
   const forceSum = usesDummyArea
-    ? calculateAreaForceN(pressurePoints ? pressureSum / pressurePoints : 0, effectiveArea)
+    ? calculateAreaForceN(referencePressure ? (referencePressure.avgKpa ?? 0)
+      : (pressurePoints ? pressureSum / pressurePoints : 0), effectiveArea)
     : legacyForceSum
   const copXIndex = weightSum ? xWeighted / weightSum : width / 2
   const copYIndex = weightSum ? yWeighted / weightSum : height / 2
@@ -674,13 +688,13 @@ function CopReport() {
   const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
   const pressureUnit = useEquipStore(s => s.pressureUnit)
   const metricDisplay = useMemo(
-    () => getPressureMetricDisplay(pressureMetricMode, undefined, 'zh', pressureUnit),
+    () => getPressureMetricDisplay(pressureMetricMode, undefined, 'zh', pressureUnit, 2),
     [pressureMetricMode, pressureUnit],
   )
   const metricName = metricDisplay.name
   const metricUnit = metricDisplay.unit
-  // 报告里压强一律保留 2 位小数，只做单位换算
-  const formatMetric = (value) => formatNumber(Number(value) * metricDisplay.valueScale)
+  // Keep the reference's 0.01 kPa resolution after unit conversion.
+  const formatMetric = (value) => value == null ? '-' : metricDisplay.formatValue(value)
   const effectiveThreshold = pressureMetricMode === ADC_METRIC_MODE
     ? 1
     : EFFECTIVE_THRESHOLD * metricDisplay.valueScale
@@ -943,10 +957,10 @@ function CopReport() {
 function SurfaceAnalysisReport({ analysis, indexLabel, metricMode = PRESSURE_METRIC_MODE, pressureUnit }) {
   const { totalSummary, averageMatrix, metrics, selections, size, matrixKey, sampleRate } = analysis
   const label = getMatrixLabel(matrixKey)
-  const metricDisplay = getPressureMetricDisplay(metricMode, undefined, 'zh', pressureUnit)
+  const metricDisplay = getPressureMetricDisplay(metricMode, undefined, 'zh', pressureUnit, 2)
   const metricName = metricDisplay.name
   const metricUnit = metricDisplay.unit
-  const formatMetric = (value) => formatNumber(Number(value) * metricDisplay.valueScale)
+  const formatMetric = (value) => value == null ? '-' : metricDisplay.formatValue(value)
   return (
     <ReportSection index={indexLabel} title={`${label}${metricName}分布与COP分析`}>
       <div className="surface-summary">

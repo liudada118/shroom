@@ -14,7 +14,7 @@ import FootTrack from '../chart/Chart';
 import { graCenter } from '../../util/util';
 import DraggablePanel from '../draggablePanel/DraggablePanel';
 import { formatSelectionName } from '../../util/selectionName';
-import { getPressureMetricDisplay } from '../../util/pressureMetrics';
+import { formatPressureSummaryValue, getPressureMetricDisplay } from '../../util/pressureMetrics';
 import {
     formatGradientValue,
     formatSymmetryPercent,
@@ -760,8 +760,10 @@ function ChartsAside(props) {
                             ? chartData[key].data.areaCm2
                             : chartData[key].data.areaTotal * widthDistance * heightDistance / 100
                         dataObj[key].areaTotal = preciseAreaTotal === null ? null : Number(preciseAreaTotal.toFixed(2))
-                        dataObj[key].pressAver = Number(chartData[key].data.pressAver || 0).toFixed(1)
-                        dataObj[key].pressMax = Number(chartData[key].data.pressMax || 0).toFixed(1)
+                        dataObj[key].pressAver = Number(chartData[key].data.pressAver || 0)
+                        dataObj[key].pressMax = Number(chartData[key].data.pressMax || 0)
+                        dataObj[key].referencePressure = chartData[key].data.referencePressure
+                        dataObj[key].physicalPressureSummary = chartData[key].data.physicalPressureSummary
                         dataObj[key].pressTotal = chartData[key].data.pressTotal
                         dataObj[key].total = chartData[key].data.pressTotal === null ? null
                             : Number(chartData[key].data.pressTotal ?? preciseAreaTotal * dataObj[key].pressAver).toFixed(1)
@@ -791,8 +793,9 @@ function ChartsAside(props) {
                                     name: formatSelectionName(box.name, idx + 1, props.t),
                                     pointTotal: box.data.areaTotal || 0,
                                     areaTotal: bPreciseArea === null ? null : Number(bPreciseArea.toFixed(2)),
-                                    pressAver: Number(box.data.pressAver || 0).toFixed(1),
-                                    pressMax: Number(box.data.pressMax || 0).toFixed(1),
+                                    pressAver: Number(box.data.pressAver || 0),
+                                    pressMax: Number(box.data.pressMax || 0),
+                                    referencePressure: box.data.referencePressure,
                                     pressTotal: box.data.pressTotal === null ? null : box.data.pressTotal || 0,
                                     total: box.data.pressTotal === null ? null
                                         : Number(box.data.pressTotal ?? bPreciseArea * Number(box.data.pressAver || 0)).toFixed(1),
@@ -864,7 +867,9 @@ function ChartsAside(props) {
         if (!Number.isFinite(numeric)) return value
         // 压力总和固定是 N，只有平均/最大压强跟随压强显示单位
         if (item === 'total') return numeric.toFixed(1)
-        return metricDisplay.formatValue(numeric)
+        return Object.values(data).some(source => source?.referencePressure)
+            ? formatPressureSummaryValue(numeric, pressureUnit)
+            : metricDisplay.formatValue(numeric)
     }
 
     /**
@@ -889,6 +894,19 @@ function ChartsAside(props) {
     const legendKeys = getSystemMatrixParts(systemType)
         .map((part) => findDataKey(part.key))
         .filter(Boolean)
+    const physicalPressureKeys = legendKeys.filter(key => data[key]?.physicalPressureSummary)
+    const hasReferencePressure = legendKeys.some(key => data[key]?.referencePressure)
+
+    const renderPhysicalPressureRow = field => physicalPressureKeys.map(key => (
+        <div className='chartTypeItem' key={`physical-${key}-${field}`}>
+            <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(key, pressColorArr) }}></div>
+            <div className='chartMetricValueGroup'>
+                <span className='chartMetricValue'>{data[key].physicalPressureSummary[field] == null
+                    ? '-' : Number(data[key].physicalPressureSummary[field]).toFixed(2)}</span>
+                <span className='chartMetricUnit'>kPa</span>
+            </div>
+        </div>
+    ))
 
     /**
      * 渲染图表图例 — 多框选时显示框颜色，否则显示设备颜色
@@ -1125,7 +1143,8 @@ function ChartsAside(props) {
                 {/* 图例（哪个颜色对应哪个部位）整块面板只在这里出现一次，下面几块共用 */}
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">
-                        <div className="chartName">{metricDisplay.curveLabel}</div>
+                        <div className="chartName">{metricDisplay.curveLabel}{hasReferencePressure
+                            ? (i18n.language?.startsWith('en') ? ' · Interpolated' : ' · 插值后') : ''}</div>
                         <div className="chartType">{renderLegend(pressColorArr)}</div>
                     </div>
                     <div ref={myChart1Dom} id="myChart1" className="chartCanvas" style={{ opacity: '0.8' }}></div>
@@ -1136,6 +1155,22 @@ function ChartsAside(props) {
                         </div>
                     ))}
                 </div>
+
+                {physicalPressureKeys.length > 0 && !hasSelectionStats ? (
+                    <details className='chartAndDataContent chartPressureComparison'>
+                        <summary className='chartTitle' style={{ cursor: 'pointer' }}>
+                            <span className='chartName'>{i18n.language?.startsWith('en')
+                                ? 'Physical matrix · Before interpolation' : '原始矩阵 · 插值前 ADC'}</span>
+                            <span className='pressureCompareChevron' aria-hidden='true'>›</span>
+                        </summary>
+                        {[['avgKpa', 'pressAver'], ['maxKpa', 'pressMax']].map(([field, label]) => (
+                            <div className='chartData' key={field}>
+                                <span className='chartDataLabel'>{t(label)}</span>
+                                <div className='chartTypeContent'>{renderPhysicalPressureRow(field)}</div>
+                            </div>
+                        ))}
+                    </details>
+                ) : null}
 
                 <div className='chartAndDataContent'>
                     <div className="chartTitle">

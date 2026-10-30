@@ -34,8 +34,10 @@ test('history selection handler uses fitted cells for single-cell and whole-regi
   })
   assert.equal(item.areaValuesCm2[0], DUMMY_POINT_AREA_CM2)
   for (const field of areaFields) assert.deepEqual(oneCell[field]['endi-leftHand'], [1])
-  assert.deepEqual(oneCell.pressureArr['endi-leftHand'], [item.pressureArr[0]])
-  assert.deepEqual(oneCell.forceArr['endi-leftHand'], [item.pressureArr[0] * DUMMY_POINT_AREA_CM2 * 0.1])
+  // The backup refits selected ADC; an isolated one-cell crop is not a valid
+  // pressure contact. Area still uses the retained full-frame area cells.
+  assert.deepEqual(oneCell.pressureArr['endi-leftHand'], [0])
+  assert.deepEqual(oneCell.forceArr['endi-leftHand'], [0])
 
   const whole = await selectedHistory(t, [frame], {
     'endi-leftHand': { xStart: 0, xEnd: 36, yStart: 0, yEnd: 4, width: 36 },
@@ -43,8 +45,7 @@ test('history selection handler uses fitted cells for single-cell and whole-regi
   for (const field of areaFields) {
     assert.deepEqual(whole[field]['endi-leftHand'], [item.areaCm2 / DUMMY_POINT_AREA_CM2])
   }
-  const positive = item.pressureArr.filter(value => value > 0)
-  const average = positive.reduce((sum, value) => sum + value, 0) / positive.length
+  const average = item.pressureSummary.avgKpa
   assert.deepEqual(whole.forceArr['endi-leftHand'], [average * item.areaCm2 * 0.1])
 })
 

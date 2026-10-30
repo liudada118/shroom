@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { createReferenceHumanShaders, REFERENCE_CRYSTAL_DEFAULTS } from './mannequinReferenceShaders.js'
 
 const DEFAULT_SETTINGS = { height: 80, gauss: 2, color: 4.6, filter: 0, autoColor: 0 }
-const CRYSTAL_MODEL_COLOR = '#ffffff'
+const MODEL_COLOR = '#ffffff'
 
 /** Read the display-aligned position, falling back to the archived world coordinates. */
 function coordinatesOf(sensor) {
@@ -12,7 +12,7 @@ function coordinatesOf(sensor) {
   return values
 }
 
-/** Adapt the 637 pressure samples to the reference project's exact crystal renderer. */
+/** Render the 637 pressure samples over an opaque white model with the reference heat colors. */
 export function createMannequinHeatField(sensors, normalizedModel) {
   if (!Array.isArray(sensors) || !sensors.length) throw new Error('人体热力场需要有效传感点位')
   if (!normalizedModel?.isObject3D) throw new Error('人体热力场需要已归一化的模型')
@@ -31,19 +31,17 @@ export function createMannequinHeatField(sensors, normalizedModel) {
   texture.magFilter = THREE.NearestFilter
   texture.generateMipmaps = false
   texture.needsUpdate = true
-  const { vertexShader, crystalShellFragmentShader, exactCrystalHeatOverlayFragmentShader } = createReferenceHumanShaders(sensorCount)
-  // Preserve the reference's raw RGB uniform convention with the requested white crystal shell.
-  const modelColor = new THREE.Color().setHex(parseInt(CRYSTAL_MODEL_COLOR.slice(1), 16), THREE.LinearSRGBColorSpace)
+  const { vertexShader, opaqueWhiteShellFragmentShader, exactCrystalHeatOverlayFragmentShader } = createReferenceHumanShaders(sensorCount)
+  const modelColor = new THREE.Color().setHex(parseInt(MODEL_COLOR.slice(1), 16), THREE.LinearSRGBColorSpace)
   const material = new THREE.ShaderMaterial({
     vertexShader,
-    fragmentShader: crystalShellFragmentShader,
+    fragmentShader: opaqueWhiteShellFragmentShader,
     uniforms: {
-      uTransparency: { value: REFERENCE_CRYSTAL_DEFAULTS.transparency },
       uModelColor: { value: modelColor },
     },
     side: THREE.FrontSide,
-    transparent: true,
-    depthWrite: false,
+    transparent: false,
+    depthWrite: true,
   })
   const heatUniforms = {
     uSensorData: { value: texture },
@@ -55,11 +53,12 @@ export function createMannequinHeatField(sensors, normalizedModel) {
   const heatMaterials = [THREE.BackSide, THREE.FrontSide].map((side, index) => new THREE.ShaderMaterial({
     vertexShader,
     fragmentShader: exactCrystalHeatOverlayFragmentShader,
-    uniforms: { ...heatUniforms, uHeatAlpha: { value: index ? REFERENCE_CRYSTAL_DEFAULTS.frontHeatAlpha : REFERENCE_CRYSTAL_DEFAULTS.backHeatAlpha } },
+    // Strong heat keeps the existing palette instead of blending into pastel on white.
+    uniforms: { ...heatUniforms, uHeatAlpha: { value: index ? 1 : REFERENCE_CRYSTAL_DEFAULTS.backHeatAlpha } },
     side,
     transparent: true,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,
   }))
   let disposed = false
   let lastRadius = -1
@@ -73,7 +72,7 @@ export function createMannequinHeatField(sensors, normalizedModel) {
     if (disposed) return false
     const options = { ...DEFAULT_SETTINGS, ...settings }
     const numericHeight = Number(options.height)
-    const height = Number.isFinite(numericHeight) ? Math.max(0, Math.min(200, numericHeight)) : 80
+    const height = Number.isFinite(numericHeight) ? Math.max(0, Math.min(400, numericHeight)) : 80
     const numericGauss = Number(options.gauss)
     const gauss = Number.isFinite(numericGauss) ? Math.max(0, Math.min(4, numericGauss)) : 2
     const radius = Math.max(0.035, Math.min(0.2, (0.035 + height * 0.000825) * (0.8 + gauss * 0.1)))

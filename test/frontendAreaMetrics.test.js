@@ -4,11 +4,17 @@ const path = require('node:path')
 const test = require('node:test')
 const vm = require('node:vm')
 const { pathToFileURL } = require('node:url')
+const { createDummyPressureStatistics } = require('../util/dummyPressureStatistics')
+const referenceStatistics = createDummyPressureStatistics(require('../server/kpa/dummyPressure.v2.10.34'))
+const referenceFixture = require('./fixtures/dummyPressureStatisticsV2.10.34.json')
 
 async function loadMetrics() {
   const helpers = await import(pathToFileURL(path.join(__dirname, '../client/src/util/areaMetrics.js')).href)
   const pressure = await import(pathToFileURL(path.join(__dirname, '../client/src/util/pressureMetrics.js')).href)
-  const scope = { ...helpers, ...pressure, calcPartShapeMetrics: () => ({}) }
+  const scope = {
+    ...helpers, ...pressure, ...referenceStatistics,
+    calcPartShapeMetrics: () => ({}), calcCentroidRatio: () => ({ x: 0.5, y: 0.5 }),
+  }
   const loadPrefix = (filename, start, end, names) => {
     const source = fs.readFileSync(path.join(__dirname, filename), 'utf8')
     return vm.runInNewContext(`(() => {
@@ -95,4 +101,85 @@ test('other sensor products retain their existing active-point area calculation'
   assert.ok(Math.abs(contrast.buildMetricSeriesFromFrames([{ [key]: item }], key, 'area', null, 'pressure')[0] - 3.9) < 1e-12)
   assert.equal(report.calcFrameMetrics(item, null, key, 'pressure').forceSum, 0.5)
   assert.equal(contrast.buildMetricSeriesFromFrames([{ [key]: item }], key, 'press', null, 'pressure')[0], 0.5)
+})
+
+function referenceFrame(name) {
+  const sample = referenceFixture.cases.find(item => item.name === name)
+  const rawAdcArr = new Array(24 * 54).fill(0)
+  const pressureValuesKpa = new Array(24 * 54).fill(0)
+  sample.matrix.forEach((row, y) => row.forEach((value, x) => {
+    rawAdcArr[(y + 20) * 24 + x + 5] = value
+    pressureValuesKpa[(y + 20) * 24 + x + 5] = sample.expected.pressureMatrixKpa[y][x]
+  }))
+  const areaValuesCm2 = rawAdcArr.map(value => value > 30 ? 1.5625 : 0)
+  return {
+    width: 24, height: 54, arr: [...rawAdcArr], rawAdcArr, pressureValuesKpa,
+    pressureSummary: sample.expected,
+    pressureArr: pressureValuesKpa.map(value => Math.round(value * 10) / 10),
+    forceArr: new Array(24 * 54).fill(999), areaValuesCm2,
+    areaCm2: areaValuesCm2.reduce((sum, value) => sum + value, 0),
+    processing: { dummyAdcThreshold: 0, dummyResultScale: 1 },
+  }
+}
+
+test('report and comparison match independent reference screenshot statistics and recalibrate selected ADC', async () => {
+  const { report, contrast } = await loadMetrics()
+  const item = referenceFrame('screenshot prepared main contact')
+  const key = 'endi-jacket'
+  const rect = { xStart: 9, xEnd: 14, yStart: 22, yEnd: 28 }
+  for (const [scope, expected] of [[null, { avg: 10.86, max: 30.06, points: 77 }], [rect, { avg: 9.17, max: 17.24, points: 30 }]]) {
+    const metrics = report.calcFrameMetrics(item, scope, key, 'pressure')
+    assert.equal(metrics.pAvg, expected.avg)
+    assert.equal(metrics.pMax, expected.max)
+    assert.equal(metrics.effectivePoints, expected.points)
+    for (const [metric, value] of [['aver', expected.avg], ['max', expected.max], ['points', expected.points]]) {
+      assert.equal(contrast.buildMetricSeriesFromFrames([{ [key]: item }], key, metric, scope, 'pressure')[0], value)
+    }
+    for (const mode of ['adc', 'pressure', 'force']) {
+      const force = expected.avg * metrics.effectiveArea * 0.1
+      assert.equal(report.calcFrameMetrics(item, scope, key, mode).forceSum, force)
+      assert.equal(contrast.buildMetricSeriesFromFrames([{ [key]: item }], key, 'press', scope, mode)[0], force)
+    }
+  }
+})
+
+test('report and comparison count precise positive pressures that round to zero in the legacy matrix', async () => {
+  const { report, contrast } = await loadMetrics()
+  const item = referenceFrame('tiny positive pressures survive metric rounding')
+  const key = 'endi-jacket'
+  assert.equal(item.pressureArr.filter(value => value > 0).length, 1)
+  const result = report.calcFrameMetrics(item, null, key, 'pressure')
+  assert.equal(result.effectivePoints, 3)
+  assert.equal(result.pAvg, 3.54)
+  assert.equal(result.pMax, 10.53)
+  assert.equal(contrast.buildMetricSeriesFromFrames([{ [key]: item }], key, 'points')[0], 3)
+  assert.equal(contrast.buildMetricSeriesFromFrames([{ [key]: item }], key, 'aver')[0], 3.54)
+})
+
+test('reference summary formatting retains 0.01 kPa across units while grid labels and legacy summaries keep their precision', async () => {
+  const pressure = await import(pathToFileURL(path.join(__dirname, '../client/src/util/pressureMetrics.js')).href)
+  const sample = referenceFixture.cases.find(item => item.name === 'tiny positive pressures survive metric rounding')
+  const precise = sample.expected.pressureMatrixKpa.flat()
+  const rounded = precise.map(value => Math.round(value * 10) / 10)
+  const reference = { ...sample.expected, pressureValuesKpa: precise }
+  const summary = pressure.getCanonicalMetricSummary(rounded, [], 'pressure', sample.matrix.flat(), reference)
+  assert.equal(summary.activeCount, 3)
+  assert.equal(summary.average, 3.54)
+  assert.equal(summary.max, 10.53)
+  assert.equal(summary.total, sample.expected.pressureSumKpa)
+  assert.deepEqual(summary.metricValues, precise)
+  const legacy = pressure.getCanonicalMetricSummary(rounded, [], 'pressure')
+  assert.equal(legacy.activeCount, 1)
+  assert.equal(legacy.average, 10.5)
+
+  for (const [unit, gridText, summaryText] of [['kPa', '9.1', '9.07'], ['N/cm²', '0.91', '0.907']]) {
+    assert.equal(pressure.formatPressureValue(9.07, unit), gridText)
+    assert.equal(pressure.formatPressureSummaryValue(9.07, unit), summaryText)
+    assert.equal(pressure.getPressureMetricDisplay('pressure', null, 'zh', unit).formatValue(9.07), gridText)
+    assert.equal(pressure.getPressureMetricDisplay('pressure', null, 'zh', unit, 2).formatValue(9.07), summaryText)
+  }
+  assert.equal(pressure.formatPressureSummaryValue(null, 'kPa'), '-')
+  for (const mode of ['adc', 'force']) {
+    assert.equal(pressure.getPressureMetricDisplay(mode, null, 'zh', 'N/cm²', 2).formatValue(9.07), '9.1')
+  }
 })

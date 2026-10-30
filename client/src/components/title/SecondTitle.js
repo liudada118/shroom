@@ -15,6 +15,7 @@ import SelectSet from './SelectSet'
 import { getRestoredVisualSettingValue, normalizeVisualSettingMax, saveVisualSettingValue, VISUAL_ADC_COLOR_SETTING_DEFAULT, VISUAL_ADC_FILTER_SETTING_DEFAULT, VISUAL_ADC_SETTING_MAX } from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import { getPressureMetricDisplay, PRESSURE_METRIC_MODE } from '../../util/pressureMetrics'
+import { getMannequinHeatmapMode } from '../../util/mannequinHeatmapSource'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
@@ -44,7 +45,10 @@ function SecondTitle(props) {
     const pressureUnit = useEquipStore(s => s.pressureUnit);
     const pressureMetricDisplay = getPressureMetricDisplay(PRESSURE_METRIC_MODE, t, i18n?.language, pressureUnit);
     const isMannequin3D = systemType === 'endi' && display === 'point3D';
-    const colorMetricDisplay = isMannequin3D ? {
+    const isMannequin = systemType === 'endi';
+    const mannequinMode = getMannequinHeatmapMode(settingValue);
+    const useAdcControls = isMannequin && mannequinMode === 'adc';
+    const colorMetricDisplay = useAdcControls ? {
         unit: 'ADC', valueScale: 1, formatValue: value => Number(value).toFixed(2),
     } : pressureMetricDisplay;
     const pressureFilterDisplay = colorMetricDisplay;
@@ -53,8 +57,8 @@ function SecondTitle(props) {
     const setSettingValue = useEquipStore.getState().setSettingValue
 
     const getSettingKey = (a) => {
-        if (isMannequin3D && a.type === 'color') return 'adcColor'
-        if (isMannequin3D && a.type === 'filter') return 'adcFilter'
+        if (useAdcControls && a.type === 'color') return 'adcColor'
+        if (useAdcControls && a.type === 'filter') return 'adcFilter'
         return a.type
     }
 
@@ -107,7 +111,7 @@ function SecondTitle(props) {
         const getMax = (arr) => Array.isArray(arr) || ArrayBuffer.isView(arr)
             ? arr.reduce((max, value) => Math.max(max, Number(value) || 0), 0)
             : null
-        const currentData = isMannequin3D ? metricStatus?.adc || {} : displayStatus
+        const currentData = isMannequin ? metricStatus?.[mannequinMode] || {} : displayStatus
         if (Array.isArray(currentData) || ArrayBuffer.isView(currentData)) return getMax(currentData)
         if (!currentData || typeof currentData !== 'object') return isMannequin3D ? 0 : null
         const values = Object.entries(currentData)
@@ -120,7 +124,7 @@ function SecondTitle(props) {
             .map(([, arr]) => getMax(arr))
             .filter((value) => value !== null)
         return maxList.length ? Math.max(...maxList) : isMannequin3D ? 0 : null
-    }, [displayStatus, metricStatus, isMannequin3D, activeDisplayType, systemType])
+    }, [displayStatus, metricStatus, isMannequin3D, isMannequin, mannequinMode, activeDisplayType, systemType])
 
 
 
@@ -137,10 +141,10 @@ function SecondTitle(props) {
             content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoUniform')}</div>
         },
         {
-            // 假人3D使用独立ADC参考值；其他视图的压强参考值仍存kPa并按当前单位显示
+            // 假人的ADC/压强显示使用独立参考值，压强存kPa并按当前单位显示。
             title: t('colorAdj'),
             type: 'color',
-            max: isMannequin3D ? VISUAL_ADC_SETTING_MAX : 60,
+            max: useAdcControls ? VISUAL_ADC_SETTING_MAX : 60,
             min: 0.01,
             step: 0.01,
             sliderScale: colorMetricDisplay.valueScale,
@@ -149,7 +153,7 @@ function SecondTitle(props) {
         {
             title: t('denoise'),
             type: 'filter',
-            max: isMannequin3D ? VISUAL_ADC_SETTING_MAX : 60,
+            max: useAdcControls ? VISUAL_ADC_SETTING_MAX : 60,
             min: 0,
             step: 0.1,
             sliderScale: colorMetricDisplay.valueScale,
