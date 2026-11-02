@@ -1189,7 +1189,8 @@ const Canvas =
                     const sourceCol = (iy - sitOrder) / sitInterp1
                     // The 3D backrest is visually flipped vertically relative to the 2D matrix.
                     const visibleRow = name === 'back' ? sitnum1 - 1 - sourceRow : sourceRow
-                    const isPaddingPoint = name === 'back' && !isEndiBackPointVisible(visibleRow, sourceCol, sitnum2, sitnum1)
+                    const fullAlgorithmBack = useEquipStore.getState().metricAlgorithmVersions?.back === '2.11.0'
+                    const isPaddingPoint = false
                     const isHidden = isPaddingPoint;
                     scales[j] = isHidden ? 0 : 1;
 
@@ -1286,11 +1287,17 @@ const Canvas =
             const defaultSitLen = sitW * sitH
             const defaultBackLen = backW * backH
 
-            const metricMode = useEquipStore.getState().pressureMetricMode
-            const metricData = props.metricData?.current?.[metricMode] || {}
+            const metricMode = 'adc'
+            const metricData = props.metricData?.current?.adc || {}
             const data = {
                 back: metricData.back || new Array(defaultBackLen).fill(0),
                 sit: metricData.sit || new Array(defaultSitLen).fill(0),
+            }
+            // The complete algorithm rotates the rectangular backrest display.
+            // Reorient only this rendering copy to the model's existing grid.
+            const dimensions = useEquipStore.getState().metricDimensions || {}
+            if (dimensions.back?.width === backH && dimensions.back?.height === backW && backW !== backH) {
+                data.back = rotateMatrix(data.back, dimensions.back.height, dimensions.back.width)
             }
 
             {

@@ -14,10 +14,15 @@ export interface DataDirection {
 
 export interface MatrixItem {
   arr?: number[]
+  /** Post-zero, pre-compensation ADC, retained for repeatable calibration. */
+  calibrationSourceAdcArr?: number[]
   calibrationAdcArr?: number[]
   calibrationValidMask?: number[]
-  pressureArr?: number[]
-  forceArr?: number[]
+  pressureArr?: Array<number | null>
+  forceArr?: Array<number | null>
+  pointAreaArr?: Array<number | null>
+  forceDistributionAvailable?: boolean
+  algorithmMetrics?: FullAlgorithmMetrics
   [key: string]: any
 }
 
@@ -48,22 +53,31 @@ export interface SelectionRegion {
 export interface PressureMetrics {
   activeCount: number
   averagePointCount?: number
-  effectiveArea: number
+  effectiveArea: number | null
   rawPress: number
   rawMax: number
   rawAvg: number
   adcAvg?: number
   sensor?: string
-  pressMax: number
-  pressAver: number
-  matrixPressMax?: number
-  matrixPressAver?: number
-  pressureTotal?: number
+  pressMax: number | null
+  pressAver: number | null
+  matrixPressMax?: number | null
+  matrixPressAver?: number | null
+  pressureTotal?: number | null
+  matrixPressureTotal?: number | null
   pressureValues?: number[]
   forceValues?: number[]
-  forceMax?: number
-  forceAver?: number
-  total: number
+  forceGrid?: { rows: number, cols: number, orientation: 'native-physical' } | null
+  forceMax?: number | null
+  forceAver?: number | null
+  total: number | null
+  algorithmMetrics?: FullAlgorithmMetrics | FullSensorResult
+  forceN?: number | null
+  areaCm2?: number | null
+  calibrationComplete?: boolean
+  calibrationScope?: string
+  pressureMethod?: 'force-over-area'
+  unavailableReason?: string | null
   normalizationScale?: number | null
   meanConservationErrorKPa?: number | null
   pressureCalibrationBranch?: 'weight' | 'human' | 'average-formula'
@@ -119,7 +133,63 @@ export function getPressureSensor(key: string): string
 export function estimatePressure(adcAvg: number, nValid: number, sensor: string): number | null
 export function estimateMaxPressure(adcMax: number, nValid: number, sensor: string, adcAvg: number): number | null
 export function getPressurePointAreaCm2(key: string): number
-export function computePressureMetrics(arr: number[], key: string, options?: { profile?: string, pointAreaCm2?: number }): PressureMetrics
+/** Matrix ADC input is post-interpolation/post-zero, before calibration compensation. */
+export function computePressureMetrics(arr: number[], key: string, options?: { profile?: string, pointAreaCm2?: number, pressureArr?: number[], calibrationValidMask?: number[], algorithmMetrics?: FullAlgorithmMetrics | FullSensorResult }): PressureMetrics
+
+export type FullSensorType = 'endi-23x23' | 'new-backrest-32x25'
+export interface FullSensorFrameInput {
+  raw?: ArrayLike<number>
+  physical?: number[][]
+  timestampMs: number
+  reset?: boolean
+}
+export interface FullSensorOptions {
+  rotation?: 0 | 1 | 2 | 3
+  filterThreshold?: number
+  resultScale?: number
+  humanCoefficient?: number
+  seatForceMethod?: string
+  backrestPressureMethod?: string
+  adcCompensationSettings?: Record<string, any>
+}
+export interface FullSensorResult {
+  sensorType: FullSensorType
+  timestampMs: number
+  forceMetrics: Record<string, any> & { forceN: number | null, averagePressureKPa: number | null }
+  areaMetrics: Record<string, any> & { areaCm2: number | null }
+  pressureMetrics: Record<string, any> & { pressureMatrixKPa: number[][], maxPressureKPa: number | null }
+  sourcePhysical: number[][]
+  sourceMatrix: number[][]
+  displayAdcMatrix: number[][]
+}
+export interface FullAlgorithmMetrics {
+  version: '2.11.0'
+  pressureMethod?: 'force-over-area'
+  status: 'complete' | 'unavailable'
+  reason?: string
+  forceMetrics?: Record<string, any>
+  areaMetrics?: Record<string, any>
+  pressureMetrics?: Record<string, any>
+  summary?: {
+    pressureMethod?: 'force-over-area'
+    forceN: number | null
+    areaCm2: number | null
+    averagePressureKPa: number | null
+    maxPressureKPa: number | null
+    maximumPressureDisplayKPa: number | null
+    forceMaxN?: number | null
+    forceAverageN?: number | null
+    activePointCount: number | null
+  }
+}
+export interface FullSensorSession {
+  process(frame: FullSensorFrameInput): FullSensorResult
+  reset(): void
+}
+export function calculateSensorSequence(frames: FullSensorFrameInput[], sensorType: FullSensorType, options?: FullSensorOptions): FullSensorResult[]
+export function calculateSensorFrame(frame: FullSensorFrameInput, sensorType: FullSensorType, options?: FullSensorOptions): FullSensorResult
+export function createSensorSession(sensorType: FullSensorType, options?: FullSensorOptions): FullSensorSession
+export function getMaximumPressureDisplay(raw: number | null, sensorType: FullSensorType): number | null
 
 export class ShroomSdkError extends Error {
   code?: number

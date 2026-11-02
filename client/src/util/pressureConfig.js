@@ -3,8 +3,8 @@ import { localAddress } from './constant'
 import { setPressureFormulaProfile } from './pressureMetrics'
 
 const DEFAULT_PRESSURE_CONFIG = {
-  pressureFormulaFile: 'adc-matrix-to-pressure-filter30-v2.7.63.js',
-  pressureFormulaProfile: 'adc-matrix-to-pressure-filter30-v2.7.63',
+  pressureFormulaFile: 'seatBackrestPressure_v2.11.0.js',
+  pressureFormulaProfile: 'seatBackrestPressure_v2.11.0',
 }
 
 let pressureConfigCache = DEFAULT_PRESSURE_CONFIG

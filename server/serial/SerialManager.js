@@ -731,6 +731,7 @@ async function resolveDeviceType(uniqueId, options = {}) {
 
 function processMatrixData(pointArr, dataItem) {
   const t = dataItem.type
+  captureAlgorithmRawFrame(pointArr, dataItem)
   if (t === 'hand') return hand(pointArr)
   if (t === 'bed') return jqbed(pointArr)
   if (t === 'car-back') return jqbed(pointArr)
@@ -743,6 +744,7 @@ function processMatrixData(pointArr, dataItem) {
 
 function processTypedMatrixData(pointArr, dataItem) {
   const t = dataItem.type
+  captureAlgorithmRawFrame(pointArr, dataItem)
   if (t === 'car-back') return jqbed(pointArr)
   if (t === 'car-sit' || t === 'bed') return jqbed(pointArr)
   if (t === 'endi-sit') return endiSit1024(pointArr)
@@ -750,6 +752,18 @@ function processTypedMatrixData(pointArr, dataItem) {
   if (t === 'carY-sit') return carYSitLine(pointArr)
   if (t === 'carY-back') return carYBackLine(pointArr)
   return pointArr
+}
+
+// Preserve the wire payload before legacy line mapping, padding or interpolation.
+// The complete seat/backrest kernel owns those steps itself.
+function captureAlgorithmRawFrame(pointArr, dataItem) {
+  if ((dataItem.type === 'endi-sit' || dataItem.type === 'endi-back') && pointArr.length === 1024) {
+    if (!Number.isFinite(dataItem.algorithmStreamStartedAt)) dataItem.algorithmStreamStartedAt = Date.now()
+    dataItem.algorithmRawFrame = Array.from(pointArr)
+  } else {
+    delete dataItem.algorithmRawFrame
+    delete dataItem.algorithmStreamStartedAt
+  }
 }
 
 function updateHZAndStartTimer(dataItem, stamp, onTimerStart, portPath, broadcastFn) {
@@ -910,6 +924,8 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
 
     // -- Foot pad 4096 matrix --
     if (pointArr.length === 4096) {
+      delete dataItem.algorithmRawFrame
+      delete dataItem.algorithmStreamStartedAt
       if (!dataItem.premission) {
         dataItem.status = 'expired'
         return
@@ -952,6 +968,8 @@ function bindDataHandler(portPath, parserItem, dataItem, broadcastFn, onTimerSta
 
     // -- 4097 matrix (with type prefix) --
     if (pointArr.length === 4097) {
+      delete dataItem.algorithmRawFrame
+      delete dataItem.algorithmStreamStartedAt
       const typeCode = pointArr[0]
       const matrixData = pointArr.slice(1)
       dataItem.premission = true

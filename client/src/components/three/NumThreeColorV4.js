@@ -46,7 +46,7 @@ function jet(min, max, x) {
   return rgb;
 }
 
-function normalizeDisplayValue(value, mode = useEquipStore.getState().pressureMetricMode) {
+function normalizeDisplayValue(value, mode = 'adc') {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
   const atlasValue = numeric * 10;
@@ -54,7 +54,8 @@ function normalizeDisplayValue(value, mode = useEquipStore.getState().pressureMe
 }
 
 function getTextureColorMax(color) {
-  return normalizeVisualColorSetting(color);
+  const numeric = Number(color);
+  return Math.max(1, Math.min(255, Number.isFinite(numeric) ? numeric : 255));
 }
 
 function normalizeZoomScale(value) {
@@ -115,7 +116,7 @@ export default function NumThree(props) {
   const gridRef = useRef({ width: 0, height: 0 });
   const invertYRef = useRef(false);
   const textureMaxRef = useRef(22);
-  const textureModeRef = useRef(useEquipStore.getState().pressureMetricMode);
+  const textureModeRef = useRef('adc');
   const magnifierPosRef = useRef({ col: -1, row: -1 });
   const drawMagnifierRef = useRef(null);
   const magnifierZoomRef = useRef(1);
@@ -147,7 +148,7 @@ export default function NumThree(props) {
   // }
 
 
-  function createDigitSpriteSheetWithJet(value = 22, mode = useEquipStore.getState().pressureMetricMode) {
+  function createDigitSpriteSheetWithJet(value = 22, mode = 'adc') {
     const canvas = document.createElement("canvas");
     // document.body.appendChild(canvas)
     canvas.width = canvas.height = DIGIT_ATLAS_SIZE;
@@ -273,7 +274,7 @@ export default function NumThree(props) {
     };
 
     let currentTextureMax = getTextureColorMax(getSettingValue()?.color)
-    let currentTextureMode = useEquipStore.getState().pressureMetricMode
+    let currentTextureMode = 'adc'
     let currentTextureScope = ''
     const texture = createDigitSpriteSheetWithJet(currentTextureMax, currentTextureMode);
     textureMaxRef.current = currentTextureMax;
@@ -414,16 +415,17 @@ export default function NumThree(props) {
 
       const settingValue = getSettingValue()
       const { color, height, autoColor } = settingValue //pageRef.current.settingValue
-      const metricMode = useEquipStore.getState().pressureMetricMode
+      const metricMode = 'adc'
       const colorScope = `num-${matrixKey}-${metricMode}`
       setDynamicGammaColorEnabled(Boolean(autoColor), colorScope);
       const metricDataKey = matrixKey.includes('-') ? matrixKey.split('-').pop() : matrixKey
-      const sharedMetricData = props.metricData?.current?.[metricMode]?.[metricDataKey]
+      const sharedMetricData = props.metricData?.current?.adc?.[metricDataKey]
       if (Array.isArray(sharedMetricData)) {
         data = sharedMetricData
       } else {
         data = new Array(gridSize1 * gridSize2).fill(0)
       }
+      mesh.visible = data.some(Number.isFinite);
       dataRef.current = data;
       gridRef.current = { width: gridSize1, height: gridSize2 };
 
@@ -472,9 +474,7 @@ export default function NumThree(props) {
       for (let i = 0; i < count; i++) {
         const x = i % gridSize1;
         const y = Math.floor(i / gridSize1);
-        const isPaddingCell = systemType === 'endi'
-          && displayType === 'back2D'
-          && !isEndiBackVisibleIndex(i, gridSize1, gridSize2);
+        const isPaddingCell = false;
         dummy.position.set((((gridSize2 - gridSize1) / 2) + x - (gridSize2 / 2 - 0.5)) / (gridSize2 / 2), (y - (gridSize2 / 2 - 0.5)) / (gridSize2 / 2), 0); // 居中
         dummy.scale.setScalar(isPaddingCell ? 0 : 1);
 
@@ -614,11 +614,7 @@ export default function NumThree(props) {
         for (let x = 0; x < cells; x++) {
           const gx = col + x - center;
           const gy = row + y - center;
-          const isPaddingCell = getSysType() === 'endi'
-            && getDisplayType() === 'back2D'
-            && gx >= 0 && gx < width
-            && gy >= 0 && gy < height
-            && !isEndiBackVisibleCell(gy, gx, width, height);
+          const isPaddingCell = false;
           if (isPaddingCell) {
             continue;
           }

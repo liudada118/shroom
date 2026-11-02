@@ -4,7 +4,7 @@ import { loadVisualSettingValue, normalizeVisualSettingMax, VISUAL_COLOR_SETTING
 import { FORCE_METRIC_MODE, normalizePressureMetricMode } from '../util/pressureMetrics'
 
 // ─── 持久化设置值 ────────────────────────────────────────
-const DEFAULT_SETTINGS = { gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 30, height: 80, coherent: 1, autoColor: 1 }
+const DEFAULT_SETTINGS = { gauss: 0, color: 255, filter: 0, height: 80, coherent: 1, autoColor: 0 }
 
 function loadSettingValue() {
   return loadVisualSettingValue('default', DEFAULT_SETTINGS, maxObj.bed)
@@ -47,9 +47,9 @@ export const useEquipStore = create((set) => ({
   settingValueOptimal: initialSettings,
   num2DZoom: 100,
   pressureMetricMode: loadPressureMetricMode(),
-  threeDisplaySource: 'metric',
+  threeDisplaySource: 'adc',
   threeAdcColor: 255,
-  threeDisplayStatus: { pressure: {}, force: {} },
+  threeDisplayStatus: { adc: {}, pressure: {}, force: {} },
 
   // 框选工具
   selectArr: [],
@@ -94,7 +94,7 @@ export const useEquipStore = create((set) => ({
   setSettingValueMax: (s) => set({ settingValueMax: s }),
   setSettingValueOptimal: (s) => set({ settingValueOptimal: s }),
   setNum2DZoom: (s) => set({ num2DZoom: s }),
-  setThreeDisplaySource: (source) => set({ threeDisplaySource: source === 'adc' ? 'adc' : 'metric' }),
+  setThreeDisplaySource: () => set({ threeDisplaySource: 'adc' }),
   setThreeAdcColor: (value) => set({ threeAdcColor: Math.max(1, Math.min(255, Number(value) || 255)) }),
   setThreeDisplayStatus: (value) => set({ threeDisplayStatus: value }),
   setPressureMetricMode: (mode) => {
@@ -124,8 +124,10 @@ export const getSysType = () => useEquipStore.getState().systemType
 export const getSettingValue = () => ({
   ...useEquipStore.getState().settingValue,
   filter: 0,
-  gauss: 0.01,
+  gauss: 0,
   coherent: 1,
+  autoColor: 0,
+  color: useEquipStore.getState().threeAdcColor,
 })
 export const getFrameProcessingSettingValue = () => useEquipStore.getState().settingValue
 export const getDisplayType = () => useEquipStore.getState().displayType

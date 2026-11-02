@@ -1,5 +1,3 @@
-import { normalizeVisualColorSetting } from './visualSettingStorage'
-
 // Separable Gaussian convolution keeps calibrated decimals; the legacy blur rounds to ADC integers.
 export function blurThreeMatrix(values, width, height, sigma) {
   if (sigma <= 0) return [...values]
@@ -28,55 +26,40 @@ export function blurThreeMatrix(values, width, height, sigma) {
 }
 
 export function getThreeDisplaySettings(store) {
-  const adc = store.threeDisplaySource === 'adc'
   return {
     ...store.settingValue,
-    colorLimit: adc ? store.threeAdcColor : normalizeVisualColorSetting(store.settingValue.color),
-    // ADC and kPa have different magnitudes; this affects geometry only, not matrix values.
-    height: (Number(store.settingValue.height) || 1) * (adc ? 0.02 : 1),
-    mode: adc ? 'adc' : store.pressureMetricMode,
+    colorLimit: Math.max(1, Math.min(255, Number(store.threeAdcColor) || 255)),
+    height: (Number(store.settingValue.height) || 1) * 0.02,
+    filter: 0,
+    gauss: 0,
+    coherent: 1,
+    autoColor: 0,
+    mode: 'adc',
   }
+}
+
+export function prepareRawAdcDisplayMatrix(values, width, height) {
+  if (!Array.isArray(values) || values.length !== width * height) return null
+  return values.map(value => Number.isFinite(value) ? value : null)
 }
 
 export function createThreeDisplayProcessor() {
   let previousFrame
   let previousContext
-  let previousAt = 0
-  let previousIndex
-  let result = { pressure: {}, force: {} }
-  let previousDimensions = {}
 
   return (frame, store) => {
-    const mode = store.threeDisplaySource === 'adc' ? 'adc' : store.pressureMetricMode
-    const sigma = Math.max(0, Math.min(4, Number(store.settingValue.gauss) || 0))
-    const coherent = Math.max(1, Math.min(10, Number(store.settingValue.coherent) || 1))
-    const context = JSON.stringify([mode, sigma, coherent, store.systemType, store.dataStatus,
-      store.display, store.playbackRecordDate, frame?.orientation])
+    const context = JSON.stringify([store.systemType, frame?.orientation])
     if (frame === previousFrame && context === previousContext) return null
-    const now = Date.now()
-    const index = Number(store.history?.index)
-    const seek = store.dataStatus !== 'realtime' && Number.isFinite(previousIndex)
-      && Number.isFinite(index) && (index < previousIndex || index > previousIndex + 1)
-    const reset = context !== previousContext || now - previousAt > 1000 || seek
     const matrices = {}
-    for (const [key, values] of Object.entries(frame?.[mode] || {})) {
+    for (const [key, values] of Object.entries(frame?.adc || {})) {
       const { width, height } = frame.dimensions?.[key] || {}
       if (!width || !height || values.length !== width * height) continue
-      const clean = values.map(value => Number.isFinite(value) && value > 0 ? value : 0)
-      const spatial = blurThreeMatrix(clean, width, height, sigma)
-      const previous = result[store.pressureMetricMode]?.[key]
-      const sameShape = previousDimensions[key]?.width === width && previousDimensions[key]?.height === height
-      matrices[key] = !reset && sameShape && previous?.length === spatial.length && coherent > 1
-        ? spatial.map((value, i) => previous[i] + (value - previous[i]) / coherent)
-        : spatial
+      matrices[key] = prepareRawAdcDisplayMatrix(values, width, height)
     }
     previousFrame = frame
     previousContext = context
-    previousAt = now
-    previousIndex = index
-    previousDimensions = frame?.dimensions || {}
-    // Renderers select by the global physical unit; ADC is an independent display-only source.
-    result = { pressure: matrices, force: matrices, mode }
-    return result
+    // Legacy renderer aliases carry the same raw ADC. A statistics unit change
+    // cannot change the visual matrix or introduce a pressure/force substitute.
+    return { adc: matrices, pressure: matrices, force: matrices, mode: 'adc' }
   }
 }

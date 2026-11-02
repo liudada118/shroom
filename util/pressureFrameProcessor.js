@@ -4,10 +4,18 @@ const {
   isCalibrationFormula,
   calculateCalibrationPressureDistribution,
 } = require('./calibrationPressureAdapter')
+const {
+  isFullAlgorithmSensor,
+  processFullAlgorithmItem,
+  hasFullAlgorithmResult,
+  upgradeFullAlgorithmItem,
+  prepareFullAlgorithmHistory,
+  resetFullAlgorithmSessions,
+} = require('./fullAlgorithmProcessor')
 
-const PROCESSING_VERSION = 'backend-zero-native-v16-matrix-calibration-v2763'
-const ADC_PREPROCESSING_MODE = 'zero-baseline-native-filter30-v2763'
-const NATIVE_CALIBRATION_DISTRIBUTION = 'native-adc-matrix-to-pressure-filter30-v2763'
+const PROCESSING_VERSION = 'backend-zero-native-v17-seat-backrest-v2110'
+const ADC_PREPROCESSING_MODE = 'zero-baseline-seat-compensated-filter30-v2110'
+const NATIVE_CALIBRATION_DISTRIBUTION = 'native-seat-backrest-pressure-v2110'
 const CURVE_PRESSURE_DISTRIBUTION = 'curve-response-mean-normalized-v1'
 const POINT_PRESSURE_DISTRIBUTION = 'point-formula-v1'
 const DISPLAY_DIGITS = 1
@@ -115,7 +123,20 @@ function normalizeCalibrationAdcMatrix(values, key) {
   const count = matrixConfig.width * matrixConfig.height
   if (!count || !Array.isArray(values) || values.length !== count) return []
 
-  return applyCalibrationInputGate(values, key)
+  return prepareCalibrationAdcValues(values, key)
+}
+
+// This stage consumes zeroed display ADC, before the fixed gate. Keep it separate
+// from the snapshot's matrix API, which expects ADC that is already compensated.
+function prepareCalibrationAdcValues(values, key, formula = loadPressureFormula()) {
+  const compensateSeat = typeof formula.calculateMatrixPressureMap === 'function'
+    && getPressureSensor(key) === 'seat'
+  const compensated = (Array.isArray(values) ? values : []).map((value) => {
+    const adc = Number(value)
+    if (!Number.isFinite(adc) || adc <= 0) return 0
+    return compensateSeat ? 1.0069947916666666 * adc + 6.018421875000001 : adc
+  })
+  return applyCalibrationInputGate(compensated, key, formula)
 }
 
 // Compatibility export for callers that still use the old function name.
@@ -290,10 +311,12 @@ function calcPointFormulaPressureValues(values, key, formula) {
   })
 }
 
-function calcPressureFormulaStats(arr, key, pointAreaCm2 = getPressurePointAreaCm2(key)) {
+function calcPressureFormulaStats(arr, key, pointAreaCm2 = getPressurePointAreaCm2(key), calibrationInputPrepared = false) {
   const formula = loadPressureFormula()
   const sourceValues = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
-  const values = applyCalibrationInputGate(sourceValues, key, formula)
+  const values = calibrationInputPrepared
+    ? applyCalibrationInputGate(sourceValues, key, formula)
+    : prepareCalibrationAdcValues(sourceValues, key, formula)
   const rawPress = values.reduce((sum, value) => sum + value, 0)
   const rawMax = values.length ? Math.max(...values) : 0
   const pointArea = Number(pointAreaCm2) > 0 ? Number(pointAreaCm2) : 1
@@ -411,7 +434,7 @@ function calcPressureFormulaStats(arr, key, pointAreaCm2 = getPressurePointAreaC
 
 function buildCanonicalMetricArrays(adcValues, key, preGateValues = adcValues) {
   const matrixConfig = getMatrixConfig(key, adcValues)
-  const stats = calcPressureFormulaStats(adcValues, key, matrixConfig.pointAreaCm2)
+  const stats = calcPressureFormulaStats(adcValues, key, matrixConfig.pointAreaCm2, true)
   const source = Array.isArray(preGateValues) ? preGateValues : []
   const pressureArr = stats.pressureValues.map((value) => {
     const numeric = Number(value)
@@ -484,21 +507,32 @@ function buildProcessingMetadata(config, key) {
     pressureDistribution: getPressureDistributionMode(),
     calibrationInputGrid: 'display-matrix-post-interpolation',
     calibrationInputMinAdc: getCalibrationInputMinAdc(key),
-    calibrationMethod: 'v2763-filter30-weight-normalization-or-human-x2.2-gt300',
+    calibrationMethod: 'v2110-compensated-filter30-weight-normalization-or-human-x2.2-gt300',
+    calibrationAdcCompensation: getPressureSensor(key) === 'seat'
+      && typeof loadPressureFormula().calculateMatrixPressureMap === 'function'
+      ? { scale: 1.0069947916666666, offset: 6.018421875000001 }
+      : { scale: 1, offset: 0 },
     statisticsSource: 'pressureArr+calibrationValidMask',
   }
 }
 
 function processMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG) {
+  if (isFullAlgorithmSensor(key) && typeof loadPressureFormula().calculateSensorSequence === 'function') {
+    return processFullAlgorithmItem(key, item)
+  }
+  // A fresh processing request owns its arr (including a newly applied zero
+  // baseline). History source selection belongs to ensureProcessedMatrixItem.
   const source = Array.isArray(item.arr) ? item.arr : []
   const config = normalizeFrameProcessingConfig(processingConfig)
-  const arr = normalizeCalibrationAdcMatrix(source, key)
-  if (!arr.length && source.length) return { ...item }
-  const metrics = buildCanonicalMetricArrays(arr, key, source)
+  const calibrationAdcArr = normalizeCalibrationAdcMatrix(source, key)
+  if (!calibrationAdcArr.length && source.length) return { ...item }
+  const arr = applyCalibrationInputGate(source, key)
+  const metrics = buildCanonicalMetricArrays(calibrationAdcArr, key, source)
   return {
     ...item,
     rawAdcArr: Array.isArray(item.rawAdcArr) ? [...item.rawAdcArr] : [...source],
-    calibrationAdcArr: [...arr],
+    calibrationSourceAdcArr: [...source],
+    calibrationAdcArr,
     arr,
     ...metrics,
     processing: buildProcessingMetadata(config, key),
@@ -506,6 +540,9 @@ function processMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROC
 }
 
 function hasCanonicalMetricArrays(item = {}) {
+  if (item.algorithmMetrics && typeof loadPressureFormula().calculateSensorSequence === 'function') {
+    return hasFullAlgorithmResult(item)
+  }
   const length = Array.isArray(item.arr) ? item.arr.length : 0
   const pressureConfig = loadPressureConfig()
   return item.processing?.version === PROCESSING_VERSION
@@ -523,16 +560,24 @@ function hasCanonicalMetricArrays(item = {}) {
 }
 
 function ensureProcessedMatrixItem(key, item = {}, processingConfig = DEFAULT_FRAME_PROCESSING_CONFIG) {
+  if (isFullAlgorithmSensor(key) && typeof loadPressureFormula().calculateSensorSequence === 'function') {
+    const upgraded = upgradeFullAlgorithmItem(key, item)
+    if (upgraded) return upgraded
+  }
   if (hasCanonicalMetricArrays(item)) return { ...item }
-  const source = Array.isArray(item.calibrationAdcArr)
-    ? item.calibrationAdcArr
-    : Array.isArray(item.rawAdcArr)
-      ? item.rawAdcArr
-      : item.arr
+  const source = Array.isArray(item.calibrationSourceAdcArr)
+    ? item.calibrationSourceAdcArr
+    : Array.isArray(item.calibrationAdcArr)
+      ? item.calibrationAdcArr
+      : Array.isArray(item.rawAdcArr)
+        ? item.rawAdcArr
+        : item.arr
   return processMatrixItem(key, { ...item, arr: source }, item.processing || processingConfig)
 }
 
 module.exports = {
+  prepareFullAlgorithmHistory,
+  resetFullAlgorithmSessions,
   PROCESSING_VERSION,
   ADC_PREPROCESSING_MODE,
   NATIVE_CALIBRATION_DISTRIBUTION,
@@ -549,6 +594,7 @@ module.exports = {
   getPressurePointAreaCm2,
   gaussianBlur,
   normalizeCalibrationAdcMatrix,
+  prepareCalibrationAdcValues,
   getCalibrationInputMinAdc,
   applyCalibrationInputGate,
   processAdcMatrix,

@@ -15,7 +15,8 @@ const { broadcast } = require('../websocket')
 const { connectPort, rescanPort, portWrite, stopPort, detectBaudRate, sendMacCommand, resolveDeviceType } = require('../serial/SerialManager')
 const { colAndSendData, sendData, clearPlayTimer, ensureRealtimeTimer, startPlayback, changePlaySpeed, getPlaybackSnapshot, saveDataDirection } = require('../services/DataService')
 const { loadPressureConfig, savePressureConfig, listPressureFormulaFiles } = require('../services/PressureConfig')
-const { normalizeFrameProcessingConfig, ensureProcessedMatrixItem } = require('../../util/pressureFrameProcessor')
+const { normalizeFrameProcessingConfig, ensureProcessedMatrixItem, prepareFullAlgorithmHistory } = require('../../util/pressureFrameProcessor')
+const { captureAlgorithmZeroBaselines } = require('../../util/fullAlgorithmProcessor')
 const { getAllCached, setTypeToCache, removeFromCache, clearCache } = require('../../util/serialCache')
 const { validateDeviceList, validateDeviceAgainstCache, SUPPORTED_DEVICE_TYPES } = require('../../util/deviceConfigValidation')
 
@@ -178,7 +179,8 @@ async function loadImportedPlayback(fileName) {
 
 async function loadHistoryPlayback(record, source, db) {
   if (shouldLoadImportedPlayback(record, source)) {
-    return loadImportedPlayback(record)
+    const imported = await loadImportedPlayback(record)
+    return { ...imported, rows: prepareFullAlgorithmHistory(imported.rows || []) }
   }
   const result = await dbGetData({ db, params: [record] })
   return {
@@ -224,7 +226,7 @@ function normalizeReportFrame(row, keys) {
   keys.forEach((key) => {
     const source = ensureProcessedMatrixItem(key, frame[key] || {}, state.frameProcessingConfig)
     const arr = Array.isArray(source.arr) ? source.arr.map((value) => Number(value) || 0) : []
-    const size = inferMatrixSize(key, arr)
+    const size = inferMatrixSizeFromItem(key, source, arr)
     result.data[key] = {
       ...source,
       arr,
@@ -705,6 +707,7 @@ function resolveZeroState(req) {
     enabled,
     zeroTime: enabled ? (source.zeroTime || Date.now()) : null,
     data: enabled ? data : {},
+    algorithmRawData: enabled ? captureAlgorithmZeroBaselines(state.dataMap) : {},
   }
 }
 

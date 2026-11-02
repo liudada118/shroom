@@ -6,28 +6,25 @@ import * as echarts from 'echarts'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { localAddress } from '../../util/constant'
 import { buildFallbackParams } from '../../util/request'
-import { FORCE_METRIC_MODE, getPressureMetricDisplay, getPressurePointAreaCm2 } from '../../util/pressureMetrics'
+import { getRawAdcValues, getPhysicalFrameSummary, summarizeAdcValues } from '../../components/contrast/adcMetrics'
 import { useEquipStore } from '../../store/equipStore'
 import { jetWhite3NoWhite } from '../../assets/util/line'
 import { AsyncState } from '../../ui'
 import './CopReport.scss'
 
 const COP_REPORT_SELECTION_PREFIX = 'copReportSelection:'
-const EFFECTIVE_THRESHOLD = 5
-const POINT_AREA_CM2 = 1
 const POINT_SPACING_MM = 10
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
-const formatNumber = (value, digits = 2) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '-'
+const formatNumber = (value, digits = 2) => value != null && Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '-'
+const meanMetric = (items, field) => !items.length || items.some(item => item[field] == null)
+  ? null : items.reduce((sum, item) => sum + item[field], 0) / items.length
+const maxMetric = (items, field) => !items.length || items.some(item => item[field] == null)
+  ? null : Math.max(...items.map(item => item[field]))
 const safeArray = (value) => Array.isArray(value) ? value : []
-const getMatrixMetricValues = (matrix, metricMode = FORCE_METRIC_MODE) => {
-  const source = metricMode === FORCE_METRIC_MODE ? matrix?.forceArr : matrix?.pressureArr
-  const length = safeArray(matrix?.arr).length || safeArray(source).length
-  return Array.from({ length }, (_, index) => {
-    const value = Number(source?.[index])
-    return Number.isFinite(value) && value > 0 ? value : 0
-  })
-}
+const pressureFromForceArea = (force, area) => force != null && area != null && Number.isFinite(force) && area > 0
+  ? 10 * force / area : null
+const getMatrixMetricValues = (matrix) => getRawAdcValues(matrix)
 const downsample = (items, limit = 160) => {
   if (!Array.isArray(items) || items.length <= limit) return items || []
   const bucketSize = Math.ceil(items.length / limit)
@@ -53,8 +50,8 @@ const parseMaybeJson = (value) => {
 
 const inferSize = (matrix) => {
   const arr = safeArray(matrix?.arr)
-  const width = Number(matrix?.width) || Number(matrix?.col)
-  const height = Number(matrix?.height) || Number(matrix?.row)
+  const width = Number(matrix?.matrixMeta?.width) || Number(matrix?.width) || Number(matrix?.col)
+  const height = Number(matrix?.matrixMeta?.height) || Number(matrix?.height) || Number(matrix?.row)
   if (width && height) return { width, height }
   const side = Math.sqrt(arr.length)
   if (Number.isInteger(side) && side > 0) return { width: side, height: side }
@@ -172,91 +169,49 @@ const normalizeSelections = (selectValue, matrixKey, matrixSize) => {
   }).filter(Boolean)
 }
 
-const calcFrameMetrics = (matrix, rect = null, matrixKey = '', metricMode = FORCE_METRIC_MODE) => {
-  const adcValues = safeArray(matrix?.arr)
-  const pressureValues = getMatrixMetricValues(matrix, 'pressure')
-  const forceValues = getMatrixMetricValues(matrix, FORCE_METRIC_MODE)
-  const metricValues = metricMode === FORCE_METRIC_MODE ? forceValues : pressureValues
-  const validMaskSource = safeArray(matrix?.calibrationValidMask).length === metricValues.length
-    ? matrix.calibrationValidMask
-    : safeArray(matrix?.calibrationAdcArr).length === metricValues.length
-      ? matrix.calibrationAdcArr
-      : adcValues
+const calcFrameMetrics = (matrix, rect = null) => {
+  const raw = getRawAdcValues(matrix)
   const { width, height } = inferSize(matrix)
   const scope = rect || { xStart: 0, yStart: 0, xEnd: width, yEnd: height }
-  let pMax = 0
-  let pSum = 0
-  let adcSum = 0
-  let adcMax = 0
-  let effectivePoints = 0
-  let averagePointCount = 0
-  let weightSum = 0
-  let xWeighted = 0
-  let yWeighted = 0
-
+  const scoped = []
   for (let y = scope.yStart; y < scope.yEnd; y++) {
-    for (let x = scope.xStart; x < scope.xEnd; x++) {
-      const index = y * width + x
-      const adcValue = Number(adcValues[index]) || 0
-      const metricValue = Number(metricValues[index]) || 0
-      pMax = Math.max(pMax, metricValue)
-      adcMax = Math.max(adcMax, adcValue)
-      adcSum += adcValue
-      pSum += metricValue
-      if (Number(validMaskSource[index]) > 0) averagePointCount++
-      if (metricValue > 0) {
-        effectivePoints++
-        const weight = metricValue
-        weightSum += weight
-        xWeighted += x * weight
-        yWeighted += y * weight
-      }
-    }
+    for (let x = scope.xStart; x < scope.xEnd; x++) scoped.push(raw[y * width + x])
   }
-
-  let forceSum = 0
-  let pressureMax = 0
-  for (let y = scope.yStart; y < scope.yEnd; y++) {
-    for (let x = scope.xStart; x < scope.xEnd; x++) {
-      const index = y * width + x
-      forceSum += Number(forceValues[index]) || 0
-      pressureMax = Math.max(pressureMax, Number(pressureValues[index]) || 0)
-    }
-  }
-  const pAvg = averagePointCount ? pSum / averagePointCount : 0
-  const copXIndex = weightSum ? xWeighted / weightSum : width / 2
-  const copYIndex = weightSum ? yWeighted / weightSum : height / 2
+  const scopeWidth = Math.max(1, scope.xEnd - scope.xStart)
+  const scopeHeight = Math.max(1, scope.yEnd - scope.yStart)
+  const adc = summarizeAdcValues(scoped, scopeWidth, scopeHeight)
+  const full = getPhysicalFrameSummary(matrix, rect)
+  const centerX = adc.center ? scope.xStart + adc.center.x * (scopeWidth - 1) : null
+  const centerY = adc.center ? scope.yStart + adc.center.y * (scopeHeight - 1) : null
   return {
-    pMax,
-    pAvg,
-    pSum,
-    forceSum,
-    pressureMax,
-    adcSum,
-    adcMax,
-    effectivePoints,
-    averagePointCount,
-    effectiveArea: effectivePoints * getPressurePointAreaCm2(matrixKey),
-    copX: (copXIndex - (width - 1) / 2) * POINT_SPACING_MM,
-    copY: ((height - 1) / 2 - copYIndex) * POINT_SPACING_MM,
+    pAvg: full.pressureKPa,
+    pSum: full.forceN,
+    forceSum: full.forceN,
+    effectiveArea: full.areaCm2,
+    adcSum: adc.sum,
+    adcMax: adc.max,
+    adcAverage: adc.average,
+    effectivePoints: adc.points,
+    copX: centerX == null ? null : (centerX - (width - 1) / 2) * POINT_SPACING_MM,
+    copY: centerY == null ? null : ((height - 1) / 2 - centerY) * POINT_SPACING_MM,
+    statisticsSource: 'full-sensor-force-area-pressure-and-raw-adc',
   }
 }
-
-const buildAverageMap = (frames, matrixKey, metricMode = FORCE_METRIC_MODE) => {
+const buildAverageMap = (frames, matrixKey) => {
   const firstMatrix = frames[0]?.data?.[matrixKey]
   const { width, height } = inferSize(firstMatrix)
   const sum = Array(width * height).fill(0)
   let count = 0
   frames.forEach((frame) => {
-    const arr = getMatrixMetricValues(frame?.data?.[matrixKey], metricMode)
-    if (arr.length !== sum.length) return
+    const arr = getMatrixMetricValues(frame?.data?.[matrixKey])
+    if (arr.length !== sum.length || arr.some(value => value == null)) return
     count++
     arr.forEach((value, index) => { sum[index] += Number(value) || 0 })
   })
-  return { arr: count ? sum.map((value) => value / count) : sum, width, height }
+  return { arr: count ? sum.map((value) => value / count) : sum.map(() => null), width, height }
 }
 
-const buildSingleAnalysis = (payload, matrixKey, metricMode = FORCE_METRIC_MODE) => {
+const buildSingleAnalysis = (payload, matrixKey, metricMode = 'adc') => {
   const frames = safeArray(payload?.frames)
   if (!frames.length || !matrixKey) return null
   const averageMatrix = buildAverageMap(frames, matrixKey, metricMode)
@@ -277,52 +232,46 @@ const buildSingleAnalysis = (payload, matrixKey, metricMode = FORCE_METRIC_MODE)
   const avgSpeed = durationSeconds ? pathLength / durationSeconds : 0
   const stability = clamp(100 - Math.hypot(avgCopX, avgCopY) * 0.35 - pathLength * 0.08 - avgSpeed * 1.2 - (swayX + swayY) * 0.2, 0, 100)
   const totalSummary = {
-    pMax: Math.max(...metrics.map((item) => item.pMax), 0),
-    pAvg: metrics.length ? metrics.reduce((sum, item) => sum + item.pAvg, 0) / metrics.length : 0,
-    pSum: metrics.length ? metrics.reduce((sum, item) => sum + item.pSum, 0) / metrics.length : 0,
-    forceSum: metrics.length ? metrics.reduce((sum, item) => sum + item.forceSum, 0) / metrics.length : 0,
-    adcSum: metrics.length ? metrics.reduce((sum, item) => sum + item.adcSum, 0) / metrics.length : 0,
-    adcMax: Math.max(...metrics.map((item) => item.adcMax), 0),
-    effectiveArea: metrics.length ? metrics.reduce((sum, item) => sum + item.effectiveArea, 0) / metrics.length : 0,
-    effectivePoints: metrics.length ? metrics.reduce((sum, item) => sum + item.effectivePoints, 0) / metrics.length : 0,
-    copX: avgCopX,
-    copY: avgCopY,
-    pathLength,
-    avgSpeed,
-    swayX,
-    swayY,
-    stability,
+    pAvg: pressureFromForceArea(meanMetric(metrics, 'forceSum'), meanMetric(metrics, 'effectiveArea')),
+    pSum: meanMetric(metrics, 'forceSum'),
+    forceSum: meanMetric(metrics, 'forceSum'),
+    adcSum: meanMetric(metrics, 'adcSum'),
+    adcMax: maxMetric(metrics, 'adcMax'),
+    effectiveArea: meanMetric(metrics, 'effectiveArea'),
+    effectivePoints: meanMetric(metrics, 'effectivePoints'),
+    copX: copSeries.length ? avgCopX : null,
+    copY: copSeries.length ? avgCopY : null,
+    pathLength: copSeries.length ? pathLength : null,
+    avgSpeed: copSeries.length ? avgSpeed : null,
+    swayX: copSeries.length ? swayX : null,
+    swayY: copSeries.length ? swayY : null,
+    stability: copSeries.length ? stability : null,
   }
 
   const selectionAnalyses = selections.map((selection) => {
     const series = frames.map((frame) => calcFrameMetrics(frame.data?.[matrixKey], selection.rect, matrixKey, metricMode))
-    const regionCop = series.filter((item) => item.effectivePoints > 0)
+    const regionCop = series.filter((item) => item.effectivePoints > 0 && Number.isFinite(item.copX) && Number.isFinite(item.copY))
     const regionPath = regionCop.reduce((sum, item, index) => {
       if (!index) return 0
       const prev = regionCop[index - 1]
       return sum + Math.hypot(item.copX - prev.copX, item.copY - prev.copY)
     }, 0)
-    const pSum = series.length ? series.reduce((sum, item) => sum + item.pSum, 0) / series.length : 0
-    const forceSum = series.length ? series.reduce((sum, item) => sum + item.forceSum, 0) / series.length : 0
-    const ratio = totalSummary.forceSum ? forceSum / totalSummary.forceSum * 100 : 0
-    const risk = ratio >= 30 || Math.max(...series.map((item) => item.pressureMax), 0) >= 70 ? '高' : ratio >= 12 ? '中' : '低'
+    const pSum = meanMetric(series, 'forceSum')
+    const forceSum = meanMetric(series, 'forceSum')
     return {
       ...selection,
       series,
       summary: {
-        pMax: Math.max(...series.map((item) => item.pMax), 0),
-        pAvg: series.length ? series.reduce((sum, item) => sum + item.pAvg, 0) / series.length : 0,
+        pAvg: meanMetric(series, 'pAvg'),
         pSum,
         forceSum,
-        pressureRatio: ratio,
         adcSum: series.length ? series.reduce((sum, item) => sum + item.adcSum, 0) / series.length : 0,
         adcMax: Math.max(...series.map((item) => item.adcMax), 0),
-        effectiveArea: series.length ? series.reduce((sum, item) => sum + item.effectiveArea, 0) / series.length : 0,
-        effectivePoints: series.length ? series.reduce((sum, item) => sum + item.effectivePoints, 0) / series.length : 0,
-        copX: regionCop.length ? regionCop.reduce((sum, item) => sum + item.copX, 0) / regionCop.length : 0,
-        copY: regionCop.length ? regionCop.reduce((sum, item) => sum + item.copY, 0) / regionCop.length : 0,
-        pathLength: regionPath,
-        risk,
+        effectiveArea: meanMetric(series, 'effectiveArea'),
+        effectivePoints: meanMetric(series, 'effectivePoints'),
+        copX: regionCop.length ? regionCop.reduce((sum, item) => sum + item.copX, 0) / regionCop.length : null,
+        copY: regionCop.length ? regionCop.reduce((sum, item) => sum + item.copY, 0) / regionCop.length : null,
+        pathLength: regionCop.length ? regionPath : null,
       },
     }
   })
@@ -340,7 +289,7 @@ const buildSingleAnalysis = (payload, matrixKey, metricMode = FORCE_METRIC_MODE)
   }
 }
 
-const buildAnalysis = (payload, metricMode = FORCE_METRIC_MODE) => {
+const buildAnalysis = (payload, metricMode = 'adc') => {
   const keys = getReportMatrixKeys(payload)
   const orderedKeys = keys
   const analyses = orderedKeys
@@ -354,17 +303,19 @@ const buildAnalysis = (payload, metricMode = FORCE_METRIC_MODE) => {
 }
 
 const heatColor = (value, max) => {
+  if (value == null || !Number.isFinite(Number(value))) return 'rgba(160,160,160,0.2)'
   if (!max || value <= 0) return 'rgb(0,153,255)'
   const [r, g, b] = jetWhite3NoWhite(0, max, value)
   return `rgb(${r},${g},${b})`
 }
 
-const HEATMAP_DESCRIPTION = 'X轴为传感器横向点位，Y轴为传感器纵向点位；颜色表示对应点位的压力/压强大小。'
-const COP_DESCRIPTION = 'X轴距离表示压力中心左右偏移的距离；Y轴距离表示压力中心上下偏移的距离，单位均为 mm。'
+const HEATMAP_DESCRIPTION = 'X轴为横向点位，Y轴为纵向点位；颜色仅表示原始 ADC，未进行补偿、过滤或置零。'
+const COP_DESCRIPTION = '基于原始 ADC 加权的空间中心。X轴为左右偏移，Y轴为上下偏移，单位均为 mm；不代表逐点力学真值。'
 const FORCE_TREND_DESCRIPTION = 'X轴表示采集时间，单位为 s；Y轴表示压力总和，单位为 N。'
-const COP_DX_TREND_DESCRIPTION = 'X轴表示采集时间，单位为 s；Y轴表示压力中心左右偏移距离，单位为 mm。'
+const COP_DX_TREND_DESCRIPTION = 'X轴为采集时间(s)；Y轴为原始 ADC 加权中心的左右偏移(mm)。'
 
-const getForceTotalSeries = (items) => safeArray(items).map((item) => Number(item?.forceSum ?? item?.pSum)).filter(Number.isFinite)
+const getForceTotalSeries = (items) => safeArray(items).map((item) => item?.forceSum ?? null)
+const getAdcTotalSeries = (items) => safeArray(items).map((item) => item?.adcSum ?? null)
 
 function Heatmap({ matrix, selections = [], activeSelection = null, title, description = HEATMAP_DESCRIPTION }) {
   const arr = safeArray(matrix?.arr)
@@ -464,7 +415,7 @@ function LineChart({
   description = '',
 }) {
   const source = series
-    .map((value, index) => ({ value: Number(value), index }))
+    .map((value, index) => ({ value: value == null ? NaN : Number(value), index }))
     .filter((item) => Number.isFinite(item.value))
   const sampled = downsample(source, 180)
   const sampleRateValue = Number(sampleRate)
@@ -642,10 +593,9 @@ function CopReport() {
   const [loading, setLoading] = useState(true)
   const [payload, setPayload] = useState(null)
   const [exporting, setExporting] = useState(false)
-  const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
-  const metricDisplay = useMemo(() => getPressureMetricDisplay(pressureMetricMode), [pressureMetricMode])
-  const metricName = metricDisplay.name
-  const metricUnit = metricDisplay.unit
+  const pressureMetricMode = 'adc'
+  const metricName = 'ADC'
+  const metricUnit = 'ADC'
   const query = new URLSearchParams(location.search)
   const date = query.get('date') || query.get('time') || ''
   const source = query.get('source') || ''
@@ -745,7 +695,7 @@ function CopReport() {
       </div>
 
       <main className="cop-report-sheet">
-        <h1>压力中心（COP）分析报告</h1>
+        <h1>原始 ADC 加权中心分析报告</h1>
         <section className="report-meta">
           <div><span>历史文档名称：</span>{payload.name || payload.date}</div>
           <div><span>历史文档ID：</span>{payload.id}</div>
@@ -762,8 +712,7 @@ function CopReport() {
             <MetricCard label="采样时长" value={formatNumber(analysis.durationSeconds, 2)} unit="秒" />
             <MetricCard label="采样率" value={formatNumber(analysis.sampleRate, 1)} unit="帧/秒" />
             <MetricCard label="矩阵尺寸" value={`${size.width} x ${size.height}`} unit="" />
-            <MetricCard label="有效阈值" value={EFFECTIVE_THRESHOLD} unit="kPa" />
-            <MetricCard label={`${metricName}单位`} value={metricUnit} unit="" />
+            <MetricCard label="矩阵数据" value="原始 ADC" unit="" />
             <MetricCard label="坐标单位" value="mm" unit="" />
           </div>
         </ReportSection>
@@ -779,15 +728,11 @@ function CopReport() {
 
         <ReportSection index="3" title={`${primaryLabel}统计指标`}>
           <DataTable
-            columns={[`最大${metricName} (${metricUnit})`, `平均${metricName} (${metricUnit})`, `${metricName}总和 (${metricUnit})`, 'ADC总和 (ADC)', 'ADC最大值 (ADC)', '有效面积 (cm²)', '有效点数 (个)']}
+            columns={['总力 F (N)', '面积 A (cm²)', '压强 P (kPa)']}
             rows={[[
-              formatNumber(totalSummary.pMax),
-              formatNumber(totalSummary.pAvg),
               formatNumber(totalSummary.pSum),
-              formatNumber(totalSummary.adcSum, 0),
-              formatNumber(totalSummary.adcMax, 0),
               formatNumber(totalSummary.effectiveArea),
-              formatNumber(totalSummary.effectivePoints, 0),
+              formatNumber(totalSummary.pAvg),
             ]]}
           />
         </ReportSection>
@@ -814,17 +759,15 @@ function CopReport() {
         <ReportSection index="5" title="框选区域总览">
           {selections.length ? (
             <DataTable
-              columns={['序号', '区域名称', '形状类型', '面积 (cm²)', `${metricName}总和 (${metricUnit})`, '占当前传感面比例 (%)', `最大${metricName} (${metricUnit})`, `平均${metricName} (${metricUnit})`, '风险等级']}
+              columns={['序号', '区域名称', '形状类型', '矩阵格数', 'ADC总和', 'ADC最大值', 'ADC正值点数']}
               rows={selections.map((selection, index) => [
                 index + 1,
                 selection.name,
                 selection.shapeType,
-                formatNumber(selection.rect.width * selection.rect.height * POINT_AREA_CM2),
-                formatNumber(selection.summary.pSum),
-                formatNumber(selection.summary.pressureRatio, 1),
-                formatNumber(selection.summary.pMax),
-                formatNumber(selection.summary.pAvg),
-                selection.summary.risk,
+                selection.rect.width * selection.rect.height,
+                formatNumber(selection.summary.adcSum),
+                formatNumber(selection.summary.adcMax),
+                formatNumber(selection.summary.effectivePoints, 0),
               ])}
             />
           ) : (
@@ -839,19 +782,15 @@ function CopReport() {
                 <h3><span style={{ background: selection.color }}>{index + 1}</span>{selection.name}</h3>
                 <div className="selection-detail-grid">
                   <Heatmap matrix={averageMatrix} selections={[selection]} activeSelection={selection} title="区域叠加图" />
-                  <LineChart series={getForceTotalSeries(selection.series)} title="区域压力总和趋势 (N)" color={selection.color} yLabel="压力总和" yUnit="N" sampleRate={sampleRate} description={FORCE_TREND_DESCRIPTION} />
+                  <LineChart series={getAdcTotalSeries(selection.series)} title="区域 ADC 总和趋势" color={selection.color} yLabel="ADC总和" yUnit="ADC" sampleRate={sampleRate} description="局部原始 ADC 空间统计，不换算局部力或压强。" />
                   <CopChart series={selection.series} title={`${primaryLabel}区域局部COP轨迹 (mm)`} />
                   <DataTable
                     columns={['指标', '数值']}
                     rows={[
-                      [`最大${metricName} (${metricUnit})`, formatNumber(selection.summary.pMax)],
-                      [`平均${metricName} (${metricUnit})`, formatNumber(selection.summary.pAvg)],
-                      [`${metricName}总和 (${metricUnit})`, `${formatNumber(selection.summary.pSum)} (${formatNumber(selection.summary.pressureRatio, 1)}%)`],
                       ['ADC总和 (ADC)', formatNumber(selection.summary.adcSum, 0)],
-                      ['有效面积 (cm²)', formatNumber(selection.summary.effectiveArea)],
-                      ['有效点数 (个)', formatNumber(selection.summary.effectivePoints, 0)],
-                      ['局部COP (mm)', `(${formatNumber(selection.summary.copX)}, ${formatNumber(selection.summary.copY)})`],
-                      ['风险等级', selection.summary.risk],
+                      ['ADC最大值 (ADC)', formatNumber(selection.summary.adcMax)],
+                      ['ADC正值点数 (个)', formatNumber(selection.summary.effectivePoints, 0)],
+                      ['局部 ADC 加权中心 (mm)', `(${formatNumber(selection.summary.copX)}, ${formatNumber(selection.summary.copY)})`],
                     ]}
                   />
                   <div className="region-info">
@@ -880,14 +819,14 @@ function CopReport() {
           <div className="appendix-grid">
             <div>
               <b>计算公式</b>
-              <p>COP坐标：Xcop = Σ(Pi * xi) / ΣPi，Ycop = Σ(Pi * yi) / ΣPi。</p>
+              <p>ADC 加权中心：X = Σ(ADCᵢ × xᵢ) / ΣADCᵢ，Y = Σ(ADCᵢ × yᵢ) / ΣADCᵢ。</p>
               <p>轨迹长度：相邻COP点距离累加。</p>
               <p>平均速度：轨迹长度 / 有效采样时长。</p>
             </div>
             <div>
-              <b>阈值配置</b>
-              <p>有效阈值：{EFFECTIVE_THRESHOLD} kPa。</p>
-              <p>风险等级：结合压力占比和最大压强估算。</p>
+              <b>物理统计口径</b>
+              <p>总力 F 与面积 A 来自附件算法，压强 P = 10F/A (kPa)。</p>
+              <p>框选仅统计原始 ADC；不分配局部力、面积或压强。</p>
             </div>
             <div>
               <b>数据说明</b>
@@ -903,12 +842,11 @@ function CopReport() {
   )
 }
 
-function SurfaceAnalysisReport({ analysis, indexLabel, metricMode = FORCE_METRIC_MODE }) {
+function SurfaceAnalysisReport({ analysis, indexLabel, metricMode = 'adc' }) {
   const { totalSummary, averageMatrix, metrics, selections, size, matrixKey, sampleRate } = analysis
   const label = getMatrixLabel(matrixKey)
-  const metricDisplay = getPressureMetricDisplay(metricMode)
-  const metricName = metricDisplay.name
-  const metricUnit = metricDisplay.unit
+  const metricName = 'ADC'
+  const metricUnit = 'ADC'
   return (
     <ReportSection index={indexLabel} title={`${label}${metricName}分布与COP分析`}>
       <div className="surface-summary">
@@ -924,15 +862,11 @@ function SurfaceAnalysisReport({ analysis, indexLabel, metricMode = FORCE_METRIC
         <LineChart series={getForceTotalSeries(metrics)} title={`${label}压力总和趋势 (N)`} color="#1d4ed8" yLabel="压力总和" yUnit="N" sampleRate={sampleRate} description={FORCE_TREND_DESCRIPTION} />
       </div>
       <DataTable
-        columns={[`最大${metricName} (${metricUnit})`, `平均${metricName} (${metricUnit})`, `${metricName}总和 (${metricUnit})`, 'ADC总和 (ADC)', 'ADC最大值 (ADC)', '有效面积 (cm²)', '有效点数 (个)']}
+        columns={['总力 F (N)', '面积 A (cm²)', '压强 P (kPa)']}
         rows={[[
-          formatNumber(totalSummary.pMax),
-          formatNumber(totalSummary.pAvg),
           formatNumber(totalSummary.pSum),
-          formatNumber(totalSummary.adcSum, 0),
-          formatNumber(totalSummary.adcMax, 0),
           formatNumber(totalSummary.effectiveArea),
-          formatNumber(totalSummary.effectivePoints, 0),
+          formatNumber(totalSummary.pAvg),
         ]]}
       />
       <DataTable
@@ -954,17 +888,15 @@ function SurfaceAnalysisReport({ analysis, indexLabel, metricMode = FORCE_METRIC
               <h3><span style={{ background: selection.color }}>{index + 1}</span>{selection.name}</h3>
               <div className="selection-detail-grid">
                 <Heatmap matrix={averageMatrix} selections={[selection]} activeSelection={selection} title="区域叠加图" />
-                <LineChart series={getForceTotalSeries(selection.series)} title="区域压力总和趋势 (N)" color={selection.color} yLabel="压力总和" yUnit="N" sampleRate={sampleRate} description={FORCE_TREND_DESCRIPTION} />
+                <LineChart series={getAdcTotalSeries(selection.series)} title="区域 ADC 总和趋势" color={selection.color} yLabel="ADC总和" yUnit="ADC" sampleRate={sampleRate} description="局部原始 ADC 空间统计，不换算局部力或压强。" />
                 <CopChart series={selection.series} title={`${label}区域局部COP轨迹 (mm)`} />
                 <DataTable
                   columns={['指标', '数值']}
                   rows={[
-                    [`最大${metricName} (${metricUnit})`, formatNumber(selection.summary.pMax)],
-                    [`平均${metricName} (${metricUnit})`, formatNumber(selection.summary.pAvg)],
-                    [`${metricName}总和 (${metricUnit})`, `${formatNumber(selection.summary.pSum)} (${formatNumber(selection.summary.pressureRatio, 1)}%)`],
-                    ['有效面积 (cm²)', formatNumber(selection.summary.effectiveArea)],
-                    ['有效点数 (个)', formatNumber(selection.summary.effectivePoints, 0)],
-                    ['局部COP (mm)', `(${formatNumber(selection.summary.copX)}, ${formatNumber(selection.summary.copY)})`],
+                    ['ADC总和 (ADC)', formatNumber(selection.summary.adcSum)],
+                    ['ADC最大值 (ADC)', formatNumber(selection.summary.adcMax)],
+                    ['ADC正值点数 (个)', formatNumber(selection.summary.effectivePoints, 0)],
+                    ['局部 ADC 加权中心 (mm)', `(${formatNumber(selection.summary.copX)}, ${formatNumber(selection.summary.copY)})`],
                   ]}
                 />
               </div>

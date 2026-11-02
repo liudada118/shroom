@@ -1,9 +1,11 @@
 'use strict'
 
 const { distributeWeightPointPressures } = require('./weightPointPressureNormalization')
+const fullAlgorithm = require('./seatBackrestAlgorithm')
 
-const DEFAULT_PRESSURE_FORMULA_PROFILE = 'adc-matrix-to-pressure-filter30-v2.7.63'
+const DEFAULT_PRESSURE_FORMULA_PROFILE = 'seatBackrestPressure_v2.11.0'
 const LEGACY_NATIVE_CALIBRATION_PROFILES = new Set([
+  'adc-matrix-to-pressure-filter30-v2.7.63',
   'point_pressure_calibration',
   'calibration_v2746_seat_v2752_backrest',
 ])
@@ -17,26 +19,27 @@ const NATIVE_HUMAN_COEFFICIENT = 2.2
 const NATIVE_SEAT_PROFILE = {
   topStartRank: 5,
   topEndRank: 70,
-  lowMode: 'zero-origin',
-  leftSlope: 0.042221396731054977,
+  lowMode: 'offset-origin',
+  lowAdcOrigin: 6.018421875000001,
+  leftSlope: 0.04192811827872,
   highPressureClampKPa: 27,
   segments: [
-    { lo: 53.84, hi: 61.33375, a: 2.2732, b: 0.06000000000000003 },
-    { lo: 61.33375, hi: 68.8275, a: 2.7228250000000003, b: 0.06382641966890193 },
-    { lo: 68.8275, hi: 76.32125, a: 3.201124232393834, b: 0.06682641966890183 },
-    { lo: 76.32125, hi: 83.815, a: 3.7019047147876676, b: 0.06982641966890177 },
-    { lo: 83.815, hi: 91.30875, a: 4.2251664471815, b: 0.07282641966890172 },
-    { lo: 91.30875, hi: 98.8025, a: 4.770909429575332, b: 0.07582641966890165 },
-    { lo: 98.8025, hi: 106.29625, a: 5.339133661969163, b: 0.07882641966890166 },
-    { lo: 106.29625, hi: 113.79, a: 5.929839144362996, b: 0.12623356167051475 },
-    { lo: 113.79, hi: 121.28375, a: 6.875801897131416, b: 0.1292335616705143 },
-    { lo: 121.28375, hi: 128.7775, a: 7.844245899899832, b: 0.15661037138419087 },
-    { lo: 128.7775, hi: 136.27125, a: 9.017844870460113, b: 0.15961037138419065 },
-    { lo: 136.27125, hi: 143.765, a: 10.213925091020393, b: 0.3384472701670871 },
-    { lo: 143.765, hi: 151.25875, a: 12.750164321834994, b: 0.3414472701670874 },
-    { lo: 151.25875, hi: 158.7525, a: 15.308884802649617, b: 0.3444472701670879 },
-    { lo: 158.7525, hi: 166.24625, a: 17.890086533464224, b: 0.4839608686196772 },
-    { lo: 166.24625, hi: 173.74, a: 21.516768292682933, b: 0.7317073170731694 },
+    { lo: 60.2350214583333, hi: 67.7811886783854, a: 2.2732, b: 0.059583227735165 },
+    { lo: 67.7811886783854, hi: 75.3273558984375, a: 2.722825, b: 0.0633830683108733 },
+    { lo: 75.3273558984375, hi: 82.8735231184896, a: 3.20112423239383, b: 0.0663622296976314 },
+    { lo: 82.8735231184896, hi: 90.4196903385417, a: 3.70190471478767, b: 0.0693413910843896 },
+    { lo: 90.4196903385417, hi: 97.9658575585938, a: 4.2251664471815, b: 0.0723205524711478 },
+    { lo: 97.9658575585938, hi: 105.512024778646, a: 4.77090942957533, b: 0.075299713857906 },
+    { lo: 105.512024778646, hi: 113.058191998698, a: 5.33913366196916, b: 0.0782788752446643 },
+    { lo: 113.058191998698, hi: 120.60435921875, a: 5.929839144363, b: 0.125356717547255 },
+    { lo: 120.60435921875, hi: 128.150526438802, a: 6.87580189713142, b: 0.128335878934012 },
+    { lo: 128.150526438802, hi: 135.696693658854, a: 7.84424589989983, b: 0.155522523731217 },
+    { lo: 135.696693658854, hi: 143.242860878906, a: 9.01784487046011, b: 0.158501685117975 },
+    { lo: 143.242860878906, hi: 150.789028098958, a: 10.2139250910204, b: 0.336096346245174 },
+    { lo: 150.789028098958, hi: 158.33519531901, a: 12.750164321835, b: 0.339075507631933 },
+    { lo: 158.33519531901, hi: 165.881362539062, a: 15.3088848026496, b: 0.342054669018692 },
+    { lo: 165.881362539062, hi: 173.427529759115, a: 17.8900865334642, b: 0.480599177497908 },
+    { lo: 173.427529759115, hi: 180.973696979167, a: 21.5167682926829, b: 0.72662472847762 },
   ],
 }
 
@@ -167,6 +170,36 @@ function getPressureSensor(key) {
   return ''
 }
 
+// Matrix entry points accept uncorrected, interpolated ADC and never mutate it.
+// Base-curve helpers below consume compensated ADC, so compensation happens once.
+function prepareNativeCalibrationValues(values, sensor) {
+  return values.map((value) => {
+    if (!Number.isFinite(value) || value <= 0) return 0
+    const compensated = sensor === 'backrest'
+      ? value
+      : value * 1.0069947916666666 + 6.018421875000001
+    return compensated > NATIVE_CALIBRATION_MIN_ADC ? compensated : 0
+  })
+}
+
+function getCanonicalPressureValues(values, options) {
+  if (!Array.isArray(options.pressureArr)) return null
+  if (options.pressureArr.length !== values.length) {
+    throw new RangeError('Canonical pressure matrix length does not match the ADC array')
+  }
+  return options.pressureArr.map((value) => {
+    const numeric = Number(value)
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
+  })
+}
+
+function getCanonicalValidPointCount(pressureValues, options) {
+  const mask = options.calibrationValidMask
+  return Array.isArray(mask) && mask.length === pressureValues.length
+    ? mask.reduce((count, value) => count + (Number(value) > 0 ? 1 : 0), 0)
+    : pressureValues.filter((value) => value > 0).length
+}
+
 function getNativeProfile(sensor) {
   return sensor === 'backrest' ? NATIVE_BACKREST_PROFILE : NATIVE_SEAT_PROFILE
 }
@@ -187,9 +220,11 @@ function calculateNativeBasePressure(adc, sensor) {
   const last = profile.segments[profile.segments.length - 1]
   let raw
   if (value <= first.lo) {
-    raw = profile.lowMode === 'zero-origin'
-      ? profile.leftSlope * value
-      : evaluateNativeSegment(value, first)
+    raw = profile.lowMode === 'offset-origin'
+      ? profile.leftSlope * Math.max(0, value - profile.lowAdcOrigin)
+      : profile.lowMode === 'zero-origin'
+        ? profile.leftSlope * value
+        : evaluateNativeSegment(value, first)
   } else if (value > last.hi) {
     raw = profile.highPressureClampKPa
   } else {
@@ -317,13 +352,45 @@ function getPressurePointAreaCm2(key) {
 function computePressureMetrics(arr, key, options = {}) {
   if (options.profile) setPressureFormulaProfile(options.profile)
   const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
+  if (options.algorithmMetrics) return getCompleteAlgorithmMetrics(values, key, options.algorithmMetrics)
+  const matrix = computeMatrixPressureMetrics(values, key, options)
+  const requiresCompleteKernel = activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE
+    && (key === 'endi-sit' || key === 'endi-back')
+  const rawPositiveValues = values.filter((value) => Number.isFinite(value) && value > 0)
+  return {
+    ...matrix,
+    calibrationScope: 'matrix-only',
+    calibrationComplete: false,
+    spatialForceTotal: matrix.total,
+    spatialAreaCm2: matrix.effectiveArea,
+    ...(requiresCompleteKernel ? {
+      pressureMethod: 'force-over-area',
+      spatialForceTotal: null, spatialAreaCm2: null,
+      total: null, forceN: null, effectiveArea: null, areaCm2: null,
+      pressAver: null, pressMax: null, pressureTotal: null,
+      forceMax: null, forceAver: null,
+      pressureValues: [], forceValues: [], forceGrid: null,
+      matrixPressMax: null, matrixPressAver: null, matrixPressureTotal: null,
+      activeCount: rawPositiveValues.length,
+      averagePointCount: rawPositiveValues.length,
+      rawAvg: rawPositiveValues.length
+        ? rawPositiveValues.reduce((sum, value) => sum + value, 0) / rawPositiveValues.length
+        : 0,
+    } : {}),
+  }
+}
+
+function computeMatrixPressureMetrics(arr, key, options = {}) {
+  if (options.profile) setPressureFormulaProfile(options.profile)
+  const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
   const rawPress = values.reduce((sum, value) => sum + value, 0)
   const rawMax = values.length ? Math.max(...values) : 0
   const pointAreaCm2 = Number(options.pointAreaCm2) > 0 ? Number(options.pointAreaCm2) : getPressurePointAreaCm2(key)
   const sensor = getPressureSensor(key)
+  const canonicalPressureValues = getCanonicalPressureValues(values, options)
 
   if (!sensor) {
-    const pressureValues = values.map((value) => (value > 0 ? value : 0))
+    const pressureValues = canonicalPressureValues || values.map((value) => (value > 0 ? value : 0))
     const activePressureValues = pressureValues.filter((value) => value > 0)
     const activeCount = activePressureValues.length
     const pressureTotal = pressureValues.reduce((sum, value) => sum + value, 0)
@@ -346,19 +413,18 @@ function computePressureMetrics(arr, key, options = {}) {
 
   const isNativeCalibration = activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE
   const nativeMinAdc = NATIVE_CALIBRATION_MIN_ADC
-  const filteredValues = values.map((value) => {
-    if (!Number.isFinite(value) || value <= 0) return 0
-    if (isNativeCalibration) return nativeMinAdc === 0 || value > nativeMinAdc ? value : 0
-    return value > MIN_ADC ? value : 0
-  })
+  const filteredValues = isNativeCalibration
+    ? prepareNativeCalibrationValues(values, sensor)
+    : values.map((value) => (Number.isFinite(value) && value > MIN_ADC ? value : 0))
   const validValues = filteredValues.filter((value) => value > 0)
   const rawAvg = validValues.length
     ? validValues.reduce((sum, value) => sum + value, 0) / validValues.length
     : 0
-  if (!validValues.length) {
+  if (!validValues.length && !canonicalPressureValues) {
     const pressureValues = filteredValues
     return {
       activeCount: 0,
+      averagePointCount: 0,
       effectiveArea: 0,
       rawPress,
       rawMax,
@@ -381,7 +447,15 @@ function computePressureMetrics(arr, key, options = {}) {
   }
 
   let distribution
-  if (isNativeCalibration) {
+  if (canonicalPressureValues) {
+    distribution = {
+      pressureValues: canonicalPressureValues,
+      adcAvg: getNativeCalibrationAverage(validValues, sensor),
+      normalizationScale: null,
+      meanConservationErrorKPa: null,
+      branch: 'canonical',
+    }
+  } else if (isNativeCalibration) {
     distribution = getNativePressureDistribution(filteredValues, sensor)
   } else {
     const meta = getActiveSensorMeta(sensor)
@@ -408,12 +482,16 @@ function computePressureMetrics(arr, key, options = {}) {
   const forceValues = pressureValues.map((value) => value * pointAreaCm2 * 0.1)
   const total = forceValues.reduce((sum, value) => sum + value, 0)
   const matrixPressMax = activeCount ? Math.max(...activePressureValues) : 0
-  const averagePointCount = isNativeCalibration ? validValues.length : activeCount
+  const averagePointCount = canonicalPressureValues
+    ? getCanonicalValidPointCount(pressureValues, options)
+    : isNativeCalibration ? validValues.length : activeCount
   const matrixPressAver = averagePointCount ? pressureTotal / averagePointCount : 0
   const pressMax = matrixPressMax
   const pressAver = matrixPressAver
 
   return {
+    calibrationScope: 'matrix-only',
+    calibrationComplete: false,
     activeCount,
     averagePointCount,
     effectiveArea: activeCount * pointAreaCm2,
@@ -436,11 +514,59 @@ function computePressureMetrics(arr, key, options = {}) {
     meanConservationErrorKPa: distribution.meanConservationErrorKPa,
     pressureCalibrationBranch: distribution.branch,
     calibrationInputMinAdc: isNativeCalibration ? nativeMinAdc : MIN_ADC,
-    calibrationValidCount: validValues.length,
+    calibrationValidCount: averagePointCount,
+  }
+}
+
+function getCompleteAlgorithmMetrics(values, key, metrics) {
+  const type = key === 'endi-back' || key === 'new-backrest-32x25'
+    ? 'new-backrest-32x25'
+    : 'endi-23x23'
+  const complete = metrics.status
+    ? metrics.status === 'complete'
+    : Boolean(metrics.areaMetrics && metrics.pressureMetrics && Object.hasOwn(metrics, 'forceMetrics'))
+  const force = complete ? metrics.forceMetrics || {} : {}
+  const area = complete ? metrics.areaMetrics || {} : {}
+  const positiveAdcValues = values.filter((value) => Number.isFinite(value) && value > 0)
+  const forceN = Number.isFinite(force.forceN) ? force.forceN : null
+  const areaCm2 = Number.isFinite(area.areaCm2) ? area.areaCm2 : null
+  const pressureKPa = forceN !== null && areaCm2 !== null && areaCm2 > 0 ? 10 * forceN / areaCm2 : null
+  return {
+    calibrationScope: complete ? 'complete-sensor-sequence' : 'unavailable',
+    calibrationComplete: complete,
+    unavailableReason: complete ? null : metrics.reason ?? 'complete_algorithm_result_required',
+    algorithmVersion: '2.11.0',
+    pressureMethod: 'force-over-area',
+    algorithmMetrics: metrics,
+    sensor: type === 'endi-23x23' ? 'seat' : 'backrest',
+    activeCount: positiveAdcValues.length,
+    averagePointCount: positiveAdcValues.length,
+    effectiveArea: areaCm2,
+    areaCm2,
+    total: forceN,
+    forceN,
+    pressAver: pressureKPa,
+    pressMax: null,
+    rawMaxPressureKPa: null,
+    pressureValues: [],
+    forceValues: [],
+    forceGrid: null,
+    forceMax: null,
+    forceAver: null,
+    pressureTotal: pressureKPa,
+    matrixPressureTotal: null,
+    rawPress: values.reduce((sum, value) => sum + value, 0),
+    rawMax: values.length ? Math.max(...values) : 0,
+    rawAvg: positiveAdcValues.length
+      ? positiveAdcValues.reduce((sum, value) => sum + value, 0) / positiveAdcValues.length
+      : 0,
+    matrixPressMax: null,
+    matrixPressAver: null,
   }
 }
 
 module.exports = {
+  ...fullAlgorithm,
   DEFAULT_PRESSURE_FORMULA_PROFILE,
   NATIVE_CALIBRATION_MIN_ADC,
   NATIVE_BACKREST_CALIBRATION_MIN_ADC,

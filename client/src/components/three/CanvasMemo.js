@@ -670,12 +670,12 @@ const Canvas = memo(React.forwardRef((props, refs) => {
     const { colorLimit, height, autoColor, mode } = getThreeDisplaySettings(store)
     const colorScope = `canvas-${store.systemType}-${mode}`
     setDynamicGammaColorEnabled(Boolean(autoColor), colorScope)
-    beginDynamicColorFrame(props.metricData?.current?.[store.pressureMetricMode]?.[store.systemType], colorLimit, colorScope)
+    beginDynamicColorFrame(props.metricData?.current?.adc?.[store.systemType], colorLimit, colorScope)
     const numParticles = AMOUNTX * AMOUNTY;
     const positions = new Float32Array(numParticles * 3);
     const colors = new Float32Array(numParticles * 3);
 
-    const ndata1 = props.metricData?.current?.[store.pressureMetricMode]?.[store.systemType]
+    const ndata1 = props.metricData?.current?.adc?.[store.systemType]
     if (!Array.isArray(ndata1) || ndata1.length !== sitnum1 * sitnum2) return
 
     let bigArrs = addSide(

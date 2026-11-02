@@ -13,6 +13,7 @@ const {
   normalizeFrameProcessingConfig,
   processMatrixItem,
   ensureProcessedMatrixItem,
+  prepareFullAlgorithmHistory,
 } = require('../../util/pressureFrameProcessor')
 
 const { blue } = constantObj
@@ -328,11 +329,14 @@ function buildProcessedFrame(frame, processingConfig = getActiveFrameProcessingC
 
     const rawAdcArr = [...item.arr]
     const zeroedAdcArr = applyZeroBaseline(key, rawAdcArr, state.zeroState)
+    const algorithmInput = getFullAlgorithmInput(key, item, state.zeroState)
     result[key] = {
       ...processMatrixItem(key, {
         ...item,
         arr: zeroedAdcArr,
         rawAdcArr,
+        zeroState: buildZeroMeta(state.zeroState, key),
+        ...algorithmInput,
       }, config),
       zeroState: buildZeroMeta(state.zeroState, key),
       pressureUnit: 'kPa',
@@ -341,6 +345,47 @@ function buildProcessedFrame(frame, processingConfig = getActiveFrameProcessingC
   })
 
   return result
+}
+
+function getFullAlgorithmInput(key, item = {}, zeroState = {}) {
+  if (key !== 'endi-sit' && key !== 'endi-back') return {}
+  const raw = item.algorithmRawSourceFrame || item.algorithmRawFrame
+  if (!Array.isArray(raw) || raw.length !== 1024) {
+    return { algorithmRawFrame: null, algorithmInputError: 'raw_adc_unavailable' }
+  }
+  const shortKey = key.split('-')[1]
+  const baseline = zeroState.algorithmRawData?.[key] || zeroState.algorithmRawData?.[shortKey]
+  if (zeroState.enabled && (!Array.isArray(baseline) || baseline.length !== raw.length)) {
+    return {
+      algorithmRawSourceFrame: [...raw],
+      algorithmRawFrame: null,
+      algorithmInputError: 'zero_baseline_requires_raw_recapture',
+    }
+  }
+  const timestamp = Number(item.rawFrame?.received_at ?? item.algorithmTimestampMs ?? item.stamp)
+  if (!Number.isFinite(timestamp)) {
+    return {
+      algorithmRawSourceFrame: [...raw],
+      algorithmRawFrame: null,
+      algorithmInputError: 'explicit_timestamp_required',
+    }
+  }
+  const timestampMs = timestamp
+  const port = item.rawFrame?.port
+  const mac = item.deviceMac || (port ? state.macInfo?.[port]?.uniqueId : '') || ''
+  const device = `${port || key}:${mac}:${item.algorithmStreamStartedAt || 0}`
+  const zeroIdentity = zeroState.enabled ? `zero-${zeroState.zeroTime || 0}` : 'raw'
+  return {
+    algorithmRawSourceFrame: [...raw],
+    algorithmRawFrame: zeroState.enabled
+      ? raw.map((value, index) => Math.max(0, value - Number(baseline[index] || 0)))
+      : [...raw],
+    algorithmTimestampMs: timestampMs,
+    algorithmFrameId: item.rawFrame?.frame_id ?? timestampMs,
+    algorithmStreamId: `${device}:${key}:${zeroIdentity}`,
+    algorithmRotation: 3,
+    algorithmInputError: null,
+  }
 }
 
 function ensureProcessedFrame(frame, processingConfig = getActiveFrameProcessingConfig()) {
@@ -437,6 +482,10 @@ function parseData(parserArr, objs, type) {
       json[data.type].frameIntervalMs = data.frameIntervalMs
       json[data.type].rawFrame = data.rawFrame
       json[data.type].rawPointArray = data.rawPointArray
+      if (Array.isArray(data.algorithmRawFrame)) {
+        json[data.type].algorithmRawFrame = [...data.algorithmRawFrame]
+        json[data.type].algorithmStreamStartedAt = data.algorithmStreamStartedAt
+      }
       json[data.type].matrixMeta = buildMatrixMeta(data.type, blueArr)
       if (quality) json[data.type].dataQuality = quality
       if (data.cop) json[data.type].cop = data.cop
@@ -461,6 +510,7 @@ const FRAME_CLONE_FIELDS = [
   'type', 'premission', 'status', 'deviceClass', 'baudRate',
   'arr', 'rotate', 'stamp', 'HZ', 'sampleRateHz', 'frameIntervalMs',
   'rawFrame', 'rawPointArray', 'dataQuality', 'cop', 'breatheData',
+  'algorithmRawFrame', 'algorithmStreamStartedAt',
   'hardwareSampleRateHz', 'last', 'next',
 ]
 
@@ -583,8 +633,21 @@ function ensureRealtimeTimer() {
   return true
 }
 
+let playbackHistorySource = null
+let playbackHistoryLength = -1
+let playbackPreparedRows = []
+
 function getPlaybackRows() {
-  return Array.isArray(state.historyDbArr) ? state.historyDbArr : []
+  const rows = Array.isArray(state.historyDbArr) ? state.historyDbArr : []
+  if (rows !== playbackHistorySource || rows.length !== playbackHistoryLength) {
+    // Reconstruct recognition history in chronological order once, before
+    // seeking or changing playback speed. A seek must not become an empty-history
+    // single-frame force calculation.
+    playbackPreparedRows = prepareFullAlgorithmHistory(rows)
+    playbackHistorySource = rows
+    playbackHistoryLength = rows.length
+  }
+  return playbackPreparedRows
 }
 
 function parsePlaybackData(value) {
@@ -847,6 +910,7 @@ module.exports = {
   parseData,
   buildDirectedFrame,
   buildProcessedFrame,
+  getFullAlgorithmInput,
   ensureProcessedFrame,
   getActiveFrameProcessingConfig,
   normalizeDataDirectionState,

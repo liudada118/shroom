@@ -6,12 +6,13 @@ const {
   REQUIRED_CALIBRATION_EXPORTS,
 } = require('../../util/calibrationPressureAdapter')
 
-const ACTIVE_PRESSURE_CALIBRATION_FILE = 'adc-matrix-to-pressure-filter30-v2.7.63.js'
+const ACTIVE_PRESSURE_CALIBRATION_FILE = 'seatBackrestPressure_v2.11.0.js'
+const PREVIOUS_PRESSURE_CALIBRATION_FILE = 'adc-matrix-to-pressure-filter30-v2.7.63.js'
 const POINT_PRESSURE_CALIBRATION_FILE = 'point_pressure_calibration.js'
 const LEGACY_POINT_PRESSURE_CALIBRATION_FILE = 'pressureFormula_calibration_v2746_seat_v2752_backrest.js'
 const DEFAULT_PRESSURE_CONFIG = {
   pressureFormulaFile: ACTIVE_PRESSURE_CALIBRATION_FILE,
-  pressureFormulaProfile: 'adc-matrix-to-pressure-filter30-v2.7.63',
+  pressureFormulaProfile: 'seatBackrestPressure_v2.11.0',
 }
 
 let configCache = null
@@ -34,6 +35,7 @@ function normalizeFormulaFile(fileName) {
   if (
     normalizedName === POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()
     || normalizedName === LEGACY_POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()
+    || normalizedName === PREVIOUS_PRESSURE_CALIBRATION_FILE.toLowerCase()
   ) {
     return ACTIVE_PRESSURE_CALIBRATION_FILE
   }
@@ -116,7 +118,7 @@ function requirePressureFormula(formulaPath, formulaFile) {
   const hasPointFormula = typeof moduleValue.master === 'function'
   const hasNativeCalibrationFormula = isCalibrationFormula(moduleValue)
   if (!hasLegacyAverageFormula && !hasPointFormula && !hasNativeCalibrationFormula) {
-    throw new Error(`Pressure formula file must export ${REQUIRED_CALIBRATION_EXPORTS.join('/')}, master, or estimatePressure/estimateMaxPressure: ${formulaFile}`)
+    throw new Error(`Pressure formula file must export calculateMatrixPressureMap/calculatePressureMetricsFromMatrix, ${REQUIRED_CALIBRATION_EXPORTS.join('/')}, master, or estimatePressure/estimateMaxPressure: ${formulaFile}`)
   }
   return moduleValue
 }

@@ -5,12 +5,12 @@ const path = require('path')
 
 const AES_KEY_TEXT = 'JIANXINGZHEPSVMC'
 
-const ACTIVE_PRESSURE_CALIBRATION_FILE = 'adc-matrix-to-pressure-filter30-v2.7.63.js'
+const ACTIVE_PRESSURE_CALIBRATION_FILE = 'seatBackrestPressure_v2.11.0.js'
 const POINT_PRESSURE_CALIBRATION_FILE = 'point_pressure_calibration.js'
 const LEGACY_POINT_PRESSURE_CALIBRATION_FILE = 'pressureFormula_calibration_v2746_seat_v2752_backrest.js'
 const DEFAULT_PRESSURE_CONFIG = {
   pressureFormulaFile: ACTIVE_PRESSURE_CALIBRATION_FILE,
-  pressureFormulaProfile: 'adc-matrix-to-pressure-filter30-v2.7.63',
+  pressureFormulaProfile: 'seatBackrestPressure_v2.11.0',
 }
 
 function stringToHex(str) {
@@ -98,7 +98,8 @@ function normalizeFormulaFile(fileName, fallback = DEFAULT_PRESSURE_CONFIG.press
   const baseName = path.basename(String(fileName || fallback))
   const normalizedName = baseName.toLowerCase()
   if (
-    normalizedName === POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()
+    normalizedName === 'adc-matrix-to-pressure-filter30-v2.7.63.js'
+    || normalizedName === POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()
     || normalizedName === LEGACY_POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()
   ) {
     return ACTIVE_PRESSURE_CALIBRATION_FILE
@@ -158,8 +159,9 @@ function loadPressureFormula(formulaDir, formulaFile) {
     && typeof moduleValue.estimateMaxPressure === 'function'
   const hasPointFormula = typeof moduleValue.master === 'function'
   const hasNativeCalibrationFormula = typeof moduleValue.adcMatrixToPressureMatrix === 'function'
+    || typeof moduleValue.calculateMatrixPressureMap === 'function'
   if (!hasLegacyAverageFormula && !hasPointFormula && !hasNativeCalibrationFormula) {
-    throw new Error(`Pressure formula file must export adcMatrixToPressureMatrix, master, or estimatePressure/estimateMaxPressure: ${formulaFile}`)
+    throw new Error(`Pressure formula file must export calculateMatrixPressureMap, adcMatrixToPressureMatrix, master, or estimatePressure/estimateMaxPressure: ${formulaFile}`)
   }
   return moduleValue
 }

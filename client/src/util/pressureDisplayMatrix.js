@@ -6,6 +6,7 @@ import {
   getPressurePointAreaCm2,
   normalizePressureMetricMode,
 } from './pressureMetrics.js'
+import { applyFullAlgorithmSummary } from './fullAlgorithmMetrics.js'
 
 export const PRESSURE_DISPLAY_DIGITS = 1
 export const PRESSURE_DISPLAY_VISIBLE_THRESHOLD = 0.05
@@ -19,14 +20,14 @@ function toFiniteNonNegative(value) {
 }
 
 export function normalizePressureDisplayValue(value) {
-  return Math.round(toFiniteNonNegative(value) * DISPLAY_SCALE) / DISPLAY_SCALE
+  return Number.isFinite(value) ? value : null
 }
 
 export function preparePressureDisplayAdcMatrix(data, width, height, settings = {}) {
   const safeWidth = Math.max(1, Number(width) || 1)
   const safeHeight = Math.max(1, Number(height) || 1)
   const count = safeWidth * safeHeight
-  return Array.from({ length: count }, (_, index) => toFiniteNonNegative(data?.[index]))
+  return Array.from({ length: count }, (_, index) => Number.isFinite(data?.[index]) ? data[index] : null)
 }
 
 export function maskPressureDisplayMatrix(values, isVisibleIndex) {
@@ -35,9 +36,8 @@ export function maskPressureDisplayMatrix(values, isVisibleIndex) {
 }
 
 export function stabilizePressureDisplayMetricValues(values, previousState = null) {
-  const source = Array.from(values || [], toFiniteNonNegative)
-  const display = source.map(normalizePressureDisplayValue)
-  return { values: display, state: { values: source, display } }
+  const source = Array.from(values || [], normalizePressureDisplayValue)
+  return { values: [...source], state: { values: [...source], display: [...source] } }
 }
 
 export function buildPressureDisplayMetricMatrix({
@@ -50,10 +50,7 @@ export function buildPressureDisplayMetricMatrix({
   previousState,
   isVisibleIndex,
 }) {
-  const preparedAdc = maskPressureDisplayMatrix(
-    preparePressureDisplayAdcMatrix(adcValues, width, height, settings),
-    isVisibleIndex,
-  )
+  const preparedAdc = preparePressureDisplayAdcMatrix(adcValues, width, height, settings)
   return convertPreparedPressureDisplayMetricMatrix({
     preparedAdc,
     matrixKey,
@@ -72,7 +69,7 @@ export function convertPreparedPressureDisplayMetricMatrix({
   return stabilizePressureDisplayMetricValues(metricValues, previousState)
 }
 
-export function summarizePressureDisplayMatrix(values, matrixKey, metricMode, validMask = null) {
+export function summarizePressureDisplayMatrix(values, matrixKey, metricMode, validMask = null, algorithmMetrics = null, pointAreaValues = null) {
   const mode = normalizePressureMetricMode(metricMode)
   const sourceValues = Array.from(values || [], toFiniteNonNegative)
   const metricValues = sourceValues.map(normalizePressureDisplayValue)
@@ -95,20 +92,23 @@ export function summarizePressureDisplayMatrix(values, matrixKey, metricMode, va
   const pressureTotal = pressureValues.reduce((sum, value) => sum + value, 0)
   const forceTotal = forceValues.reduce((sum, value) => sum + value, 0)
 
-  return {
+  const spatialSummary = {
     mode,
     metricValues,
     pressureValues,
     forceValues,
     activeCount,
     averagePointCount,
-    effectiveArea: activeCount * getPressurePointAreaCm2(matrixKey),
+    effectiveArea: Array.isArray(pointAreaValues)
+      ? pointAreaValues.reduce((sum, value) => sum + toFiniteNonNegative(value), 0)
+      : activeCount * getPressurePointAreaCm2(matrixKey),
     max,
     average,
     total,
     pressureTotal,
     forceTotal,
   }
+  return applyFullAlgorithmSummary(spatialSummary, algorithmMetrics, mode)
 }
 
 export function buildPressureDisplayNormalDistribution(values, metricMode) {

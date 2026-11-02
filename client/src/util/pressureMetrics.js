@@ -1,9 +1,11 @@
 // Browser-safe mirror of server/kpa pressure formula files.
 // Keep estimatePressure/estimateMaxPressure constants synchronized with that file.
 import { distributeWeightPointPressures } from './weightPointPressureNormalization.js'
+import { getFullAlgorithmSummary } from './fullAlgorithmMetrics.js'
 
-const DEFAULT_PRESSURE_FORMULA_PROFILE = 'adc-matrix-to-pressure-filter30-v2.7.63'
+const DEFAULT_PRESSURE_FORMULA_PROFILE = 'seatBackrestPressure_v2.11.0'
 const LEGACY_NATIVE_CALIBRATION_PROFILES = new Set([
+  'adc-matrix-to-pressure-filter30-v2.7.63',
   'point_pressure_calibration',
   'calibration_v2746_seat_v2752_backrest',
 ])
@@ -15,26 +17,27 @@ const NATIVE_HUMAN_COEFFICIENT = 2.2
 const NATIVE_SEAT_PROFILE = {
   topStartRank: 5,
   topEndRank: 70,
-  lowMode: 'zero-origin',
-  leftSlope: 0.042221396731054977,
+  lowMode: 'offset-origin',
+  lowAdcOrigin: 6.018421875000001,
+  leftSlope: 0.04192811827872,
   highPressureClampKPa: 27,
   segments: [
-    { lo: 53.84, hi: 61.33375, a: 2.2732, b: 0.06000000000000003 },
-    { lo: 61.33375, hi: 68.8275, a: 2.7228250000000003, b: 0.06382641966890193 },
-    { lo: 68.8275, hi: 76.32125, a: 3.201124232393834, b: 0.06682641966890183 },
-    { lo: 76.32125, hi: 83.815, a: 3.7019047147876676, b: 0.06982641966890177 },
-    { lo: 83.815, hi: 91.30875, a: 4.2251664471815, b: 0.07282641966890172 },
-    { lo: 91.30875, hi: 98.8025, a: 4.770909429575332, b: 0.07582641966890165 },
-    { lo: 98.8025, hi: 106.29625, a: 5.339133661969163, b: 0.07882641966890166 },
-    { lo: 106.29625, hi: 113.79, a: 5.929839144362996, b: 0.12623356167051475 },
-    { lo: 113.79, hi: 121.28375, a: 6.875801897131416, b: 0.1292335616705143 },
-    { lo: 121.28375, hi: 128.7775, a: 7.844245899899832, b: 0.15661037138419087 },
-    { lo: 128.7775, hi: 136.27125, a: 9.017844870460113, b: 0.15961037138419065 },
-    { lo: 136.27125, hi: 143.765, a: 10.213925091020393, b: 0.3384472701670871 },
-    { lo: 143.765, hi: 151.25875, a: 12.750164321834994, b: 0.3414472701670874 },
-    { lo: 151.25875, hi: 158.7525, a: 15.308884802649617, b: 0.3444472701670879 },
-    { lo: 158.7525, hi: 166.24625, a: 17.890086533464224, b: 0.4839608686196772 },
-    { lo: 166.24625, hi: 173.74, a: 21.516768292682933, b: 0.7317073170731694 },
+    { lo: 60.2350214583333, hi: 67.7811886783854, a: 2.2732, b: 0.059583227735165 },
+    { lo: 67.7811886783854, hi: 75.3273558984375, a: 2.722825, b: 0.0633830683108733 },
+    { lo: 75.3273558984375, hi: 82.8735231184896, a: 3.20112423239383, b: 0.0663622296976314 },
+    { lo: 82.8735231184896, hi: 90.4196903385417, a: 3.70190471478767, b: 0.0693413910843896 },
+    { lo: 90.4196903385417, hi: 97.9658575585938, a: 4.2251664471815, b: 0.0723205524711478 },
+    { lo: 97.9658575585938, hi: 105.512024778646, a: 4.77090942957533, b: 0.075299713857906 },
+    { lo: 105.512024778646, hi: 113.058191998698, a: 5.33913366196916, b: 0.0782788752446643 },
+    { lo: 113.058191998698, hi: 120.60435921875, a: 5.929839144363, b: 0.125356717547255 },
+    { lo: 120.60435921875, hi: 128.150526438802, a: 6.87580189713142, b: 0.128335878934012 },
+    { lo: 128.150526438802, hi: 135.696693658854, a: 7.84424589989983, b: 0.155522523731217 },
+    { lo: 135.696693658854, hi: 143.242860878906, a: 9.01784487046011, b: 0.158501685117975 },
+    { lo: 143.242860878906, hi: 150.789028098958, a: 10.2139250910204, b: 0.336096346245174 },
+    { lo: 150.789028098958, hi: 158.33519531901, a: 12.750164321835, b: 0.339075507631933 },
+    { lo: 158.33519531901, hi: 165.881362539062, a: 15.3088848026496, b: 0.342054669018692 },
+    { lo: 165.881362539062, hi: 173.427529759115, a: 17.8900865334642, b: 0.480599177497908 },
+    { lo: 173.427529759115, hi: 180.973696979167, a: 21.5167682926829, b: 0.72662472847762 },
   ],
 }
 
@@ -178,6 +181,36 @@ export function getPressureSensor(key) {
   return ''
 }
 
+// Matrix entry points accept uncorrected, interpolated ADC and never mutate it.
+// Base-curve helpers below consume compensated ADC, so compensation happens once.
+function prepareNativeCalibrationValues(values, sensor) {
+  return values.map((value) => {
+    if (!Number.isFinite(value) || value <= 0) return 0
+    const compensated = sensor === 'backrest'
+      ? value
+      : value * 1.0069947916666666 + 6.018421875000001
+    return compensated > NATIVE_CALIBRATION_MIN_ADC ? compensated : 0
+  })
+}
+
+function getCanonicalPressureValues(values, options) {
+  if (!Array.isArray(options.pressureArr)) return null
+  if (options.pressureArr.length !== values.length) {
+    throw new RangeError('Canonical pressure matrix length does not match the ADC array')
+  }
+  return options.pressureArr.map((value) => {
+    const numeric = Number(value)
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
+  })
+}
+
+function getCanonicalValidPointCount(pressureValues, options) {
+  const mask = options.calibrationValidMask
+  return Array.isArray(mask) && mask.length === pressureValues.length
+    ? mask.reduce((count, value) => count + (Number(value) > 0 ? 1 : 0), 0)
+    : pressureValues.filter((value) => value > 0).length
+}
+
 function getNativeProfile(sensor) {
   return sensor === 'backrest' ? NATIVE_BACKREST_PROFILE : NATIVE_SEAT_PROFILE
 }
@@ -198,9 +231,11 @@ function calculateNativeBasePressure(adc, sensor) {
   const last = profile.segments[profile.segments.length - 1]
   let raw
   if (value <= first.lo) {
-    raw = profile.lowMode === 'zero-origin'
-      ? profile.leftSlope * value
-      : evaluateNativeSegment(value, first)
+    raw = profile.lowMode === 'offset-origin'
+      ? profile.leftSlope * Math.max(0, value - profile.lowAdcOrigin)
+      : profile.lowMode === 'zero-origin'
+        ? profile.leftSlope * value
+        : evaluateNativeSegment(value, first)
   } else if (value > last.hi) {
     raw = profile.highPressureClampKPa
   } else {
@@ -306,9 +341,12 @@ function usesHumanCalibrationAverage(meta, validCount) {
 
 export function getPressurePointValuesKpa(arr, key, options = {}) {
   const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
+  const canonicalPressureValues = getCanonicalPressureValues(values, options)
+  if (canonicalPressureValues) return canonicalPressureValues
+  if (options.algorithmMetrics?.version === '2.11.0') return values.map(() => null)
   const sensor = getPressureSensor(key) || 'seat'
   if (activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE) {
-    return getNativePressureDistribution(values, sensor).pressureValues
+    return getNativePressureDistribution(prepareNativeCalibrationValues(values, sensor), sensor).pressureValues
   }
 
   if (!POINT_PRESSURE_FORMULA_PROFILES.has(activePressureFormulaProfile)) {
@@ -541,27 +579,28 @@ export function computePressureMetrics(arr, key, options = {}) {
   const activeCount = countActiveMetricPoints(pressureValues)
   const rawPress = values.reduce((sum, value) => sum + value, 0)
   const rawMax = values.length ? Math.max(...values) : 0
-  const rawActiveValues = values.filter((value) => Number.isFinite(value) && (
-    activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE
-      ? value > 0
-      : value > MIN_ADC
-  ))
+  const sensor = getPressureSensor(key) || 'seat'
+  const isNativeCalibration = activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE
+  const rawActiveValues = isNativeCalibration
+    ? prepareNativeCalibrationValues(values, sensor).filter((value) => value > 0)
+    : values.filter((value) => Number.isFinite(value) && value > MIN_ADC)
   const rawAvg = rawActiveValues.length ? rawActiveValues.reduce((sum, value) => sum + value, 0) / rawActiveValues.length : 0
   const pointAreaCm2 = Number(options.pointAreaCm2) > 0 ? Number(options.pointAreaCm2) : getPressurePointAreaCm2(key)
   const effectiveArea = activeCount * pointAreaCm2
-  const sensor = getPressureSensor(key)
   const pressureTotal = pressureValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
   const matrixPressMax = activePressureValues.length ? Math.max(...activePressureValues) : 0
-  const averagePointCount = activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE
-    ? rawActiveValues.length
-    : activeCount
+  const averagePointCount = Array.isArray(options.pressureArr)
+    ? getCanonicalValidPointCount(pressureValues, options)
+    : isNativeCalibration ? rawActiveValues.length : activeCount
   const matrixPressAver = averagePointCount ? pressureTotal / averagePointCount : 0
   const pressMax = matrixPressMax
   const pressAver = matrixPressAver
-  const forceValues = pressureValues.map((value) => value * pointAreaCm2 * 0.1)
+  const forceValues = Array.isArray(options.forceArr)
+    ? options.forceArr.map((value) => value == null ? null : Number(value))
+    : isNativeCalibration ? values.map(() => null) : pressureValues.map((value) => value * pointAreaCm2 * 0.1)
   const total = forceValues.reduce((sum, value) => sum + (Number(value) || 0), 0)
 
-  return {
+  const result = {
     activeCount,
     averagePointCount,
     effectiveArea,
@@ -581,6 +620,39 @@ export function computePressureMetrics(arr, key, options = {}) {
     forceAver: pressAver * pointAreaCm2 * 0.1,
     total,
   }
+  const full = getFullAlgorithmSummary(options.algorithmMetrics)
+  return full ? {
+    ...result,
+    activeCount: full.activePointCount,
+    effectiveArea: full.areaCm2,
+    pressMax: full.maximumPressureDisplayKPa,
+    pressAver: full.averagePressureKPa,
+    pressureTotal: full.averagePressureKPa,
+    forceMax: full.forceMaxN,
+    forceAver: full.forceAverageN,
+    total: full.forceN,
+    pressureValues: [],
+    forceValues: [],
+    matrixPressMax: null,
+    matrixPressAver: null,
+    algorithmMetricsSource: full.source,
+  } : isNativeCalibration ? {
+    ...result,
+    calibrationScope: 'matrix-only',
+    calibrationComplete: false,
+    pressureTotal: null,
+    effectiveArea: null,
+    pressMax: null,
+    pressAver: null,
+    forceMax: null,
+    forceAver: null,
+    total: null,
+    pressureTotal: null,
+    pressureValues: [],
+    forceValues: [],
+    matrixPressMax: null,
+    matrixPressAver: null,
+  } : result
 }
 
 export function getPressureMetricSummary(arr, key, mode, options = {}) {
@@ -605,12 +677,10 @@ export function getPressureMetricSummary(arr, key, mode, options = {}) {
 }
 
 export function getPressureMetricPointValues(arr, key, mode, options = {}) {
-  const forceScale = getPressurePointAreaCm2(key) * 0.1
-  const normalizedMode = normalizePressureMetricMode(mode)
-  const pressureValues = getPressurePointValuesKpa(arr, key, options)
-  return normalizedMode === PRESSURE_METRIC_MODE
-    ? pressureValues
-    : pressureValues.map((value) => value * forceScale)
+  const source = Array.isArray(arr) ? arr : []
+  if (options.rawDisplayAvailable === false) return source.map(() => null)
+  // The statistics unit never changes the visual data source.
+  return source.map(value => Number.isFinite(value) ? value : null)
 }
 
 export function convertForceTotalToMetric(value, key, mode) {

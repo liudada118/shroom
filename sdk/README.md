@@ -120,11 +120,37 @@ const pressure = computePressureMetrics(zeroed, 'hand')
 console.log(selection.hand.press, pressure.pressAver)
 ```
 
-默认压强标定为 V2.7.63，不执行空间高斯或时序滤波。插值与置零后，有限且 `ADC > 30` 的点为标定有效点，`ADC <= 30` 的值置为 0。有效点数 `<=300` 时，坐垫以降序第 5-70 位均值、靠背以 TOP46 均值计算目标平均压强 `Pbar=F(X)`，再按 `Pi=F(ADCi)*Pbar/AVG(F(ADCi))` 生成归一化逐点矩阵；有效点数 `>300` 时逐点使用 `Pi=F(ADCi)*2.2`。
+坐垫与靠背的总力、面积模型使用附件 V2.11.0，独立 SDK 内包含同一份未修改附件。应用最终压强统一由总力除以总面积计算：`P(kPa) = 10 × forceN / areaCm2`。面积不大于0或总力不可用时压强为 `null`；总力为0且面积大于0时为0。
 
-Node 配置加载器要求原生标定模块导出 `adcMatrixToPressureMatrix()`。V2.7.63 通过 `calculatePressureFromMatrix(matrix, { sensorType, humanCoefficient: 2.2 })` 返回压强矩阵和审计字段；主程序对插值后的坐垫/靠背二维矩阵分别传入 `seat` 和 `backrest`。
+```js
+const sdk = require('@shroom-seat/core-sdk')
 
-`pressureValues` 与 `forceValues` 分别返回用于热力图和格点业务的 kPa、N 矩阵。`pressMax/matrixPressMax` 取最终逐点矩阵最大值；`pressAver/matrixPressAver` 用最终矩阵总和除以门槛后 `ADC > 30` 的有效点数，因此砝码段平均值严格保持为 `Pbar`。点数与接触面积仍按最终矩阵中大于 0 的格点计算。
+// raw 是未做线序、插值、方向、补偿的1024字节ADC；时间由调用方显式提供。
+const results = sdk.calculateSensorSequence([
+  { raw: rawFrame0, timestampMs: 0 },
+  { raw: rawFrame1, timestampMs: 100 },
+], 'endi-23x23') // 靠背使用 'new-backrest-32x25'
+const latest = results[results.length - 1]
+console.log(latest.forceMetrics?.forceN, latest.areaMetrics.areaCm2)
+const latestSummary = sdk.computePressureMetrics(rawFrame1, 'endi-sit', { algorithmMetrics: latest })
+console.log(latestSummary.pressAver) // 10 × forceN / areaCm2
+
+// 无界采集流使用独立会话，保留加载方向和识别历史，不会重跑全部历史帧。
+const session = sdk.createSensorSession('new-backrest-32x25')
+const frame = session.process({ raw: rawFrame0, timestampMs: 0 })
+const metrics = sdk.computePressureMetrics(rawFrame0, 'endi-back', {
+  algorithmMetrics: frame,
+})
+session.reset() // 新采集/去皮后明确重置历史
+```
+
+也可提供原生方向 `physical`：坐垫 `23×23`、靠背 `32×25`，数值必须在 `0..255`。完整算法内部负责线序解码、2倍插值、靠背有效区、默认 ADC 补偿、过滤、面积分区以及总力识别/人体估算。默认旋转为顺时针270°，坐垫显示 `46×46`、靠背显示 `50×64`。
+
+`calculateSensorFrame` 只代表空历史的一帧，连续加载时不可反复调用它。`calculateSensorSequence` 一次计算完整显式序列；`createSensorSession` 则保留原算法的有限内部状态。二者逐帧结果一致。去皮应在原始ADC层减去原始基线，再把处理后的 `raw` 或 `physical` 传入；不要把插值/补偿后的显示矩阵当原生输入。
+
+`computePressureMetrics(..., { algorithmMetrics })` 的 `total` 取 `forceMetrics.forceN`，`effectiveArea` 取 `areaMetrics.areaCm2`，`pressAver` 与压强趋势字段 `pressureTotal` 均按上述 `10F/A` 换算，标记 `pressureMethod:'force-over-area'`。附件的原分区均压、逐点曲线、最大值和力矩阵保留在 `algorithmMetrics` 中供诊断，不作为应用指标。应用 `pressMax/rawMaxPressureKPa/forceMax/forceAver/matrixPressureTotal` 均为 `null`，`pressureValues/forceValues` 为空数组；可视化使用采集到的原始 ADC，包含低于30的值，不能使用已补偿/过滤的 `displayAdcMatrix` 冒充原始 ADC。不可用结果标记 `calibrationComplete:false`、`calibrationScope:'unavailable'`。
+
+仅传 ADC 数组给 `computePressureMetrics(arr, key)` 时，结果明确标为 `calibrationScope:'matrix-only'`、`calibrationComplete:false`。对 `endi-sit/endi-back`，缺少完整模型结果时总力、面积、压强及逐点物理指标均不可用，不使用逐点曲线或固定格点面积兜底。Node 配置加载器支持附件原始导出，旧 V2.7.63 配置自动迁移到 `seatBackrestPressure_v2.11.0.js`。应用 V18 历史中已经保存的附件总力和面积可直接迁移为新 `10F/A` 摘要，保留采集前识别历史产生的估计值；若旧记录只保存了去皮后 ADC，不能恢复去皮前原始图，原始显示需明确标记不可用。
 
 ## 配置和设备缓存
 

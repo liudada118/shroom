@@ -674,7 +674,7 @@ const Canvas =
             const { colorLimit, height, autoColor, mode } = getThreeDisplaySettings(store)
             const colorScope = `bed-${mode}`
             setDynamicGammaColorEnabled(Boolean(autoColor), colorScope)
-            beginDynamicColorFrame(props.metricData?.current?.[store.pressureMetricMode]?.bed, colorLimit, colorScope)
+            beginDynamicColorFrame(props.metricData?.current?.adc?.bed, colorLimit, colorScope)
             const numParticles = AMOUNTX * AMOUNTY;
             const positions = new Float32Array(numParticles * 3);
             const colors = new Float32Array(numParticles * 3);
@@ -682,8 +682,8 @@ const Canvas =
             // let ndata1 = pageRef.current.equipStatus.data.length == 4096 ?pageRef.current.equipStatus.data : new Array(4096).fill(0)
             // let ndata1 = getStatus()
           
-            const metricMode = useEquipStore.getState().pressureMetricMode
-            let ndata1 = props.metricData?.current?.[metricMode]?.bed || new Array(1024).fill(0)
+            const metricMode = 'adc'
+            let ndata1 = props.metricData?.current?.adc?.bed || new Array(1024).fill(0)
             // console.log(ndata1)
             // if (props.type) {
 

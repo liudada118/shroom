@@ -961,8 +961,8 @@ const Canvas =
 
             // const {back , sit} = props.sitData.current
 
-            const metricMode = useEquipStore.getState().pressureMetricMode
-            const metricData = props.metricData?.current?.[metricMode] || {}
+            const metricMode = 'adc'
+            const metricData = props.metricData?.current?.adc || {}
             const data = {
                 back: metricData.back || new Array(4096).fill(0),
                 sit: metricData.sit || new Array(4096).fill(0),

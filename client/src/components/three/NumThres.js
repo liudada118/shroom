@@ -14,6 +14,7 @@ export default function NumThres(props) {
     const systemType = useEquipStore(s => s.systemType, shallow);
     const displayType = useEquipStore(s => s.displayType, shallow);
     const num2DZoom = useEquipStore(s => s.num2DZoom, shallow);
+    const metricDimensions = useEquipStore(s => s.metricDimensions, shallow);
     console.log(displayType.includes('sit'))
 
     // 根据 systemType 和 displayType 动态获取 width/height
@@ -21,6 +22,8 @@ export default function NumThres(props) {
         if (!isMoreMatrix(systemType)) return { width: 32, height: 32 }
         const isBack = displayType.includes('back')
         const configKey = `${systemType}-${isBack ? 'back' : 'sit'}`
+        const dimensions = metricDimensions?.[isBack ? 'back' : 'sit']
+        if (dimensions) return dimensions
         const config = systemPointConfig[configKey]
         if (config) return { width: config.width, height: config.height }
         // fallback to endi defaults
@@ -36,9 +39,9 @@ export default function NumThres(props) {
         <>{isMoreMatrix(systemType) ?
             displayType.includes('back') ?
                 (isSquareBack ?
-                    <NumThree key={`${systemType}-back`} width={width} height={height} sitData={sitData} metricData={props.metricData} zoom={num2DZoom} /> :
-                    <NumThree2 key={`${systemType}-back`} width={width} height={height} sitData={sitData} metricData={props.metricData} zoom={num2DZoom} />) :
-                <NumThree key={`${systemType}-sit`} width={width} height={height} sitData={sitData} metricData={props.metricData} zoom={num2DZoom} /> :
+                    <NumThree key={`${systemType}-back-${width}-${height}`} width={width} height={height} sitData={sitData} metricData={props.metricData} zoom={num2DZoom} /> :
+                    <NumThree2 key={`${systemType}-back-${width}-${height}`} width={width} height={height} sitData={sitData} metricData={props.metricData} zoom={num2DZoom} />) :
+                <NumThree key={`${systemType}-sit-${width}-${height}`} width={width} height={height} sitData={sitData} metricData={props.metricData} zoom={num2DZoom} /> :
             <NumThree width={32} height={32} sitData={sitData} metricData={props.metricData} zoom={num2DZoom} />}
 
             {/* <div style={{width : '100vw' , height : '100vh' , 

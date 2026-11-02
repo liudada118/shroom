@@ -2,8 +2,6 @@
 import { useTranslation } from 'react-i18next'
 import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setDynamicGammaColorEnabled } from '../../assets/util/line'
 import { useEquipStore } from '../../store/equipStore'
-import { isEndiBackVisibleCell } from '../../util/endiBackVisibleMask'
-import { normalizeVisualColorSetting } from '../../util/visualSettingStorage'
 
 let contrastColorScopeId = 0
 
@@ -14,7 +12,8 @@ function normalizeDisplayValue(value) {
 }
 
 function getTextureColorMax(colorMax) {
-    return normalizeVisualColorSetting(colorMax)
+    const numeric = Number(colorMax)
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : 255
 }
 
 function diffColor(value, maxAbs) {
@@ -27,11 +26,13 @@ function diffColor(value, maxAbs) {
 }
 
 function shouldHideCell(matrixKey, row, col, width, height) {
-    const isEndiBack = matrixKey === 'endi-back' || (matrixKey === 'back' && Number(width) === 50 && Number(height) === 64)
-    return isEndiBack && !isEndiBackVisibleCell(row, col, width, height)
+    return false
 }
 
 function getCellDisplay(rawValue, mode, maxAbs, colorMax) {
+    if (rawValue == null || !Number.isFinite(Number(rawValue))) {
+        return { displayValue: '—', background: 'rgba(3, 5, 7, 0.3)' }
+    }
     const colorValue = Number(rawValue) || 0
     const displayValue = mode === 'diff'
         ? Math.round(colorValue)
@@ -92,8 +93,7 @@ export default function ContrastHeatmap(props) {
         const ctx = canvas.getContext('2d')
         const draw = () => {
             const autoColor = Boolean(useEquipStore.getState().settingValue?.autoColor)
-            const metricMode = useEquipStore.getState().pressureMetricMode
-            const colorScope = `${colorScopeRef.current}-${matrixKey}-${metricMode}`
+            const colorScope = `${colorScopeRef.current}-${matrixKey}-raw-adc`
             setDynamicGammaColorEnabled(autoColor, colorScope)
             if (mode !== 'diff') {
                 beginDynamicColorFrame(arr, colorMax, colorScope)
@@ -125,7 +125,7 @@ export default function ContrastHeatmap(props) {
                     if (shouldHideCell(matrixKey, row, col, drawWidth, drawHeight)) {
                         continue
                     }
-                    const rawValue = Number(arr[row * drawWidth + col]) || 0
+                    const rawValue = arr[row * drawWidth + col]
                     const { displayValue, background } = getCellDisplay(rawValue, mode, maxAbs, safeColorMax)
                     const x = offsetX + col * cell
                     const y = offsetY + row * cell
@@ -183,7 +183,7 @@ export default function ContrastHeatmap(props) {
                 const row = magnifier.row + y - 2
                 const inRange = col >= 0 && row >= 0 && col < drawWidth && row < drawHeight
                 const hidden = inRange && shouldHideCell(matrixKey, row, col, drawWidth, drawHeight)
-                const rawValue = inRange && !hidden ? (Number(arr[row * drawWidth + col]) || 0) : 0
+                const rawValue = inRange && !hidden ? arr[row * drawWidth + col] : null
                 const { displayValue, background } = getCellDisplay(rawValue, mode, maxAbs, colorMax)
                 cells.push(
                     <div

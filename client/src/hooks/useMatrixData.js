@@ -15,6 +15,7 @@ import {
   buildPressureDisplayNormalDistribution,
   summarizePressureDisplayMatrix,
 } from '../util/pressureDisplayMatrix'
+import { getFullAlgorithmSummary } from '../util/fullAlgorithmMetrics'
 
 /**
  * 矩阵数据处理 Hook
@@ -41,11 +42,13 @@ const DATA_DIRECTION_STORAGE_KEY = 'matrixDataDirection'
 const DATA_QUALITY_MESSAGE_INTERVAL = 3000
 
 function roundMetricValue(value, digits = 1) {
+  if (value === null) return null
   const numeric = Number(value)
   return Number.isFinite(numeric) ? Number(numeric.toFixed(digits)) : 0
 }
 
 function formatMetricValue(value, digits = 1) {
+  if (value === null) return null
   return roundMetricValue(value, digits).toFixed(digits)
 }
 
@@ -156,6 +159,7 @@ export function useMatrixData() {
   const activeFrameDirectionRef = useRef({})
   const lastSensorFrameRef = useRef(null)
   const lastSensorFrameSourceRef = useRef('realtime')
+  const frameMatrixConfigRef = useRef({})
 
   /**
    * 限制 endi 类型数据值上限为 255
@@ -219,7 +223,8 @@ export function useMatrixData() {
     ]
     for (const candidate of candidates) {
       if (candidate && systemPointConfig[candidate]) {
-        return { key: candidate, config: systemPointConfig[candidate] }
+        const dimensions = frameMatrixConfigRef.current[matrixKey] || frameMatrixConfigRef.current[shortKey]
+        return { key: candidate, config: { ...systemPointConfig[candidate], ...dimensions } }
       }
     }
     return { key: matrixKey, config: null }
@@ -246,7 +251,7 @@ export function useMatrixData() {
       const boxes = []
       for (let i = 0; i < currentSelect.length; i++) {
         const { sel, originalIndex } = currentSelect[i]
-        const matrix = colSelectMatrix('canvasThree', sel, systemPointConfig[fullKey])
+        const matrix = colSelectMatrix('canvasThree', sel, config)
         if (matrix) {
           const data = extractSelectData(arr, matrix, width)
           if (data) {
@@ -317,19 +322,27 @@ export function useMatrixData() {
     return { default: [...arr], boxes: [] }
   }
 
-  function computeRenderedStats(pressureValues, forceValues, validMask, fullKey, activeMode) {
+  function computeRenderedStats(pressureValues, forceValues, validMask, fullKey, activeMode, algorithmMetrics = null, pointAreaValues = null, forceDistributionAvailable = true) {
     const pressureSummary = summarizePressureDisplayMatrix(
       pressureValues,
       fullKey,
       PRESSURE_METRIC_MODE,
       validMask,
+      algorithmMetrics,
+      pointAreaValues,
     )
     const forceSummary = summarizePressureDisplayMatrix(
       forceValues,
       fullKey,
       FORCE_METRIC_MODE,
       validMask,
+      algorithmMetrics,
+      pointAreaValues,
     )
+    if (!forceDistributionAvailable && !algorithmMetrics) {
+      Object.assign(forceSummary, { max: null, average: null, total: null, forceTotal: null })
+    }
+    pressureSummary.forceTotal = forceSummary.total
     const activeSummary = normalizePressureMetricMode(activeMode) === PRESSURE_METRIC_MODE
       ? pressureSummary
       : forceSummary
@@ -342,6 +355,9 @@ export function useMatrixData() {
       stats: {
         pressTotal: formatMetricValue(activeForceTotal),
         areaTotal: activeSummary.activeCount,
+        effectiveAreaCm2: activeSummary.effectiveArea,
+        areaUnit: algorithmMetrics || Array.isArray(pointAreaValues) ? 'cm2' : 'points',
+        algorithmMetricsSource: activeSummary.algorithmMetricsSource || (Array.isArray(pointAreaValues) ? 'matrix-region' : null),
         pressurePointTotal: pressureSummary.activeCount,
         forcePointTotal: forceSummary.activeCount,
         pressMax: formatMetricValue(pressureSummary.max),
@@ -406,155 +422,36 @@ export function useMatrixData() {
   }
 
   function computeStats(data, arr, selectResult, key, fullKey, options = {}, renderedMetrics = {}) {
-    const { key: matrixKey, config } = getMatrixConfigEntry(fullKey, key)
-    if (!config) return
-    const { width, height } = config
-
+    // Selection is a visual tool. The physical metrics always describe the
+    // complete sensor frame returned by the delivered force/area algorithm.
+    const full = getFullAlgorithmSummary(renderedMetrics.algorithmMetrics)
+    const forceN = full?.forceN ?? null
+    const areaCm2 = full?.areaCm2 ?? null
+    const pressureKPa = full?.averagePressureKPa ?? null
     if (!data[key]) data[key] = {}
-    if (!data[key].areaArr) data[key].areaArr = []
-    if (!data[key].pressureAreaArr) data[key].pressureAreaArr = []
-    if (!data[key].forceAreaArr) data[key].forceAreaArr = []
-    if (!data[key].pressArr) data[key].pressArr = []
-    if (!data[key].pressureArr) data[key].pressureArr = []
-    if (!data[key].forceArr) data[key].forceArr = []
-    if (!data[key].data) data[key].data = {}
-    if (!data[key].boxStats) data[key].boxStats = []
-
-    const pressureSelectResult = mapSelectionToMatrix(renderedMetrics[PRESSURE_METRIC_MODE], selectResult, width)
-    const forceSelectResult = mapSelectionToMatrix(renderedMetrics[FORCE_METRIC_MODE], selectResult, width)
-    const adcSelectResult = mapSelectionToMatrix(renderedMetrics.adc, selectResult, width)
-    const validMaskSelectResult = mapSelectionToMatrix(renderedMetrics.validMask, selectResult, width)
-    const activeSelectResult = normalizePressureMetricMode(useEquipStore.getState().pressureMetricMode) === PRESSURE_METRIC_MODE
-      ? pressureSelectResult
-      : forceSelectResult
-    const selectedArr = activeSelectResult.default
-    const firstBox = selectResult.boxes?.[0]
-    const firstBoxWidth = Math.max(1, Number(firstBox?.matrix?.xEnd) - Number(firstBox?.matrix?.xStart) || width)
-    const firstBoxHeight = Math.max(1, Number(firstBox?.matrix?.yEnd) - Number(firstBox?.matrix?.yStart) || height)
-    const selectedCenter = firstBox
-      ? projectBoxCenterToMatrix(calcCentroidRatio([...selectedArr], firstBoxWidth, firstBoxHeight), firstBox.matrix, width, height)
-      : calcCentroidRatio([...selectedArr], width, height)
-    const metricMode = useEquipStore.getState().pressureMetricMode
-    const renderedStats = computeRenderedStats(
-      pressureSelectResult.default,
-      forceSelectResult.default,
-      validMaskSelectResult.default,
-      matrixKey,
-      metricMode,
-    )
-    const { pressureSummary, forceSummary, activeSummary } = renderedStats
-    const pressureNormalDis = buildPressureDisplayNormalDistribution(pressureSummary.metricValues, PRESSURE_METRIC_MODE)
-    const forceNormalDis = buildPressureDisplayNormalDistribution(forceSummary.metricValues, FORCE_METRIC_MODE)
-    const activeNormalDis = normalizePressureMetricMode(metricMode) === PRESSURE_METRIC_MODE
-      ? pressureNormalDis
-      : forceNormalDis
-
-    data[key].center = selectedCenter
-    data[key].normalDis = {
-      ...activeNormalDis,
-      byMode: {
-        [PRESSURE_METRIC_MODE]: pressureNormalDis,
-        [FORCE_METRIC_MODE]: forceNormalDis,
-      },
+    for (const field of ['areaArr', 'pressureAreaArr', 'forceAreaArr', 'pressArr', 'pressureArr', 'forceArr']) {
+      if (!Array.isArray(data[key][field])) data[key][field] = []
     }
-
-    // 默认统计（全部数据或第一个框）
-    setTrendValue(data[key].areaArr, activeSummary.activeCount, options)
-    setTrendValue(data[key].pressureAreaArr, pressureSummary.activeCount, options)
-    setTrendValue(data[key].forceAreaArr, forceSummary.activeCount, options)
-    const pressForChart = roundMetricValue(activeSummary.forceTotal)
-    setTrendValue(data[key].pressArr, pressForChart, options)
-    setTrendValue(data[key].pressureArr, roundMetricValue(pressureSummary.total), options)
-    setTrendValue(data[key].forceArr, roundMetricValue(forceSummary.total), options)
-
-    Object.assign(data[key].data, renderedStats.stats)
-    appendAdcChartStats(data[key], adcSelectResult.default, width, height, firstBox?.matrix, options)
-
-    // carY 类型压力转换
-    if (matrixKey === 'carY-back' || matrixKey === 'carY-sit') {
-      data[key].data.pressTotal = formatMetricValue(forceSummary.total)
+    setTrendValue(data[key].areaArr, areaCm2, options)
+    setTrendValue(data[key].pressureAreaArr, areaCm2, options)
+    setTrendValue(data[key].forceAreaArr, areaCm2, options)
+    setTrendValue(data[key].pressArr, forceN, options)
+    setTrendValue(data[key].forceArr, forceN, options)
+    setTrendValue(data[key].pressureArr, pressureKPa, options)
+    data[key].data = {
+      total: forceN,
+      pressTotal: forceN,
+      forceTotal: forceN,
+      effectiveAreaCm2: areaCm2,
+      areaUnit: 'cm2',
+      pressAver: pressureKPa,
+      pressureAver: pressureKPa,
+      pressureTotal: pressureKPa,
+      algorithmMetricsSource: full?.source || null,
     }
-
-    // ─── 多框选独立统计 ───────────────────────────────────
-    const boxes = selectResult.boxes
-    if (boxes.length > 0) {
-      // 确保每个框都有自己的滑动窗口
-      while (data[key].boxStats.length < boxes.length) {
-        data[key].boxStats.push({
-          colorIndex: 0,
-          bgc: '#FF6B6B',
-          name: getDefaultSelectionName(data[key].boxStats.length + 1),
-          pressArr: [],
-          pressureArr: [],
-          forceArr: [],
-          areaArr: [],
-          pressureAreaArr: [],
-          forceAreaArr: [],
-          data: {},
-        })
-      }
-      // 如果框数减少了，截断
-      if (data[key].boxStats.length > boxes.length) {
-        data[key].boxStats.length = boxes.length
-      }
-
-      for (let i = 0; i < boxes.length; i++) {
-        const box = boxes[i]
-        const boxStat = data[key].boxStats[i]
-        if (!boxStat.pressureAreaArr) boxStat.pressureAreaArr = []
-        if (!boxStat.forceAreaArr) boxStat.forceAreaArr = []
-        boxStat.colorIndex = box.colorIndex
-        boxStat.bgc = box.bgc
-        boxStat.name = formatSelectionName(box.name, i + 1)
-
-        const boxRenderedStats = computeRenderedStats(
-          pressureSelectResult.boxes[i]?.data,
-          forceSelectResult.boxes[i]?.data,
-          validMaskSelectResult.boxes[i]?.data,
-          matrixKey,
-          metricMode,
-        )
-        const {
-          pressureSummary: boxPressureSummary,
-          forceSummary: boxForceSummary,
-          activeSummary: boxActiveSummary,
-          stats,
-        } = boxRenderedStats
-        boxStat.data = stats
-        const boxWidth = Math.max(1, Number(box.matrix?.xEnd) - Number(box.matrix?.xStart) || width)
-        const boxHeight = Math.max(1, Number(box.matrix?.yEnd) - Number(box.matrix?.yStart) || height)
-        const activeBoxValues = normalizePressureMetricMode(metricMode) === PRESSURE_METRIC_MODE
-          ? pressureSelectResult.boxes[i]?.data
-          : forceSelectResult.boxes[i]?.data
-        const localCenter = calcCentroidRatio([...(activeBoxValues || [])], boxWidth, boxHeight)
-        boxStat.center = projectBoxCenterToMatrix(localCenter, box.matrix, width, height)
-        boxStat.localCenter = localCenter
-        const boxPressureNormalDis = buildPressureDisplayNormalDistribution(boxPressureSummary.metricValues, PRESSURE_METRIC_MODE)
-        const boxForceNormalDis = buildPressureDisplayNormalDistribution(boxForceSummary.metricValues, FORCE_METRIC_MODE)
-        const boxActiveNormalDis = normalizePressureMetricMode(metricMode) === PRESSURE_METRIC_MODE
-          ? boxPressureNormalDis
-          : boxForceNormalDis
-        boxStat.normalDis = {
-          ...boxActiveNormalDis,
-          byMode: {
-            [PRESSURE_METRIC_MODE]: boxPressureNormalDis,
-            [FORCE_METRIC_MODE]: boxForceNormalDis,
-          },
-        }
-
-        const bPressForChart = roundMetricValue(boxForceSummary.total)
-        setTrendValue(boxStat.pressArr, bPressForChart, options)
-        setTrendValue(boxStat.pressureArr, roundMetricValue(boxPressureSummary.total), options)
-        setTrendValue(boxStat.forceArr, roundMetricValue(boxForceSummary.total), options)
-        setTrendValue(boxStat.areaArr, boxActiveSummary.activeCount, options)
-        setTrendValue(boxStat.pressureAreaArr, boxPressureSummary.activeCount, options)
-        setTrendValue(boxStat.forceAreaArr, boxForceSummary.activeCount, options)
-        appendAdcChartStats(boxStat, adcSelectResult.boxes[i]?.data, width, height, box.matrix, options)
-      }
-    } else {
-      // 无框选时清空 boxStats
-      data[key].boxStats = []
-    }
+    data[key].boxStats = []
+    data[key].normalDis = null
+    data[key].center = null
   }
 
   function appendAdcChartStats(target, values, width, height, box, options) {
@@ -670,6 +567,7 @@ export function useMatrixData() {
   }
 
   function getExecutedDirectionForFrame(fullKey, frameItem) {
+    if (frameItem?.algorithmMetrics?.version === '2.11.0') return { left: true, up: true, rotateDegree: 0 }
     const currentDirection = getCurrentDirectionForKey(fullKey)
     const frameDirection = normalizeDataDirection(frameItem?.dataDirection || DEFAULT_DATA_DIRECTION)
     return isDefaultDataDirection(frameDirection) ? currentDirection : frameDirection
@@ -681,6 +579,11 @@ export function useMatrixData() {
     for (const fullKey of keyArr) {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       if (!res[key] || !systemPointConfig[fullKey]) continue
+
+      if (sitData[fullKey]?.algorithmMetrics?.version === '2.11.0') {
+        activeFrameDirectionRef.current[fullKey] = getExecutedDirectionForFrame(fullKey, sitData[fullKey])
+        continue
+      }
 
       const frameDirection = normalizeDataDirection(sitData[fullKey]?.dataDirection || DEFAULT_DATA_DIRECTION)
       const executedDirection = getExecutedDirectionForFrame(fullKey, sitData[fullKey])
@@ -715,6 +618,9 @@ export function useMatrixData() {
       dimensions: {},
       orientation: {},
       validMask: {},
+      pointArea: {},
+      algorithmMetrics: {},
+      forceDistributionAvailable: {},
     }
 
     for (const fullKey of keyArr) {
@@ -731,15 +637,20 @@ export function useMatrixData() {
           return Number.isFinite(value) && value > 0 ? value : 0
         })
         const frameDirection = normalizeDataDirection(item.dataDirection || DEFAULT_DATA_DIRECTION)
-        if (isDefaultDataDirection(frameDirection)) {
+        if (!item.algorithmMetrics && isDefaultDataDirection(frameDirection)) {
           values = applyDirectionToArray(values, width, height, getExecutedDirectionForFrame(fullKey, item))
         }
         return values
       }
-      next[PRESSURE_METRIC_MODE][shortKey] = readMetric('pressureArr')
-      next[FORCE_METRIC_MODE][shortKey] = readMetric('forceArr')
+      next.algorithmMetrics[shortKey] = item.algorithmMetrics || null
+      next.forceDistributionAvailable[shortKey] = item.forceDistributionAvailable !== false
+      if (Array.isArray(item.pointAreaArr)) next.pointArea[shortKey] = readMetric('pointAreaArr')
       // No calibrated fallback: missing historical raw ADC must not masquerade as original data.
-      if (Array.isArray(item.rawAdcArr)) next.adc[shortKey] = readMetric('rawAdcArr')
+      if (Array.isArray(item.rawAdcArr)) {
+        next.adc[shortKey] = item.rawDisplayAvailable === false
+          ? new Array(count).fill(null)
+          : Array.from({ length: count }, (_, index) => Number.isFinite(item.rawAdcArr[index]) ? item.rawAdcArr[index] : null)
+      }
       next.dimensions[shortKey] = { width, height }
       next.orientation[shortKey] = [getExecutedDirectionForFrame(fullKey, item), item.zeroState]
       const validMaskField = Array.isArray(item.calibrationValidMask)
@@ -751,9 +662,14 @@ export function useMatrixData() {
     }
 
     renderedMetricDataRef.current = next
+    const previousDimensions = useEquipStore.getState().metricDimensions
+    const versions = Object.fromEntries(Object.entries(next.algorithmMetrics).map(([key, metric]) => [key, metric?.version || null]))
+    if (JSON.stringify(previousDimensions) !== JSON.stringify(next.dimensions)
+      || JSON.stringify(useEquipStore.getState().metricAlgorithmVersions) !== JSON.stringify(versions)) {
+      useEquipStore.setState({ metricDimensions: next.dimensions, metricAlgorithmVersions: versions })
+    }
     useEquipStore.getState().setMetricStatus({
-      [PRESSURE_METRIC_MODE]: next[PRESSURE_METRIC_MODE],
-      [FORCE_METRIC_MODE]: next[FORCE_METRIC_MODE],
+      adc: next.adc,
     })
     return next
   }
@@ -784,11 +700,19 @@ export function useMatrixData() {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       if (!sitData[fullKey]?.arr) continue
 
-      arr[key] = clampEndi([...sitData[fullKey].arr], fullKey, key)
+      const meta = sitData[fullKey].matrixMeta || {}
+      const frameWidth = Number(meta.width ?? meta.cols ?? sitData[fullKey].width)
+      const frameHeight = Number(meta.height ?? meta.rows ?? sitData[fullKey].height)
+      if (frameWidth > 0 && frameHeight > 0 && frameWidth * frameHeight === sitData[fullKey].arr.length) {
+        frameMatrixConfigRef.current[fullKey] = { width: frameWidth, height: frameHeight }
+        frameMatrixConfigRef.current[key] = { width: frameWidth, height: frameHeight }
+      }
+
       const rawAdc = Array.isArray(sitData[fullKey].rawAdcArr)
         ? sitData[fullKey].rawAdcArr
         : sitData[fullKey].arr
-      sourceAdcArr[key] = clampEndi([...rawAdc], fullKey, key)
+      sourceAdcArr[key] = sitData[fullKey].rawDisplayAvailable === false ? rawAdc.map(() => null) : [...rawAdc]
+      arr[key] = [...sourceAdcArr[key]]
     }
 
     const statsArr = buildFilteredMatrixFromRaw(arr, keyArr)
@@ -807,6 +731,9 @@ export function useMatrixData() {
         [FORCE_METRIC_MODE]: renderedMetricData[FORCE_METRIC_MODE][key],
         validMask: renderedMetricData.validMask[key],
         adc: renderedMetricData.adc[key],
+        pointArea: renderedMetricData.pointArea[key],
+        algorithmMetrics: renderedMetricData.algorithmMetrics[key],
+        forceDistributionAvailable: renderedMetricData.forceDistributionAvailable[key],
       })
     }
 

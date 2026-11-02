@@ -2,22 +2,73 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const {
-  ADC_PREPROCESSING_MODE,
   NATIVE_CALIBRATION_MIN_ADC,
   NATIVE_BACKREST_CALIBRATION_MIN_ADC,
   NATIVE_CALIBRATION_DISTRIBUTION,
-  PROCESSING_VERSION,
   calcNativeCalibrationPressureValues,
   calcPressureFormulaStats,
   ensureProcessedMatrixItem,
   normalizeFrameProcessingConfig,
   processMatrixItem,
 } = require('../util/pressureFrameProcessor')
-const calibrationFormula = require('../server/kpa/adc-matrix-to-pressure-filter30-v2.7.63')
+const calibrationFormula = require('../server/kpa/seatBackrestPressure_v2.11.0')
 const { endiBack1024 } = require('../util/line')
+const {
+  FULL_PROCESSING_VERSION,
+  FULL_ADC_PREPROCESSING,
+  FULL_DISTRIBUTION,
+} = require('../util/fullAlgorithmProcessor')
+
+let streamIndex = 0
+
+function processPhysical(key, physical, item = {}, config = {}) {
+  streamIndex += 1
+  return processMatrixItem(key, {
+    arr: [],
+    algorithmPhysicalFrame: physical,
+    algorithmTimestampMs: 0,
+    algorithmStreamId: `frame-processor-test-${streamIndex}`,
+    ...item,
+  }, config)
+}
+
+function contactPhysical(rows = 23, cols = 23, value = 110) {
+  return Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (_, col) => (
+    row >= 7 && row <= 13 && col >= 8 && col <= 14 ? value : 0
+  )))
+}
+
+function rawDisplay(output) {
+  let matrix = output.sourceMatrix
+  for (let i = 0; i < 3; i++) matrix = matrix[0].map((_, col) => matrix.map(row => row[col]).reverse())
+  return matrix.flat()
+}
 
 function mean(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function prepareReferenceAdc(values, sensor) {
+  return values.map((value) => {
+    if (!Number.isFinite(value) || value <= 0) return 0
+    const corrected = sensor === 'seat'
+      ? 1.0069947916666666 * value + 6.018421875000001
+      : value
+    return corrected > 30 ? corrected : 0
+  })
+}
+
+function referenceMetrics(values, sensor) {
+  return calibrationFormula.calculatePressureMetricsFromMatrix(
+    [prepareReferenceAdc(values, sensor)],
+    sensor === 'seat' ? 'endi-23x23' : 'new-backrest-32x25',
+  )
+}
+
+function referenceBasePressure(value, sensor) {
+  return calibrationFormula.calculateMatrixPressureMap(
+    [[value]], sensor === 'seat' ? 'endi-23x23' : 'new-backrest-32x25',
+  ).kpa[0][0]
 }
 
 test('frame processing settings are normalized to backend limits', () => {
@@ -32,33 +83,30 @@ test('frame processing settings are normalized to backend limits', () => {
   })
 })
 
-test('zeroed ADC applies the fixed 30 gate without configurable filter or Gaussian processing', () => {
-  const values = new Array(46 * 46).fill(0)
-  values[22 * 46 + 22] = 29
-  values[23 * 46 + 23] = 1000
-  const expectedCalibrationValues = values.map((value) => (value > 30 ? value : 0))
+test('native input uses complete kernel compensation and filtering independently of legacy visual settings', () => {
+  const physical = contactPhysical()
+  physical[2][2] = 24
+  physical[3][3] = 29
+  const expected = calibrationFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'endi-23x23')
   const firstConfig = { filter: 0, gauss: 0, coherent: 7 }
   const ignoredProcessingConfig = { filter: 4095, gauss: 4, coherent: 1 }
 
-  const first = processMatrixItem('endi-sit', { arr: values }, firstConfig)
-  const second = processMatrixItem('endi-sit', { arr: values }, ignoredProcessingConfig)
+  const first = processPhysical('endi-sit', physical, {}, firstConfig)
+  const second = processPhysical('endi-sit', physical, {}, ignoredProcessingConfig)
 
-  assert.deepEqual(first.arr, expectedCalibrationValues)
-  assert.deepEqual(second.arr, expectedCalibrationValues)
+  assert.deepEqual(first.arr, rawDisplay(expected))
+  assert.deepEqual(second.arr, rawDisplay(expected))
   assert.deepEqual(first.pressureArr, second.pressureArr)
   assert.deepEqual(first.forceArr, second.forceArr)
-  assert.deepEqual(first.calibrationAdcArr, expectedCalibrationValues)
-  assert.equal(first.processing.version, PROCESSING_VERSION)
-  assert.equal(first.processing.adcPreprocessing, ADC_PREPROCESSING_MODE)
-  assert.equal(first.processing.filterApplied, false)
-  assert.equal(first.processing.gaussianApplied, false)
-  assert.equal(first.processing.gaussianSigma, 0)
-  assert.equal(first.processing.temporal, false)
-  assert.equal(first.processing.coherent, 7)
-  assert.equal(first.processing.pressureDistribution, NATIVE_CALIBRATION_DISTRIBUTION)
-  assert.equal(first.processing.calibrationInputGrid, 'display-matrix-post-interpolation')
-  assert.equal(first.arr.filter((value) => value > 0).length, 1)
-  assert.deepEqual(first.rawAdcArr, values)
+  assert.deepEqual(first.calibrationAdcArr, expected.displayAdcMatrix.flat())
+  assert.equal(first.processing.version, FULL_PROCESSING_VERSION)
+  assert.equal(first.processing.adcPreprocessing, FULL_ADC_PREPROCESSING)
+  assert.equal(first.processing.temporal, true)
+  assert.equal(first.processing.pressureDistribution, FULL_DISTRIBUTION)
+  assert.equal(first.processing.calibrationInputGrid, 'native-physical-before-interpolation')
+  assert.deepEqual(first.algorithmMetrics.forceMetrics, expected.forceMetrics)
+  assert.deepEqual(first.algorithmMetrics.areaMetrics, expected.areaMetrics)
+  assert.deepEqual(first.algorithmPhysicalFrame, physical)
 })
 
 test('native processor consumes the formula weight distribution as the final matrix', () => {
@@ -114,13 +162,13 @@ test('backrest calibration runs after 25x32 ADC interpolation produces the 50x64
   )
 
   assert.equal(interpolatedValues.length, 50 * 64)
-  assert.ok(interpolatedCount > calibrationFormula.HUMAN_VALID_POINT_THRESHOLD)
+  assert.ok(interpolatedCount > 300)
   assert.equal(result.calibrationAdcValues.length, 50 * 64)
   assert.deepEqual(result.calibrationAdcValues, gatedInterpolatedValues)
   assert.equal(result.branch, 'human')
   assert.equal(result.humanCoefficient, 2.2)
   const firstActiveIndex = gatedInterpolatedValues.findIndex((value) => value > 0)
-  const expectedPressure = calibrationFormula.estimateBasePressure(
+  const expectedPressure = referenceBasePressure(
     gatedInterpolatedValues[firstActiveIndex],
     'backrest',
   ) * 2.2
@@ -129,7 +177,7 @@ test('backrest calibration runs after 25x32 ADC interpolation produces the 50x64
 
 test('native calibration derives average and maximum from the normalized heatmap matrix', () => {
   const seatValues = [0, ...Array.from({ length: 100 }, (_, index) => index + 70)]
-  const seatDistribution = calibrationFormula.calculateWeightNormalizedPressureMatrix([seatValues], 'seat')
+  const seatDistribution = referenceMetrics(seatValues, 'seat')
   const seatPressures = seatDistribution.pressureMatrixKPa[0].filter((value) => value > 0)
   const seatStats = calcPressureFormulaStats(seatValues, 'endi-sit')
 
@@ -140,10 +188,10 @@ test('native calibration derives average and maximum from the normalized heatmap
   assert.ok(Math.abs(seatStats.total - seatPressures.reduce((sum, value) => sum + value, 0) * 0.1) < 1e-12)
   assert.equal(seatStats.pressureDistribution, NATIVE_CALIBRATION_DISTRIBUTION)
   assert.equal(seatStats.pressureCalibrationBranch, 'weight')
-  assert.equal(seatStats.normalizationScale, seatDistribution.normalization.scale)
+  assert.equal(seatStats.normalizationScale, seatDistribution.normalizationScale)
 
   const backValues = Array.from({ length: 80 }, (_, index) => index + 100)
-  const backDistribution = calibrationFormula.calculateWeightNormalizedPressureMatrix([backValues], 'backrest')
+  const backDistribution = referenceMetrics(backValues, 'backrest')
   const backPressures = backDistribution.pressureMatrixKPa[0].filter((value) => value > 0)
   const backStats = calcPressureFormulaStats(backValues, 'endi-back')
 
@@ -158,14 +206,14 @@ test('native calibration derives average and maximum from the normalized heatmap
 
 test('more than 300 effective points multiply every direct point pressure by 2.2', () => {
   const values = Array.from({ length: 301 }, (_, index) => 70 + (index % 120))
-  const expectedPressureValues = values.map((value) => (
-    calibrationFormula.estimateBasePressure(value, 'seat') * 2.2
+  const expectedPressureValues = prepareReferenceAdc(values, 'seat').map((value) => (
+    referenceBasePressure(value, 'seat') * 2.2
   ))
   const stats = calcPressureFormulaStats(values, 'endi-sit')
 
   assert.ok(Math.abs(stats.aver - mean(expectedPressureValues)) < 1e-12)
   assert.ok(Math.abs(stats.max - Math.max(...expectedPressureValues)) < 1e-12)
-  assert.equal(stats.normalizationScale, 1)
+  assert.equal(stats.normalizationScale, null)
   assert.equal(stats.pressureCalibrationBranch, 'human')
   assert.equal(stats.humanValidPointThreshold, 300)
   assert.equal(stats.humanCoefficient, 2.2)
@@ -173,10 +221,9 @@ test('more than 300 effective points multiply every direct point pressure by 2.2
 })
 
 test('canonical pressure and force matrices preserve formula precision and are not processed twice', () => {
-  const values = new Array(46 * 46).fill(0)
-  values[100] = 500
-  values[101] = 700
-  const processed = processMatrixItem('endi-sit', { arr: values }, {
+  const physical = contactPhysical()
+  const expected = calibrationFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'endi-23x23')
+  const processed = processPhysical('endi-sit', physical, {}, {
     filter: 30,
     gauss: 0.5,
     coherent: 1,
@@ -187,38 +234,36 @@ test('canonical pressure and force matrices preserve formula precision and are n
     coherent: 10,
   })
 
-  assert.equal(processed.pressureArr.length, values.length)
-  assert.equal(processed.forceArr.length, values.length)
-  assert.deepEqual(processed.calibrationAdcArr, values)
+  assert.equal(processed.pressureArr.length, 46 * 46)
+  assert.equal(processed.forceArr.length, 46 * 46)
+  assert.ok(processed.pressureArr.every(value => value === null))
+  assert.deepEqual(processed.algorithmMetrics.pressureMetrics, expected.pressureMetrics)
+  assert.deepEqual(processed.calibrationAdcArr, expected.displayAdcMatrix.flat())
+  assert.deepEqual(processed.algorithmPhysicalFrame, physical)
   assert.deepEqual(ensured.arr, processed.arr)
   assert.deepEqual(ensured.pressureArr, processed.pressureArr)
   assert.deepEqual(ensured.forceArr, processed.forceArr)
 
-  const activePressures = processed.pressureArr.filter((value) => value > 0)
-  const validCount = processed.calibrationValidMask.reduce((sum, value) => sum + value, 0)
-  const heatmapAverage = processed.pressureArr.reduce((sum, value) => sum + value, 0) / validCount
-  const heatmapMax = Math.max(...activePressures)
-  assert.equal(processed.calibrationDiagnostics.averagePressureKPa, heatmapAverage)
-  assert.equal(processed.calibrationDiagnostics.maxPressureKPa, heatmapMax)
-  assert.equal(processed.calibrationDiagnostics.statisticsSource, 'pressureArr+calibrationValidMask')
-  processed.forceArr.forEach((value, index) => {
-    assert.ok(Math.abs(value - processed.pressureArr[index] * 0.1) < 1e-12)
-  })
-
-  const displayedForceTotal = processed.forceArr.reduce((sum, value) => sum + value, 0)
-  const activePointCount = processed.forceArr.filter((value) => value > 0).length
-  assert.ok(displayedForceTotal > 0)
-  assert.ok(activePointCount > 0)
+  assert.deepEqual(processed.algorithmMetrics.forceMetrics, expected.forceMetrics)
+  assert.deepEqual(processed.algorithmMetrics.areaMetrics, expected.areaMetrics)
+  assert.equal(processed.processing.statisticsSource, 'algorithmMetrics')
+  assert.ok(processed.forceArr.every(value => value === null))
+  assert.deepEqual(processed.arr, rawDisplay(expected))
+  assert.equal(processed.algorithmMetrics.summary.forceN, expected.forceMetrics.forceN)
+  assert.equal(processed.algorithmMetrics.summary.areaCm2, expected.areaMetrics.areaCm2)
 })
 
-test('frames with an old processing version or formula watermark are recalculated from raw ADC', () => {
-  const values = new Array(46 * 46).fill(0)
-  values[100] = 500
+test('frames with an old processing version or formula watermark are recalculated from native ADC', () => {
+  const physical = contactPhysical()
+  const values = new Array(46 * 46).fill(999)
   const legacyItem = {
     arr: [...values],
     rawAdcArr: [...values],
     pressureArr: new Array(values.length).fill(999),
     forceArr: new Array(values.length).fill(999),
+    algorithmPhysicalFrame: physical,
+    algorithmTimestampMs: 0,
+    algorithmStreamId: 'legacy-native-reprocessing-test',
     processing: {
       version: 'backend-spatial-v1',
       filter: 30,
@@ -228,8 +273,8 @@ test('frames with an old processing version or formula watermark are recalculate
   }
   const recalculated = ensureProcessedMatrixItem('endi-sit', legacyItem)
 
-  assert.equal(recalculated.processing.version, PROCESSING_VERSION)
-  assert.equal(recalculated.processing.pressureDistribution, NATIVE_CALIBRATION_DISTRIBUTION)
+  assert.equal(recalculated.processing.version, FULL_PROCESSING_VERSION)
+  assert.equal(recalculated.processing.pressureDistribution, FULL_DISTRIBUTION)
   assert.notEqual(recalculated.pressureArr[100], 999)
   assert.notEqual(recalculated.forceArr[100], 999)
 
@@ -239,7 +284,7 @@ test('frames with an old processing version or formula watermark are recalculate
     forceArr: new Array(values.length).fill(777),
     processing: {
       ...recalculated.processing,
-      formulaFile: 'pressureFormula_previous.js',
+      formulaFile: 'previous-formula.js',
     },
   }
   const formulaRecalculated = ensureProcessedMatrixItem('endi-sit', staleFormulaItem)
@@ -247,79 +292,81 @@ test('frames with an old processing version or formula watermark are recalculate
   assert.notEqual(formulaRecalculated.forceArr[100], 777)
 })
 
-test('backend pressure matrices do not add a backrest validity mask after calibration', () => {
-  const values = new Array(50 * 64).fill(600)
-  const processed = processMatrixItem('endi-back', { arr: values }, {
+test('complete backrest calibration preserves the original physical validity mask', () => {
+  const physical = Array.from({ length: 32 }, () => new Array(25).fill(100))
+  const expected = calibrationFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'new-backrest-32x25')
+  const processed = processPhysical('endi-back', physical, {}, {
     filter: 0,
     gauss: 0,
     coherent: 1,
   })
 
-  assert.ok(processed.pressureArr[0] > 0)
-  assert.ok(processed.forceArr[13 * 50] > 0)
-  assert.ok(processed.pressureArr[18 * 50] > 0)
-  assert.ok(processed.forceArr[18 * 50] > 0)
-  assert.equal(processed.pressureArr.filter((value) => value > 0).length, values.length)
+  assert.deepEqual(processed.algorithmMetrics.pressureMetrics.pressureMatrixKPa, expected.pressureMetrics.pressureMatrixKPa)
+  assert.deepEqual(processed.calibrationAdcArr, expected.displayAdcMatrix.flat())
+  assert.equal(processed.algorithmMetrics.pressureMetrics.pressureMatrixKPa.flat().filter((value) => value > 0).length,
+    expected.pressureMetrics.pressureMatrixKPa.flat().filter((value) => value > 0).length)
+  assert.ok(processed.algorithmMetrics.pressureMetrics.pressureMatrixKPa.flat().some(value => value === 0))
+  assert.deepEqual(processed.arr, rawDisplay(expected))
 })
 
-test('backrest ADC 106.24 reaches the supplied calibration without a pre-calibration multiplier', () => {
-  const values = new Array(50 * 64).fill(0)
-  values.fill(106.24, 0, 56)
-  const processed = processMatrixItem('endi-back', { arr: values }, {
+test('native backrest ADC is preserved while display interpolation follows the supplied complete algorithm', () => {
+  const physical = Array.from({ length: 32 }, () => new Array(25).fill(106.24))
+  const expected = calibrationFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'new-backrest-32x25')
+  const processed = processPhysical('endi-back', physical, {}, {
     filter: 0,
     gauss: 0,
     coherent: 1,
   })
-  const activePressures = processed.pressureArr.filter((value) => value > 0)
-
-  assert.equal(Math.max(...processed.calibrationAdcArr), 106.24)
-  assert.equal(activePressures.length, 56)
-  assert.ok(Math.abs(mean(activePressures) - calibrationFormula.estimateBasePressure(106.24, 'backrest')) < 1e-12)
+  assert.equal(Math.max(...processed.calibrationAdcArr), Math.max(...expected.displayAdcMatrix.flat()))
+  assert.deepEqual(processed.algorithmPhysicalFrame, physical)
+  assert.deepEqual(processed.algorithmMetrics.pressureMetrics, expected.pressureMetrics)
+  assert.deepEqual(processed.arr, rawDisplay(expected))
 })
 
-test('seat and backrest both filter finite ADC values below 30', () => {
-  for (const [key, length] of [['endi-sit', 46 * 46], ['endi-back', 50 * 64]]) {
-    const processed = processMatrixItem(key, {
-      arr: [29, 30, 31, ...new Array(length - 3).fill(0)],
-    })
-
-    assert.equal(processed.processing.calibrationInputMinAdc, NATIVE_CALIBRATION_MIN_ADC)
-    assert.deepEqual(processed.calibrationAdcArr.slice(0, 3), [0, 0, 31])
-    assert.equal(processed.calibrationDiagnostics.validCount, 1)
+test('complete seat and backrest matrices apply the delivered calibration threshold after interpolation', () => {
+  for (const [key, type, rows, cols] of [
+    ['endi-sit', 'endi-23x23', 23, 23], ['endi-back', 'new-backrest-32x25', 32, 25],
+  ]) {
+    const physical = contactPhysical(rows, cols, 31)
+    const processed = processPhysical(key, physical)
+    const expected = calibrationFormula.calculateSensorFrame({ physical, timestampMs: 0 }, type)
+    assert.equal(processed.processing.algorithmOptions.filterThreshold, 30)
+    assert.deepEqual(processed.calibrationAdcArr, expected.displayAdcMatrix.flat())
+    assert.ok(processed.calibrationAdcArr.every((value) => value === 0 || value > 30))
+    assert.deepEqual(processed.arr, rawDisplay(expected))
+    assert.equal(processed.algorithmMetrics.pressureMetrics.validCount, expected.pressureMetrics.validCount)
   }
   assert.equal(NATIVE_BACKREST_CALIBRATION_MIN_ADC, NATIVE_CALIBRATION_MIN_ADC)
 })
 
-test('ADC values below 30 do not enter calibration count or switch the branch', () => {
+test('explicit point-map calibration filters ADC below 30 before counting the 300-point branch', () => {
   const buildValues = (noiseCount) => [
     ...new Array(56).fill(106.24),
     ...new Array(noiseCount).fill(29),
     ...new Array(50 * 64 - 56 - noiseCount).fill(0),
   ]
-  const belowBoundary = processMatrixItem('endi-back', { arr: buildValues(243) })
-  const aboveBoundary = processMatrixItem('endi-back', { arr: buildValues(245) })
+  const belowBoundary = calcNativeCalibrationPressureValues(buildValues(243), 'endi-back', calibrationFormula)
+  const aboveBoundary = calcNativeCalibrationPressureValues(buildValues(245), 'endi-back', calibrationFormula)
 
-  assert.equal(belowBoundary.processing.calibrationInputMinAdc, NATIVE_CALIBRATION_MIN_ADC)
-  assert.equal(belowBoundary.calibrationDiagnostics.validCount, 56)
-  assert.equal(belowBoundary.calibrationDiagnostics.selectedCount, 46)
-  assert.equal(belowBoundary.calibrationDiagnostics.branch, 'weight')
-  assert.ok(Math.abs(belowBoundary.calibrationDiagnostics.inputMeanAdc - 106.24) < 1e-9)
+  assert.equal(belowBoundary.validCount, 56)
+  assert.equal(belowBoundary.selectedCount, 46)
+  assert.equal(belowBoundary.branch, 'weight')
+  assert.ok(Math.abs(belowBoundary.adcAvg - 106.24) < 1e-9)
   assert.ok(Math.abs(
-    belowBoundary.calibrationDiagnostics.averagePressureKPa
-      - calibrationFormula.estimateBasePressure(106.24, 'backrest'),
+    belowBoundary.summaryAveragePressureKPa
+      - referenceBasePressure(106.24, 'backrest'),
   ) < 1e-12)
-  assert.equal(belowBoundary.pressureArr.filter((value) => value > 0).length, 56)
+  assert.equal(belowBoundary.pressureValues.filter((value) => value > 0).length, 56)
 
-  assert.equal(aboveBoundary.processing.calibrationInputMinAdc, NATIVE_CALIBRATION_MIN_ADC)
-  assert.equal(aboveBoundary.calibrationDiagnostics.validCount, 56)
-  assert.equal(aboveBoundary.calibrationDiagnostics.selectedCount, 46)
-  assert.equal(aboveBoundary.calibrationDiagnostics.branch, 'weight')
-  assert.equal(aboveBoundary.calibrationDiagnostics.humanCoefficient, null)
-  assert.equal(aboveBoundary.pressureArr.filter((value) => value > 0).length, 56)
+  assert.equal(aboveBoundary.validCount, 56)
+  assert.equal(aboveBoundary.selectedCount, 46)
+  assert.equal(aboveBoundary.branch, 'weight')
+  assert.equal(aboveBoundary.humanCoefficient, null)
+  assert.equal(aboveBoundary.pressureValues.filter((value) => value > 0).length, 56)
   assert.ok(Math.abs(
-    aboveBoundary.calibrationDiagnostics.averagePressureKPa
-      - calibrationFormula.estimateBasePressure(106.24, 'backrest'),
+    aboveBoundary.summaryAveragePressureKPa
+      - referenceBasePressure(106.24, 'backrest'),
   ) < 1e-12)
-  assert.equal(belowBoundary.calibrationDiagnostics.preGatePositiveCount, 299)
-  assert.equal(aboveBoundary.calibrationDiagnostics.preGatePositiveCount, 301)
+  assert.equal(buildValues(243).filter((value) => value > 0).length, 299)
+  assert.equal(buildValues(245).filter((value) => value > 0).length, 301)
 })

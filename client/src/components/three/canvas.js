@@ -680,22 +680,17 @@ const Canvas = React.forwardRef((props, refs) => {
       sitOrder,
       sitOrder
     );
-    let bigArrg = gaussBlur_return(
-      bigArrs,
-      sitnum2 * sitInterp + sitOrder * 2,
-      sitnum1 * sitInterp + sitOrder * 2,
-      gauss
-    );
+    let bigArrg = bigArrs;
 
     let k = 0,
       l = 0;
     let dataArr = []
     for (let ix = 0; ix < AMOUNTX; ix++) {
       for (let iy = 0; iy < AMOUNTY; iy++) {
-        const value = bigArrg[l] * 10 ;
+        const value = Number.isFinite(bigArrg[l]) ? bigArrg[l] : 0;
 
         //柔化处理smooth
-        smoothBig[l] = smoothBig[l] + (value - smoothBig[l] + 0.5) / coherent;
+        smoothBig[l] = value;
 
         positions[k] = 13500 - iy * SEPARATION - (AMOUNTY * SEPARATION) / 2;// x
         positions[k + 1] = -smoothBig[l] * height; // y

@@ -31,11 +31,10 @@ import {
 } from '../client/src/util/pressureDisplayMatrix.js'
 
 const require = createRequire(import.meta.url)
-const calibrationFormula = require('../server/kpa/adc-matrix-to-pressure-filter30-v2.7.63.js')
-const { calculateCalibrationPressureDistribution } = require('../util/calibrationPressureAdapter.js')
+const calibrationFormula = require('../server/kpa/seatBackrestPressure_v2.11.0.js')
 const { normalizePressureConfig } = require('../server/services/PressureConfig.js')
 const { calcPressureFormulaStats } = require('../util/pressureFrameProcessor.js')
-const CALIBRATION_FORMULA_PROFILE = 'adc-matrix-to-pressure-filter30-v2.7.63'
+const CALIBRATION_FORMULA_PROFILE = 'seatBackrestPressure_v2.11.0'
 
 setPressureFormulaProfile(CALIBRATION_FORMULA_PROFILE)
 
@@ -44,10 +43,15 @@ function mean(values) {
 }
 
 function getExpectedPointValues(values, sensor) {
-  const gatedValues = values.map((value) => (
-    Number.isFinite(Number(value)) && Number(value) > 30 ? Number(value) : 0
-  ))
-  return calculateCalibrationPressureDistribution(calibrationFormula, gatedValues, sensor).pressureMatrixKPa
+  const gatedValues = values.map((value) => {
+    const adc = Number(value)
+    if (!Number.isFinite(adc) || adc <= 0) return 0
+    const corrected = sensor === 'seat' ? 1.0069947916666666 * adc + 6.018421875000001 : adc
+    return corrected > 30 ? corrected : 0
+  })
+  return calibrationFormula.calculateMatrixPressureMap(
+    [gatedValues], sensor === 'seat' ? 'endi-23x23' : 'new-backrest-32x25',
+  ).kpa[0]
 }
 
 test('formula file name overrides a stale configured profile', () => {
@@ -65,201 +69,113 @@ test('formula file name overrides a stale configured profile', () => {
   )
 })
 
-test('seat point matrix applies the V2.7.46 base curve to every point', () => {
-  const values = [0, ...Array.from({ length: 100 }, (_, index) => index + 70)]
-  const pointValues = getPressureMetricPointValues(values, 'endi-sit', PRESSURE_METRIC_MODE)
-  const expectedValues = getExpectedPointValues(values, 'seat')
-  const activeExpectedValues = expectedValues.filter((value) => value > 0)
-
-  assert.equal(getPressureFormulaProfile(), CALIBRATION_FORMULA_PROFILE)
-  assert.equal(pointValues[0], 0)
-  pointValues.forEach((value, index) => {
-    assert.ok(Math.abs(value - expectedValues[index]) < 1e-9)
-  })
-  assert.ok(Math.abs(mean(pointValues.filter((value) => value > 0)) - mean(activeExpectedValues)) < 1e-9)
-  assert.ok(Math.abs(Math.max(...pointValues) - Math.max(...expectedValues)) < 1e-9)
+test('every visual mode preserves the same raw ADC including low values and decimal precision', () => {
+  const raw = [0, 12, 24, 29, 30, 31.125, 140, 255]
+  const initial = [...raw]
+  for (const mode of [PRESSURE_METRIC_MODE, FORCE_METRIC_MODE, 'adc']) {
+    assert.deepEqual(getPressureMetricPointValues(raw, 'endi-sit', mode, {
+      pressureArr: raw.map(() => 999), forceArr: raw.map(() => 999),
+    }), raw)
+  }
+  assert.deepEqual(raw, initial)
 })
 
-test('browser fallback applies weight normalization through 300 points and 2.2 above 300', () => {
-  const backValues = Array.from({ length: 80 }, (_, index) => index + 100)
-  const backPointValues = getPressureMetricPointValues(backValues, 'endi-back', PRESSURE_METRIC_MODE)
-  const backExpectedValues = getExpectedPointValues(backValues, 'backrest')
-  const activeBackExpectedValues = backExpectedValues.filter((value) => value > 0)
-  assert.ok(Math.abs(backPointValues[0] - backExpectedValues[0]) < 1e-9)
-  assert.ok(Math.abs(mean(backPointValues) - mean(activeBackExpectedValues)) < 1e-9)
-
-  const backSummary = getPressureMetricSummary(backValues, 'endi-back', PRESSURE_METRIC_MODE)
-  assert.ok(Math.abs(backSummary.average - mean(activeBackExpectedValues)) < 1e-9)
-  assert.ok(Math.abs(backSummary.max - Math.max(...activeBackExpectedValues)) < 1e-9)
-  assert.equal(backSummary.metrics.matrixPressMax, backSummary.max)
-  assert.equal(backSummary.metrics.matrixPressAver, backSummary.average)
-
-  const boundaryValues = Array.from({ length: 300 }, (_, index) => 70 + (index % 120))
-  const boundaryPointValues = getPressureMetricPointValues(boundaryValues, 'endi-sit', PRESSURE_METRIC_MODE)
-  const boundaryExpectedValues = getExpectedPointValues(boundaryValues, 'seat')
-  const boundaryBasePressure = calibrationFormula.estimateBasePressure(boundaryValues[0], 'seat')
-  assert.ok(Math.abs(boundaryPointValues[0] - boundaryExpectedValues[0]) < 1e-9)
-  assert.ok(Math.abs(mean(boundaryPointValues) - mean(boundaryExpectedValues)) < 1e-9)
-
-  const humanValues = Array.from({ length: 301 }, (_, index) => 70 + (index % 120))
-  const humanPointValues = getPressureMetricPointValues(humanValues, 'endi-sit', PRESSURE_METRIC_MODE)
-  const humanExpectedValues = getExpectedPointValues(humanValues, 'seat')
-  assert.ok(Math.abs(humanPointValues[0] - humanExpectedValues[0]) < 1e-9)
-  assert.ok(Math.abs(humanPointValues[0] - boundaryBasePressure * 2.2) < 1e-9)
-  assert.ok(Math.abs(mean(humanPointValues) - mean(humanExpectedValues)) < 1e-9)
+test('visual matrices retain raw ADC for both sensor types across the old 300-point branch boundary', () => {
+  for (const key of ['endi-sit', 'endi-back']) {
+    for (const count of [299, 300, 301]) {
+      const raw = Array.from({ length: count }, (_, index) => index % 255)
+      assert.deepEqual(getPressureMetricPointValues(raw, key, PRESSURE_METRIC_MODE), raw)
+      assert.deepEqual(getPressureMetricPointValues(raw, key, FORCE_METRIC_MODE), raw)
+    }
+  }
 })
 
-test('browser native fallback filters ADC values below 30 before branch counting', () => {
-  const seatValues = getPressureMetricPointValues([29, 30, 31], 'endi-sit', PRESSURE_METRIC_MODE)
-  assert.equal(seatValues[0], 0)
-  assert.equal(seatValues[1], 0)
-  assert.ok(seatValues[2] > 0)
-
-  const buildValues = (noiseCount) => [
-    ...new Array(56).fill(106.24),
-    ...new Array(noiseCount).fill(29),
-    ...new Array(50 * 64 - 56 - noiseCount).fill(0),
-  ]
-  const belowBoundary = getPressureMetricPointValues(buildValues(243), 'endi-back', PRESSURE_METRIC_MODE)
-  const aboveBoundary = getPressureMetricPointValues(buildValues(245), 'endi-back', PRESSURE_METRIC_MODE)
-  const activeBelow = belowBoundary.filter((value) => value > 0)
-  const activeAbove = aboveBoundary.filter((value) => value > 0)
-  const expectedBelow = getExpectedPointValues(buildValues(243), 'backrest')
-  const expectedAbove = getExpectedPointValues(buildValues(245), 'backrest')
-
-  assert.equal(activeBelow.length, 56)
-  assert.equal(activeAbove.length, 56)
-  belowBoundary.forEach((value, index) => {
-    assert.ok(Math.abs(value - expectedBelow[index]) < 1e-9)
-  })
-  aboveBoundary.forEach((value, index) => {
-    assert.ok(Math.abs(value - expectedAbove[index]) < 1e-9)
-  })
+test('unavailable pre-zero raw data stays blank instead of showing a calibrated or zeroed fallback', () => {
+  const raw = [29, 30, 31]
+  assert.deepEqual(getPressureMetricPointValues(raw, 'endi-back', PRESSURE_METRIC_MODE, {
+    rawDisplayAvailable: false, pressureArr: [10, 20, 30], forceArr: [1, 2, 3],
+  }), [null, null, null])
+  assert.deepEqual(getPressureMetricPointValues([0, NaN, Infinity, 24], 'endi-sit', 'adc'), [0, null, null, 24])
 })
 
-test('browser fallback and backend canonical calculation produce the same point pressures', () => {
-  const values = [0, 30, ...Array.from({ length: 100 }, (_, index) => index + 31)]
-  const browserValues = getPressureMetricPointValues(values, 'endi-sit', PRESSURE_METRIC_MODE)
-  const backendValues = calcPressureFormulaStats(values, 'endi-sit').pressureValues
-
-  assert.equal(browserValues.length, backendValues.length)
-  browserValues.forEach((value, index) => {
-    assert.ok(Math.abs(value - backendValues[index]) < 1e-9)
-  })
-})
-
-test('pressure and force summaries use the same point area conversion', () => {
+test('matrix-only browser inputs never claim complete F, A or P', () => {
   const values = [0, 100, 120, 140]
-  const matrixKey = 'endi-back'
-  const pointAreaCm2 = getPressurePointAreaCm2(matrixKey)
-  const pressure = getPressureMetricSummary(values, matrixKey, PRESSURE_METRIC_MODE)
-  const force = getPressureMetricSummary(values, matrixKey, FORCE_METRIC_MODE)
-
+  const pressure = getPressureMetricSummary(values, 'endi-back', PRESSURE_METRIC_MODE)
+  const force = getPressureMetricSummary(values, 'endi-back', FORCE_METRIC_MODE)
   assert.equal(force.unit, 'N')
   assert.equal(pressure.unit, 'kPa')
-  assert.ok(Math.abs(force.total - pressure.total * pointAreaCm2 * 0.1) < 1e-9)
-  assert.ok(Math.abs(force.max - pressure.max * pointAreaCm2 * 0.1) < 1e-9)
-  assert.ok(Math.abs(force.average - pressure.average * pointAreaCm2 * 0.1) < 1e-9)
+  assert.equal(force.total, null)
+  assert.equal(force.max, null)
+  assert.equal(force.average, null)
+  assert.equal(pressure.total, null)
+  assert.equal(pressure.average, null)
+  assert.equal(pressure.metrics.effectiveArea, null)
 })
 
-test('2D point values switch between kPa and N consistently', () => {
-  const values = [80, 100, 120]
-  const matrixKey = 'endi-sit'
-  const pointAreaCm2 = getPressurePointAreaCm2(matrixKey)
-  const pressureValues = getPressureMetricPointValues(values, matrixKey, PRESSURE_METRIC_MODE)
-  const forceValues = getPressureMetricPointValues(values, matrixKey, FORCE_METRIC_MODE)
-
-  forceValues.forEach((value, index) => {
-    assert.ok(Math.abs(value - pressureValues[index] * pointAreaCm2 * 0.1) < 1e-9)
+test('physical summaries use complete force and area with global P=10F/A and omit old point maxima', () => {
+  const algorithmMetrics = { version: '2.11.0', status: 'complete', summary: {
+    forceN: 100, areaCm2: 200, averagePressureKPa: 999,
+    maxPressureKPa: 999, maximumPressureDisplayKPa: 999, forceAverageN: 999, forceMaxN: 999,
+  } }
+  const raw = [12, 24, 80]
+  const pressure = getPressureMetricSummary(raw, 'endi-sit', PRESSURE_METRIC_MODE, { algorithmMetrics })
+  const force = getPressureMetricSummary(raw, 'endi-sit', FORCE_METRIC_MODE, { algorithmMetrics })
+  assert.equal(pressure.average, 5)
+  assert.equal(pressure.total, 5)
+  assert.equal(force.total, 100)
+  assert.equal(force.metrics.effectiveArea, 200)
+  assert.equal(force.average, null)
+  assert.equal(force.max, null)
+  assert.equal(pressure.max, null)
+  const zeroArea = getPressureMetricSummary(raw, 'endi-sit', PRESSURE_METRIC_MODE, {
+    algorithmMetrics: { ...algorithmMetrics, summary: { forceN: 0, areaCm2: 0 } },
   })
+  assert.equal(zeroArea.average, null)
 })
 
-test('unknown modes keep the existing force display as the default', () => {
+test('unknown physical units retain their existing default without changing raw visualization', () => {
   assert.equal(normalizePressureMetricMode(), FORCE_METRIC_MODE)
   assert.equal(normalizePressureMetricMode('invalid'), FORCE_METRIC_MODE)
+  assert.deepEqual(getPressureMetricPointValues([1, 24, 90], 'endi-sit', 'invalid'), [1, 24, 90])
 })
 
-test('left-side totals use the heatmap matrix while average uses the ADC valid-point mask', () => {
-  const adcValues = [31, 0]
-  const matrixKey = 'endi-sit'
-  const settings = { filter: 30, gauss: 0 }
-  const pressureMatrix = buildPressureDisplayMetricMatrix({
-    adcValues,
-    width: 2,
-    height: 1,
-    settings,
-    matrixKey,
-    metricMode: PRESSURE_METRIC_MODE,
-  }).values
-  const forceMatrix = buildPressureDisplayMetricMatrix({
-    adcValues,
-    width: 2,
-    height: 1,
-    settings,
-    matrixKey,
-    metricMode: FORCE_METRIC_MODE,
-  }).values
-  const pressureSummary = summarizePressureDisplayMatrix(pressureMatrix, matrixKey, PRESSURE_METRIC_MODE)
-  const forceSummary = summarizePressureDisplayMatrix(forceMatrix, matrixKey, FORCE_METRIC_MODE)
-
-  assert.deepEqual(pressureMatrix, [1.3, 0])
-  assert.deepEqual(forceMatrix, [0.1, 0])
-  assert.equal(pressureSummary.activeCount, pressureMatrix.filter((value) => value > 0).length)
-  assert.equal(forceSummary.activeCount, forceMatrix.filter((value) => value > 0).length)
-  assert.equal(forceSummary.total, forceMatrix.reduce((sum, value) => sum + value, 0))
-  assert.equal(forceSummary.forceTotal, forceSummary.total)
-  assert.equal(getPressureMetricPointValues(adcValues, matrixKey, FORCE_METRIC_MODE).filter((value) => value > 0).length, 1)
-
-  const maskedSummary = summarizePressureDisplayMatrix(
-    [2, 0],
-    matrixKey,
-    PRESSURE_METRIC_MODE,
-    [1, 1],
-  )
-  assert.equal(maskedSummary.activeCount, 1)
-  assert.equal(maskedSummary.averagePointCount, 2)
-  assert.equal(maskedSummary.average, 1)
+test('display preparation ignores filter, Gaussian, temporal state and validity masks', () => {
+  const raw = [0, 12.25, 24, 31, 0, 60, 90, 180]
+  for (const mode of [PRESSURE_METRIC_MODE, FORCE_METRIC_MODE]) {
+    const matrix = buildPressureDisplayMetricMatrix({
+      adcValues: raw, width: 4, height: 2,
+      settings: { filter: 4095, gauss: 4, coherent: 10 },
+      matrixKey: 'endi-sit', metricMode: mode,
+      isVisibleIndex: () => false,
+      previousState: { values: raw.map(() => 999), display: raw.map(() => 999) },
+    })
+    assert.deepEqual(matrix.values, raw)
+  }
 })
 
-test('normal distribution uses active values from the final displayed kPa or N matrix', () => {
-  const pressureDistribution = buildPressureDisplayNormalDistribution([0, 0.1, 0.2, 0.3], PRESSURE_METRIC_MODE)
-  const forceDistribution = buildPressureDisplayNormalDistribution([0, 0.1, 0.1], FORCE_METRIC_MODE)
-
-  assert.equal(pressureDistribution.unit, 'kPa')
-  assert.equal(pressureDistribution.count, 3)
-  assert.equal(pressureDistribution['\u03bc'], '0.200')
-  assert.equal(forceDistribution.unit, 'N')
-  assert.equal(forceDistribution.count, 2)
-  assert.equal(forceDistribution['\u03bc'], '0.100')
-  assert.equal(pressureDistribution.xData.length, 256)
-  assert.equal(pressureDistribution.yData.length, 256)
-  assert.ok(pressureDistribution.max < 255)
-  assert.ok(pressureDistribution.yData.every(Number.isFinite))
-  assert.ok(forceDistribution.yData.every(Number.isFinite))
+test('distribution explicitly describes ADC rather than a force or pressure calibration matrix', () => {
+  const distribution = buildPressureDisplayNormalDistribution([0, 10, 20, 30], 'adc')
+  assert.equal(distribution.unit, 'ADC')
+  assert.equal(distribution.count, 3)
+  assert.equal(distribution['\u03bc'], '20.000')
+  assert.equal(distribution.xData.length, 256)
+  assert.ok(distribution.yData.every(Number.isFinite))
 })
 
-test('automatic color range follows the rendered metric matrix instead of raw ADC', () => {
-  const rawValues = [0, 80, 100, 120, 140]
-  const renderedValues = getPressureMetricPointValues(rawValues, 'endi-sit', PRESSURE_METRIC_MODE)
-  const renderedForceValues = getPressureMetricPointValues(rawValues, 'endi-sit', FORCE_METRIC_MODE)
-  const expectedMax = Number(Math.max(...renderedValues).toFixed(2))
-  const expectedForceMax = Number(Math.max(...renderedForceValues).toFixed(2))
-  const scope = 'pressure-auto-range-test'
-  const forceScope = 'force-auto-range-test'
-
+test('automatic color range follows the unchanged raw ADC regardless of the physical unit', () => {
+  const raw = [0, 12, 24, 80, 140]
+  const rendered = getPressureMetricPointValues(raw, 'endi-sit', PRESSURE_METRIC_MODE)
+  const renderedForce = getPressureMetricPointValues(raw, 'endi-sit', FORCE_METRIC_MODE, { forceArr: [0, 1, 2, 3, 4] })
+  assert.deepEqual(rendered, raw)
+  assert.deepEqual(renderedForce, raw)
+  const scope = 'raw-adc-auto-range-test'
   resetPressureColorRange(scope)
   setDynamicGammaColorEnabled(true, scope)
-  assert.equal(beginDynamicColorFrame(renderedValues, VISUAL_COLOR_SETTING_DEFAULT, scope), expectedMax)
-  assert.equal(getDynamicColorRangeMax(scope), expectedMax)
-  assert.notEqual(expectedMax, Math.max(...rawValues))
-  assert.equal(beginDynamicColorFrame([], VISUAL_COLOR_SETTING_DEFAULT, scope), expectedMax)
-  resetPressureColorRange(forceScope)
-  assert.equal(beginDynamicColorFrame(renderedForceValues, VISUAL_COLOR_SETTING_DEFAULT, forceScope), expectedForceMax)
-  assert.equal(getDynamicColorRangeMax(scope), expectedMax)
-  assert.equal(getDynamicColorRangeMax(forceScope), expectedForceMax)
+  assert.equal(beginDynamicColorFrame(rendered, 255, scope), 140)
+  assert.equal(getDynamicColorRangeMax(scope), 140)
+  assert.equal(beginDynamicColorFrame([], 255, scope), 140)
   setDynamicGammaColorEnabled(false, scope)
 })
-
 test('legacy ADC color settings migrate into the pressure range', () => {
   const values = new Map([
     ['visualSettingValueBySystemV1', JSON.stringify({ endi: { color: 110 } })],

@@ -9,6 +9,53 @@ const DEFAULT_HUMAN_COEFFICIENT = 2.2
 
 function isCalibrationFormula(formula) {
   return REQUIRED_CALIBRATION_EXPORTS.every((name) => typeof formula?.[name] === 'function')
+    || (typeof formula?.calculateMatrixPressureMap === 'function'
+      && typeof formula?.calculatePressureMetricsFromMatrix === 'function')
+}
+
+// The snapshot accepts already compensated/filtered display ADC. Its exported
+// metrics function supplies the same unrounded matrix as calculateMatrixPressureMap
+// plus the branch and normalization diagnostics, without running the full kernel.
+function calculateSnapshotPressureDistribution(formula, data, sensor, humanCoefficient) {
+  const isMatrix = Array.isArray(data[0])
+  const matrix = isMatrix ? data : [data]
+  const sensorType = sensor === 'backrest' ? 'new-backrest-32x25' : 'endi-23x23'
+  const coefficient = humanCoefficient ?? DEFAULT_HUMAN_COEFFICIENT
+  const metrics = formula.calculatePressureMetricsFromMatrix(matrix, sensorType, coefficient)
+  const pressureMatrix = metrics.pressureMatrixKPa
+  const adcValues = matrix.flat()
+  const pressureValues = pressureMatrix.flat()
+  const pointPressuresKPa = pressureValues.filter((_, index) => (
+    Number.isFinite(adcValues[index]) && adcValues[index] > 0
+  ))
+  const active = pressureValues.filter((value) => value > 0)
+  const summary = calculateCalibrationSummary(null, pointPressuresKPa)
+  const human = metrics.calibrationBranch === 'human'
+  const profile = sensor === 'backrest' ? formula.BACKREST_CALIBRATION : formula.SEAT_CALIBRATION
+  return {
+    mean: metrics.topMean,
+    selectedCount: metrics.topCount,
+    validCount: metrics.validCount,
+    maxAdc: metrics.max,
+    inputLabel: profile.xAxis,
+    branch: metrics.calibrationBranch,
+    humanValidPointThreshold: DEFAULT_HUMAN_VALID_POINT_THRESHOLD,
+    humanCoefficient: metrics.humanCoefficient,
+    pointPressureScale: human ? metrics.humanCoefficient : 1,
+    matrixConversion: 'calculatePressureMetricsFromMatrix',
+    pointPressureCount: active.length,
+    pointPressuresKPa,
+    pressureMatrixKPa: isMatrix ? pressureMatrix : pressureValues,
+    pressureValuesKPa: active,
+    actualAveragePressureKPa: summary.summaryAveragePressureKPa,
+    avgPressureKPa: summary.summaryAveragePressureKPa,
+    maxPressureKPa: summary.summaryMaxPressureKPa,
+    ...summary,
+    targetAveragePressureKPa: human ? null : summary.summaryAveragePressureKPa,
+    normalizationScale: metrics.normalizationScale ?? null,
+    meanConservationErrorKPa: metrics.meanConservationErrorKPa ?? null,
+    fallbackMode: metrics.pointPressureFallbackMode ?? (active.length ? 'none' : 'no-valid-points'),
+  }
 }
 
 function calculateCalibrationSummary(_metrics, pressureValues) {
@@ -38,15 +85,18 @@ function getFilteredCalibrationMatrix(formula, sourceMatrix) {
 
 /**
  * Uses the selected calibration file as the complete pressure contract.
- * V2.7.63 owns ADC filtering and accepts an options object. Older native
- * calibration files keep their positional matrix API for compatibility.
+ * V2.11.0 consumes compensated display ADC through its metrics API. V2.7.63
+ * owns filtering and accepts options; older files keep their positional API.
  */
 function calculateCalibrationPressureDistribution(formula, data, sensor, humanCoefficient) {
   if (!isCalibrationFormula(formula)) {
-    throw new TypeError(`Calibration formula must export ${REQUIRED_CALIBRATION_EXPORTS.join('/')}`)
+    throw new TypeError(`Calibration formula must export calculateMatrixPressureMap/calculatePressureMetricsFromMatrix or ${REQUIRED_CALIBRATION_EXPORTS.join('/')}`)
   }
   if (!Array.isArray(data)) {
     throw new TypeError('data must be an ADC array or matrix')
+  }
+  if (typeof formula.calculateMatrixPressureMap === 'function') {
+    return calculateSnapshotPressureDistribution(formula, data, sensor, humanCoefficient)
   }
 
   const isMatrix = Array.isArray(data[0])

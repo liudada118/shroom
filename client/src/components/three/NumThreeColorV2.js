@@ -176,7 +176,7 @@ export default function NumThree(props) {
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
     camera.position.z = 1000;
 
-    let currentTextureMode = useEquipStore.getState().pressureMetricMode;
+    let currentTextureMode = 'adc';
     let currentTextureMax = currentTextureMode === FORCE_METRIC_MODE ? 2.5 : 25;
     const texture = createDigitSpriteSheetWithJet(currentTextureMax, currentTextureMode);
     // texture.flipY = false;
@@ -304,22 +304,8 @@ export default function NumThree(props) {
       const {
         gauss, color, filter, height, coherent,
       } = getSettingValue() //pageRef.current.settingValue
-      const metricMode = useEquipStore.getState().pressureMetricMode
-      const numericFilter = Number.isFinite(Number(filter)) && Number(filter) > 0 ? Number(filter) : 0
-      if (lastMetricSource !== data || lastMetricMode !== metricMode || lastMetricKey !== matrixKey || lastMetricFilter !== numericFilter) {
-        const filteredData = numericFilter > 0
-          ? data.map(value => (Number(value) < numericFilter ? 0 : value))
-          : data
-        metricDisplayData = getPressureMetricPointValues(filteredData, matrixKey, metricMode)
-        lastMetricSource = data
-        lastMetricMode = metricMode
-        lastMetricKey = matrixKey
-        lastMetricFilter = numericFilter
-      }
-      data = metricDisplayData
-      const nextTextureMax = metricMode === FORCE_METRIC_MODE
-        ? getPressurePointAreaCm2(matrixKey) * 2.5
-        : 25
+      const metricMode = 'adc'
+      const nextTextureMax = Math.max(1, Math.min(255, Number(useEquipStore.getState().threeAdcColor) || 255))
       if (currentTextureMax !== nextTextureMax || currentTextureMode !== metricMode) {
         const oldTexture = material.uniforms.map.value
         const nextTexture = createDigitSpriteSheetWithJet(nextTextureMax, metricMode)

@@ -7,22 +7,20 @@ import { pageContext } from '../../page/test/Test'
 import { useEquipStore } from '../../store/equipStore'
 import { ExportDialog, ExportProgressDialog } from '../../ui'
 import { localAddress } from '../../util/constant'
-import { FORCE_METRIC_MODE, getPressureMetricDisplay, getPressurePointAreaCm2 } from '../../util/pressureMetrics'
-import { calcCentroidRatio } from '../../util/util'
+import { getRawAdcValues, getPhysicalFrameSummary, summarizeAdcValues } from './adcMetrics'
 import ContrastHeatmap from './ContrastHeatmap'
 import { useTranslation } from 'react-i18next'
 import './contrast.scss'
 
-const METRIC_KEYS = ['aver', 'max', 'press', 'area', 'points', 'center']
+const METRIC_KEYS = ['press', 'area', 'aver']
 const CONTRAST_PLAYBACK_SPEEDS = [0.5, 1, 2, 4]
 const BASE_PLAYBACK_INTERVAL_MS = 120
 
 const CONTRAST_COPY = {
     zh: {
         metrics: {
-            aver: '平均压强',
-            max: '最大压强',
-            press: '压力总和',
+            aver: '压强 P (kPa)',
+            press: '总力 F (N)',
             area: '受压面积(cm²)',
             points: '有效点数',
             center: '压力重心',
@@ -82,9 +80,9 @@ const CONTRAST_COPY = {
         direction: '方向',
         currentConclusion: '当前帧结论',
         redBlueTip: '红色表示 B 大于 A，蓝色表示 B 小于 A',
-        baselineA: 'A 基准数据',
-        compareB: 'B 对比数据',
-        diffMap: 'B-A 差值图',
+        baselineA: 'A 原始 ADC',
+        compareB: 'B 原始 ADC',
+        diffMap: 'B-A ADC 差值图',
         frame: '帧',
         diffSubtitle: '红色升高，蓝色降低',
         regionManage: '区域管理',
@@ -110,9 +108,8 @@ const CONTRAST_COPY = {
     },
     en: {
         metrics: {
-            aver: 'Avg Pressure',
-            max: 'Max Pressure',
-            press: 'Pressure Sum',
+            aver: 'Pressure P (kPa)',
+            press: 'Total force F (N)',
             area: 'Contact Area(cm²)',
             points: 'Valid Points',
             center: 'Pressure Center',
@@ -172,9 +169,9 @@ const CONTRAST_COPY = {
         direction: 'Direction',
         currentConclusion: 'Current Frame',
         redBlueTip: 'Red means B is greater than A; blue means B is less than A',
-        baselineA: 'A Baseline',
-        compareB: 'B Comparison',
-        diffMap: 'B-A Difference',
+        baselineA: 'A Raw ADC',
+        compareB: 'B Raw ADC',
+        diffMap: 'B-A ADC Difference',
         frame: 'Frame',
         diffSubtitle: 'Red increased, blue decreased',
         regionManage: 'Region Management',
@@ -254,7 +251,8 @@ function getFrameByProgress(frames = [], progress = 0) {
 
 function buildDiffArr(leftArr = [], rightArr = []) {
     const length = Math.min(leftArr.length, rightArr.length)
-    return Array.from({ length }, (_, index) => (Number(rightArr[index]) || 0) - (Number(leftArr[index]) || 0))
+    return Array.from({ length }, (_, index) => leftArr[index] == null || rightArr[index] == null
+        ? null : Number(rightArr[index]) - Number(leftArr[index]))
 }
 
 function getRegionArr(arr = [], width, matrixRect) {
@@ -309,53 +307,29 @@ function formatCenter(center) {
 }
 
 function calcSafeCentroidRatio(arr = [], width = 1, height = 1) {
-    if (width > 1 && height > 1) return calcCentroidRatio(arr, width, height)
-    let sum = 0
-    let sumX = 0
-    let sumY = 0
-    arr.forEach((value, index) => {
-        const weight = Number(value) || 0
-        if (weight <= 0) return
-        sum += weight
-        sumX += (index % width) * weight
-        sumY += Math.floor(index / width) * weight
-    })
-    if (!sum) return { x: 0.5, y: 0.5 }
-    return {
-        x: width > 1 ? (sumX / sum / (width - 1)).toFixed(2) : '0.50',
-        y: height > 1 ? (sumY / sum / (height - 1)).toFixed(2) : '0.50',
-    }
+    return summarizeAdcValues(arr, width, height).center
 }
 
-function getFrameMetricValues(data = {}, metricMode = FORCE_METRIC_MODE) {
-    const source = metricMode === FORCE_METRIC_MODE ? data.forceArr : data.pressureArr
-    const length = Array.isArray(data.arr) ? data.arr.length : (Array.isArray(source) ? source.length : 0)
-    return Array.from({ length }, (_, index) => {
-        const value = Number(source?.[index])
-        return Number.isFinite(value) && value > 0 ? value : 0
-    })
+function getFrameMetricValues(data = {}) {
+    return getRawAdcValues(data)
 }
 
-function calcMetrics(arr = [], width = 1, height = 1, matrixRect = null, matrixKey = '', metricMode = FORCE_METRIC_MODE) {
-    const values = arr.map((value) => {
-        const numeric = Number(value)
-        return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
-    })
-    const activeValues = values.filter((value) => value > 0)
-    const points = activeValues.length
-    const total = values.reduce((sum, value) => sum + value, 0)
-    const area = points * getPressurePointAreaCm2(matrixKey)
-    const center = calcSafeCentroidRatio(values, width, height)
+function calcMetrics(arr = [], width = 1, height = 1, matrixRect = null, matrixKey = '', metricMode = 'adc', frameItem = null) {
+    const adc = summarizeAdcValues(arr, width, height)
+    const physical = getPhysicalFrameSummary(frameItem || {})
+    const center = adc.center
     const matrixCenter = matrixRect
         ? projectCenterToMatrix(center, matrixRect, Number(matrixRect.width) || width, Number(matrixRect.height) || height)
         : center
     return {
-        press: total,
-        area,
-        points,
-        max: points ? Math.max(...activeValues) : 0,
-        aver: points ? total / points : 0,
-        center: points ? formatCenter(matrixCenter) : 'N/A',
+        press: physical.forceN,
+        area: physical.areaCm2,
+        aver: physical.pressureKPa,
+        adcSum: adc.sum,
+        adcMax: adc.max,
+        adcAverage: adc.average,
+        points: adc.points,
+        center: center ? formatCenter(matrixCenter) : 'N/A',
     }
 }
 
@@ -474,29 +448,31 @@ function buildSeriesByFrameIndex(leftValues = [], rightValues = []) {
     const count = Math.max(leftValues.length, rightValues.length)
     if (!count) return []
     return Array.from({ length: count }, (_, index) => {
-        const left = Number(leftValues[getClampedFrameIndex(leftValues.length, index)] || 0)
-        const right = Number(rightValues[getClampedFrameIndex(rightValues.length, index)] || 0)
-        return { frameIndex: index, left, right, diff: right - left }
+        const leftValue = leftValues[getClampedFrameIndex(leftValues.length, index)]
+        const rightValue = rightValues[getClampedFrameIndex(rightValues.length, index)]
+        const left = leftValue == null ? null : Number(leftValue)
+        const right = rightValue == null ? null : Number(rightValue)
+        return { frameIndex: index, left, right, diff: left == null || right == null ? null : right - left }
     })
 }
 
 function buildSingleSeries(values = []) {
     return (Array.isArray(values) ? values : []).map((value, index) => ({
         index,
-        value: Number(value) || 0,
+        value: value == null ? null : Number(value),
     }))
 }
 
-function buildMetricSeriesFromFrames(frames = [], matrixKey, metricKey, matrixRect = null, metricMode = FORCE_METRIC_MODE) {
+function buildMetricSeriesFromFrames(frames = [], matrixKey, metricKey, matrixRect = null, metricMode = 'adc') {
     if (!Array.isArray(frames) || !matrixKey) return []
     return frames.map((frame) => {
         const data = frame?.[matrixKey] || {}
-        const width = data.width || 1
-        const height = data.height || Math.max(1, Math.ceil((data.arr || []).length / width))
+        const width = data.matrixMeta?.width || data.width || 1
+        const height = data.matrixMeta?.height || data.height || Math.max(1, Math.ceil((data.arr || []).length / width))
         const source = getRegionArr(getFrameMetricValues(data, metricMode), width, matrixRect)
         const metricWidth = matrixRect ? Math.max(1, matrixRect.xEnd - matrixRect.xStart) : width
         const metricHeight = matrixRect ? Math.max(1, matrixRect.yEnd - matrixRect.yStart) : height
-        return Number(calcMetrics(source, metricWidth, metricHeight, matrixRect, matrixKey, metricMode)[metricKey]) || 0
+        return calcMetrics(source, metricWidth, metricHeight, matrixRect, matrixKey, metricMode, data)[metricKey]
     })
 }
 
@@ -520,15 +496,12 @@ function MiniLineChart({ title, rows = [], mode = 'pair', markers = {}, unit = '
         ? [0, Math.floor((rows.length - 1) / 2), rows.length - 1]
         : [0]
     const makePath = (key) => rows.map((row, index) => {
+        if (!Number.isFinite(row[key])) return ''
         const x = pointX(index)
         const y = pointY(row[key])
-        return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
+        return `${index === 0 || !Number.isFinite(rows[index - 1]?.[key]) ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
     }).join(' ')
-    const singlePath = rows.map((row, index) => {
-        const x = pointX(index)
-        const y = pointY(row.value)
-        return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
-    }).join(' ')
+    const singlePath = makePath('value')
     const markerItems = isSingle ? [
         { key: 'A', index: markers.a, className: 'chartMarkerA' },
         { key: 'B', index: markers.b, className: 'chartMarkerB' },
@@ -613,19 +586,11 @@ export default function NumThresContrast() {
     const { i18n } = useTranslation()
     const isEnglish = String(i18n.language || localStorage.getItem('language') || '').toLowerCase().startsWith('en')
     const copy = CONTRAST_COPY[isEnglish ? 'en' : 'zh']
-    const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
-    const metricDisplay = useMemo(() => getPressureMetricDisplay(pressureMetricMode, null, i18n.language), [pressureMetricMode, i18n.language])
-    const metricUnit = metricDisplay.unit
-    const metrics = useMemo(() => METRIC_KEYS.map((key) => {
-        if (key === 'aver') return { key, label: `${metricDisplay.labels.average} (${metricUnit})` }
-        if (key === 'max') return { key, label: `${metricDisplay.labels.max} (${metricUnit})` }
-        if (key === 'press') return { key, label: `${metricDisplay.labels.total} (${metricUnit})` }
-        return { key, label: copy.metrics[key] }
-    }), [copy, metricDisplay, metricUnit])
+    const pressureMetricMode = 'adc'
+    const metrics = useMemo(() => METRIC_KEYS.map((key) => ({ key, label: copy.metrics[key] })), [copy])
     const pageInfo = useContext(pageContext)
     const contrast = useEquipStore(s => s.contrast, shallow)
     const displayType = useEquipStore(s => s.displayType, shallow)
-    const settingValue = useEquipStore(s => s.settingValue, shallow)
     const [playing, setPlaying] = useState(false)
     const [playbackSpeed, setPlaybackSpeed] = useState(1)
     const [playbackExpanded, setPlaybackExpanded] = useState(false)
@@ -710,12 +675,12 @@ export default function NumThresContrast() {
     ), [contrast, isTimePointMode, timeIndexB, playbackIndexB])
     const leftData = leftFrame?.[activeKey] || {}
     const rightData = rightFrame?.[activeKey] || {}
-    const width = leftData.width || rightData.width || 32
-    const height = leftData.height || rightData.height || 32
+    const width = leftData.matrixMeta?.width || rightData.matrixMeta?.width || leftData.width || rightData.width || 32
+    const height = leftData.matrixMeta?.height || rightData.matrixMeta?.height || leftData.height || rightData.height || 32
     const leftDisplayArr = useMemo(() => getFrameMetricValues(leftData, pressureMetricMode), [leftData, pressureMetricMode])
     const rightDisplayArr = useMemo(() => getFrameMetricValues(rightData, pressureMetricMode), [rightData, pressureMetricMode])
     const diffArr = useMemo(() => buildDiffArr(leftDisplayArr, rightDisplayArr), [leftDisplayArr, rightDisplayArr])
-    const metricColorMax = pressureMetricMode === FORCE_METRIC_MODE ? getPressurePointAreaCm2(activeKey) * 2.5 : 25
+    const metricColorMax = 255
 
     const activeSelect = null
 
@@ -724,8 +689,8 @@ export default function NumThresContrast() {
         const sourceB = getRegionArr(rightDisplayArr, width, activeSelect)
         const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : width
         const metricHeight = activeSelect ? Math.max(1, activeSelect.yEnd - activeSelect.yStart) : height
-        const metricA = calcMetrics(sourceA, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode)
-        const metricB = calcMetrics(sourceB, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode)
+        const metricA = calcMetrics(sourceA, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode, leftData)
+        const metricB = calcMetrics(sourceB, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode, rightData)
         return metrics.map((item) => {
             const a = metricA[item.key]
             const b = metricB[item.key]
@@ -738,7 +703,7 @@ export default function NumThresContrast() {
                 rate: typeof a === 'number' && typeof b === 'number' ? formatRate(a, b) : 'N/A',
             }
         })
-    }, [leftDisplayArr, rightDisplayArr, width, height, activeSelect, activeKey, metrics, pressureMetricMode])
+    }, [leftDisplayArr, rightDisplayArr, leftData, rightData, width, height, activeSelect, activeKey, metrics, pressureMetricMode])
 
     const conclusion = useMemo(() => {
         const pressRow = metricRows.find((row) => row.key === 'press')
@@ -856,19 +821,19 @@ export default function NumThresContrast() {
     }
 
     const buildContrastExportPayload = () => {
-        const exportMetricKey = pressureMetricMode === FORCE_METRIC_MODE ? 'force' : 'pressure'
         const buildExportMetricValues = (metricA, metricB) => ({
-            metric_mode: pressureMetricMode,
-            metric_unit: metricUnit,
-            [`a_${exportMetricKey}_sum`]: getMetricValue(metricA, 'press'),
-            [`b_${exportMetricKey}_sum`]: getMetricValue(metricB, 'press'),
-            [`diff_${exportMetricKey}_sum`]: calcDisplayDiff(metricA.press, metricB.press),
-            [`a_avg_${exportMetricKey}`]: getMetricValue(metricA, 'aver'),
-            [`b_avg_${exportMetricKey}`]: getMetricValue(metricB, 'aver'),
-            [`diff_avg_${exportMetricKey}`]: calcDisplayDiff(metricA.aver, metricB.aver),
-            [`a_max_${exportMetricKey}`]: getMetricValue(metricA, 'max'),
-            [`b_max_${exportMetricKey}`]: getMetricValue(metricB, 'max'),
-            [`diff_max_${exportMetricKey}`]: calcDisplayDiff(metricA.max, metricB.max),
+            matrix_unit: 'ADC',
+            physical_scope: 'full_sensor',
+            a_total_force_n: getMetricValue(metricA, 'press'),
+            b_total_force_n: getMetricValue(metricB, 'press'),
+            diff_total_force_n: calcDisplayDiff(metricA.press, metricB.press),
+            a_pressure_kpa: getMetricValue(metricA, 'aver'),
+            b_pressure_kpa: getMetricValue(metricB, 'aver'),
+            diff_pressure_kpa: calcDisplayDiff(metricA.aver, metricB.aver),
+            a_adc_total: getMetricValue(metricA, 'adcSum'),
+            b_adc_total: getMetricValue(metricB, 'adcSum'),
+            a_adc_max: getMetricValue(metricA, 'adcMax'),
+            b_adc_max: getMetricValue(metricB, 'adcMax'),
         })
         const leftFrames = contrast?.left?.frames || []
         const rightFrames = contrast?.right?.frames || []
@@ -879,14 +844,14 @@ export default function NumThresContrast() {
         if (isTimePointMode) {
             const leftFrameItem = getFrameByIndex(leftFrames, leftIndex)?.[activeKey] || {}
             const rightFrameItem = getFrameByIndex(rightFrames, rightIndex)?.[activeKey] || {}
-            const rowWidth = leftFrameItem.width || rightFrameItem.width || width
+            const rowWidth = leftFrameItem.matrixMeta?.width || rightFrameItem.matrixMeta?.width || leftFrameItem.width || rightFrameItem.width || width
             const leftSource = getRegionArr(getFrameMetricValues(leftFrameItem, pressureMetricMode), rowWidth, activeSelect)
             const rightSource = getRegionArr(getFrameMetricValues(rightFrameItem, pressureMetricMode), rowWidth, activeSelect)
             const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : rowWidth
-            const rowHeight = leftFrameItem.height || rightFrameItem.height || Math.max(1, Math.ceil(Math.max(leftSource.length, rightSource.length) / metricWidth))
+            const rowHeight = leftFrameItem.matrixMeta?.height || rightFrameItem.matrixMeta?.height || leftFrameItem.height || rightFrameItem.height || Math.max(1, Math.ceil(Math.max(leftSource.length, rightSource.length) / metricWidth))
             const metricHeight = activeSelect ? Math.max(1, activeSelect.yEnd - activeSelect.yStart) : rowHeight
-            const metricA = calcMetrics(leftSource, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode)
-            const metricB = calcMetrics(rightSource, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode)
+            const metricA = calcMetrics(leftSource, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode, leftFrameItem)
+            const metricB = calcMetrics(rightSource, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode, rightFrameItem)
             const maxAbsDiff = buildDiffArr(leftSource, rightSource).reduce((max, value) => Math.max(max, Math.abs(Number(value) || 0)), 0)
             const rows = [{
                 frame_index: 0,
@@ -915,14 +880,14 @@ export default function NumThresContrast() {
             const rightFrameIndex = getClampedFrameIndex(rightFrames.length, index)
             const leftFrameItem = getFrameByIndex(leftFrames, leftFrameIndex)?.[activeKey] || {}
             const rightFrameItem = getFrameByIndex(rightFrames, rightFrameIndex)?.[activeKey] || {}
-            const rowWidth = leftFrameItem.width || rightFrameItem.width || width
+            const rowWidth = leftFrameItem.matrixMeta?.width || rightFrameItem.matrixMeta?.width || leftFrameItem.width || rightFrameItem.width || width
             const leftSource = getRegionArr(getFrameMetricValues(leftFrameItem, pressureMetricMode), rowWidth, activeSelect)
             const rightSource = getRegionArr(getFrameMetricValues(rightFrameItem, pressureMetricMode), rowWidth, activeSelect)
             const metricWidth = activeSelect ? Math.max(1, activeSelect.xEnd - activeSelect.xStart) : rowWidth
-            const rowHeight = leftFrameItem.height || rightFrameItem.height || Math.max(1, Math.ceil(Math.max(leftSource.length, rightSource.length) / metricWidth))
+            const rowHeight = leftFrameItem.matrixMeta?.height || rightFrameItem.matrixMeta?.height || leftFrameItem.height || rightFrameItem.height || Math.max(1, Math.ceil(Math.max(leftSource.length, rightSource.length) / metricWidth))
             const metricHeight = activeSelect ? Math.max(1, activeSelect.yEnd - activeSelect.yStart) : rowHeight
-            const metricA = calcMetrics(leftSource, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode)
-            const metricB = calcMetrics(rightSource, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode)
+            const metricA = calcMetrics(leftSource, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode, leftFrameItem)
+            const metricB = calcMetrics(rightSource, metricWidth, metricHeight, activeSelect, activeKey, pressureMetricMode, rightFrameItem)
             const maxAbsDiff = buildDiffArr(leftSource, rightSource).reduce((max, value) => Math.max(max, Math.abs(Number(value) || 0)), 0)
 
             return {
@@ -1184,7 +1149,7 @@ export default function NumThresContrast() {
                 <span>A: {contrast.left?.name || contrast.left?.date}</span>
                 <span>B: {contrast.right?.name || contrast.right?.date}</span>
                 <span>{copy.currentMetricScope}: {activeSelect ? copy.selectionRegion || 'Selection Area' : copy.fullMatrix}</span>
-                <span>{copy.filterValue}: {settingValue?.filter ?? 0}</span>
+                <span>{isEnglish ? 'Matrix: raw ADC' : '矩阵：原始 ADC'}</span>
             </div>
 
             <div className="contrastTopbar">
@@ -1215,7 +1180,7 @@ export default function NumThresContrast() {
             <div className="contrastStatusBar">
                 <span>{copy.currentScope}: {activeSelect ? copy.selectionRegion || 'Selection Area' : copy.fullMatrix}</span>
                 <span>{copy.currentFrame}: A {leftIndex + 1}/{leftFrameCount || 0}, B {rightIndex + 1}/{rightFrameCount || 0}</span>
-                <span>{copy.filterValue}: {settingValue?.filter ?? 0}</span>
+                <span>{isEnglish ? 'Matrix: raw ADC' : '矩阵：原始 ADC'}</span>
                 <span>{copy.object}: {getContrastObjectLabel(activeKey, copy)}</span>
                 <span>{copy.sampleRate}: A {getSampleRateText(leftData, copy)} / B {getSampleRateText(rightData, copy)}</span>
                 <span>{copy.zero}: A {formatZeroState(leftData.zeroState, copy)} / B {formatZeroState(rightData.zeroState, copy)}</span>
@@ -1333,7 +1298,7 @@ export default function NumThresContrast() {
             <div className="contrastMetricTable">
                 <div className="metricTableTitle">
                     数据汇总对比
-                    <span>按当前帧与当前区域统计 A 基础数据、B 对比数据、差值和变化率</span>
+                    <span>当前帧完整传感面的 F / A / P；框选仅改变 ADC 显示范围</span>
                 </div>
                 <div className="metricHeader">
                     <span>{copy.metric}</span>

@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
 import IconAndTextAndSelect from '../iconAndTextAndSelect/IconAndTextAndSelect'
 import { Drawer, SettingControlRow, ToolbarAction } from '../../ui'
-import { Button, Input, message, Modal, Popover, Segmented } from 'antd'
+import { Button, Input, message, Modal, Popover } from 'antd'
 import { pageContext } from '../../page/test/Test'
 import { SelectionHelper } from '../selectBox/SelectBox'
 import { withTranslation } from 'react-i18next'
@@ -46,7 +46,7 @@ function SecondTitle(props) {
     const collecting = useEquipStore(s => s.collecting);
     const activeDisplayType = pageInfo.displayType || currentDisplayType;
     const isThreeDisplay = display === 'point3D';
-    const isAdcDisplay = isThreeDisplay && threeDisplaySource === 'adc';
+    const isAdcDisplay = true;
 
     const setSettingValue = useEquipStore.getState().setSettingValue
     const isCollectionLockedSetting = (type) => ['filter', 'gauss', 'coherent'].includes(type)
@@ -104,11 +104,12 @@ function SecondTitle(props) {
     const getSettingValueFromSlider = (value, a) => a.sliderScale ? Number(value) / a.sliderScale : value
 
     const currentDataMax = useMemo(() => {
-        const getMax = (arr) => Array.isArray(arr)
-            ? arr.reduce((max, value) => Math.max(max, Number(value) || 0), 0)
-            : null
+        const getMax = (arr) => {
+            const values = Array.isArray(arr) ? arr.filter(Number.isFinite) : []
+            return values.length ? Math.max(...values) : null
+        }
         const target = activeDisplayType?.includes('back') ? 'back' : activeDisplayType?.includes('sit') ? 'sit' : ''
-        const activeMetricStatus = (isThreeDisplay ? threeDisplayStatus : metricStatus)?.[pressureMetricMode]
+        const activeMetricStatus = (isThreeDisplay ? threeDisplayStatus : metricStatus)?.adc
         if (!activeMetricStatus || typeof activeMetricStatus !== 'object') return null
         const values = Object.entries(activeMetricStatus)
         if (!values.length) return null
@@ -120,7 +121,7 @@ function SecondTitle(props) {
             .filter((value) => value !== null)
         return maxList.length ? Math.max(...maxList) : null
     }, [metricStatus, threeDisplayStatus, isThreeDisplay, activeDisplayType, pressureMetricMode])
-    const currentDataMaxDisplay = isAdcDisplay ? { unit: 'ADC' } : getPressureMetricDisplay(pressureMetricMode, t, i18n.language)
+    const currentDataMaxDisplay = { unit: 'ADC' }
 
 
 
@@ -129,46 +130,15 @@ function SecondTitle(props) {
 
     const setType = [
         {
-            title: t('threeGaussian'),
-            type: 'gauss',
-            max: settingValueMax.gauss,
-            min: 0,
-            step: 0.1,
-            content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoUniform')}</div>
+            title: t('colorAdj'), type: 'color', max: 255, min: 1, step: 1,
+            content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>ADC</div>,
         },
         {
-            title: t('threeTemporal'),
-            type: 'coherent',
-            max: 10,
-            min: 1,
-            step: 0.1,
-        },
-        {
-            title: t('colorAdj'),
-            type: 'color',
-            max: isAdcDisplay ? 255 : VISUAL_COLOR_SETTING_MAX,
-            min: isAdcDisplay ? 1 : VISUAL_COLOR_SETTING_MIN,
-            step: isAdcDisplay ? 1 : VISUAL_COLOR_SETTING_STEP,
-            content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('algoRedBlue')}</div>
-        },
-        {
-            title: t('denoise'),
-            type: 'filter',
-            max: settingValueMax.filter,
-            min: 1,
-            step: 1,
-            content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('filterNoise')}</div>
-        },
-        {
-            title: t('heightAdj'),
-            type: 'height',
-            max: settingValueMax.height,
-            min: 0.1,
-            step: 20,
-            content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('pointHeight')}</div>
+            title: t('heightAdj'), type: 'height', max: settingValueMax.height,
+            min: 0.1, step: 20,
+            content: <div style={{ color: '#E6EBF0', fontSize: '0.85rem' }}>{t('pointHeight')}</div>,
         },
     ]
-
 
     // const [onSelect, setOnSelect] = useState(false)
     // const [onRuler, setOnRuler] = useState(false)
@@ -489,25 +459,8 @@ function SecondTitle(props) {
         <>
             <Drawer className="visual-settings-drawer" zindex={3} show={setshow} title={t('adjust')} setShow={setSetshow}>
                 <div className="setContent">
-                    {isThreeDisplay && <div style={{ marginBottom: 24 }}>
-                        <div style={{ marginBottom: 12 }}>{t('threeDisplayData')}</div>
-                        <Segmented
-                            block
-                            aria-label={t('threeDisplayData')}
-                            value={threeDisplaySource === 'adc' ? 'adc' : pressureMetricMode}
-                            options={[
-                                { label: t('threeRawAdc'), value: 'adc' },
-                                { label: t('threePressure'), value: 'pressure' },
-                                { label: t('threeForce'), value: 'force' },
-                            ]}
-                            onChange={(value) => {
-                                const store = useEquipStore.getState()
-                                if (value !== 'adc') store.setPressureMetricMode(value)
-                                store.setThreeDisplaySource(value === 'adc' ? 'adc' : 'metric')
-                            }}
-                        />
-                    </div>}
-                    {setType.filter(a => isThreeDisplay || !['gauss', 'coherent'].includes(a.type)).map((a) => (
+                    <div style={{ marginBottom: 24 }}>{String(i18n.language || '').startsWith('en') ? 'Visualization: raw ADC' : '可视化数据：原始 ADC'}</div>
+                    {setType.filter(a => isThreeDisplay || a.type !== 'height').map((a) => (
                         <SettingControlRow
                             key={a.type}
                             label={a.title}
@@ -527,9 +480,6 @@ function SecondTitle(props) {
                             disabled={collecting && isCollectionLockedSetting(a.type)}
                             onChange={(value) => onChange(value, a)}
                             onSliderChange={(value) => onChange(getSettingValueFromSlider(value, a), a)}
-                            switchLabel={a.type === 'color' ? t('autoColorAdj') : undefined}
-                            switchChecked={a.type === 'color' ? Boolean(settingValue.autoColor) : undefined}
-                            onSwitchChange={a.type === 'color' ? onToggleAutoColor : undefined}
                         />
                     ))}
 

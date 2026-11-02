@@ -35,9 +35,7 @@ function ChartsAside(props) {
     const [data, setData] = useState({})
     const historyChart = useEquipStore(s => s.historyChart, shallow)
     const pressureMetricMode = useEquipStore(s => s.pressureMetricMode)
-    const threeDisplaySource = useEquipStore(s => s.threeDisplaySource)
-    const display = useEquipStore(s => s.display)
-    const chartMetricMode = display === 'point3D' && threeDisplaySource === 'adc' ? 'adc' : pressureMetricMode
+    const chartMetricMode = pressureMetricMode
     const historyChartRef = useRef(historyChart)
     const pressureMetricModeRef = useRef(chartMetricMode)
 
@@ -58,10 +56,11 @@ function ChartsAside(props) {
     )
     const getCenterForMode = (entry) => pressureMetricModeRef.current === 'adc' ? entry?.adcCenter : entry?.center
     const roundMetricValue = (value, digits = 1) => {
+        if (value == null) return null
         const numeric = Number(value)
         return Number.isFinite(numeric) ? Number(numeric.toFixed(digits)) : 0
     }
-    const formatMetricValue = (value, digits = 1) => roundMetricValue(value, digits).toFixed(digits)
+    const formatMetricValue = (value, digits = 1) => value == null ? '-' : roundMetricValue(value, digits).toFixed(digits)
     const roundMetricSeries = (values = []) => Array.isArray(values)
         ? values.map((value) => roundMetricValue(value))
         : []
@@ -83,8 +82,6 @@ function ChartsAside(props) {
         pressureMetricModeRef.current = chartMetricMode
         renderCharts1()
         renderCharts2()
-        renderNormal()
-        renderCenter()
         setData((current) => ({ ...current, t: Date.now() }))
     }, [chartMetricMode])
 
@@ -306,7 +303,10 @@ function ChartsAside(props) {
             myChart: myChart2.current,
             yMax: getChartYMax(value),
             xName: props.t('timeFrame'),
-            yName: props.t('pointsAxis'),
+            yName: pressureMetricModeRef.current !== 'adc' && (historyChartRef.current?.areaUnit === 'cm2'
+                || Object.values(props.chartData.current || {}).some(item => item?.data?.areaUnit === 'cm2'))
+                ? (String(props.i18n?.language || '').startsWith('en') ? 'Area (cm²)' : '面积(cm²)')
+                : props.t('pointsAxis'),
         });
     }
 
@@ -563,7 +563,6 @@ function ChartsAside(props) {
     useEffect(() => {
         myChart1.current = echarts.init(myChart1Dom.current)
         myChart2.current = myChart2Dom.current ? echarts.init(myChart2Dom.current) : null
-        chart.current = echarts.init(normalChartDom.current);
         const chartPanel = document.querySelector('.charts-panel')
         const resizeCharts = () => {
             myChart1.current?.resize()
@@ -572,8 +571,7 @@ function ChartsAside(props) {
             // Y 轴等分数依赖图表像素高度，resize 后必须重新出图才能生效
             renderCharts1()
             renderCharts2()
-            renderNormal()
-        }
+            }
         const resizeObserver = chartPanel && typeof ResizeObserver !== 'undefined'
             ? new ResizeObserver(resizeCharts)
             : null
@@ -581,8 +579,6 @@ function ChartsAside(props) {
 
         const offRenderCharts1 = Scheduler.onRender(renderCharts1)
         const offRenderCharts2 = Scheduler.onRender(renderCharts2)
-        const offRenderCenter = Scheduler.onRender(renderCenter)
-        const offRenderNormal = Scheduler.onRender(renderNormal)
         resizeCharts()
         requestAnimationFrame(resizeCharts)
 
@@ -612,12 +608,14 @@ function ChartsAside(props) {
                         const widthDistance = sysConfig[key].pointWidthDistance || 1
                         const heightDistance = sysConfig[key].pointHeightDistance || 1
                         dataObj[key].pointTotal = chartData[key].data[currentPointField] ?? chartData[key].data.areaTotal
-                        const preciseAreaTotal = dataObj[key].pointTotal * widthDistance * heightDistance / 100
-                        dataObj[key].areaTotal = Math.round(preciseAreaTotal)
+                        const preciseAreaTotal = chartData[key].data.areaUnit === 'cm2'
+                            ? chartData[key].data.effectiveAreaCm2
+                            : dataObj[key].pointTotal * widthDistance * heightDistance / 100
+                        dataObj[key].areaTotal = formatMetricValue(preciseAreaTotal, 2)
                         dataObj[key].pressAver = formatMetricValue(chartData[key].data.pressAver)
-                        dataObj[key].pressMax = chartData[key].data.pressMax
-                        dataObj[key].pressTotal = chartData[key].data.pressTotal
-                        dataObj[key].total = formatMetricValue(chartData[key].data.pressTotal ?? preciseAreaTotal * dataObj[key].pressAver)
+                        dataObj[key].pressMax = formatMetricValue(chartData[key].data.pressMax)
+                        dataObj[key].pressTotal = formatMetricValue(chartData[key].data.pressTotal)
+                        dataObj[key].total = formatMetricValue(chartData[key].data.pressTotal)
                         dataObj[key].pressureAver = formatMetricValue(chartData[key].data.pressAver)
                         dataObj[key].pressureMax = formatMetricValue(chartData[key].data.pressMax)
                         dataObj[key].pressureTotal = formatMetricValue(chartData[key].data.pressureTotal)
@@ -642,18 +640,20 @@ function ChartsAside(props) {
                                 const bWidthDistance = widthDistance
                                 const bHeightDistance = heightDistance
                                 const boxPointTotal = box.data[currentPointField] ?? box.data.areaTotal ?? 0
-                                const bPreciseArea = boxPointTotal * bWidthDistance * bHeightDistance / 100
+                                const bPreciseArea = box.data.areaUnit === 'cm2'
+                                    ? box.data.effectiveAreaCm2
+                                    : boxPointTotal * bWidthDistance * bHeightDistance / 100
                                 const activeBoxNormalDis = getNormalDistributionForMode(box.normalDis)
                                 return {
                                     colorIndex: box.colorIndex,
                                     bgc: box.bgc,
                                     name: formatSelectionName(box.name, idx + 1, props.t),
                                     pointTotal: boxPointTotal,
-                                    areaTotal: Math.round(bPreciseArea),
+                                    areaTotal: bPreciseArea == null ? '-' : Math.round(bPreciseArea),
                                     pressAver: formatMetricValue(box.data.pressAver),
-                                    pressMax: box.data.pressMax || 0,
-                                    pressTotal: box.data.pressTotal || 0,
-                                    total: formatMetricValue(box.data.pressTotal ?? bPreciseArea * Number(box.data.pressAver || 0)),
+                                    pressMax: formatMetricValue(box.data.pressMax),
+                                    pressTotal: formatMetricValue(box.data.pressTotal),
+                                    total: formatMetricValue(box.data.pressTotal),
                                     pressureAver: formatMetricValue(box.data.pressAver),
                                     pressureMax: formatMetricValue(box.data.pressMax),
                                     pressureTotal: formatMetricValue(box.data.pressureTotal),
@@ -683,8 +683,6 @@ function ChartsAside(props) {
         return () => {
             offRenderCharts1()
             offRenderCharts2()
-            offRenderCenter()
-            offRenderNormal()
             offUI()
             resizeObserver?.disconnect()
             myChart1.current?.dispose()
@@ -700,8 +698,8 @@ function ChartsAside(props) {
     const { t, i18n } = useTranslation()
 
     const system = getSysType()
-    const pressDataArr = ['aver', 'max', 'total']
-    const areaDataArr = ['pointTotal', 'areaTotal']
+    const pressDataArr = ['total', 'pressure']
+    const areaDataArr = ['areaTotal']
     const centerDataArr = ['pressureCenter']
 
     /**
@@ -721,10 +719,12 @@ function ChartsAside(props) {
     const centerTitle = chartMetricMode === 'adc' ? t('adcCenter') : t('pressureCenterCurve')
 
     const getMetricValue = (source, item) => {
-        if (item === 'total') return chartMetricMode === 'adc' ? source?.adcTotal : source?.forceTotal
+        if (item === 'total') return source?.forceTotal
+        if (item === 'pressure') return source?.pressureAver
         return source?.[`${metricPrefix}${item.charAt(0).toUpperCase()}${item.slice(1)}`]
     }
     const getMetricLabel = (item) => {
+        if (item === 'pressure') return String(i18n.language || '').startsWith('en') ? 'Pressure' : '压强'
         if (item === 'aver') return metricDisplay.labels.average
         if (item === 'max') return metricDisplay.labels.max
         if (chartMetricMode === 'adc') return metricDisplay.labels.total
@@ -774,7 +774,7 @@ function ChartsAside(props) {
     const renderDataRow = (item, colorArr) => {
         const isPressureMetric = pressDataArr.includes(item)
         const getDisplayValue = (source) => isPressureMetric ? getMetricValue(source, item) : source?.[item]
-        const getDisplayUnit = () => item === 'total' ? (chartMetricMode === 'adc' ? 'ADC' : 'N') : isPressureMetric ? metricDisplay.unit : item === 'pointTotal' ? '个' : item === 'areaTotal' ? 'cm²' : ''
+        const getDisplayUnit = () => item === 'total' ? 'N' : item === 'pressure' ? 'kPa' : item === 'areaTotal' ? 'cm²' : ''
         if (hasBoxStats()) {
             // 多框选模式
             const allBoxRows = []
@@ -866,7 +866,6 @@ function ChartsAside(props) {
                                 aria-label={t('switchPressureMetric')}
                                 onClick={() => {
                                     useEquipStore.getState().setPressureMetricMode(metricDisplay.nextMode)
-                                    useEquipStore.getState().setThreeDisplaySource('metric')
                                 }}
                             />
                         </Tooltip>
@@ -897,33 +896,7 @@ function ChartsAside(props) {
                 </ChartPanel>
             </DraggablePanel>
 
-            <DraggablePanel title={centerTitle + ' / ' + normalDistTitle} defaultPosition={{ right: 20, y: 80 }}>
-                <ChartPanel
-                    className="chartAndDataContent"
-                    title={centerTitle}
-                    legend={renderLegend(areaColorArr)}
-                >
-                    <FootTrack ref={trackRef} />
-                    <div style={{ marginBottom: '6px', color: '#E6EBF0', fontSize: '0.875rem' }}>{t('pressureCenter')}{`(X,Y)`}</div>
-                    {centerDataArr.map((item) => (
-                        <div className='chartData' key={item}>
-                            <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`} style={{ height: '1.2rem' }}>
-                                {renderCenterRows()}
-                            </div>
-                        </div>
-                    ))}
-                </ChartPanel>
 
-                <ChartPanel
-                    className="chartAndDataContent"
-                    title={normalDistTitle}
-                    legend={renderLegend(areaColorArr)}
-                >
-                    <div className="normalChartWrap">
-                        <div ref={normalChartDom} id="chart" className="normalChartCanvas"></div>
-                    </div>
-                </ChartPanel>
-            </DraggablePanel>
         </>
     )
 }

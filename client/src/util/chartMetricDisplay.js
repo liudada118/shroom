@@ -2,7 +2,15 @@ import { getPressureMetricDisplay } from './pressureMetrics'
 
 // ADC is a visualization mode, never a physical calibration/export unit.
 export function getChartMetricDisplay(mode, t, language) {
-  if (mode !== 'adc') return getPressureMetricDisplay(mode, t, language)
+  if (mode !== 'adc') {
+    const display = getPressureMetricDisplay(mode, t, language)
+    if (mode !== 'pressure') return display
+    const english = String(language || '').toLowerCase().startsWith('en')
+    return { ...display,
+      curveLabel: english ? 'Average Pressure Curve' : '平均压强曲线',
+      axisLabel: english ? 'Average pressure (kPa)' : '平均压强(kPa)',
+    }
+  }
   const english = String(language || '').toLowerCase().startsWith('en')
   const label = (key, zh, en) => {
     const translated = t?.(key)

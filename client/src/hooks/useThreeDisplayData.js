@@ -3,7 +3,7 @@ import { useEquipStore } from '../store/equipStore'
 import { createThreeDisplayProcessor } from '../util/threeDisplayProcessing'
 
 export function useThreeDisplayData(sourceRef) {
-  const displayRef = useRef({ pressure: {}, force: {} })
+  const displayRef = useRef({ adc: {}, pressure: {}, force: {} })
   useEffect(() => {
     const process = createThreeDisplayProcessor()
     const update = () => {
