@@ -3,75 +3,81 @@
     "504330390250435E45": {
       "type": "endi-jacket",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-10T05:40:23.225Z",
+      "lastSeen": "2026-11-02T06:35:11.616Z",
       "alias": ""
     },
     "464134391150431A9A": {
       "type": "endi-rightHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-10T05:40:23.232Z",
+      "lastSeen": "2026-11-02T06:35:11.617Z",
       "alias": ""
     },
     "46413439115043190B": {
       "type": "endi-leftHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-12T06:21:15.940Z",
+      "lastSeen": "2026-11-02T06:35:11.618Z",
       "alias": ""
     },
     "344637301550321301": {
       "type": "endi-leftFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-10T05:40:23.241Z",
+      "lastSeen": "2026-11-02T06:35:11.618Z",
       "alias": ""
     },
     "554635300E5043598D": {
       "type": "endi-rightFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-10T05:40:23.247Z",
+      "lastSeen": "2026-11-02T06:35:11.619Z",
       "alias": ""
     },
     "46413439115043198B": {
       "type": "endi-leftFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-10T05:40:23.251Z",
+      "lastSeen": "2026-11-02T11:51:38.774Z",
       "alias": ""
     },
     "314631310550457130": {
       "type": "endi-rightFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-10T05:40:23.256Z",
+      "lastSeen": "2026-11-02T07:50:02.819Z",
       "alias": ""
     },
     "344637301550321444": {
       "type": "endi-jacket",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-15T12:36:30.561Z",
+      "lastSeen": "2026-11-02T06:35:11.621Z",
       "alias": ""
     },
     "504330390250435F14": {
       "type": "endi-rightFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-15T13:51:06.017Z",
+      "lastSeen": "2026-11-02T06:35:11.623Z",
       "alias": ""
     },
     "52313935115046700A": {
       "type": "endi-rightHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-12T06:25:28.416Z",
+      "lastSeen": "2026-11-02T06:35:11.627Z",
       "alias": ""
     },
     "504330390250435E40": {
       "type": "endi-leftHand",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-12T06:25:27.904Z",
+      "lastSeen": "2026-11-02T06:35:11.630Z",
       "alias": ""
     },
     "34463730155032141C": {
       "type": "endi-leftFoot",
       "deviceClass": "foot",
-      "lastSeen": "2026-10-15T13:51:06.535Z",
+      "lastSeen": "2026-11-02T06:35:11.631Z",
+      "alias": ""
+    },
+    "504330390250435387": {
+      "type": "endi-jacket",
+      "deviceClass": "foot",
+      "lastSeen": "2026-11-02T11:51:39.280Z",
       "alias": ""
     }
   },
-  "updatedAt": "2026-10-15T13:51:06.535Z"
+  "updatedAt": "2026-11-02T11:51:39.280Z"
 }
