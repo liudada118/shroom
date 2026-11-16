@@ -158,9 +158,9 @@ export const getVisualRenderMetricMode = () => {
   const state = useEquipStore.getState()
   return state.systemType === 'endi' ? getMannequinHeatmapMode(state.settingValue) : state.pressureMetricMode
 }
-export const getVisualRenderSettings = () => {
+export const getVisualRenderSettings = (display) => {
   const state = useEquipStore.getState()
-  return state.systemType === 'endi' ? getMannequinHeatmapRenderSettings(state.settingValue) : getSettingValue()
+  return state.systemType === 'endi' ? getMannequinHeatmapRenderSettings(state.settingValue, display ?? state.display) : getSettingValue()
 }
 export const getDisplayType = () => useEquipStore.getState().displayType
 export const getSettingValueOptimal = () => useEquipStore.getState().settingValueOptimal

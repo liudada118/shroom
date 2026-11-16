@@ -9,7 +9,7 @@ export const REFERENCE_CRYSTAL_DEFAULTS = Object.freeze({
   frontHeatAlpha: 0.65,
 })
 
-/** 来自 shroom1.0/HumanBodyOptimized.jsx 的世界 XYZ 高斯着色器，不添加区域、法线或深度截断。 */
+/** 保留参考项目世界 XYZ 高斯与色阶，受压覆盖独立控制热图可见度。 */
 export function createReferenceHumanShaders(maxSensors) {
   const MAX_SHADER_SENSORS = maxSensors
   const vertexShader = `
@@ -56,13 +56,14 @@ export function createReferenceHumanShaders(maxSensors) {
   }
 `;
 
-  const exactCrystalHeatOverlayFragmentShader = `
+  const pressureHeatOverlayFragmentShader = `
   uniform sampler2D uSensorData;
   uniform float uSensorCount;
   uniform float uRadius;
   uniform float uIntensity;
   uniform float uHeatAlpha;
   uniform int uColorScheme;
+  uniform vec4 uColorStops;
   varying vec3 vWorldPos;
 
   vec3 heatColor(float t) {
@@ -79,27 +80,44 @@ export function createReferenceHumanShaders(maxSensors) {
       if (t < 0.66) return mix(vec3(0.5, 0.0, 0.1), vec3(0.95, 0.42, 0.0), (t - 0.33) * 3.0);
       return mix(vec3(0.95, 0.42, 0.0), vec3(1.0, 1.0, 0.4), (t - 0.66) * 3.0);
     }
-    if (t < 0.2) return mix(vec3(0.04, 0.04, 0.28), vec3(0.0, 0.28, 0.85), t / 0.2);
-    if (t < 0.4) return mix(vec3(0.0, 0.28, 0.85), vec3(0.0, 0.75, 0.55), (t - 0.2) / 0.2);
-    if (t < 0.6) return mix(vec3(0.0, 0.75, 0.55), vec3(0.55, 0.85, 0.0), (t - 0.4) / 0.2);
-    if (t < 0.8) return mix(vec3(0.55, 0.85, 0.0), vec3(1.0, 0.62, 0.0), (t - 0.6) / 0.2);
-    return mix(vec3(1.0, 0.62, 0.0), vec3(0.95, 0.04, 0.0), (t - 0.8) / 0.2);
+    vec3 blue = vec3(0.30, 0.58, 0.88);
+    vec3 cyan = vec3(0.0, 0.75, 0.90);
+    vec3 green = vec3(0.10, 0.78, 0.35);
+    vec3 yellow = vec3(1.0, 0.90, 0.10);
+    vec3 orange = vec3(1.0, 0.62, 0.0);
+    vec3 red = vec3(0.95, 0.04, 0.0);
+    if (t < uColorStops.x) return mix(blue, cyan, t / uColorStops.x);
+    if (t < uColorStops.y) return mix(cyan, green, (t - uColorStops.x) / (uColorStops.y - uColorStops.x));
+    if (t < uColorStops.z) return mix(green, yellow, (t - uColorStops.y) / (uColorStops.z - uColorStops.y));
+    if (t < uColorStops.w) return mix(yellow, orange, (t - uColorStops.z) / (uColorStops.w - uColorStops.z));
+    return mix(orange, red, (t - uColorStops.w) / (1.0 - uColorStops.w));
   }
 
   void main() {
     float heat = 0.0;
+    float supportWeightSum = 0.0;
+    float supportWeightSquaredSum = 0.0;
     for (int i = 0; i < ${MAX_SHADER_SENSORS}; i++) {
       if (float(i) >= uSensorCount) break;
       float u = (float(i) + 0.5) / uSensorCount;
       vec4 sensor = texture2D(uSensorData, vec2(u, 0.5));
+      if (sensor.w <= 0.0) continue;
       float distanceToSensor = distance(vWorldPos, sensor.xyz);
-      heat += exp(-(distanceToSensor * distanceToSensor) / (2.0 * uRadius * uRadius)) * sensor.w * uIntensity;
+      float weight = exp(-(distanceToSensor * distanceToSensor) / (2.0 * uRadius * uRadius));
+      heat += weight * sensor.w * uIntensity;
+      supportWeightSum += weight;
+      supportWeightSquaredSum += weight * weight;
     }
     heat = clamp(heat, 0.0, 1.0);
-    float heatVisibility = smoothstep(0.02, 0.65, heat);
-    if (heatVisibility < 0.01) discard;
+    // A continuous, density-normalized support field avoids per-point scalloped outlines.
+    // One point (or coincident duplicates) retains its original Gaussian footprint.
+    float support = supportWeightSquaredSum / max(supportWeightSum, 1e-8);
+    float supportDistance = sqrt(max(-2.0 * log(max(support, 1e-8)), 0.0));
+    float edgeAA = min(fwidth(supportDistance), 0.12);
+    float heatVisibility = 1.0 - smoothstep(1.1 - edgeAA, 2.55 + edgeAA, supportDistance);
+    if (heatVisibility <= 0.0) discard;
     gl_FragColor = vec4(heatColor(heat), heatVisibility * uHeatAlpha);
   }
 `;
-  return { vertexShader, crystalShellFragmentShader, opaqueWhiteShellFragmentShader, exactCrystalHeatOverlayFragmentShader }
+  return { vertexShader, crystalShellFragmentShader, opaqueWhiteShellFragmentShader, pressureHeatOverlayFragmentShader }
 }

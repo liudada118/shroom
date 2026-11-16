@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createReferenceHumanShaders, REFERENCE_CRYSTAL_DEFAULTS } from './mannequinReferenceShaders.js'
+import { getColorBandStops } from '../../util/mannequinColorBands.js'
 
 const DEFAULT_SETTINGS = { height: 80, gauss: 2, color: 4.6, filter: 0, autoColor: 0 }
 const MODEL_COLOR = '#ffffff'
@@ -31,7 +32,7 @@ export function createMannequinHeatField(sensors, normalizedModel) {
   texture.magFilter = THREE.NearestFilter
   texture.generateMipmaps = false
   texture.needsUpdate = true
-  const { vertexShader, opaqueWhiteShellFragmentShader, exactCrystalHeatOverlayFragmentShader } = createReferenceHumanShaders(sensorCount)
+  const { vertexShader, opaqueWhiteShellFragmentShader, pressureHeatOverlayFragmentShader } = createReferenceHumanShaders(sensorCount)
   const modelColor = new THREE.Color().setHex(parseInt(MODEL_COLOR.slice(1), 16), THREE.LinearSRGBColorSpace)
   const material = new THREE.ShaderMaterial({
     vertexShader,
@@ -49,10 +50,11 @@ export function createMannequinHeatField(sensors, normalizedModel) {
     uRadius: { value: 0.1 },
     uIntensity: { value: REFERENCE_CRYSTAL_DEFAULTS.intensity },
     uColorScheme: { value: REFERENCE_CRYSTAL_DEFAULTS.colorScheme },
+    uColorStops: { value: new THREE.Vector4(0.2, 0.4, 0.6, 0.8) },
   }
   const heatMaterials = [THREE.BackSide, THREE.FrontSide].map((side, index) => new THREE.ShaderMaterial({
     vertexShader,
-    fragmentShader: exactCrystalHeatOverlayFragmentShader,
+    fragmentShader: pressureHeatOverlayFragmentShader,
     // Strong heat keeps the existing palette instead of blending into pastel on white.
     uniforms: { ...heatUniforms, uHeatAlpha: { value: index ? 1 : REFERENCE_CRYSTAL_DEFAULTS.backHeatAlpha } },
     side,
@@ -71,6 +73,9 @@ export function createMannequinHeatField(sensors, normalizedModel) {
   function update(values, settings = {}) {
     if (disposed) return false
     const options = { ...DEFAULT_SETTINGS, ...settings }
+    const colorStops = getColorBandStops(options.colorBandRatios)
+    const paletteChanged = colorStops.some((value, index) => heatUniforms.uColorStops.value.getComponent(index) !== value)
+    if (paletteChanged) heatUniforms.uColorStops.value.fromArray(colorStops)
     const numericHeight = Number(options.height)
     const height = Number.isFinite(numericHeight) ? Math.max(0, Math.min(400, numericHeight)) : 80
     const numericGauss = Number(options.gauss)
@@ -108,7 +113,9 @@ export function createMannequinHeatField(sensors, normalizedModel) {
       const active = Number.isFinite(value) && value > 0 && value > filter
       const heat = active ? Math.min(1, value / regionRanges[regionIndices[index]]) : 0
       if (active) activeCount++
-      if (Math.abs(sensorData[index * 4 + 3] - heat) > 0.000001) {
+      const previousHeat = sensorData[index * 4 + 3]
+      // Even a tiny positive reading must become visible, and zero must clear it exactly.
+      if ((previousHeat > 0) !== (heat > 0) || Math.abs(previousHeat - heat) > 0.000001) {
         sensorData[index * 4 + 3] = heat
         changed = true
       }
@@ -117,7 +124,7 @@ export function createMannequinHeatField(sensors, normalizedModel) {
     if (changed) texture.needsUpdate = true
     lastRadius = radius
     Object.assign(stats, { activeCount, maxValue: maximum, rangeMax, radius })
-    return changed
+    return changed || paletteChanged
   }
 
   /** Release the shared measurement texture once and each crystal surface pass. */

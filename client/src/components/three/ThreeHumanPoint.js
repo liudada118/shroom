@@ -6,7 +6,10 @@ import { getFrameProcessingSettingValue } from '../../store/equipStore'
 import { cleanupThree, disposeObject } from '../../util/disposeThree'
 import { buildMannequinSensorLayout, readMannequinSensorValues } from '../../util/mannequinSensorLayout'
 import { getMannequinHeatmapFrame, getMannequinHeatmapMode, getMannequinHeatmapRenderSettings } from '../../util/mannequinHeatmapSource'
+import { createMannequinMatrixSurface } from './mannequinMatrixSurface'
 import { createMannequinHeatField } from './mannequinHeatField'
+import { extendMannequinLegCalibration } from '../../util/mannequinLegProjection'
+import { alignMannequinMatrixCoordinates, getMannequinDisplayRegions, normalizeMannequinDisplayRegions } from '../../util/mannequinDisplayMatrix'
 import { createMannequinCamera } from './mannequinCamera'
 import { alignMannequinHeadToDisplay } from './mannequinSensorPositions'
 import './ThreeHumanPoint.scss'
@@ -82,9 +85,11 @@ const ThreeHumanPoint = memo(React.forwardRef(({ metricData, changeViewProp }, r
     if (!mount) return undefined
     let disposed = false
     let animationId = 0
-    let field = null
+    let surface = null
+    let upperField = null
+    let upperSensors = []
+    const upperOverlays = []
     let model = null
-    const overlayMeshes = []
     let sensors = []
     let renderer
     let controls
@@ -146,29 +151,33 @@ const ThreeHumanPoint = memo(React.forwardRef(({ metricData, changeViewProp }, r
         if (disposed) { disposeObject(source); return }
         model = normalizeHumanModel(source)
         scene.add(model)
-        sensors = alignMannequinHeadToDisplay(sensors, model)
-        field = createMannequinHeatField(sensors, model)
+        sensors = alignMannequinMatrixCoordinates(alignMannequinHeadToDisplay(sensors, model))
         releaseModelMaterials(model)
+        upperSensors = sensors.filter(sensor => !sensor.canvasId.endsWith('-leg')).map((sensor, index) => ({ ...sensor, index }))
+        upperField = createMannequinHeatField(upperSensors, model)
         const modelMeshes = []
         model.traverse(object => {
           if (object.isMesh) modelMeshes.push(object)
         })
         modelMeshes.forEach(object => {
-          object.material = field.material
+          object.material = upperField.material
           object.renderOrder = 9
           object.castShadow = false
           object.receiveShadow = false
-          field.heatMaterials.forEach((material, index) => {
+          upperField.heatMaterials.forEach((material, index) => {
             const overlay = new THREE.Mesh(object.geometry, material)
-            overlay.name = `mannequin-heat-${index === 0 ? 'back' : 'front'}`
+            overlay.name = `mannequin-upper-heat-${index}`
+            overlay.userData.mannequinHeatOverlay = true
             overlay.renderOrder = index === 0 ? 8 : 10
             object.add(overlay)
-            overlayMeshes.push(overlay)
+            upperOverlays.push(overlay)
           })
         })
+        surface = createMannequinMatrixSurface(extendMannequinLegCalibration(sensors, model), model)
         renderer.domElement.setAttribute('data-model-state', 'ready')
         renderer.domElement.setAttribute('data-model-source', MODEL_PATH)
         renderer.domElement.setAttribute('data-sensor-count', String(sensors.length))
+        renderer.domElement.setAttribute('data-heatmap-format', 'upper-point-field-lower-continuous-2d')
         setStatus({ state: 'ready', message: '', count: sensors.length })
       } catch (error) {
         if (disposed || error.name === 'AbortError') return
@@ -185,12 +194,14 @@ const ThreeHumanPoint = memo(React.forwardRef(({ metricData, changeViewProp }, r
       animationId = requestAnimationFrame(animate)
       if (document.hidden || now - lastFrameAt < FRAME_INTERVAL) return
       navigation.update(now)
-      if (field) {
+      if (surface) {
         const settings = getFrameProcessingSettingValue?.() || {}
         const mode = getMannequinHeatmapMode(settings)
         const frame = getMannequinHeatmapFrame(dataRef.current?.current, settings)
-        const values = readMannequinSensorValues(sensors, frame)
-        field.update(values, getMannequinHeatmapRenderSettings(settings))
+        const renderSettings = getMannequinHeatmapRenderSettings(settings)
+        upperField.update(readMannequinSensorValues(upperSensors, frame), renderSettings)
+        const regions = getMannequinDisplayRegions(frame, renderSettings).filter(region => region.canvasId.endsWith('-leg'))
+        surface.update(normalizeMannequinDisplayRegions(regions, renderSettings), renderSettings)
         if (renderer.domElement.getAttribute('data-heatmap-source') !== mode) renderer.domElement.setAttribute('data-heatmap-source', mode)
       }
       renderer.render(scene, camera)
@@ -206,15 +217,14 @@ const ThreeHumanPoint = memo(React.forwardRef(({ metricData, changeViewProp }, r
       resizeObserver?.disconnect()
       navigation?.dispose()
       runtimeRef.current = null
-      // Overlay geometry belongs to the original model; field materials own their textures.
-      overlayMeshes.forEach(overlay => {
+      surface?.dispose()
+      upperOverlays.forEach(overlay => {
         overlay.removeFromParent()
         overlay.geometry = null
         overlay.material = null
       })
-      overlayMeshes.length = 0
-      if (field) scene.traverse(object => { if (object.material === field.material) object.material = null })
-      field?.dispose()
+      if (upperField) scene.traverse(object => { if (object.material === upperField.material) object.material = null })
+      upperField?.dispose()
       cleanupThree({ scene, renderer, controls })
     }
   }, [loadAttempt])

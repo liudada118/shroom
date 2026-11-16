@@ -12,10 +12,11 @@ import { shallow } from 'zustand/shallow'
 import { isMoreMatrix } from '../../assets/util/util'
 import { getMatrixPartFromDisplayType, localAddress, pointConfig, systemPointConfig } from '../../util/constant'
 import SelectSet from './SelectSet'
-import { getRestoredVisualSettingValue, normalizeVisualSettingMax, saveVisualSettingValue, VISUAL_ADC_COLOR_SETTING_DEFAULT, VISUAL_ADC_FILTER_SETTING_DEFAULT, VISUAL_ADC_SETTING_MAX } from '../../util/visualSettingStorage'
+import { getRestoredVisualSettingValue, normalizeVisualSettingMax, saveVisualSettingValue, VISUAL_ADC_COLOR_SETTING_DEFAULT, VISUAL_ADC_FILTER_SETTING_DEFAULT, VISUAL_ADC_SETTING_MAX, VISUAL_COLOR_SETTING_MAX, VISUAL_PRESSURE_FILTER_SETTING_MAX } from '../../util/visualSettingStorage'
 import { removeHistoryBox } from '../../assets/util/selectMatrix'
 import { getPressureMetricDisplay, PRESSURE_METRIC_MODE } from '../../util/pressureMetrics'
-import { getMannequinHeatmapMode } from '../../util/mannequinHeatmapSource'
+import { getMannequinHeatmapMode, getMannequinAutoColor } from '../../util/mannequinHeatmapSource'
+import ColorBandControls from './ColorBandControls'
 
 // const selectHelper = new SelectionHelper(document.body, 'selectBox');
 
@@ -46,17 +47,20 @@ function SecondTitle(props) {
     const pressureMetricDisplay = getPressureMetricDisplay(PRESSURE_METRIC_MODE, t, i18n?.language, pressureUnit);
     const isMannequin3D = systemType === 'endi' && display === 'point3D';
     const isMannequin = systemType === 'endi';
+    const showMannequinColorBands = isMannequin && (isMannequin3D || display === 'num');
+    const currentAutoColor = Boolean(isMannequin ? getMannequinAutoColor(settingValue, display) : settingValue.autoColor);
     const mannequinMode = getMannequinHeatmapMode(settingValue);
     const useAdcControls = isMannequin && mannequinMode === 'adc';
     const colorMetricDisplay = useAdcControls ? {
         unit: 'ADC', valueScale: 1, formatValue: value => Number(value).toFixed(2),
     } : pressureMetricDisplay;
     const pressureFilterDisplay = colorMetricDisplay;
-    const showMannequinAutoColorHint = isMannequin3D && Boolean(settingValue.autoColor);
+    const showMannequinAutoColorHint = isMannequin3D && currentAutoColor;
 
     const setSettingValue = useEquipStore.getState().setSettingValue
 
     const getSettingKey = (a) => {
+        if (isMannequin && display === 'num' && a.type === 'color') return 'colorRange2D'
         if (useAdcControls && a.type === 'color') return 'adcColor'
         if (useAdcControls && a.type === 'filter') return 'adcFilter'
         return a.type
@@ -85,7 +89,15 @@ function SecondTitle(props) {
     };
 
     const onToggleAutoColor = (checked) => {
-        const obj = { ...settingValue, autoColor: checked ? 1 : 0 }
+        const key = isMannequin3D ? 'autoColor3D' : 'autoColor'
+        const obj = { ...useEquipStore.getState().settingValue, [key]: checked ? 1 : 0 }
+        saveVisualSettingValue(systemType || getSysType(), obj)
+        setSettingValue(obj)
+    }
+
+    const onChangeColorBands = (colorBandRatios) => {
+        const key = isMannequin3D ? 'colorBandRatios' : 'colorBandRatios2D'
+        const obj = { ...useEquipStore.getState().settingValue, [key]: colorBandRatios }
         saveVisualSettingValue(systemType || getSysType(), obj)
         setSettingValue(obj)
     }
@@ -144,7 +156,7 @@ function SecondTitle(props) {
             // 假人的ADC/压强显示使用独立参考值，压强存kPa并按当前单位显示。
             title: t('colorAdj'),
             type: 'color',
-            max: useAdcControls ? VISUAL_ADC_SETTING_MAX : 60,
+            max: useAdcControls ? VISUAL_ADC_SETTING_MAX : VISUAL_COLOR_SETTING_MAX,
             min: 0.01,
             step: 0.01,
             sliderScale: colorMetricDisplay.valueScale,
@@ -153,7 +165,7 @@ function SecondTitle(props) {
         {
             title: t('denoise'),
             type: 'filter',
-            max: useAdcControls ? VISUAL_ADC_SETTING_MAX : 60,
+            max: useAdcControls ? VISUAL_ADC_SETTING_MAX : VISUAL_PRESSURE_FILTER_SETTING_MAX,
             min: 0,
             step: 0.1,
             sliderScale: colorMetricDisplay.valueScale,
@@ -405,7 +417,7 @@ function SecondTitle(props) {
 
         <>
             <Drawer zindex={3} show={setshow} title={t('adjust')} setShow={setSetshow}>
-                <div className="setContent">
+                <div className={`setContent${showMannequinColorBands ? ' setContent--with-color-bands' : ''}`}>
                     {/* <div className="setItem">
                         <Row align='middle'>
                             <Col span={4} >高斯模糊</Col>
@@ -492,7 +504,7 @@ function SecondTitle(props) {
                                         <div className="autoColorSwitchRow">
                                             <Switch
                                                 size="small"
-                                                checked={Boolean(settingValue.autoColor)}
+                                                checked={currentAutoColor}
                                                 onChange={onToggleAutoColor}
                                             />
                                             <span>{t('autoColorAdj')}</span>
@@ -500,6 +512,16 @@ function SecondTitle(props) {
                                     ) : null}
                                     {a.type === 'color' && showMannequinAutoColorHint ? (
                                         <div className="autoColorHint">{t('mannequinAutoColorHint')}</div>
+                                    ) : null}
+                                    {a.type === 'color' && showMannequinColorBands ? (
+                                        <ColorBandControls
+                                            ratios={isMannequin3D ? settingValue.colorBandRatios : settingValue.colorBandRatios2D}
+                                            defaultRatios={getRestoredVisualSettingValue('endi')[isMannequin3D ? 'colorBandRatios' : 'colorBandRatios2D']}
+                                            title={t(isMannequin3D ? 'heatmapColorBands3D' : 'heatmapColorBands2D')}
+                                            hint={t('colorBandIndependentHint')}
+                                            onChange={onChangeColorBands}
+                                            t={t}
+                                        />
                                     ) : null}
 
                                 </div>

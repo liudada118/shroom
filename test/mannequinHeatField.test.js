@@ -5,12 +5,11 @@ const path = require('node:path')
 const test = require('node:test')
 const { pathToFileURL } = require('node:url')
 
-// Captured from HumanBodyOptimized.jsx's exact crystal shaders with MAX_SHADER_SENSORS=2.
-// Keep the reference contract portable: tests never depend on the reference checkout being present.
+// Preserve the reference vertex/shell and the current configurable display palette.
 const REFERENCE_SHADER_SHA256 = {
   vertex: '269f686e68c74e9856b27fc07bee80715b1cef1f7166e2fc4b023030e7cc065d',
   shell: 'd9e8c93eea431d164b3d762e733fb88d11123640d2779ddfb4a56bdcc86f48ce',
-  heat: 'f4bf2cf5d0b51492b168399acc5564082de22c5df9ebca8c885b06b567beb992',
+  heatColor: '980cb56cc46f80ae6f9b958968bf10d14caa50c5e359fe978ab93d9a5ae1b91c',
 }
 
 async function createFixture({ segments = 1, sensors: suppliedSensors } = {}) {
@@ -37,6 +36,22 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex')
 }
 
+function heatColorSource(shader) {
+  const match = shader.match(/  vec3 heatColor\(float t\) \{[\s\S]*?\n  \}/)
+  assert.ok(match, 'the pressure renderer exposes its heat color function')
+  return match[0]
+}
+
+function assertHeatColors(shader) {
+  const source = heatColorSource(shader)
+  assert.match(source, /vec3 blue = vec3\(0\.30, 0\.58, 0\.88\)/,
+    'low pressure retains a clear blue with a softer contrast against white')
+  assert.match(source, /if \(t < uColorStops\.x\) return mix\(blue, cyan, t \/ uColorStops\.x\)/,
+    'the lowest color interval must interpolate using its configured width')
+  assert.equal(sha256(source), REFERENCE_SHADER_SHA256.heatColor,
+    'the configured stops retain continuous interpolation and the defined color values')
+}
+
 function regionalSensors(regions) {
   const sources = {
     head: 'jacket', back: 'jacket', 'left-arm': 'leftHand', 'right-arm': 'rightHand',
@@ -52,13 +67,20 @@ function heatValues(field) {
   return Array.from({ length: field.texture.image.width }, (_, index) => field.texture.image.data[index * 4 + 3])
 }
 
-test('opaque white model writes depth while preserving the reference heat colors', async () => {
+test('opaque white model uses configurable colors and a soft spatial boundary', async () => {
   const { THREE, field } = await createFixture()
   const { createReferenceHumanShaders, REFERENCE_CRYSTAL_DEFAULTS } = await import(pathToFileURL(path.resolve(__dirname, '../client/src/components/three/mannequinReferenceShaders.js')).href)
   const reference = createReferenceHumanShaders(2)
   assert.equal(sha256(reference.vertexShader), REFERENCE_SHADER_SHA256.vertex)
   assert.equal(sha256(reference.crystalShellFragmentShader), REFERENCE_SHADER_SHA256.shell)
-  assert.equal(sha256(reference.exactCrystalHeatOverlayFragmentShader), REFERENCE_SHADER_SHA256.heat)
+  assertHeatColors(reference.pressureHeatOverlayFragmentShader)
+  assert.match(reference.pressureHeatOverlayFragmentShader, /sensor\.w <= 0\.0/)
+  assert.match(reference.pressureHeatOverlayFragmentShader, /supportWeightSquaredSum \+= weight \* weight/)
+  assert.match(reference.pressureHeatOverlayFragmentShader, /supportWeightSquaredSum \/ max\(supportWeightSum, 1e-8\)/)
+  assert.doesNotMatch(reference.pressureHeatOverlayFragmentShader, /nearestDistance/,
+    'the visible boundary must combine neighboring kernels instead of taking a hard nearest-point union')
+  assert.match(reference.pressureHeatOverlayFragmentShader, /fwidth\(supportDistance\)/)
+  assert.match(reference.pressureHeatOverlayFragmentShader, /smoothstep\(1\.1 - edgeAA, 2\.55 \+ edgeAA, supportDistance\)/)
   assert.deepEqual(REFERENCE_CRYSTAL_DEFAULTS, {
     background: '#afacac', modelColor: '#718096', transparency: 0.8,
     intensity: 0.8, colorScheme: 0, backHeatAlpha: 0.35, frontHeatAlpha: 0.65,
@@ -70,16 +92,18 @@ test('opaque white model writes depth while preserving the reference heat colors
   assert.equal(field.material.fragmentShader, reference.opaqueWhiteShellFragmentShader)
   assert.match(field.material.fragmentShader, /gl_FragColor = vec4\(uModelColor \* shade, 1\.0\)/)
   for (const material of [back, front]) {
-    assert.equal(sha256(material.fragmentShader), REFERENCE_SHADER_SHA256.heat)
+    assert.equal(material.fragmentShader, reference.pressureHeatOverlayFragmentShader)
+    assertHeatColors(material.fragmentShader)
     assert.equal(material.uniforms.uIntensity.value, 0.8)
     assert.equal(material.uniforms.uColorScheme.value, 0)
+    assert.deepEqual(material.uniforms.uColorStops.value.toArray(), [0.2, 0.4, 0.6, 0.8])
   }
   assert.equal(field.material.side, THREE.FrontSide)
   assert.equal(field.material.transparent, false)
   assert.equal(field.material.opacity, 1)
   assert.equal(field.material.depthWrite, true)
   assert.deepEqual(field.material.uniforms.uModelColor.value.toArray(), [1, 1, 1],
-    'the app uses an opaque white model while preserving the archived reference heat palette')
+    'the app uses an opaque white model beneath the pressure color overlay')
   assert.equal(back.side, THREE.BackSide)
   assert.equal(front.side, THREE.FrontSide)
   assert.equal(back.uniforms.uHeatAlpha.value, 0.35)
@@ -88,6 +112,35 @@ test('opaque white model writes depth while preserving the reference heat colors
     assert.equal(material.depthWrite, false)
     assert.equal(material.depthTest, true, 'the opaque body must hide heat on occluded surfaces')
   }
+  field.dispose()
+})
+
+test('color band edits update both heat passes immediately without changing pressure textures', async () => {
+  const { field } = await createFixture()
+  const source = Object.freeze([2, 4])
+  const [back, front] = field.heatMaterials
+  assert.equal(back.uniforms.uColorStops, front.uniforms.uColorStops)
+  for (const autoColor of [0, 1]) {
+    const settings = { autoColor, color: 8 }
+    field.update(source, settings)
+    const previousTexture = [...field.texture.image.data]
+    const previousVersion = field.texture.version
+    const previousRange = field.stats.rangeMax
+    assert.equal(field.update(source, { ...settings, colorBandRatios: [40, 15, 15, 15, 15] }), true)
+    for (const pass of [back, front]) {
+      assert.deepEqual(pass.uniforms.uColorStops.value.toArray(), [0.4, 0.55, 0.7, 0.85])
+    }
+    assert.equal(field.texture.version, previousVersion, 'palette edits do not upload measurement data')
+    assert.deepEqual([...field.texture.image.data], previousTexture)
+    assert.equal(field.stats.rangeMax, previousRange)
+    assert.equal(field.stats.activeCount, 2)
+    assert.equal(field.update(source, { ...settings, colorBandRatios: [40, 15, 15, 15, 15] }), false)
+    assert.equal(field.update(source, settings), true)
+    assert.deepEqual(front.uniforms.uColorStops.value.toArray(), [0.2, 0.4, 0.6, 0.8])
+    assert.equal(field.texture.version, previousVersion)
+    assert.deepEqual([...field.texture.image.data], previousTexture)
+  }
+  assert.deepEqual(source, [2, 4])
   field.dispose()
 })
 
@@ -101,6 +154,39 @@ test('measurement texture contains one row of archived world XYZ and copied heat
   assert.deepEqual([...field.texture.image.data], [...new Float32Array([-0.4, 2, 0, 0.25, 0.4, 2, 0, 0.5])])
   assert.deepEqual(sensors.map(sensor => [sensor.x, sensor.y, sensor.z]), [[-0.4, 2, 0], [0.4, 2, 0]])
   geometries.forEach(geometry => assert.deepEqual(Object.keys(geometry.attributes).sort(), ['normal', 'position', 'uv']))
+  field.dispose()
+})
+
+test('very low pressure activates and clears despite sub-epsilon intensity changes without changing readings', async () => {
+  const { field } = await createFixture()
+  const source = new Float64Array([0.000001, 4])
+  const original = source.slice()
+  const settings = Object.freeze({ autoColor: 0, color: 20.2, filter: 0 })
+  const xyz = [...field.texture.image.data].filter((_, index) => index % 4 !== 3)
+  const expectedHighHeat = Math.fround(4 / 20.2)
+  assert.equal(field.update(source, settings), true)
+  assert.deepEqual(heatValues(field), [Math.fround(source[0] / 20.2), expectedHighHeat])
+  assert.ok(heatValues(field)[0] > 0 && heatValues(field)[0] < 0.000001,
+    'a valid low reading must reach the shader even below the normal texture update tolerance')
+  assert.equal(field.stats.activeCount, 2)
+  assert.equal(field.stats.rangeMax, 20.2)
+  assert.equal(field.stats.maxValue, 4)
+
+  const textureVersion = field.texture.version
+  assert.equal(field.update([0, 4], settings), true, 'zero pressure immediately removes the low-pressure footprint')
+  assert.deepEqual(heatValues(field), [0, expectedHighHeat])
+  assert.ok(field.texture.version > textureVersion, 'clearing the low reading uploads a new texture')
+  assert.equal(field.stats.activeCount, 1)
+  assert.equal(field.update(source, settings), true, 'returning low pressure reactivates the footprint')
+  assert.equal(heatValues(field)[0], Math.fround(source[0] / 20.2))
+  assert.equal(field.update(source, { ...settings, filter: source[0] }), true,
+    'the visual noise threshold can still remove a low reading at the threshold')
+  assert.deepEqual(heatValues(field), [0, expectedHighHeat])
+  assert.equal(field.stats.activeCount, 1)
+  assert.equal(field.stats.maxValue, 4)
+  assert.equal(field.stats.rangeMax, 20.2)
+  assert.deepEqual([...field.texture.image.data].filter((_, index) => index % 4 !== 3), xyz)
+  assert.deepEqual(source, original, 'display visibility cannot modify measured pressure')
   field.dispose()
 })
 
@@ -267,8 +353,9 @@ test('actual combined-foot frames retain independent left and right automatic co
   const sensors = buildMannequinSensorLayout(archive)
   const { field } = await createFixture({ sensors })
   const point = (canvasId, row) => sensors.find(sensor => sensor.canvasId === canvasId && sensor.row === row && sensor.col === 1)
-  const selected = [point('left-leg', 1), point('left-leg', 2), point('right-leg', 1), point('right-leg', 2)]
-  assert.deepEqual(selected.map(sensor => sensor.combinedDisplayIndex), [0, 2, 16, 18])
+  // Keep the input channels fixed; horizontal reversal moves them to model columns 4 and 3.
+  const selected = [point('left-leg', 4), point('left-leg', 3), point('right-leg', 4), point('right-leg', 3)]
+  assert.deepEqual(selected.map(sensor => sensor.combinedDisplayIndex), [16, 18, 0, 2])
   const combined = new Array(24 * 64).fill(0)
   combined[0] = 4
   combined[2] = 8
@@ -277,22 +364,22 @@ test('actual combined-foot frames retain independent left and right automatic co
   const frame = { foot: combined }
   const values = readMannequinSensorValues(sensors, frame)
   const initialValues = values.slice()
-  assert.deepEqual(selected.map(sensor => values[sensor.index]), [4, 8, 1, 2])
+  assert.deepEqual(selected.map(sensor => values[sensor.index]), [1, 2, 4, 8])
   const selectedHeat = () => selected.map(sensor => field.texture.image.data[sensor.index * 4 + 3])
   field.update(values, { autoColor: 1 })
   assert.deepEqual(selectedHeat(), [0.5, 1, 0.5, 1])
-  assert.equal(field.stats.rangeMaxByRegion['left-leg'], 8)
-  assert.equal(field.stats.rangeMaxByRegion['right-leg'], 2)
+  assert.equal(field.stats.rangeMaxByRegion['left-leg'], 2)
+  assert.equal(field.stats.rangeMaxByRegion['right-leg'], 8)
   combined[2] = 16
   const frameBefore = structuredClone(frame)
   const nextValues = readMannequinSensorValues(sensors, frame)
   const nextValuesBefore = nextValues.slice()
   field.update(nextValues, { autoColor: 1 })
-  assert.deepEqual(selectedHeat(), [0.25, 1, 0.5, 1], 'changing the left peak does not affect the right leg')
+  assert.deepEqual(selectedHeat(), [0.5, 1, 0.25, 1], 'changing the source-left peak only affects the right model leg')
   field.update(nextValues, { autoColor: 1, color: 9.2 })
-  assert.deepEqual(selectedHeat(), [0.125, 0.5, 0.25, 0.5])
-  assert.equal(field.stats.rangeMaxByRegion['left-leg'], 32)
-  assert.equal(field.stats.rangeMaxByRegion['right-leg'], 4)
+  assert.deepEqual(selectedHeat(), [0.25, 0.5, 0.125, 0.5])
+  assert.equal(field.stats.rangeMaxByRegion['left-leg'], 4)
+  assert.equal(field.stats.rangeMaxByRegion['right-leg'], 32)
   assert.equal(field.stats.rangeMax, 32)
   assert.equal(field.stats.maxValue, 16)
   assert.equal(field.stats.activeCount, 4)

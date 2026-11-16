@@ -201,6 +201,17 @@
     }
 }
 
+.setContent--with-color-bands {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+    padding-bottom: 1rem;
+    scrollbar-width: thin;
+    scrollbar-color: #4e5c6b #141414;
+}
+
 .setItem {
     display: flex;
     font-size: 1rem;

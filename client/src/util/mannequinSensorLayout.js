@@ -3,17 +3,26 @@ const CANVAS_SOURCES = {
   back: { key: 'jacket', rows: 12, cols: 22, sourceRows: 27, sourceCols: 12 },
   'left-arm': { key: 'leftHand', rows: 18, cols: 2, sourceRows: 2, sourceCols: 18 },
   'right-arm': { key: 'rightHand', rows: 18, cols: 2, sourceRows: 2, sourceCols: 18 },
-  'left-leg': { key: 'leftFoot', rows: 4, cols: 32, sourceRows: 32, sourceCols: 6 },
-  'right-leg': { key: 'rightFoot', rows: 4, cols: 32, sourceRows: 32, sourceCols: 6 },
+  // 点表左右腿名称与当前采集部位相反，仅在 3D 取样时交换数据绑定。
+  'left-leg': { key: 'rightFoot', rows: 4, cols: 32, sourceRows: 32, sourceCols: 6 },
+  'right-leg': { key: 'leftFoot', rows: 4, cols: 32, sourceRows: 32, sourceCols: 6 },
 }
 
 /** 将点位行列转为现有物理矩阵索引，不改变传感器线序。 */
-function getPhysicalCell(point) {
+function getPhysicalCell(point, definition) {
   const row = point.col - 1
   const col = point.row - 1
+  // 臂点表从肩到腕、横向两列的方向都与当前 2D 数字相反；
+  // 仅翻转取样的物理格，模型点位及 2× 显示矩阵的原始格锚点不变。
+  if (point.canvasId === 'left-arm' || point.canvasId === 'right-arm') {
+    return { row: definition.sourceRows - 1 - row, col: definition.sourceCols - 1 - col }
+  }
   if (point.canvasId === 'head') return { row, col: col + 3 }
   if (point.canvasId === 'back') return { row: row + 5, col }
-  if (point.canvasId === 'right-leg') return { row, col: col + 2 }
+  // 腿内外侧按四个有效物理列反向；右腿源前两列的偏移仍跟随数据源。
+  if (definition.key === 'leftFoot' || definition.key === 'rightFoot') {
+    return { row, col: definition.rows - 1 - col + (definition.key === 'rightFoot' ? 2 : 0) }
+  }
   return { row, col }
 }
 
@@ -44,7 +53,7 @@ export function buildMannequinSensorLayout(archive) {
     }
     indices.add(point.index)
     cells.add(cellKey)
-    const physical = getPhysicalCell(point)
+    const physical = getPhysicalCell(point, definition)
     const displayWidth = definition.sourceCols * 2
     const displayRow = physical.row * 2
     const displayCol = physical.col * 2 - (point.canvasId === 'head' ? 3 : 0)
@@ -94,7 +103,7 @@ function sampleMatrix(values, sensor, combined = false) {
   return Number.isFinite(value) && value > 0 ? value : 0
 }
 
-/** 按布局 index 生成 637 路实时压力，缺失部位置零，不插值或改写源矩阵。 */
+/** Read calibrated upper-body samples; the live legs use the complete processed 2D matrix instead. */
 export function readMannequinSensorValues(sensors, frame) {
   const values = new Float32Array(sensors.length)
   if (!frame || typeof frame !== 'object') return values

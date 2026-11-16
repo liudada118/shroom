@@ -9,6 +9,9 @@ import { NUMBER_TEXT_COLOR_ALPHA, beginDynamicColorFrame, jetWhite3NoWhite, setD
 import { getMatrixPartFromDisplayType } from '../../util/constant';
 import { expandFootVisualArr } from '../../util/footDisplayLayout';
 import { ADC_METRIC_MODE, formatPressureValue } from '../../util/pressureMetrics';
+import { getColorBandRGB, normalizeColorBandRatios } from '../../util/mannequinColorBands';
+import { PRESSURE_GAMMA } from '../../assets/util/colorMap_dynamic_gamma';
+import { normalizePressureDisplayValue, preparePressureDisplayValues } from '../../util/mannequinDisplayMatrix';
 
 function jet(min, max, x) {
   let red, g, blue;
@@ -51,7 +54,7 @@ function normalizeDisplayValue(value, rawAdcMode = false) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
   if (rawAdcMode) return Math.max(0, Math.min(255, Math.round(numeric)));
-  return Math.max(0, Math.min(102.3, Math.round(numeric * 10) / 10));
+  return normalizePressureDisplayValue(numeric);
 }
 
 function getDigitAtlasIndex(value, rawAdcMode = false) {
@@ -64,6 +67,33 @@ function getDigitAtlasIndex(value, rawAdcMode = false) {
 function getTextureColorMax(color) {
   const value = Number(color);
   return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+function getNumericPaletteSettings(systemType, ratios, autoColor = false) {
+  const normalized = normalizeColorBandRatios(ratios);
+  const automatic = Boolean(autoColor);
+  return {
+    systemType,
+    ratios: normalized,
+    autoColor: automatic,
+    key: systemType === 'endi' ? `${systemType}:${normalized.join(',')}:${automatic ? 'auto' : 'manual'}` : `${systemType}:legacy`,
+  };
+}
+
+function getNumericCellColor(value, colorMax, paletteSettings) {
+  if (paletteSettings?.systemType !== 'endi') return jetWhite3NoWhite(0, colorMax, value);
+  // Preserve the existing 2D automatic pressure gamma before applying adjustable color intervals.
+  const ratio = Math.max(0, Math.min(1, Number(value) / colorMax));
+  const paletteValue = paletteSettings.autoColor ? Math.pow(ratio, PRESSURE_GAMMA) * colorMax : value;
+  return getColorBandRGB(paletteValue, colorMax, paletteSettings.ratios);
+}
+
+function getNumericCellStyle(value, colorMax, paletteSettings) {
+  if (paletteSettings?.systemType === 'endi' && Number(value) === 0) {
+    return { background: '#202428', textColor: '#7F8B99' };
+  }
+  const [r, g, b] = getNumericCellColor(value, colorMax, paletteSettings);
+  return { background: `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`, textColor: '#fff' };
 }
 
 function normalizeZoomScale(value) {
@@ -114,8 +144,9 @@ function createEndiNullMask(systemType, displayType, width, height) {
   return null;
 }
 
-function prepareDisplayData(data, width, height, rawAdcMode = false) {
+function prepareDisplayData(data, width, height, rawAdcMode = false, filter = 0) {
   const count = width * height;
+  if (!rawAdcMode) return preparePressureDisplayValues(data, count, filter);
   return Array.from({ length: count }, (_, index) => normalizeDisplayValue(data?.[index], rawAdcMode));
 }
 
@@ -125,12 +156,12 @@ function stabilizeDisplayData(data, stableRef, key, rawAdcMode = false) {
   return display;
 }
 
-function drawCellValue(ctx, value, cx, cy, cellSize) {
+function drawCellValue(ctx, value, cx, cy, cellSize, textColor = 'white') {
   const text = String(value);
   const fontSize = cellSize * 0.5;
   ctx.font = `700 ${fontSize}px "Arial Narrow", Arial, sans-serif`;
   ctx.globalAlpha = 1;
-  ctx.fillStyle = "white";
+  ctx.fillStyle = textColor;
   const maxTextWidth = cellSize * 0.9;
   const textWidth = ctx.measureText(text).width || maxTextWidth;
   const horizontalScale = Math.min(1, maxTextWidth / textWidth);
@@ -141,12 +172,77 @@ function drawCellValue(ctx, value, cx, cy, cellSize) {
   ctx.restore();
 }
 
+/** Each setup owns its renderer and overlays, including any layers left by an earlier setup. */
+function mountNumericCanvasLayers(host, rendererCanvas, size) {
+  host.style.display = 'flex';
+  host.style.gap = '1rem';
+  host.style.alignItems = 'center';
+  host.style.justifyContent = 'center';
+  let inner = host.querySelector('.canvasNumInner');
+  if (!inner) {
+    inner = document.createElement('div');
+    inner.className = 'canvasNumInner';
+    host.appendChild(inner);
+  }
+  inner.style.position = 'relative';
+  inner.style.width = `${size}px`;
+  inner.style.height = `${size}px`;
+
+  // Overlay children must never prevent the live WebGL canvas from being attached.
+  rendererCanvas.classList.add('canvasThree');
+  rendererCanvas.style.position = 'absolute';
+  rendererCanvas.style.left = '0';
+  rendererCanvas.style.top = '0';
+  rendererCanvas.style.zIndex = '1';
+  inner.appendChild(rendererCanvas);
+
+  let ruler = inner.querySelector('.canvasRuler');
+  if (!ruler) {
+    ruler = document.createElement('canvas');
+    ruler.className = 'canvasThree canvasRuler';
+    inner.appendChild(ruler);
+  }
+  ruler.style.width = `${size}px`;
+  ruler.style.height = `${size}px`;
+  ruler.width = size;
+  ruler.height = size;
+  ruler.style.position = 'absolute';
+  ruler.style.left = '0';
+  ruler.style.top = '0';
+  ruler.style.zIndex = '2';
+
+  let magnifier = inner.querySelector('.canvasMagnifier');
+  if (!magnifier) {
+    magnifier = document.createElement('canvas');
+    magnifier.width = 200;
+    magnifier.height = 200;
+    magnifier.style.position = 'absolute';
+    magnifier.style.left = 'calc(100% + 16px)';
+    magnifier.style.bottom = '0';
+    magnifier.style.border = '1px solid #3a3a3a';
+    magnifier.style.background = '#111';
+    magnifier.style.display = 'none';
+    magnifier.className = 'canvasMagnifier';
+    inner.appendChild(magnifier);
+  }
+  return {
+    magnifier,
+    dispose() {
+      rendererCanvas.remove();
+      ruler.remove();
+      magnifier.remove();
+      if (inner.childNodes.length === 0) inner.remove();
+    },
+  };
+}
+
 export default function NumThree(props) {
   console.log(props)
   let animationRequestId
   const pageInfo = useContext(pageContext);
   const { onSelect, onRuler, onMagnifier } = pageInfo || {};
   console.log('NumThree')
+  const canvasNumRef = useRef(null);
   const cameraRef = useRef(null);
   const resetCameraRef = useRef(null);
   const pendingResetRef = useRef(false);
@@ -160,6 +256,7 @@ export default function NumThree(props) {
   const gridRef = useRef({ width: 0, height: 0 });
   const textureMaxRef = useRef(22);
   const rawAdcModeRef = useRef(false);
+  const paletteSettingsRef = useRef(null);
   // 放大镜在 animate 之外重绘，单位取最新值
   const pressureUnitRef = useRef(getPressureUnit());
   const magnifierPosRef = useRef({ col: -1, row: -1 });
@@ -195,7 +292,7 @@ export default function NumThree(props) {
 
 
   // pressureUnit 只影响格子里的文字，索引编码（round(kPa×10)）与配色保持不变
-  function createDigitSpriteSheetWithJet(value = 22, rawAdcMode = false, pressureUnit) {
+  function createDigitSpriteSheetWithJet(value = 22, rawAdcMode = false, pressureUnit, paletteSettings) {
     syncDynamicColorRange(value);
     const canvas = document.createElement("canvas");
     // document.body.appendChild(canvas)
@@ -217,15 +314,15 @@ export default function NumThree(props) {
       const displayValue = rawAdcMode ? Math.min(255, i) : i / 10;
 
       // ✅ 计算背景颜色
-      const [r, g, b] = jetWhite3NoWhite(0, value, displayValue);
-      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
+      const cellStyle = getNumericCellStyle(displayValue, value, paletteSettings);
+      ctx.fillStyle = cellStyle.background;
       ctx.fillRect(cx, cy, cellSize, cellSize);
 
       ctx.strokeStyle = "rgba(0, 0, 0, 0.78)";
       ctx.lineWidth = 3;
       ctx.strokeRect(cx + 1.5, cy + 1.5, cellSize - 3, cellSize - 3);
 
-      drawCellValue(ctx, rawAdcMode ? String(displayValue) : formatPressureValue(displayValue, pressureUnit), cx, cy, cellSize);
+      drawCellValue(ctx, rawAdcMode ? String(displayValue) : formatPressureValue(displayValue, pressureUnit), cx, cy, cellSize, cellStyle.textColor);
     }
 
     const tex = new THREE.CanvasTexture(canvas);
@@ -241,7 +338,8 @@ export default function NumThree(props) {
 
   useEffect(() => {
     // 初始化 Three.js
-
+    const canvasNum = canvasNumRef.current;
+    if (!canvasNum) return undefined;
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     let height
     if (window.innerHeight < 750) {
@@ -252,56 +350,8 @@ export default function NumThree(props) {
 
     renderer.setSize(height, height);
 
-    const canvasNum = document.querySelector('.canvasNum')
-    canvasNum.style.display = 'flex'
-    canvasNum.style.gap = '1rem'
-    canvasNum.style.alignItems = 'center'
-    canvasNum.style.justifyContent = 'center'
-    let canvasInner = canvasNum.querySelector('.canvasNumInner');
-    if (!canvasInner) {
-      canvasInner = document.createElement('div');
-      canvasInner.className = 'canvasNumInner';
-      canvasInner.style.position = 'relative';
-      canvasInner.style.width = `${height}px`;
-      canvasInner.style.height = `${height}px`;
-      canvasNum.appendChild(canvasInner);
-    }
-    if (canvasInner.childNodes.length == 0) {
-      console.log(canvasInner.childNodes.length)
-      renderer.domElement.classList.add('canvasThree')
-      renderer.domElement.style.position = 'absolute'
-      renderer.domElement.style.left = '0'
-      renderer.domElement.style.top = '0'
-      renderer.domElement.style.zIndex = '1'
-      canvasInner.appendChild(renderer.domElement);
-
-      const canvasRuler = document.createElement('canvas');
-      canvasRuler.style.width = `${height}px`
-      canvasRuler.style.height = `${height}px`
-      canvasRuler.width = `${height}`
-      canvasRuler.height = `${height}`
-      canvasRuler.style.position = 'absolute'
-      canvasRuler.style.left = '0'
-      canvasRuler.style.top = '0'
-      canvasRuler.style.zIndex = '2'
-      canvasRuler.className = 'canvasThree canvasRuler'
-      canvasInner.appendChild(canvasRuler);
-    }
-
-    let magnifierCanvas = canvasInner.querySelector('.canvasMagnifier');
-    if (!magnifierCanvas) {
-      magnifierCanvas = document.createElement('canvas');
-      magnifierCanvas.width = 200;
-      magnifierCanvas.height = 200;
-      magnifierCanvas.style.position = 'absolute';
-      magnifierCanvas.style.left = 'calc(100% + 16px)';
-      magnifierCanvas.style.bottom = '0';
-      magnifierCanvas.style.border = '1px solid #3a3a3a';
-      magnifierCanvas.style.background = '#111';
-      magnifierCanvas.style.display = 'none';
-      magnifierCanvas.className = 'canvasMagnifier';
-      canvasInner.appendChild(magnifierCanvas);
-    }
+    const canvasLayers = mountNumericCanvasLayers(canvasNum, renderer.domElement, height);
+    const magnifierCanvas = canvasLayers.magnifier;
     magnifierCanvasRef.current = magnifierCanvas;
     magnifierCtxRef.current = magnifierCanvas.getContext('2d');
 
@@ -322,11 +372,15 @@ export default function NumThree(props) {
       camera.updateProjectionMatrix();
     };
 
-    let currentTextureMax = getTextureColorMax(getVisualRenderSettings()?.color)
+    const initialSettings = getVisualRenderSettings('num');
+    const initialPalette = getNumericPaletteSettings(getSysType(), initialSettings?.colorBandRatios2D, initialSettings?.autoColor);
+    let currentTextureMax = getTextureColorMax(initialSettings?.color)
     let currentTextureMode = getVisualRenderMetricMode()
     let currentTextureUnit = getPressureUnit()
-    const texture = createDigitSpriteSheetWithJet(currentTextureMax, currentTextureMode === ADC_METRIC_MODE, currentTextureUnit);
+    let currentTexturePaletteKey = initialPalette.key;
+    const texture = createDigitSpriteSheetWithJet(currentTextureMax, currentTextureMode === ADC_METRIC_MODE, currentTextureUnit, initialPalette);
     textureMaxRef.current = currentTextureMax;
+    paletteSettingsRef.current = initialPalette;
     // texture.flipY = false;
 
 
@@ -452,17 +506,19 @@ export default function NumThree(props) {
       // data = newArr
 
 
-      const settingValue = getVisualRenderSettings()
+      const settingValue = getVisualRenderSettings('num')
       const {
         gauss, color, filter, height, coherent, autoColor,
       } = settingValue //pageRef.current.settingValue
       const currentMetricMode = getVisualRenderMetricMode();
       const rawAdcMode = currentMetricMode === ADC_METRIC_MODE;
       rawAdcModeRef.current = rawAdcMode;
+      const paletteSettings = getNumericPaletteSettings(systemType, settingValue.colorBandRatios2D, autoColor);
+      paletteSettingsRef.current = paletteSettings;
       setDynamicGammaColorEnabled(Boolean(autoColor));
       // 这里画的是压强(kPa)，动态配色的量程下限/保护值要按压强那一套走
       setDynamicColorValueScale(rawAdcMode);
-      data = prepareDisplayData(data, gridSize1, gridSize2, rawAdcMode);
+      data = prepareDisplayData(data, gridSize1, gridSize2, rawAdcMode, filter);
       // 噪点消除只在画面上隐藏低值格，sitData 里的原值不动，统计照常
       const filterValue = Number(filter);
       if (Number.isFinite(filterValue) && filterValue > 0) {
@@ -501,15 +557,19 @@ export default function NumThree(props) {
       if (
         currentTextureMode !== currentMetricMode
         || currentTextureUnit !== currentPressureUnit
+        || currentTexturePaletteKey !== paletteSettings.key
         || Math.abs(currentTextureMax - nextMax) >= colorValueStep
       ) {
         console.log('colorChange')
-        const texture = createDigitSpriteSheetWithJet(nextMax, rawAdcMode, currentPressureUnit)
+        const previousTexture = material.uniforms.map.value;
+        const texture = createDigitSpriteSheetWithJet(nextMax, rawAdcMode, currentPressureUnit, paletteSettings)
         material.uniforms.map.value = texture
+        previousTexture?.dispose();
         textureMaxRef.current = nextMax
         currentTextureMax = nextMax
         currentTextureMode = currentMetricMode
         currentTextureUnit = currentPressureUnit
+        currentTexturePaletteKey = paletteSettings.key
       }
 
 
@@ -647,8 +707,8 @@ export default function NumThree(props) {
       syncDragCursor();
     };
     syncDragCursor();
-    const applyMatrixColor = (value, colorMax) => {
-      return jetWhite3NoWhite(0, colorMax, value);
+    const applyMatrixStyle = (value, colorMax) => {
+      return getNumericCellStyle(value, colorMax, paletteSettingsRef.current);
     };
 
     const drawMagnifier = (col, row) => {
@@ -682,13 +742,13 @@ export default function NumThree(props) {
           }
           const rawAdcMode = rawAdcModeRef.current;
           value = normalizeDisplayValue(value, rawAdcMode);
-          const [r, g, b] = applyMatrixColor(value, colorMax);
-          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${NUMBER_TEXT_COLOR_ALPHA})`;
+          const cellStyle = applyMatrixStyle(value, colorMax);
+          ctx.fillStyle = cellStyle.background;
           ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
           ctx.strokeStyle = 'rgba(0,0,0,0.4)';
           ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
           ctx.globalAlpha = 1;
-          ctx.fillStyle = '#fff';
+          ctx.fillStyle = cellStyle.textColor;
           ctx.fillText(rawAdcMode ? String(value) : formatPressureValue(value, pressureUnitRef.current), x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
         }
       }
@@ -767,6 +827,7 @@ export default function NumThree(props) {
     window.addEventListener('mouseup', handleCanvasDragEnd);
 
     return () => {
+      material.uniforms.map.value?.dispose();
       cleanupThree({ scene, renderer, animationId: animationRequestId })
       wheelTarget.removeEventListener('mousedown', handleMouseDown);
       wheelTarget.removeEventListener('mousemove', handleMouseMove);
@@ -774,6 +835,16 @@ export default function NumThree(props) {
       wheelTarget.removeEventListener('wheel', handleWheel);
       window.removeEventListener('mousemove', handleCanvasDragMove);
       window.removeEventListener('mouseup', handleCanvasDragEnd);
+      canvasLayers.dispose();
+      if (magnifierCanvasRef.current === magnifierCanvas) {
+        magnifierCanvasRef.current = null;
+        magnifierCtxRef.current = null;
+        drawMagnifierRef.current = null;
+      }
+      if (cameraRef.current === camera) {
+        cameraRef.current = null;
+        resetCameraRef.current = null;
+      }
     };
 
   }, [])
@@ -790,7 +861,7 @@ export default function NumThree(props) {
   useEffect(() => {
     const locked = Boolean(onSelect || onRuler);
     interactionLockedRef.current = locked;
-    const canvasNum = document.querySelector('.canvasNum');
+    const canvasNum = canvasNumRef.current;
     if (canvasNum) {
       canvasNum.style.cursor = locked ? 'default' : 'grab';
     }
@@ -840,7 +911,7 @@ export default function NumThree(props) {
 
 
   return (
-    <div className='canvasNum' >
+    <div className='canvasNum' ref={canvasNumRef} >
 
     </div>
   )

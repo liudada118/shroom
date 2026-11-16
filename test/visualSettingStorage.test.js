@@ -19,21 +19,280 @@ function createFixture(initial = {}) {
     setItem: (key, value) => entries.set(key, String(value)),
   }
   const source = fs.readFileSync(path.resolve(__dirname, '../client/src/util/visualSettingStorage.js'), 'utf8')
-  const storage = vm.runInNewContext(`${source.replace(/^export\s+/gm, '')}\n;({ loadVisualSettingValue, saveVisualSettingValue, getRestoredVisualSettingValue, normalizeVisualSettingMax })`, { localStorage })
+  const bandsSource = fs.readFileSync(path.resolve(__dirname, '../client/src/util/mannequinColorBands.js'), 'utf8')
+  const bands = vm.runInThisContext(`(() => { ${bandsSource.replace(/^export\s+/gm, '')}\n; return { DEFAULT_COLOR_BAND_RATIOS, normalizeColorBandRatios }; })()`)
+  const storageSource = source.replace(/^import.*\r?\n/gm, '').replace(/^export\s+/gm, '')
+  const storage = vm.runInNewContext(`${storageSource}\n;({ loadVisualSettingValue, saveVisualSettingValue, getRestoredVisualSettingValue, normalizeVisualSettingMax })`, { localStorage, ...bands })
   return { entries, ...storage }
 }
 
-test('missing visual preferences receive the manual 4.6 range without enabling auto color', () => {
+test('missing mannequin preferences use the shared manual 4 N/cm² preset in both views', () => {
   const fixture = createFixture()
   const settings = fixture.loadVisualSettingValue('endi')
-  assert.equal(settings.color, 4.6)
+  assert.equal(settings.gauss, 1)
+  assert.equal(settings.height, 100)
+  assert.equal(settings.filter, 0)
+  assert.equal(settings.color, 40)
+  assert.equal(settings.colorRange2D, 40)
   assert.equal(settings.autoColor, 0)
+  assert.equal(settings.autoColor3D, 0)
   assert.equal(Object.hasOwn(settings, 'heatmapUsePressure'), false)
   assert.equal(settings.adcColor, 600)
   assert.equal(settings.adcFilter, 0)
   assert.equal(settings.visualDataMode, 'pressure')
+  assert.deepEqual(settings.colorBandRatios, [20, 20, 20, 20, 20])
+  assert.deepEqual(settings.colorBandRatios2D, [6, 9, 20, 28, 37])
   assert.ok(fixture.entries.get(VERSION_KEY))
   assert.equal(fixture.entries.get(ADC_VERSION_KEY), ADC_VERSION)
+  for (const partial of [{}, { color: 40 }]) {
+    fixture.saveVisualSettingValue('endi', partial)
+    const saved = JSON.parse(fixture.entries.get(MAP_KEY)).endi
+    assert.equal(saved.colorRange2D, 40)
+    assert.equal(saved.autoColor3D, 0)
+    assert.deepEqual(saved.colorBandRatios, [20, 20, 20, 20, 20])
+    assert.deepEqual(saved.colorBandRatios2D, [6, 9, 20, 28, 37])
+  }
+})
+
+test('startup mannequin defaults override generic fallback values without changing other systems or explicit archives', () => {
+  const fallback = { gauss: 2, color: 4.6, colorRange2D: 8, filter: 5, height: 80, autoColor: 1, autoColor3D: 1, coherent: 3,
+    colorBandRatios: [40, 15, 15, 15, 15], colorBandRatios2D: [20, 20, 20, 20, 20] }
+  const fixture = createFixture()
+  const settings = fixture.loadVisualSettingValue('endi', fallback)
+  assert.equal(settings.gauss, 1)
+  assert.equal(settings.color, 40)
+  assert.equal(settings.colorRange2D, 40)
+  assert.equal(settings.filter, 0)
+  assert.equal(settings.height, 100)
+  assert.equal(settings.autoColor, 0)
+  assert.equal(settings.autoColor3D, 0)
+  assert.equal(settings.coherent, 3)
+  assert.deepEqual(settings.colorBandRatios, [20, 20, 20, 20, 20])
+  assert.deepEqual(settings.colorBandRatios2D, [6, 9, 20, 28, 37])
+  const other = createFixture().loadVisualSettingValue('bed', fallback)
+  for (const key of ['gauss', 'color', 'filter', 'height', 'autoColor']) assert.equal(other[key], fallback[key])
+
+  const source = fs.readFileSync(path.resolve(__dirname, '../client/src/assets/util/constant.js'), 'utf8')
+    .replace(/^import.*\r?\n/gm, '').replace(/^export\s*\{[^]*?\}\s*;?\s*$/gm, '').replace(/^export\s+/gm, '')
+  const { optimalObj } = vm.runInNewContext(`${source}\n;({ optimalObj })`, {
+    getRestoredVisualSettingValue: fixture.getRestoredVisualSettingValue,
+    VISUAL_COLOR_SETTING_MAX: 100,
+  })
+  const { coherent, ...preset } = optimalObj.endi
+  assert.deepEqual({ ...preset }, { ...fixture.getRestoredVisualSettingValue('endi') })
+  assert.equal(coherent, 1)
+  assert.equal(optimalObj.bed.color, 4.6)
+  assert.equal(optimalObj.bed.gauss, 2)
+})
+
+test('legacy shared auto color keeps the manual 3D default and explicit per-view choices survive reopening', () => {
+  for (const autoColor of [0, 1]) {
+    const previous = { gauss: 1.3, color: 20.2, filter: 0, height: 100, autoColor, colorBandRatios: [30, 20, 20, 15, 15] }
+    for (const archived of [{ [MAP_KEY]: JSON.stringify({ endi: previous }) }, { [LEGACY_KEY]: JSON.stringify(previous) }]) {
+      const fixture = createFixture({ ...archived, [VERSION_KEY]: '2026-08-03-pressure-filter-zero-default', [ADC_VERSION_KEY]: ADC_VERSION })
+      const loaded = fixture.loadVisualSettingValue('endi')
+      assert.equal(loaded.autoColor3D, 0, 'a legacy 2D preference does not enable 3D automatic color')
+      assert.equal(loaded.autoColor, autoColor)
+      assert.deepEqual(loaded.colorBandRatios, previous.colorBandRatios)
+      for (const autoColor3D of [0, 1]) {
+        const saved = { ...loaded, autoColor3D }
+        fixture.saveVisualSettingValue('endi', saved)
+        for (const storageKey of [MAP_KEY, LEGACY_KEY]) {
+          const reopened = createFixture({ [storageKey]: fixture.entries.get(storageKey), [VERSION_KEY]: '2026-08-03-pressure-filter-zero-default', [ADC_VERSION_KEY]: ADC_VERSION })
+          const settings = reopened.loadVisualSettingValue('endi')
+          assert.equal(settings.autoColor3D, autoColor3D)
+          assert.equal(settings.autoColor, autoColor)
+          assert.equal(settings.color, 20.2)
+          assert.equal(settings.gauss, 1.3)
+          assert.equal(settings.height, 100)
+          assert.deepEqual(settings.colorBandRatios, previous.colorBandRatios)
+          reopened.saveVisualSettingValue('endi', settings)
+          assert.equal(reopened.loadVisualSettingValue('endi').autoColor3D, autoColor3D)
+          assert.equal(reopened.getRestoredVisualSettingValue('endi', settings).autoColor3D, 0)
+        }
+      }
+    }
+  }
+  const fixture = createFixture()
+  for (const system of ['car', 'bed', 'default']) {
+    assert.equal(Object.hasOwn(fixture.loadVisualSettingValue(system), 'autoColor3D'), false)
+    fixture.saveVisualSettingValue(system, { color: 8, autoColor: 0 })
+    assert.equal(Object.hasOwn(JSON.parse(fixture.entries.get(MAP_KEY))[system], 'autoColor3D'), false)
+  }
+})
+
+test('mannequin color proportions persist through both stores and reset independently of other systems', () => {
+  const fixture = createFixture()
+  const custom = { gauss: 1.3, color: 20.2, filter: 0, height: 100, autoColor: 0, colorBandRatios: [40, 15, 15, 15, 15] }
+  const before = structuredClone(custom)
+  fixture.saveVisualSettingValue('endi', custom)
+  for (const archived of [
+    { [MAP_KEY]: fixture.entries.get(MAP_KEY) },
+    { [LEGACY_KEY]: fixture.entries.get(LEGACY_KEY) },
+  ]) {
+    const reopened = createFixture({ ...archived, [VERSION_KEY]: '2026-08-03-pressure-filter-zero-default', [ADC_VERSION_KEY]: ADC_VERSION })
+    const loaded = reopened.loadVisualSettingValue('endi')
+    assert.deepEqual(loaded.colorBandRatios, custom.colorBandRatios)
+    assert.equal(loaded.gauss, 1.3)
+    assert.equal(loaded.color, 20.2)
+    assert.equal(loaded.filter, 0)
+    assert.equal(loaded.height, 100)
+    assert.equal(loaded.autoColor, 0)
+    const restored = reopened.getRestoredVisualSettingValue('endi', loaded)
+    assert.deepEqual(restored.colorBandRatios, [20, 20, 20, 20, 20])
+    assert.deepEqual(loaded.colorBandRatios, custom.colorBandRatios)
+    reopened.saveVisualSettingValue('endi', restored)
+    assert.deepEqual(reopened.loadVisualSettingValue('endi').colorBandRatios, [20, 20, 20, 20, 20])
+  }
+  for (const invalid of [[100, 0, 0, 0, 0], [100], 'invalid']) {
+    fixture.saveVisualSettingValue('endi', { ...custom, colorBandRatios: invalid })
+    assert.deepEqual(fixture.loadVisualSettingValue('endi').colorBandRatios, [20, 20, 20, 20, 20])
+  }
+  fixture.saveVisualSettingValue('car', { gauss: 3, color: 8, height: 120 })
+  assert.equal(Object.hasOwn(JSON.parse(fixture.entries.get(MAP_KEY)).car, 'colorBandRatios'), false)
+  assert.deepEqual(custom, before)
+})
+
+test('2D and 3D color proportions save, normalize and restore independently', () => {
+  const defaults = [20, 20, 20, 20, 20]
+  const defaults2D = [6, 9, 20, 28, 37]
+  const threeD = [40, 15, 15, 15, 15]
+  const twoD = [10, 15, 20, 25, 30]
+  const previous = { gauss: 1.3, color: 20.2, filter: 0, height: 100, autoColor: 0, autoColor3D: 1, colorBandRatios: threeD }
+  for (const archived of [{ [MAP_KEY]: JSON.stringify({ endi: previous }) }, { [LEGACY_KEY]: JSON.stringify(previous) }]) {
+    const fixture = createFixture({ ...archived, [VERSION_KEY]: '2026-08-03-pressure-filter-zero-default', [ADC_VERSION_KEY]: ADC_VERSION })
+    const initial = fixture.loadVisualSettingValue('endi')
+    assert.deepEqual(initial.colorBandRatios, threeD, 'existing proportions stay assigned to 3D')
+    assert.deepEqual(initial.colorBandRatios2D, defaults2D, 'missing 2D proportions use the independent 2D preset')
+    assert.notEqual(initial.colorBandRatios2D, initial.colorBandRatios)
+    const custom = { ...initial, colorBandRatios2D: twoD }
+    const before = structuredClone(custom)
+    fixture.saveVisualSettingValue('endi', custom)
+    assert.deepEqual(custom, before, 'saving never mutates either view preference')
+
+    for (const storageKey of [MAP_KEY, LEGACY_KEY]) {
+      const reopened = createFixture({ [storageKey]: fixture.entries.get(storageKey), [VERSION_KEY]: '2026-08-03-pressure-filter-zero-default', [ADC_VERSION_KEY]: ADC_VERSION })
+      const loaded = reopened.loadVisualSettingValue('endi')
+      assert.deepEqual(loaded.colorBandRatios, threeD)
+      assert.deepEqual(loaded.colorBandRatios2D, twoD)
+      assert.equal(loaded.autoColor, 0)
+      assert.equal(loaded.autoColor3D, 1)
+      assert.equal(loaded.color, 20.2)
+
+      reopened.saveVisualSettingValue('endi', { ...loaded, colorBandRatios: [10, 10, 10, 10, 60] })
+      const changed3D = reopened.loadVisualSettingValue('endi')
+      assert.deepEqual(changed3D.colorBandRatios, [10, 10, 10, 10, 60])
+      assert.deepEqual(changed3D.colorBandRatios2D, twoD, 'editing 3D keeps the independent 2D proportions')
+      reopened.saveVisualSettingValue('endi', { ...changed3D, colorBandRatios2D: [30, 25, 20, 15, 10] })
+      const changed2D = reopened.loadVisualSettingValue('endi')
+      assert.deepEqual(changed2D.colorBandRatios, changed3D.colorBandRatios, 'editing 2D keeps the independent 3D proportions')
+      assert.deepEqual(changed2D.colorBandRatios2D, [30, 25, 20, 15, 10])
+
+      const restored = reopened.getRestoredVisualSettingValue('endi', changed2D)
+      assert.deepEqual(restored.colorBandRatios, defaults)
+      assert.deepEqual(restored.colorBandRatios2D, defaults2D)
+      assert.notEqual(restored.colorBandRatios, restored.colorBandRatios2D)
+      reopened.saveVisualSettingValue('endi', restored)
+      const reset = reopened.loadVisualSettingValue('endi')
+      assert.deepEqual(reset.colorBandRatios, defaults)
+      assert.deepEqual(reset.colorBandRatios2D, defaults2D)
+      assert.equal(reset.autoColor, 0)
+      assert.equal(reset.autoColor3D, 0)
+      assert.deepEqual(changed2D.colorBandRatios2D, [30, 25, 20, 15, 10])
+    }
+
+    for (const invalid of [[100], [100, 0, 0, 0, 0], 'invalid']) {
+      fixture.saveVisualSettingValue('endi', { ...custom, colorBandRatios2D: invalid })
+      const normalized = fixture.loadVisualSettingValue('endi')
+      assert.deepEqual(normalized.colorBandRatios, threeD)
+      assert.deepEqual(normalized.colorBandRatios2D, defaults2D)
+    }
+    fixture.saveVisualSettingValue('endi', { ...custom, colorBandRatios2D: [1, 1, 1, 1, 1] })
+    assert.deepEqual(fixture.loadVisualSettingValue('endi').colorBandRatios2D, defaults)
+  }
+  const fixture = createFixture()
+  for (const system of ['car', 'bed', 'default']) {
+    assert.equal(Object.hasOwn(fixture.loadVisualSettingValue(system), 'colorBandRatios2D'), false)
+    fixture.saveVisualSettingValue(system, { color: 8, autoColor: 0 })
+    assert.equal(Object.hasOwn(JSON.parse(fixture.entries.get(MAP_KEY))[system], 'colorBandRatios2D'), false)
+  }
+  for (const colorBandRatios2D of [[100], [100, 0, 0, 0, 0], [1, 1, 1, 1, 1], 'invalid']) {
+    const stored = { ...previous, colorBandRatios2D }
+    for (const archived of [{ [MAP_KEY]: JSON.stringify({ endi: stored }) }, { [LEGACY_KEY]: JSON.stringify(stored) }]) {
+      const loaded = createFixture(archived).loadVisualSettingValue('endi')
+      assert.deepEqual(Array.from(loaded.colorBandRatios2D), Array.isArray(colorBandRatios2D) && colorBandRatios2D.length === 5 && colorBandRatios2D.every(value => value > 0) ? defaults : defaults2D,
+        'raw archives retain valid proportions and use the 2D preset when invalid')
+      assert.deepEqual(loaded.colorBandRatios, threeD)
+    }
+  }
+})
+
+test('2D color range initializes from legacy color once and then remains independent of the 3D range', () => {
+  for (const previous of [{ color: 7.3 }, { color3D: 8.7 }, { color2D: 6.3 }, { color: 120 }]) {
+    for (const archived of [{ [MAP_KEY]: JSON.stringify({ endi: previous }) }, { [LEGACY_KEY]: JSON.stringify(previous) }]) {
+      const fixture = createFixture({ ...archived, [VERSION_KEY]: '2026-08-03-pressure-filter-zero-default', [ADC_VERSION_KEY]: ADC_VERSION })
+      const loaded = fixture.loadVisualSettingValue('endi', { color: 4.6, colorRange2D: 50 })
+      assert.equal(loaded.colorRange2D, loaded.color, 'a missing stored range uses the normalized current color, including old aliases')
+      const initial3DRange = loaded.color
+      const custom = { ...loaded, colorRange2D: 9.9 }
+      const original = structuredClone(custom)
+      fixture.saveVisualSettingValue('endi', custom)
+      assert.deepEqual(custom, original)
+      for (const storageKey of [MAP_KEY, LEGACY_KEY]) {
+        const reopened = createFixture({ [storageKey]: fixture.entries.get(storageKey), [VERSION_KEY]: '2026-08-03-pressure-filter-zero-default', [ADC_VERSION_KEY]: ADC_VERSION })
+        const settings = reopened.loadVisualSettingValue('endi')
+        assert.equal(settings.color, initial3DRange)
+        assert.equal(settings.colorRange2D, 9.9)
+        reopened.saveVisualSettingValue('endi', { ...settings, color: 16.7 })
+        const changed3D = reopened.loadVisualSettingValue('endi')
+        assert.equal(changed3D.color, 16.7)
+        assert.equal(changed3D.colorRange2D, 9.9, '3D edits cannot replace an explicit 2D range')
+        reopened.saveVisualSettingValue('endi', { ...changed3D, colorRange2D: 2.5 })
+        const changed2D = reopened.loadVisualSettingValue('endi')
+        assert.equal(changed2D.color, 16.7, '2D edits cannot change the 3D range')
+        assert.equal(changed2D.colorRange2D, 2.5)
+        const restored = reopened.getRestoredVisualSettingValue('endi', changed2D)
+        reopened.saveVisualSettingValue('endi', restored)
+        const reset = reopened.loadVisualSettingValue('endi')
+        assert.equal(reset.color, 40)
+        assert.equal(reset.colorRange2D, 40)
+        assert.equal(reset.autoColor3D, 0)
+        assert.equal(reset.autoColor, 0)
+      }
+    }
+  }
+  for (const [colorRange2D, expected] of [[-1, 0.01], [0, 0.01], [100, 100], [120, 100], ['7.3', 7.3], ['invalid', 7.3]]) {
+    const stored = { color: 7.3, colorRange2D }
+    for (const archived of [{ [MAP_KEY]: JSON.stringify({ endi: stored }) }, { [LEGACY_KEY]: JSON.stringify(stored) }]) {
+      const fixture = createFixture(archived)
+      const loaded = fixture.loadVisualSettingValue('endi')
+      assert.equal(loaded.colorRange2D, expected)
+      assert.equal(loaded.color, 7.3)
+      fixture.saveVisualSettingValue('endi', stored)
+      assert.equal(JSON.parse(fixture.entries.get(MAP_KEY)).endi.colorRange2D, expected)
+      assert.equal(JSON.parse(fixture.entries.get(LEGACY_KEY)).colorRange2D, expected)
+    }
+  }
+  const fixture = createFixture()
+  for (const system of ['car', 'bed', 'default']) {
+    assert.equal(Object.hasOwn(fixture.loadVisualSettingValue(system), 'colorRange2D'), false)
+    fixture.saveVisualSettingValue(system, { color: 8, autoColor: 0 })
+    assert.equal(Object.hasOwn(JSON.parse(fixture.entries.get(MAP_KEY))[system], 'colorRange2D'), false)
+  }
+})
+
+test('pressure color limits allow 10 N/cm² and cap both saved view ranges at 100 kPa', () => {
+  const fixture = createFixture()
+  assert.equal(fixture.normalizeVisualSettingMax({ color: 60 }).color, 100)
+  for (const [requested, expected] of [[80, 80], [100, 100], [120, 100]]) {
+    fixture.saveVisualSettingValue('endi', { color: requested, colorRange2D: requested, filter: 0 })
+    const saved = JSON.parse(fixture.entries.get(MAP_KEY)).endi
+    assert.equal(saved.color, expected)
+    assert.equal(saved.colorRange2D, expected)
+    const reopened = fixture.loadVisualSettingValue('endi')
+    assert.equal(reopened.color, expected)
+    assert.equal(reopened.colorRange2D, expected)
+  }
 })
 
 test('legacy ADC display preferences are normalized to pressure through save and load', () => {
@@ -96,6 +355,20 @@ test('the equipment store always renders pressure despite stale ADC preferences 
     assert.equal(state.metricStatus, metrics)
     assert.equal(Object.hasOwn(state, 'setVisualDataMode'), false, 'the retired display switch is no longer exposed')
   }
+  for (const autoColor3D of [undefined, 0, 1]) {
+    state.setSettingValue({ ...state.settingValue, autoColor: 0, autoColor3D })
+    state.setDisplay('point3D')
+    assert.equal(getters.getVisualRenderSettings().autoColor, autoColor3D ?? 0)
+    assert.equal(getters.getVisualRenderSettings('num').autoColor, 0)
+    state.setDisplay('num')
+    assert.equal(getters.getVisualRenderSettings().autoColor, 0)
+    assert.equal(getters.getVisualRenderSettings('point3D').autoColor, autoColor3D ?? 0)
+    state.setSettingValue({ ...state.settingValue, autoColor: 1 })
+    assert.equal(getters.getVisualRenderSettings('num').autoColor, 1)
+  }
+  state.setSystemType('car')
+  assert.equal(getters.getVisualRenderSettings('point3D').autoColor, 1)
+  assert.equal(JSON.stringify({ status: state.status, metricStatus: state.metricStatus }), before)
 })
 
 test('legacy-default migration preserves explicitly disabled and enabled automatic color', () => {
@@ -133,14 +406,16 @@ test('explicit saved color and automatic preference override defaults through bo
   assert.equal(JSON.parse(fixture.entries.get(MAP_KEY)).endi.autoColor, 1)
 })
 
-test('restoring mannequin controls displays 2.02 N/cm² and persists its full preset without changing other systems', () => {
+test('restoring mannequin controls displays 4 N/cm² and persists its full preset without changing other systems', () => {
   const fixture = createFixture()
   const fallback = Object.freeze({ gauss: 2, color: 4.6, filter: 5, height: 80, coherent: 3, autoColor: 1 })
   const fallbackBefore = { ...fallback }
   const restored = fixture.getRestoredVisualSettingValue('endi', fallback)
   const expected = {
-    gauss: 1.3, color: 20.2, filter: 0, height: 100, coherent: 3, autoColor: 0,
+    gauss: 1, color: 40, colorRange2D: 40, filter: 0, height: 100, coherent: 3, autoColor: 0, autoColor3D: 0,
     adcColor: 600, adcFilter: 0, visualDataMode: 'pressure',
+    colorBandRatios: [20, 20, 20, 20, 20],
+    colorBandRatios2D: [6, 9, 20, 28, 37],
   }
   assert.deepEqual({ ...restored }, expected)
 
@@ -150,8 +425,8 @@ test('restoring mannequin controls displays 2.02 N/cm² and persists its full pr
   )
   const display = getPressureMetricDisplay(PRESSURE_METRIC_MODE, undefined, 'zh', PRESSURE_UNIT_N_CM2)
   assert.equal(display.unit, 'N/cm²')
-  assert.equal(restored.color * display.valueScale, 2.02)
-  assert.equal(display.formatValue(restored.color), '2.02')
+  assert.equal(restored.color * display.valueScale, 4)
+  assert.equal(display.formatValue(restored.color), '4.00')
 
   fixture.saveVisualSettingValue('endi', restored)
   assert.deepEqual(JSON.parse(fixture.entries.get(MAP_KEY)).endi, expected)
@@ -182,6 +457,10 @@ test('retained ADC parameters cannot re-enable ADC and restore uses the fixed pr
     const original = { ...saved }
     const { heatmapUsePressure: ignored, ...expected } = saved
     expected.visualDataMode = 'pressure'
+    expected.colorRange2D = saved.color
+    expected.autoColor3D = 0
+    expected.colorBandRatios = [20, 20, 20, 20, 20]
+    expected.colorBandRatios2D = [6, 9, 20, 28, 37]
     fixture.saveVisualSettingValue('endi', saved)
     const reopened = createFixture(Object.fromEntries(fixture.entries))
     const perSystem = reopened.loadVisualSettingValue('endi')
@@ -217,7 +496,7 @@ test('retained ADC parameters cannot re-enable ADC and restore uses the fixed pr
     assert.equal(Object.hasOwn(restored, 'heatmapUsePressure'), false)
     assert.equal(restored.adcColor, 600)
     assert.equal(restored.adcFilter, 0)
-    assert.equal(restored.color, 20.2)
+    assert.equal(restored.color, 40)
     assert.equal(restored.filter, 0)
     assert.equal(restored.autoColor, 0)
     assert.equal(restored.height, 100)
@@ -237,6 +516,10 @@ test('the ADC 600 upgrade runs once for both previous defaults and preserves lat
   const fixtures = []
   const { heatmapUsePressure: ignored, ...expected } = { ...previous, adcColor: 600 }
   expected.visualDataMode = 'pressure'
+  expected.colorRange2D = previous.color
+  expected.autoColor3D = 0
+  expected.colorBandRatios = [20, 20, 20, 20, 20]
+  expected.colorBandRatios2D = [6, 9, 20, 28, 37]
   for (const adcColor of [255, 367]) {
     const oldSettings = { ...previous, adcColor }
     const fixture = createFixture({

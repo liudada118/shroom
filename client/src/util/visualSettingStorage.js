@@ -1,3 +1,5 @@
+import { DEFAULT_COLOR_BAND_RATIOS, normalizeColorBandRatios } from './mannequinColorBands.js'
+
 const VISUAL_SETTING_MAP_KEY = 'visualSettingValueBySystemV1'
 const LEGACY_SETTING_KEY = 'setValueData'
 const VISUAL_DEFAULT_VERSION_KEY = 'visualDefaultVersion'
@@ -6,7 +8,9 @@ const MANNEQUIN_ADC_DEFAULT_VERSION_KEY = 'mannequinAdcDefaultVersion'
 const MANNEQUIN_ADC_DEFAULT_VERSION = '2026-10-23-adc-600'
 const DEFAULT_SYSTEM_KEY = 'default'
 export const VISUAL_COLOR_SETTING_MIN = 0.01
-export const VISUAL_COLOR_SETTING_MAX = 60
+// Pressure controls store kPa; 100 kPa is displayed as 10 N/cm².
+export const VISUAL_COLOR_SETTING_MAX = 100
+export const VISUAL_PRESSURE_FILTER_SETTING_MAX = 60
 export const VISUAL_COLOR_SETTING_DEFAULT = 4.6
 export const VISUAL_AUTO_COLOR_SETTING_DEFAULT = 0
 export const VISUAL_ADC_COLOR_SETTING_DEFAULT = 600
@@ -16,10 +20,14 @@ const VISUAL_SETTING_DEFAULTS = {
   gauss: 2, color: VISUAL_COLOR_SETTING_DEFAULT, filter: 0, height: 80, autoColor: VISUAL_AUTO_COLOR_SETTING_DEFAULT,
   adcColor: VISUAL_ADC_COLOR_SETTING_DEFAULT, adcFilter: VISUAL_ADC_FILTER_SETTING_DEFAULT, visualDataMode: 'pressure',
 }
-// The mannequin panel displays pressure in N/cm²: 2.02 N/cm² is stored as 20.2 kPa.
+// The mannequin panel displays pressure in N/cm²: 4 N/cm² is stored as 40 kPa.
 const MANNEQUIN_RESTORE_DEFAULTS = Object.freeze({
-  gauss: 1.3, color: 20.2, filter: 0, height: 100, autoColor: 0,
+  gauss: 1, color: 40, colorRange2D: 40, filter: 0, height: 100, autoColor: 0, autoColor3D: 0,
   adcColor: VISUAL_ADC_COLOR_SETTING_DEFAULT, adcFilter: VISUAL_ADC_FILTER_SETTING_DEFAULT, visualDataMode: 'pressure',
+})
+const MANNEQUIN_COLOR_BAND_DEFAULTS = Object.freeze({
+  colorBandRatios: DEFAULT_COLOR_BAND_RATIOS,
+  colorBandRatios2D: Object.freeze([6, 9, 20, 28, 37]),
 })
 const LEGACY_DEFAULT_COLORS = new Set([50, 120, 180, 200, 255, 355, 495])
 const LEGACY_DEFAULT_VALUES = {
@@ -29,8 +37,31 @@ const LEGACY_DEFAULT_VALUES = {
   height: new Set([1, 2.02, 3.36, 10, 150]),
 }
 const SETTING_KEYS = ['gauss', 'color', 'filter', 'height', 'coherent', 'autoColor', 'adcColor', 'adcFilter']
+const COLOR_BAND_SETTING_KEYS = ['colorBandRatios', 'colorBandRatios2D']
 export const DEFAULT_HEIGHT_SETTING_MAX = 400
 export const DEFAULT_FILTER_SETTING_MAX = 200
+
+/** The 3D mannequin starts in manual mode; explicit saved choices remain valid. */
+export function normalizeMannequinAutoColor3D(value) {
+  const number = Number(value)
+  return value !== undefined && value !== null && value !== '' && (number === 0 || number === 1)
+    ? number : 0
+}
+
+function normalizePressureColorRange(value, fallback = VISUAL_COLOR_SETTING_DEFAULT) {
+  const numeric = Number(value)
+  const fallbackValue = Number(fallback)
+  const range = Number.isFinite(numeric) ? numeric
+    : Number.isFinite(fallbackValue) ? fallbackValue : VISUAL_COLOR_SETTING_DEFAULT
+  return Math.max(VISUAL_COLOR_SETTING_MIN, Math.min(VISUAL_COLOR_SETTING_MAX, range))
+}
+
+function normalizeSystemColorBands(value, key, system) {
+  const valid = Array.isArray(value) && value.length === DEFAULT_COLOR_BAND_RATIOS.length
+    && value.every(item => (typeof item === 'number' || typeof item === 'string')
+      && Number.isFinite(Number(item)) && Number(item) > 0)
+  return normalizeColorBandRatios(system === 'endi' && !valid ? MANNEQUIN_COLOR_BAND_DEFAULTS[key] : value)
+}
 
 /** Restore the mannequin's requested panel preset while retaining other systems' defaults. */
 export function getRestoredVisualSettingValue(system, fallback = {}) {
@@ -41,6 +72,11 @@ export function getRestoredVisualSettingValue(system, fallback = {}) {
     ...(system === 'endi' ? MANNEQUIN_RESTORE_DEFAULTS : {}),
   }
   delete restored.heatmapUsePressure
+  if (system === 'endi') {
+    COLOR_BAND_SETTING_KEYS.forEach((key) => {
+      restored[key] = normalizeColorBandRatios(MANNEQUIN_COLOR_BAND_DEFAULTS[key])
+    })
+  }
   return restored
 }
 
@@ -69,14 +105,15 @@ function safeParse(value, fallback) {
   }
 }
 
-function normalizeSettingValue(value = {}, fallback = {}, maxValue = {}) {
+function normalizeSettingValue(value = {}, fallback = {}, maxValue = {}, system) {
   const normalizedMax = normalizeVisualSettingMax(maxValue)
   const result = {
     // 默认值兜底后再合并后端配置和用户存档，保留明确保存的自动调节选择。
     ...VISUAL_SETTING_DEFAULTS,
     ...fallback,
+    ...(system === 'endi' ? MANNEQUIN_RESTORE_DEFAULTS : {}),
   }
-  const legacyColor = Number(value.color ?? value.color3D ?? value.color2D ?? fallback.color)
+  const legacyColor = Number(value.color ?? value.color3D ?? value.color2D ?? result.color)
   if (Number.isFinite(legacyColor)) result.color = legacyColor
 
   SETTING_KEYS.forEach((key) => {
@@ -91,9 +128,25 @@ function normalizeSettingValue(value = {}, fallback = {}, maxValue = {}) {
     if (key === 'adcColor') result[key] = Math.max(VISUAL_COLOR_SETTING_MIN, result[key])
     if (key === 'adcFilter') result[key] = Math.max(0, result[key])
   })
+  result.color = normalizePressureColorRange(result.color)
 
   delete result.heatmapUsePressure
   result.visualDataMode = 'pressure'
+  if (system === 'endi' || Object.hasOwn(value, 'autoColor3D') || Object.hasOwn(fallback, 'autoColor3D')) {
+    result.autoColor3D = normalizeMannequinAutoColor3D(Object.hasOwn(value, 'autoColor3D') ? value.autoColor3D : result.autoColor3D)
+  }
+  if (system === 'endi' || Object.hasOwn(value, 'colorRange2D') || Object.hasOwn(fallback, 'colorRange2D')) {
+    result.colorRange2D = normalizePressureColorRange(
+      Object.hasOwn(value, 'colorRange2D') ? value.colorRange2D : result.color,
+      result.color,
+    )
+  }
+  // 2D starts with its own palette; older shared proportions remain the 3D preference.
+  COLOR_BAND_SETTING_KEYS.forEach((key) => {
+    if (system === 'endi' || Object.hasOwn(value, key) || Object.hasOwn(fallback, key)) {
+      result[key] = normalizeSystemColorBands(value[key] ?? (system === 'endi' ? undefined : fallback[key]), key, system)
+    }
+  })
   return result
 }
 
@@ -184,22 +237,22 @@ function migrateMannequinAdcDefaultMap(map) {
 
 export function loadVisualSettingValue(system, fallback = {}, maxValue = {}) {
   if (typeof localStorage === 'undefined') {
-    return normalizeSettingValue(fallback, fallback, maxValue)
+    return normalizeSettingValue({}, fallback, maxValue, system)
   }
 
   const map = migrateMannequinAdcDefaultMap(migrateVisualDefaultMap())
   if (system && map?.[system]) {
-    return normalizeSettingValue(map[system], fallback, maxValue)
+    return normalizeSettingValue(map[system], fallback, maxValue, system)
   }
 
   const legacyValue = safeParse(localStorage.getItem(LEGACY_SETTING_KEY), null)
   if (legacyValue && typeof legacyValue === 'object') {
-    const normalized = normalizeSettingValue(legacyValue, fallback, maxValue)
+    const normalized = normalizeSettingValue(legacyValue, fallback, maxValue, system)
     if (system) saveVisualSettingValue(system, normalized)
     return normalized
   }
 
-  return normalizeSettingValue(fallback, fallback, maxValue)
+  return normalizeSettingValue({}, fallback, maxValue, system)
 }
 
 export function saveVisualSettingValue(system, value) {
@@ -212,6 +265,19 @@ export function saveVisualSettingValue(system, value) {
   delete nextValue.color2D
   delete nextValue.heatmapUsePressure
   nextValue.visualDataMode = 'pressure'
+  if (Object.hasOwn(nextValue, 'color')) nextValue.color = normalizePressureColorRange(nextValue.color)
+  if (normalizedSystem === 'endi' || Object.hasOwn(nextValue, 'autoColor3D')) {
+    nextValue.autoColor3D = normalizeMannequinAutoColor3D(nextValue.autoColor3D)
+  }
+  if (normalizedSystem === 'endi' || Object.hasOwn(nextValue, 'colorRange2D')) {
+    nextValue.colorRange2D = normalizePressureColorRange(nextValue.colorRange2D,
+      nextValue.color ?? (normalizedSystem === 'endi' ? MANNEQUIN_RESTORE_DEFAULTS.color : undefined))
+  }
+  COLOR_BAND_SETTING_KEYS.forEach((key) => {
+    if (normalizedSystem === 'endi' || Object.hasOwn(nextValue, key)) {
+      nextValue[key] = normalizeSystemColorBands(nextValue[key], key, normalizedSystem)
+    }
+  })
   map[normalizedSystem] = nextValue
   map[DEFAULT_SYSTEM_KEY] = nextValue
   localStorage.setItem(VISUAL_SETTING_MAP_KEY, JSON.stringify(map))
