@@ -1189,7 +1189,6 @@ const Canvas =
                     const sourceCol = (iy - sitOrder) / sitInterp1
                     // The 3D backrest is visually flipped vertically relative to the 2D matrix.
                     const visibleRow = name === 'back' ? sitnum1 - 1 - sourceRow : sourceRow
-                    const fullAlgorithmBack = useEquipStore.getState().metricAlgorithmVersions?.back === '2.11.0'
                     const isPaddingPoint = false
                     const isHidden = isPaddingPoint;
                     scales[j] = isHidden ? 0 : 1;

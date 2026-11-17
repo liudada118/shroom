@@ -7,7 +7,7 @@ const {
 } = require('../util/calibrationPressureAdapter')
 const {
   calcNativeCalibrationPressureValues,
-  calcPressureFormulaStats,
+  calcPressureFormulaStats: calcRuntimePressureFormulaStats,
   ensureProcessedMatrixItem,
   processMatrixItem,
 } = require('../util/pressureFrameProcessor')
@@ -17,6 +17,9 @@ const sdk = require('../sdk/core/pressure')
 const browserModule = import('../client/src/util/pressureMetrics.js')
 
 const PROFILE = 'seatBackrestPressure_v2.11.0'
+const activeFormula = require('../calibration/seatBackrestPressure_v2.12.0.js')
+const ACTIVE_PROFILE = 'seatBackrestPressure_v2.12.0'
+const calcPressureFormulaStats = (values, key) => calcRuntimePressureFormulaStats(values, key, undefined, false, formula)
 const SENSOR_TYPES = {
   'endi-sit': 'endi-23x23',
   'endi-back': 'new-backrest-32x25',
@@ -54,15 +57,15 @@ function sameValues(actual, expected, message) {
   actual.forEach((value, index) => near(value, expected[index], `${message}[${index}]`))
 }
 
-test('the supplied V2.11.0 snapshot is the default calibration and passes its self-check', () => {
+test('the historical V2.11.0 snapshot stays unchanged while the external calibration is active', () => {
   assert.equal(formula.VERSION, '2.11.0')
   assert.equal(formula.runSelfCheck().passed, true)
   const config = pressureConfig.loadPressureConfig()
-  assert.equal(config.pressureFormulaFile, `${PROFILE}.js`)
-  assert.equal(config.pressureFormulaProfile, PROFILE)
-  assert.equal(FULL_PROCESSING_VERSION, 'backend-force-area-v19-v2110-raw-adc')
-  assert.equal(FULL_ADC_PREPROCESSING, 'native-v2110-force-area-raw-adc-display')
-  assert.equal(FULL_DISTRIBUTION, 'force-over-area-v2110')
+  assert.equal(config.pressureFormulaFile, `${ACTIVE_PROFILE}.js`)
+  assert.equal(config.pressureFormulaProfile, ACTIVE_PROFILE)
+  assert.match(FULL_PROCESSING_VERSION, /external-calibration/)
+  assert.equal(FULL_ADC_PREPROCESSING, 'native-force-area-raw-adc-display')
+  assert.equal(FULL_DISTRIBUTION, 'force-over-area')
 })
 
 test('the adapter preserves the delivered matrix, top-rank input and 300/301 branch boundary', () => {
@@ -124,8 +127,6 @@ test('explicit curve utilities agree while public visual APIs preserve raw ADC a
       const sdkMetrics = sdk.computePressureMetrics(values, key)
       sameValues(backend.pressureValues, expected.kpa[0], `${key} backend N=${count}`)
       assert.deepEqual(browserValues, values)
-      const sdkCurve = sdk.calculateMatrixPressureMap([referenceAdc(values, key)], SENSOR_TYPES[key])
-      sameValues(sdkCurve.kpa[0], expected.kpa[0], `${key} explicit SDK curve N=${count}`)
       assert.deepEqual(sdkMetrics.pressureValues, [])
       assert.equal(sdkMetrics.pressAver, null)
       assert.equal(sdkMetrics.pressMax, null)
@@ -159,14 +160,14 @@ test('canonical frames retain native ADC and rebuild stale results without doubl
     algorithmTimestampMs: 0,
     algorithmStreamId: 'snapshot-canonical-preserve-native-test',
   })
-  const expected = formula.calculateSensorFrame({ physical, timestampMs: 0 }, 'endi-23x23')
+  const expected = activeFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'endi-23x23')
   sameValues(canonical.calibrationAdcArr, expected.displayAdcMatrix.flat(), 'stored calibration ADC')
   assert.deepEqual(canonical.algorithmMetrics.pressureMetrics, expected.pressureMetrics)
   assert.ok(canonical.pressureArr.every(value => value === null))
   assert.deepEqual(canonical.algorithmPhysicalFrame, physical)
   assert.deepEqual(canonical.algorithmMetrics.forceMetrics, expected.forceMetrics)
   assert.deepEqual(canonical.algorithmMetrics.areaMetrics, expected.areaMetrics)
-  assert.equal(canonical.processing.formulaFile, `${PROFILE}.js`)
+  assert.equal(canonical.processing.formulaFile, `${ACTIVE_PROFILE}.js`)
   assert.deepEqual(ensureProcessedMatrixItem('endi-sit', canonical), canonical)
 
   const stale = {

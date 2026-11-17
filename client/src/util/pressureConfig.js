@@ -3,8 +3,8 @@ import { localAddress } from './constant'
 import { setPressureFormulaProfile } from './pressureMetrics'
 
 const DEFAULT_PRESSURE_CONFIG = {
-  pressureFormulaFile: 'seatBackrestPressure_v2.11.0.js',
-  pressureFormulaProfile: 'seatBackrestPressure_v2.11.0',
+  pressureFormulaFile: 'seatBackrestPressure_v2.12.0.js',
+  pressureFormulaProfile: 'seatBackrestPressure_v2.12.0',
 }
 
 let pressureConfigCache = DEFAULT_PRESSURE_CONFIG
@@ -30,7 +30,7 @@ export async function loadPressureRuntimeConfig() {
     const pressureFormulaFile = config.pressureFormulaFile || DEFAULT_PRESSURE_CONFIG.pressureFormulaFile
     pressureConfigCache = {
       pressureFormulaFile,
-      pressureFormulaProfile: getPressureFormulaProfileFromFile(pressureFormulaFile),
+      pressureFormulaProfile: config.pressureFormulaProfile || getPressureFormulaProfileFromFile(pressureFormulaFile),
     }
     setPressureFormulaProfile(pressureConfigCache.pressureFormulaProfile)
     return pressureConfigCache

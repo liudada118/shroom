@@ -39,6 +39,9 @@
       "index.js",
       "preload.js",
       "server/**/*",
+      "!server/kpa/**/*",
+      "!server/kpa/**/*.zip",
+      "!server/kpa/恩迪坐垫靠背压力算法JS_v2.12.0{,/**/*}",
       "util/**/*",
       "config.txt",
       "logo.ico",
@@ -47,6 +50,13 @@
       "node_modules/**/*"
     ],
     "extraResources": [
+      {
+        "from": "calibration",
+        "to": "calibration",
+        "filter": [
+          "seatBackrestPressure*.js"
+        ]
+      },
       {
         "from": "db",
         "to": "db",

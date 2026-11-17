@@ -8,6 +8,7 @@ const path = require('path')
 const constantObj = require('../../util/config')
 const { state, resetPlaybackState } = require('../state')
 const { broadcast } = require('../websocket')
+const { getCalibrationRuntime } = require('../../util/calibrationRuntime')
 const {
   DEFAULT_FRAME_PROCESSING_CONFIG,
   normalizeFrameProcessingConfig,
@@ -636,16 +637,20 @@ function ensureRealtimeTimer() {
 let playbackHistorySource = null
 let playbackHistoryLength = -1
 let playbackPreparedRows = []
+let playbackCalibrationIdentity = null
 
 function getPlaybackRows() {
   const rows = Array.isArray(state.historyDbArr) ? state.historyDbArr : []
-  if (rows !== playbackHistorySource || rows.length !== playbackHistoryLength) {
+  const calibrationIdentity = getCalibrationRuntime().identity
+  if (rows !== playbackHistorySource || rows.length !== playbackHistoryLength
+    || calibrationIdentity !== playbackCalibrationIdentity) {
     // Reconstruct recognition history in chronological order once, before
     // seeking or changing playback speed. A seek must not become an empty-history
     // single-frame force calculation.
     playbackPreparedRows = prepareFullAlgorithmHistory(rows)
     playbackHistorySource = rows
     playbackHistoryLength = rows.length
+    playbackCalibrationIdentity = calibrationIdentity
   }
   return playbackPreparedRows
 }

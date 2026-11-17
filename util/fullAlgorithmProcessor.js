@@ -1,11 +1,17 @@
 'use strict'
 
 const { createSensorSession } = require('./seatBackrestSession')
+const { getCalibrationRuntime } = require('./calibrationRuntime')
 
-const FULL_PROCESSING_VERSION = 'backend-force-area-v19-v2110-raw-adc'
-const FULL_ADC_PREPROCESSING = 'native-v2110-force-area-raw-adc-display'
-const FULL_DISTRIBUTION = 'force-over-area-v2110'
+const FULL_PROCESSING_VERSION = 'backend-force-area-v20-external-calibration-raw-adc'
+const FULL_ADC_PREPROCESSING = 'native-force-area-raw-adc-display'
+const FULL_DISTRIBUTION = 'force-over-area'
+const FULL_ALGORITHM_CONTRACT = 'seat-backrest-force-area-v1'
+const LEGACY_FULL_PROCESSING_VERSION = 'backend-force-area-v19-v2110-raw-adc'
 const PREVIOUS_FULL_PROCESSING_VERSION = 'backend-full-seat-backrest-v18-v2110'
+const RAW_DISPLAY_PROCESSING_VERSIONS = [
+  PREVIOUS_FULL_PROCESSING_VERSION, LEGACY_FULL_PROCESSING_VERSION, FULL_PROCESSING_VERSION,
+]
 const SENSOR_TYPES = Object.freeze({
   'endi-sit': 'endi-23x23',
   'endi-back': 'new-backrest-32x25',
@@ -93,7 +99,7 @@ function buildRawDisplayAdc(key, item, rotation = getAlgorithmOptions(item).rota
   if (physical) return rotateMatrix(interpolateRawPhysical(physical), rotation)
   // V18 stored rawAdcArr as unfiltered source ADC. With tare enabled that
   // source was already baseline-subtracted and cannot recover pre-tare ADC.
-  const knownRawDisplay = [PREVIOUS_FULL_PROCESSING_VERSION, FULL_PROCESSING_VERSION].includes(item.processing?.version)
+  const knownRawDisplay = RAW_DISPLAY_PROCESSING_VERSIONS.includes(item.processing?.version)
   const savedRotation = item.processing?.algorithmOptions?.rotation ?? item.algorithmMetrics?.displayRotation
   if (!hasZeroBaseline(item) && knownRawDisplay && savedRotation === rotation && Array.isArray(item.rawAdcArr)) {
     const native = nativeDimensions(key)
@@ -115,12 +121,31 @@ function isFullAlgorithmSensor(key) {
 
 function getAlgorithmOptions(item) {
   return {
-    rotation: item.algorithmRotation ?? 3,
-    filterThreshold: 30,
-    resultScale: 1,
-    humanCoefficient: 2.2,
-    seatForceMethod: 'fixed_load_recognition',
-    backrestPressureMethod: 'fixed_load_recognition',
+    rotation: item.algorithmRotation ?? item.processing?.algorithmOptions?.rotation ?? item.algorithmMetrics?.displayRotation ?? 3,
+  }
+}
+
+function isFullAlgorithmMetrics(metrics) {
+  return Boolean(metrics && (
+    metrics.contract === FULL_ALGORITHM_CONTRACT
+    || metrics.pressureMethod === 'force-over-area'
+    || metrics.version === '2.11.0'
+  ))
+}
+
+// Historical force and area can include recognition history from before the
+// recording began. Retain their actual provenance rather than relabeling them
+// with whichever replacement module is currently installed.
+function savedAlgorithmRuntime(item) {
+  const metrics = item.algorithmMetrics || {}
+  const processing = item.processing || {}
+  const version = metrics.version || processing.algorithmVersion || 'unknown'
+  return {
+    version,
+    identity: metrics.identity || processing.algorithmIdentity,
+    checksum: metrics.checksum || processing.algorithmChecksum,
+    formulaFile: processing.formulaFile || (version === '2.11.0' ? 'seatBackrestPressure_v2.11.0.js' : undefined),
+    formulaProfile: processing.formulaProfile || `seatBackrestPressure_v${version}`,
   }
 }
 
@@ -142,14 +167,18 @@ function buildSummary(output) {
   }
 }
 
-function fullProcessingMetadata(item, options) {
+function fullProcessingMetadata(item, options, runtime) {
   return {
     ...item.processing,
     version: FULL_PROCESSING_VERSION,
     adcPreprocessing: FULL_ADC_PREPROCESSING,
     pressureDistribution: FULL_DISTRIBUTION,
-    formulaFile: 'seatBackrestPressure_v2.11.0.js',
-    formulaProfile: 'seatBackrestPressure_v2.11.0',
+    formulaFile: runtime.formulaFile,
+    formulaProfile: runtime.formulaProfile,
+    algorithmVersion: runtime.version,
+    algorithmIdentity: runtime.identity,
+    algorithmChecksum: runtime.checksum,
+    algorithmContract: FULL_ALGORITHM_CONTRACT,
     calibrationMethod: 'complete-force-area-global-pressure',
     pressureMethod: 'force-over-area',
     visualizationSource: 'raw-adc-before-zero-compensation-filter',
@@ -178,7 +207,7 @@ function rawDisplayState(key, item, options) {
   }
 }
 
-function unavailableFullAlgorithmItem(key, item, reason) {
+function unavailableFullAlgorithmItem(key, item, reason, runtime = getCalibrationRuntime()) {
   const display = rawDisplayState(key, item, getAlgorithmOptions(item))
   const arr = display.arr
   const missing = arr.map(() => null)
@@ -191,7 +220,10 @@ function unavailableFullAlgorithmItem(key, item, reason) {
     calibrationValidMask: arr.map(() => 0),
     forceDistributionAvailable: false,
     algorithmMetrics: {
-      version: '2.11.0',
+      contract: FULL_ALGORITHM_CONTRACT,
+      version: runtime.version,
+      identity: runtime.identity,
+      checksum: runtime.checksum,
       sensorType: SENSOR_TYPES[key],
       status: 'unavailable',
       pressureMethod: 'force-over-area',
@@ -205,11 +237,11 @@ function unavailableFullAlgorithmItem(key, item, reason) {
         activePointCount: null, forceMaxN: null, forceAverageN: null,
       },
     },
-    processing: fullProcessingMetadata(item, getAlgorithmOptions(item)),
+    processing: fullProcessingMetadata(item, getAlgorithmOptions(item), runtime),
   }
 }
 
-function buildFullAlgorithmItem(key, item, output, options) {
+function buildFullAlgorithmItem(key, item, output, options, runtime) {
   const display = rawDisplayState(key, item, options)
   const missing = display.arr.map(() => null)
   return {
@@ -224,7 +256,10 @@ function buildFullAlgorithmItem(key, item, output, options) {
     forceDistributionSource: 'summary-only-force-over-area',
     algorithmMetrics: {
       ...item.algorithmMetrics,
-      version: '2.11.0',
+      contract: FULL_ALGORITHM_CONTRACT,
+      version: runtime.version,
+      identity: runtime.identity,
+      checksum: runtime.checksum,
       sensorType: SENSOR_TYPES[key],
       status: 'complete',
       pressureMethod: 'force-over-area',
@@ -235,27 +270,28 @@ function buildFullAlgorithmItem(key, item, output, options) {
       pressureMetrics: output.pressureMetrics,
       summary: buildSummary(output),
     },
-    processing: fullProcessingMetadata(item, options),
+    processing: fullProcessingMetadata(item, options, runtime),
   }
 }
 
 function processFullAlgorithmItem(key, item, sessions = realtimeSessions) {
   const type = SENSOR_TYPES[key]
-  if (!type) throw new RangeError(`No complete V2.11.0 algorithm for ${key}`)
-  if (item.algorithmInputError) return unavailableFullAlgorithmItem(key, item, item.algorithmInputError)
+  if (!type) throw new RangeError(`No complete seat/backrest algorithm for ${key}`)
+  const runtime = getCalibrationRuntime()
+  if (item.algorithmInputError) return unavailableFullAlgorithmItem(key, item, item.algorithmInputError, runtime)
   const raw = item.algorithmRawFrame
   const physical = item.algorithmPhysicalFrame
   if (!Array.isArray(raw) && !Array.isArray(physical)) {
-    return unavailableFullAlgorithmItem(key, item, 'native_adc_required_for_complete_algorithm')
+    return unavailableFullAlgorithmItem(key, item, 'native_adc_required_for_complete_algorithm', runtime)
   }
   const timestampMs = item.algorithmTimestampMs ?? item.stamp
-  if (!Number.isFinite(timestampMs)) return unavailableFullAlgorithmItem(key, item, 'explicit_timestamp_required')
+  if (!Number.isFinite(timestampMs)) return unavailableFullAlgorithmItem(key, item, 'explicit_timestamp_required', runtime)
   const options = getAlgorithmOptions(item)
   const stream = item.algorithmStreamId || `${key}:explicit-native-input`
-  const cacheKey = JSON.stringify([stream, type, options])
+  const cacheKey = JSON.stringify([runtime.identity, stream, type, options])
   let entry = sessions.get(cacheKey)
   if (!entry) {
-    entry = { session: createSensorSession(type, options), lastFrameToken: null, output: null }
+    entry = { session: createSensorSession(type, options, { runtime }), lastFrameToken: null, output: null }
     sessions.set(cacheKey, entry)
     if (sessions === realtimeSessions && sessions.size > 16) sessions.delete(sessions.keys().next().value)
   }
@@ -273,11 +309,11 @@ function processFullAlgorithmItem(key, item, sessions = realtimeSessions) {
           reset: Boolean(item.algorithmReset),
         })
   } catch (error) {
-    return unavailableFullAlgorithmItem(key, item, `complete_algorithm_input_error: ${error.message}`)
+    return unavailableFullAlgorithmItem(key, item, `complete_algorithm_input_error: ${error.message}`, runtime)
   }
   entry.lastFrameToken = frameToken
   entry.output = output
-  return buildFullAlgorithmItem(key, item, output, options)
+  return buildFullAlgorithmItem(key, item, output, options, runtime)
 }
 
 // Saved V18 force/area estimates may depend on recognition history from before
@@ -285,10 +321,11 @@ function processFullAlgorithmItem(key, item, sessions = realtimeSessions) {
 // convention and raw display; rerunning an empty-history kernel would lose it.
 function canUpgradeFullAlgorithmItem(key, item) {
   return isFullAlgorithmSensor(key)
-    && item.processing?.version === PREVIOUS_FULL_PROCESSING_VERSION
-    && item.algorithmMetrics?.version === '2.11.0'
+    && RAW_DISPLAY_PROCESSING_VERSIONS.includes(item.processing?.version)
+    && isFullAlgorithmMetrics(item.algorithmMetrics)
     && item.algorithmMetrics.status === 'complete'
     && Boolean(item.algorithmMetrics.areaMetrics)
+    && !hasFullAlgorithmResult(item)
 }
 
 function upgradeFullAlgorithmItem(key, item) {
@@ -299,19 +336,18 @@ function upgradeFullAlgorithmItem(key, item) {
     forceMetrics: previous.forceMetrics,
     areaMetrics: previous.areaMetrics,
     pressureMetrics: previous.pressureMetrics,
-  }, getAlgorithmOptions(item))
-  upgraded.processing.upgradedFrom = PREVIOUS_FULL_PROCESSING_VERSION
+  }, { ...item.processing.algorithmOptions, ...getAlgorithmOptions(item) }, savedAlgorithmRuntime(item))
+  upgraded.processing.upgradedFrom = item.processing.version
   return upgraded
 }
 
 function hasFullAlgorithmResult(item) {
-  return item.processing?.version === FULL_PROCESSING_VERSION
-    && item.processing?.adcPreprocessing === FULL_ADC_PREPROCESSING
-    && item.processing?.formulaFile === 'seatBackrestPressure_v2.11.0.js'
-    && item.processing?.formulaProfile === 'seatBackrestPressure_v2.11.0'
+  const legacy = item.processing?.version === LEGACY_FULL_PROCESSING_VERSION
+  return [FULL_PROCESSING_VERSION, LEGACY_FULL_PROCESSING_VERSION].includes(item.processing?.version)
+    && item.processing?.adcPreprocessing === (legacy ? 'native-v2110-force-area-raw-adc-display' : FULL_ADC_PREPROCESSING)
     && item.processing?.pressureMethod === 'force-over-area'
-    && JSON.stringify(item.processing?.algorithmOptions) === JSON.stringify(getAlgorithmOptions(item))
-    && item.algorithmMetrics?.version === '2.11.0'
+    && item.processing?.algorithmOptions?.rotation === getAlgorithmOptions(item).rotation
+    && isFullAlgorithmMetrics(item.algorithmMetrics)
     && item.algorithmMetrics?.summary?.pressureMethod === 'force-over-area'
     && ['complete', 'unavailable'].includes(item.algorithmMetrics.status)
     && Array.isArray(item.arr)
@@ -320,6 +356,7 @@ function hasFullAlgorithmResult(item) {
     && ['pressureArr', 'forceArr', 'pointAreaArr', 'calibrationValidMask'].every((field) => (
       Array.isArray(item[field]) && item[field].length === item.arr.length
     ))
+    && ['pressureArr', 'forceArr', 'pointAreaArr'].every((field) => item[field].every((value) => value === null))
 }
 
 // Rebuild stale stored sequences in their original order, with independent
@@ -383,7 +420,8 @@ function prepareFullAlgorithmHistory(rows) {
         frame[key] = calculated || processFullAlgorithmItem(key, replayItem, sessions)
         changed = true
       } else {
-        frame[key] = unavailableFullAlgorithmItem(key, item, 'historical_native_adc_missing')
+        frame[key] = unavailableFullAlgorithmItem(key, item, 'historical_native_adc_missing',
+          isFullAlgorithmMetrics(item.algorithmMetrics) ? savedAlgorithmRuntime(item) : getCalibrationRuntime())
         changed = true
       }
     }
@@ -408,8 +446,8 @@ function captureAlgorithmZeroBaselines(dataMap) {
 }
 
 module.exports = {
-  FULL_PROCESSING_VERSION, FULL_ADC_PREPROCESSING, FULL_DISTRIBUTION,
-  isFullAlgorithmSensor, processFullAlgorithmItem, hasFullAlgorithmResult,
+  FULL_PROCESSING_VERSION, FULL_ADC_PREPROCESSING, FULL_DISTRIBUTION, FULL_ALGORITHM_CONTRACT,
+  isFullAlgorithmSensor, isFullAlgorithmMetrics, processFullAlgorithmItem, hasFullAlgorithmResult,
   forceOverAreaPressure, buildRawDisplayAdc, upgradeFullAlgorithmItem,
   prepareFullAlgorithmHistory, resetFullAlgorithmSessions,
   captureAlgorithmZeroBaselines,

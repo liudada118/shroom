@@ -45,6 +45,9 @@ test('ADC CSV replay retains raw low values and computes global pressure from sa
     assert.deepEqual(replay.forceArr[key], [100])
     assert.deepEqual(replay.areaArr[key], [200])
     assert.deepEqual(replay.pressureArr[key], [5])
+    assert.equal(item.algorithmMetrics.version, 'unknown')
+    assert.equal(item.algorithmMetrics.source, 'csv-saved-force-area')
+    assert.equal(item.processing.formulaFile, null)
   }
 })
 

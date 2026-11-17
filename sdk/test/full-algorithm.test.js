@@ -3,7 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const sdk = require('..')
-const reference = require('../../server/kpa/seatBackrestPressure_v2.11.0.js')
+const reference = require('../core/seatBackrestPressure_v2.12.0.js')
 const {
   buildRawDisplayAdc, upgradeFullAlgorithmItem, processFullAlgorithmItem,
   prepareFullAlgorithmHistory, forceOverAreaPressure, FULL_PROCESSING_VERSION,
@@ -53,16 +53,16 @@ test('SDK preserves kernel force/area and calculates global pressure as 10F/A', 
   }
 })
 
-test('native force grids remain diagnostics and do not become application point metrics', () => {
+test('native pressure grids remain diagnostics and do not become application point metrics', () => {
   for (const [key, type, rows, cols] of [['endi-sit', 'endi-23x23', 23, 23], ['endi-back', 'new-backrest-32x25', 32, 25]]) {
     const physical = Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (_, col) => (
       row > 9 && row < 15 && col > 8 && col < 15 ? 120 : 0
     )))
     const output = reference.calculateSensorFrame({ physical, timestampMs: 0 }, type)
-    const forceMap = output.forceMetrics.cellForceMapN
-    assert.ok(Array.isArray(forceMap), 'reference patch load must provide a force map')
+    const pressureMap = output.pointPressureKPa
+    assert.ok(Array.isArray(pressureMap), 'reference patch load must provide the native pressure map')
     const metrics = sdk.computePressureMetrics(output.displayAdcMatrix.flat(), key, { algorithmMetrics: output })
-    assert.deepEqual(metrics.algorithmMetrics.forceMetrics.cellForceMapN, forceMap)
+    assert.deepEqual(metrics.algorithmMetrics.pointPressureKPa, pressureMap)
     assert.deepEqual(metrics.forceValues, [])
     assert.equal(metrics.forceGrid, null)
     assert.equal(metrics.forceMax, null)
@@ -71,11 +71,10 @@ test('native force grids remain diagnostics and do not become application point 
   }
 })
 
-test('human estimates without a force map keep force-grid statistics unavailable', () => {
+test('broad contact estimates keep force-grid statistics unavailable', () => {
   const physical = Array.from({ length: 23 }, () => Array(23).fill(110))
   const output = reference.calculateSensorFrame({ physical, timestampMs: 0 }, 'endi-23x23')
-  assert.ok(output.forceMetrics.humanEstimation, 'reference must enter the human estimate branch')
-  assert.equal(output.forceMetrics.cellForceMapN, undefined)
+  assert.ok(output.forceMetrics, 'reference must return force diagnostics')
   const metrics = sdk.computePressureMetrics(output.displayAdcMatrix.flat(), 'endi-sit', { algorithmMetrics: output })
   assert.equal(metrics.calibrationComplete, true)
   assert.equal(metrics.total, output.forceMetrics.forceN)

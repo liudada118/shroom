@@ -2,91 +2,75 @@
 
 const fs = require('fs')
 const path = require('path')
-const vm = require('vm')
 const { createHash } = require('crypto')
 
-const SNAPSHOT_PATH = path.join(__dirname, 'seatBackrestPressure_v2.11.0.js')
-const SNAPSHOT_SHA256 = '221d9113e8fd777aec1bef6cbb5c43181cb44ad19fa1445e12ffba0cac9f8e4f'
-const SNAPSHOT_LF_SHA256 = '9642c7ff0e9f5fa279b9069240250c0942227b43f5ecaec3c912b67768e06520'
-const streamingApis = new Map()
+const DEFAULT_ALGORITHM_PATH = path.join(__dirname, 'seatBackrestPressure_v2.12.0.js')
+const algorithmCache = new Map()
+const resultVersions = new WeakMap()
 
-function replaceOnce(source, anchor, replacement) {
-  const index = source.indexOf(anchor)
-  if (index < 0 || source.indexOf(anchor, index + anchor.length) >= 0) {
-    throw new Error('V2.11.0 streaming lifecycle anchor changed; review the snapshot adapter')
+// The public V2.12 session API is the upgrade contract. Versions and content
+// hashes identify results; neither is a whitelist that blocks later formulas.
+function loadSensorAlgorithm(sourcePath = DEFAULT_ALGORITHM_PATH) {
+  const resolvedPath = path.resolve(sourcePath)
+  const stat = fs.statSync(resolvedPath)
+  const fileToken = `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`
+  const previous = algorithmCache.get(resolvedPath)
+  if (previous?.fileToken === fileToken) return previous
+  const checksum = createHash('sha256').update(fs.readFileSync(resolvedPath)).digest('hex')
+  const modulePath = require.resolve(resolvedPath)
+  delete require.cache[modulePath]
+  const api = require(modulePath)
+  if (typeof api.VERSION !== 'string' || !api.VERSION.trim()
+    || typeof api.createSensorSession !== 'function'
+    || !api.SENSOR_DEFINITIONS?.['endi-23x23']
+    || !api.SENSOR_DEFINITIONS?.['new-backrest-32x25']) {
+    throw new TypeError(`Calibration file must expose VERSION, SENSOR_DEFINITIONS and createSensorSession: ${resolvedPath}`)
   }
-  return source.slice(0, index) + replacement + source.slice(index + anchor.length)
+  const loaded = { api, version: api.VERSION, checksum, fileToken, sourcePath: resolvedPath }
+  algorithmCache.set(resolvedPath, loaded)
+  return loaded
 }
 
-/**
- * The delivered module deliberately creates an empty-history kernel on every
- * calculateSensorSequence call. Compile its exact local source once, adjusting
- * only those sequence-lifecycle lines so one kernel can process an endless
- * acquisition stream. No curves, masks, filtering, force or area formulas are
- * copied or changed. A checksum and unique anchors make snapshot upgrades fail
- * explicitly instead of silently changing these lifecycle edits.
- */
-function loadStreamingApi(snapshotPath = SNAPSHOT_PATH) {
-  const resolvedPath = path.resolve(snapshotPath)
-  if (streamingApis.has(resolvedPath)) return streamingApis.get(resolvedPath)
-  const bytes = fs.readFileSync(resolvedPath)
-  const checksum = createHash('sha256').update(bytes).digest('hex')
-  let source = bytes.toString('utf8').replace(/\r\n/g, '\n')
-  const normalizedChecksum = createHash('sha256').update(source).digest('hex')
-  if (checksum !== SNAPSHOT_SHA256 && normalizedChecksum !== SNAPSHOT_LF_SHA256) {
-    throw new Error('V2.11.0 calibration snapshot checksum changed; review the streaming adapter')
-  }
-  source = replaceOnce(source,
-    'function runSequence(frames, sensorType, options = {}) {',
-    'let sessionPriorTime = -Infinity;\nlet sessionInitialized = false;\nfunction runSequence(frames, sensorType, options = {}) {')
-  source = replaceOnce(source,
-    '  const outputs = [];\n  resetLiveSeatForce();\n  resetLiveBackrestForce2();\n  let priorTime = -Infinity;',
-    '  const outputs = [];\n  if (!sessionInitialized) {\n    resetLiveSeatForce();\n    resetLiveBackrestForce2();\n    sessionInitialized = true;\n  }\n  let priorTime = sessionPriorTime;')
-  source = replaceOnce(source,
-    '  return outputs;\n}\n\n    return module.exports;',
-    '  sessionPriorTime = priorTime;\n  return outputs;\n}\n\n    return module.exports;')
-  source = replaceOnce(source,
-    '    calculateMatrixPressureMap,calculateSensorSequence,calculateSensorFrame,getMaximumPressureDisplay,runSelfCheck,',
-    '    _createLocalKernel:createLocalKernel,\n    calculateMatrixPressureMap,calculateSensorSequence,calculateSensorFrame,getMaximumPressureDisplay,runSelfCheck,')
-
-  // runInThisContext keeps ordinary Node arrays/objects in the caller's realm.
-  // Only the local checksum-verified attachment is evaluated; no external code.
-  const factory = new vm.Script(`(function(module) {\n${source}\nreturn module.exports;\n})`, {
-    filename: `${resolvedPath}:streaming-lifecycle`,
-  }).runInThisContext()
-  const api = factory({ exports: {} })
-  streamingApis.set(resolvedPath, api)
-  return api
+function recordAlgorithmResult(result, version) {
+  if (result && typeof result === 'object') resultVersions.set(result, version)
+  return result
 }
 
-/**
- * One independent sensor/stream, with explicit nondecreasing timestamps.
- * frame has the original { raw | physical, timestampMs, reset? } contract.
- * process() retains only the original kernel's bounded recognition/filter state;
- * it never stores or replays an ever-growing frame list. reset() begins a new
- * acquisition history and permits a new timestamp origin.
- */
+function getResultAlgorithmVersion(result) {
+  return resultVersions.get(result) || result?.version || result?.algorithmVersion || null
+}
+
+/** One bounded native session per sensor/stream. New sessions use the current
+ * sourcePath; existing sessions retain the implementation they started with. */
 function createSensorSession(sensorType, options = {}, runtimeOptions = {}) {
-  const api = loadStreamingApi(runtimeOptions.sourcePath || SNAPSHOT_PATH)
-  if (!Object.hasOwn(api.SENSOR_DEFINITIONS, sensorType)) throw new RangeError('Unsupported sensorType')
-  const sessionOptions = structuredClone(options)
-  let kernel = api._createLocalKernel()
+  const loaded = loadSensorAlgorithm(runtimeOptions.sourcePath)
+  if (!Object.hasOwn(loaded.api.SENSOR_DEFINITIONS, sensorType)) throw new RangeError('Unsupported sensorType')
+  const session = loaded.api.createSensorSession(sensorType, structuredClone(options))
+  if (!session || typeof session.update !== 'function' || typeof session.reset !== 'function') {
+    throw new TypeError('Calibration createSensorSession must return update(frame) and reset()')
+  }
   let lastTimestampMs = -Infinity
+  const update = (frame) => {
+    if (!frame || !Number.isFinite(frame.timestampMs)
+      || (!frame.reset && frame.timestampMs < lastTimestampMs)) {
+      throw new RangeError('Explicit nondecreasing timestampMs required')
+    }
+    const result = recordAlgorithmResult(session.update(frame), loaded.version)
+    lastTimestampMs = frame.timestampMs
+    return result
+  }
   return {
     sensorType,
-    process(frame) {
-      if (!frame || !Number.isFinite(frame.timestampMs) || frame.timestampMs < lastTimestampMs) {
-        throw new RangeError('Explicit nondecreasing timestampMs required')
-      }
-      const output = kernel.runSequence([frame], sensorType, sessionOptions)[0]
-      lastTimestampMs = frame.timestampMs
-      return output
-    },
+    algorithmVersion: loaded.version,
+    calibrationIdentity: `${loaded.version}:${loaded.checksum}`,
+    update,
+    process: update,
     reset() {
-      kernel = api._createLocalKernel()
+      session.reset()
       lastTimestampMs = -Infinity
     },
+    frameCount: () => typeof session.frameCount === 'function' ? session.frameCount() : null,
   }
 }
 
-module.exports = { SNAPSHOT_SHA256, createSensorSession }
+module.exports = { DEFAULT_ALGORITHM_PATH, loadSensorAlgorithm, recordAlgorithmResult, getResultAlgorithmVersion, createSensorSession }

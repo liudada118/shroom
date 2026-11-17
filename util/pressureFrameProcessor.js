@@ -311,8 +311,7 @@ function calcPointFormulaPressureValues(values, key, formula) {
   })
 }
 
-function calcPressureFormulaStats(arr, key, pointAreaCm2 = getPressurePointAreaCm2(key), calibrationInputPrepared = false) {
-  const formula = loadPressureFormula()
+function calcPressureFormulaStats(arr, key, pointAreaCm2 = getPressurePointAreaCm2(key), calibrationInputPrepared = false, formula = loadPressureFormula()) {
   const sourceValues = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
   const values = calibrationInputPrepared
     ? applyCalibrationInputGate(sourceValues, key, formula)

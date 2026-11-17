@@ -5,12 +5,12 @@ const path = require('path')
 
 const AES_KEY_TEXT = 'JIANXINGZHEPSVMC'
 
-const ACTIVE_PRESSURE_CALIBRATION_FILE = 'seatBackrestPressure_v2.11.0.js'
+const ACTIVE_PRESSURE_CALIBRATION_FILE = 'seatBackrestPressure_v2.12.0.js'
 const POINT_PRESSURE_CALIBRATION_FILE = 'point_pressure_calibration.js'
 const LEGACY_POINT_PRESSURE_CALIBRATION_FILE = 'pressureFormula_calibration_v2746_seat_v2752_backrest.js'
 const DEFAULT_PRESSURE_CONFIG = {
   pressureFormulaFile: ACTIVE_PRESSURE_CALIBRATION_FILE,
-  pressureFormulaProfile: 'seatBackrestPressure_v2.11.0',
+  pressureFormulaProfile: 'seatBackrestPressure_v2.12.0',
 }
 
 function stringToHex(str) {
@@ -99,13 +99,14 @@ function normalizeFormulaFile(fileName, fallback = DEFAULT_PRESSURE_CONFIG.press
   const normalizedName = baseName.toLowerCase()
   if (
     normalizedName === 'adc-matrix-to-pressure-filter30-v2.7.63.js'
+    || normalizedName === 'seatbackrestpressure_v2.11.0.js'
     || normalizedName === POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()
     || normalizedName === LEGACY_POINT_PRESSURE_CALIBRATION_FILE.toLowerCase()
   ) {
     return ACTIVE_PRESSURE_CALIBRATION_FILE
   }
   const isSupportedFormula = /^pressureFormula.*\.js$/i.test(baseName)
-    || normalizedName === ACTIVE_PRESSURE_CALIBRATION_FILE.toLowerCase()
+    || /^seatBackrestPressure.*\.js$/i.test(baseName)
   return isSupportedFormula ? baseName : fallback
 }
 
@@ -142,7 +143,7 @@ function listPressureFormulaFiles(formulaDir) {
     return fs.readdirSync(formulaDir)
       .filter((file) => (
         /^pressureFormula.*\.js$/i.test(file)
-        || file.toLowerCase() === ACTIVE_PRESSURE_CALIBRATION_FILE.toLowerCase()
+        || /^seatBackrestPressure.*\.js$/i.test(file)
       ))
       .sort()
   } catch {

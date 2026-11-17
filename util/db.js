@@ -12,7 +12,10 @@ const {
   ensureProcessedMatrixItem,
   prepareFullAlgorithmHistory,
 } = require('./pressureFrameProcessor');
-const { FULL_PROCESSING_VERSION, FULL_ADC_PREPROCESSING, FULL_DISTRIBUTION } = require('./fullAlgorithmProcessor');
+const {
+  FULL_PROCESSING_VERSION, FULL_ADC_PREPROCESSING, FULL_DISTRIBUTION,
+  FULL_ALGORITHM_CONTRACT, isFullAlgorithmMetrics,
+} = require('./fullAlgorithmProcessor');
 
 // ─── 传感器点位配置 ──────────────────────────────────────
 const pointConfig = {
@@ -186,7 +189,7 @@ function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1, options = {})
     result.effectiveArea = area
   }
   const algorithm = processedItem.algorithmMetrics
-  if (algorithm?.version === '2.11.0') {
+  if (isFullAlgorithmMetrics(algorithm)) {
     const summary = algorithm.summary || {}
     const metric = (key) => algorithm.status === 'unavailable' ? null : metricOrNull(summary[key])
     const forceN = metric('forceN')
@@ -209,7 +212,7 @@ function getCanonicalMetricStats(key, item = {}, pointAreaCm2 = 1, options = {})
       activeCount: metric('activePointCount'),
       pressureActiveCount: metric('activePointCount'),
       forceActiveCount: metric('activePointCount'),
-      algorithmMetricsSource: 'seat-backrest-full-v2110',
+      algorithmMetricsSource: 'seat-backrest-force-area',
     }
   }
   if (processedItem.forceDistributionAvailable === false) {
@@ -234,7 +237,7 @@ function getMetricStatsFromValues(pressureValues, forceValues, pointAreaCm2 = 1,
     calibrationValidMask: resolvedValidMask,
     pointAreaArr: pointAreaValues,
     forceDistributionAvailable,
-    algorithmMetrics: algorithmUnavailable ? { version: '2.11.0', status: 'unavailable' } : undefined,
+    algorithmMetrics: algorithmUnavailable ? { contract: FULL_ALGORITHM_CONTRACT, version: 'unknown', status: 'unavailable' } : undefined,
     processing: { version: PROCESSING_VERSION },
   }, pointAreaCm2, { precomputed: true })
 }
@@ -278,7 +281,7 @@ function getExportMetricActiveStats(stats, metricMode) {
 }
 
 function getExportMetricPointValues(stats, metricMode) {
-  if (stats.processedItem?.algorithmMetrics?.version === '2.11.0') {
+  if (isFullAlgorithmMetrics(stats.processedItem?.algorithmMetrics)) {
     const item = stats.processedItem
     if (item.rawDisplayAvailable === false) return item.arr.map(() => null)
     return Array.isArray(item.rawAdcArr) ? item.rawAdcArr.slice() : item.arr.map(() => null)
@@ -1259,7 +1262,7 @@ function dbload(db, param, file, isPackaged, selectJson, customDownloadPath, dat
             )
             const regionMetricStats = getExportMetricStats(regionPressureStats, metricMode, pointAreaCm2)
             const regionActiveStats = getExportMetricActiveStats(regionPressureStats, metricMode)
-            const regionMetricData = processedItem.algorithmMetrics?.version === '2.11.0'
+            const regionMetricData = isFullAlgorithmMetrics(processedItem.algorithmMetrics)
               ? sliceSelectionData(exportMetricData, region)
               : getExportMetricPointValues(regionPressureStats, metricMode)
             const regionMax = regionMetricStats.max
@@ -2025,7 +2028,8 @@ function buildCsvPlaybackData(csvRows) {
           calibrationValidMask: numericArr.map((value) => value > 0 ? 1 : 0),
           matrixMeta: { matrix_key: matrixKey, width, height, point_count: numericArr.length },
           algorithmMetrics: {
-            version: '2.11.0', status: forceN !== null && areaCm2 !== null ? 'complete' : 'unavailable',
+            contract: FULL_ALGORITHM_CONTRACT, version: 'unknown',
+            status: forceN !== null && areaCm2 !== null ? 'complete' : 'unavailable',
             source: 'csv-saved-force-area', pressureMethod: 'force-over-area',
             forceMetrics: { forceN }, areaMetrics: { areaCm2 }, pressureMetrics: null,
             summary: { forceN, areaCm2, averagePressureKPa: pressureKPa, pressureMethod: 'force-over-area',
@@ -2033,10 +2037,12 @@ function buildCsvPlaybackData(csvRows) {
           },
           processing: {
             version: FULL_PROCESSING_VERSION, adcPreprocessing: FULL_ADC_PREPROCESSING, pressureDistribution: FULL_DISTRIBUTION,
-            formulaFile: 'seatBackrestPressure_v2.11.0.js', formulaProfile: 'seatBackrestPressure_v2.11.0',
+            // A scalar/ADC CSV has no calibration module identity. Preserve
+            // declared measurements without claiming the installed algorithm.
+            formulaFile: null, formulaProfile: null, algorithmVersion: 'unknown',
+            algorithmContract: FULL_ALGORITHM_CONTRACT,
             pressureMethod: 'force-over-area', importedMetric: true, visualizationSource: 'csv-declared-raw-adc',
-            algorithmOptions: { rotation: 3, filterThreshold: 30, resultScale: 1, humanCoefficient: 2.2,
-              seatForceMethod: 'fixed_load_recognition', backrestPressureMethod: 'fixed_load_recognition' },
+            algorithmOptions: { rotation: 3 },
           },
         })
       } else if (metricMode) {

@@ -72,6 +72,7 @@ export interface PressureMetrics {
   forceAver?: number | null
   total: number | null
   algorithmMetrics?: FullAlgorithmMetrics | FullSensorResult
+  algorithmVersion?: string
   forceN?: number | null
   areaCm2?: number | null
   calibrationComplete?: boolean
@@ -144,6 +145,7 @@ export interface FullSensorFrameInput {
   reset?: boolean
 }
 export interface FullSensorOptions {
+  /** Display rotation belongs to the application; the V2.12 kernel returns native matrices. */
   rotation?: 0 | 1 | 2 | 3
   filterThreshold?: number
   resultScale?: number
@@ -155,15 +157,26 @@ export interface FullSensorOptions {
 export interface FullSensorResult {
   sensorType: FullSensorType
   timestampMs: number
-  forceMetrics: Record<string, any> & { forceN: number | null, averagePressureKPa: number | null }
+  forceN: number
+  areaCm2: number
+  averagePressureKPa: number | null
+  maxPressureKPa: number | null
+  pointPressureKPa: number[][]
+  physicalPressureKPa: number[][]
+  pointPressureStats: { validCount: number, avgKpa: number, maxKpa: number }
+  regions: Record<string, any>[]
+  forceMetrics: (Record<string, any> & { forceN: number | null, averagePressureKPa: number | null }) | null
   areaMetrics: Record<string, any> & { areaCm2: number | null }
-  pressureMetrics: Record<string, any> & { pressureMatrixKPa: number[][], maxPressureKPa: number | null }
+  pressureMetrics: Record<string, any> & { maxPressureKPa: number | null }
   sourcePhysical: number[][]
   sourceMatrix: number[][]
   displayAdcMatrix: number[][]
 }
 export interface FullAlgorithmMetrics {
-  version: '2.11.0'
+  version: string
+  contract?: 'seat-backrest-force-area-v1'
+  identity?: string
+  checksum?: string
   pressureMethod?: 'force-over-area'
   status: 'complete' | 'unavailable'
   reason?: string
@@ -183,13 +196,41 @@ export interface FullAlgorithmMetrics {
   }
 }
 export interface FullSensorSession {
+  readonly sensorType: FullSensorType
+  readonly algorithmVersion: string
+  readonly calibrationIdentity: string
   process(frame: FullSensorFrameInput): FullSensorResult
+  update(frame: FullSensorFrameInput): FullSensorResult
   reset(): void
+  frameCount(): number | null
 }
 export function calculateSensorSequence(frames: FullSensorFrameInput[], sensorType: FullSensorType, options?: FullSensorOptions): FullSensorResult[]
 export function calculateSensorFrame(frame: FullSensorFrameInput, sensorType: FullSensorType, options?: FullSensorOptions): FullSensorResult
-export function createSensorSession(sensorType: FullSensorType, options?: FullSensorOptions): FullSensorSession
+export function createSensorSession(sensorType: FullSensorType, options?: FullSensorOptions, runtimeOptions?: { sourcePath?: string }): FullSensorSession
 export function getMaximumPressureDisplay(raw: number | null, sensorType: FullSensorType): number | null
+export const VERSION: string
+export const SOURCE_APPLICATION_VERSION: string
+export const SENSOR_TYPES: readonly FullSensorType[]
+export const SENSOR_DEFINITIONS: Readonly<Record<FullSensorType, Record<string, any>>>
+export const CELL_CALIBRATION: Readonly<Record<FullSensorType, Record<string, any>>>
+export function decodeRawFrame(raw: ArrayLike<number>, sensorType: FullSensorType): number[][]
+export interface FullMatrixPressureMap {
+  kpa: number[][]
+  avgKpa: number
+  maxKpa: number
+  validCount: number
+  mode: 'per-cell'
+  unit: 'kPa'
+  grid: 'physical' | 'interpolated' | 'empty'
+  sensorType: FullSensorType
+  forceN: number
+  areaCm2: number
+  [key: string]: any
+}
+export function calculateMatrixPressureMap(adcMatrix: number[][], sensorType: FullSensorType, options?: { adcCompensationSettings?: unknown, validMask?: boolean[][] }): FullMatrixPressureMap
+export const calculateDummyMatrixPressureMap: typeof calculateMatrixPressureMap
+export function kpaToNcm2(kpa: number | null | undefined): number | null
+export function runSelfCheck(): { passed: boolean, version: string, sourceApplicationVersion: string, checks: Array<Record<string, any>> }
 
 export class ShroomSdkError extends Error {
   code?: number

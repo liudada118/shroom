@@ -120,7 +120,7 @@ const pressure = computePressureMetrics(zeroed, 'hand')
 console.log(selection.hand.press, pressure.pressAver)
 ```
 
-坐垫与靠背的总力、面积模型使用附件 V2.11.0，独立 SDK 内包含同一份未修改附件。应用最终压强统一由总力除以总面积计算：`P(kPa) = 10 × forceN / areaCm2`。面积不大于0或总力不可用时压强为 `null`；总力为0且面积大于0时为0。
+坐垫与靠背的总力、面积模型使用附件 V2.12.0，独立 SDK 内包含同一份未修改附件，并直接使用其公开实时会话接口。应用最终压强统一由总力除以总面积计算：`P(kPa) = 10 × forceN / areaCm2`。面积不大于0或总力不可用时压强为 `null`；总力为0且面积大于0时为0。
 
 ```js
 const sdk = require('@shroom-seat/core-sdk')
@@ -144,13 +144,13 @@ const metrics = sdk.computePressureMetrics(rawFrame0, 'endi-back', {
 session.reset() // 新采集/去皮后明确重置历史
 ```
 
-也可提供原生方向 `physical`：坐垫 `23×23`、靠背 `32×25`，数值必须在 `0..255`。完整算法内部负责线序解码、2倍插值、靠背有效区、默认 ADC 补偿、过滤、面积分区以及总力识别/人体估算。默认旋转为顺时针270°，坐垫显示 `46×46`、靠背显示 `50×64`。
+也可提供原生方向 `physical`：坐垫 `23×23`、靠背 `32×25`，数值必须在 `0..255`。完整算法内部负责线序解码、2倍插值、靠背有效区、默认 ADC 补偿、过滤、面积分区以及总力识别/人体估算。V2.12.0 返回原生方向矩阵：坐垫 `46×46`、靠背 `64行×50列`；应用显示层自行旋转270°，得到靠背 `50行×64列`。
 
 `calculateSensorFrame` 只代表空历史的一帧，连续加载时不可反复调用它。`calculateSensorSequence` 一次计算完整显式序列；`createSensorSession` 则保留原算法的有限内部状态。二者逐帧结果一致。去皮应在原始ADC层减去原始基线，再把处理后的 `raw` 或 `physical` 传入；不要把插值/补偿后的显示矩阵当原生输入。
 
 `computePressureMetrics(..., { algorithmMetrics })` 的 `total` 取 `forceMetrics.forceN`，`effectiveArea` 取 `areaMetrics.areaCm2`，`pressAver` 与压强趋势字段 `pressureTotal` 均按上述 `10F/A` 换算，标记 `pressureMethod:'force-over-area'`。附件的原分区均压、逐点曲线、最大值和力矩阵保留在 `algorithmMetrics` 中供诊断，不作为应用指标。应用 `pressMax/rawMaxPressureKPa/forceMax/forceAver/matrixPressureTotal` 均为 `null`，`pressureValues/forceValues` 为空数组；可视化使用采集到的原始 ADC，包含低于30的值，不能使用已补偿/过滤的 `displayAdcMatrix` 冒充原始 ADC。不可用结果标记 `calibrationComplete:false`、`calibrationScope:'unavailable'`。
 
-仅传 ADC 数组给 `computePressureMetrics(arr, key)` 时，结果明确标为 `calibrationScope:'matrix-only'`、`calibrationComplete:false`。对 `endi-sit/endi-back`，缺少完整模型结果时总力、面积、压强及逐点物理指标均不可用，不使用逐点曲线或固定格点面积兜底。Node 配置加载器支持附件原始导出，旧 V2.7.63 配置自动迁移到 `seatBackrestPressure_v2.11.0.js`。应用 V18 历史中已经保存的附件总力和面积可直接迁移为新 `10F/A` 摘要，保留采集前识别历史产生的估计值；若旧记录只保存了去皮后 ADC，不能恢复去皮前原始图，原始显示需明确标记不可用。
+仅传 ADC 数组给 `computePressureMetrics(arr, key)` 时，结果明确标为 `calibrationScope:'matrix-only'`、`calibrationComplete:false`。对 `endi-sit/endi-back`，缺少完整模型结果时总力、面积、压强及逐点物理指标均不可用，不使用逐点曲线或固定格点面积兜底。Node 配置加载器支持 `seatBackrestPressure*.js` 原始导出，旧 V2.7.63 / V2.11.0 配置自动迁移到 `seatBackrestPressure_v2.12.0.js`。应用 V18 历史中已经保存的附件总力和面积可直接迁移为新 `10F/A` 摘要，保留采集前识别历史产生的估计值；若旧记录只保存了去皮后 ADC，不能恢复去皮前原始图，原始显示需明确标记不可用。
 
 ## 配置和设备缓存
 

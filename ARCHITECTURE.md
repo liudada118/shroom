@@ -1,6 +1,6 @@
 # 架构文档
 
-> 本文档由 Manus 自动生成和维护。最后更新于：2026-11-01
+> 本文档由 Manus 自动生成和维护。最后更新于：2026-11-16
 
 ## 1. 项目概述
 
@@ -38,6 +38,8 @@ shroom/
 ├── python.js                   # Python 集成
 ├── genJqtoolsConfig.js         # 配置生成工具
 ├── package.json
+├── calibration/                # 打包时外置至 resources/calibration，仅放一个算法 JS
+│   └── seatBackrestPressure_v2.12.0.js # 按 seatBackrestPressure 前缀自动查找，保留原件文件名
 ├── server/                     # 后端服务（模块化）
 │   ├── serialServer.js         # 服务入口（~118 行）
 │   ├── state.js                # 全局状态管理（含 lastDataTime/rescanLock）
@@ -50,7 +52,7 @@ shroom/
 │   ├── services/
 │   │   └── DataService.js      # 数据采集/回放/导出（~201 行）
 │   ├── kpa/
-│   │   ├── seatBackrestPressure_v2.11.0.js # 当前坐垫/靠背标定快照（附件原样保存）
+│   │   ├── seatBackrestPressure_v2.11.0.js # 历史标定诊断快照；整个 kpa 目录不进入安装包
 │   │   ├── adc-matrix-to-pressure-filter30-v2.7.63.js # 旧整帧压强标定公式
 │   │   └── point_pressure_calibration.js # 旧 V2.7.46 / V2.7.52 标定文件，仅保留兼容
 │   ├── equipMap.js             # 设备映射配置
@@ -61,7 +63,8 @@ shroom/
 │   ├── calibrationPressureAdapter.js # 原样标定模块到完整逐点矩阵及诊断的适配层
 │   ├── pressureFrameProcessor.js # 后端单帧滤波及 ADC→kPa/N 标准矩阵生成
 │   ├── fullAlgorithmProcessor.js # 原生输入、完整力/面积/压强结果及历史序列重算
-│   ├── seatBackrestSession.js   # 原附件有状态内核会话，仅调整生命周期并校验源码
+│   ├── calibrationRuntime.js    # 外置算法前缀发现、接口校验、版本与内容 SHA 身份
+│   ├── seatBackrestSession.js   # 原生 update/reset 适配；v2.11 源码适配仅保留历史显式诊断
 │   ├── weightPointPressureNormalization.js # 逐点曲线响应归一化与平均压强守恒
 │   ├── logger.js               # 统一日志模块
 │   ├── config.js               # 加密配置读写
@@ -373,26 +376,30 @@ graph TD
 
 28. **压强/压力统一计量模式**
     - `equipStore.pressureMetricMode` 是全局显示口径，值为 `pressure`（压强，kPa）或 `force`（压力，N），默认沿用原压力总和曲线的 `force` 口径，并持久化到 `localStorage.pressureMetricMode`。
-    - `util/pressureFrameProcessor.js` 是实时、采集、回放与导出的标准入口。当前坐垫 `endi-sit` 与靠背 `endi-back` 使用完整 V2.11.0 内核：`SerialManager` 在线序/插值前保存 `algorithmRawFrame` 原始1024字节，完整内核自行解码到坐垫23×23/靠背32×25，执行插值、补偿、过滤、掩码、方向、面积与总力识别。默认rotation=3，输出坐垫46×46、靠背50行×64列，显示尺寸由 `matrixMeta` 传递。
-    - 后端原样保留 `server/kpa/seatBackrestPressure_v2.11.0.js`。`seatBackrestSession.js` 校验源码并仅调整私有内核的初始化/连续帧生命周期；每个传感器、设备连接和置零会话各自保留原识别历史，不逐帧重置，也不保存或反复计算无界历史列表。帧输入包含显式时间，重复采集帧ID复用结果。
+    - `util/pressureFrameProcessor.js` 是实时、采集、回放与导出的标准入口。当前坐垫 `endi-sit` 与靠背 `endi-back` 使用外置 V2.12.0 内核：`SerialManager` 在线序/插值前保存 `algorithmRawFrame` 原始1024字节，完整内核自行解码到坐垫23×23/靠背32×25，执行面积与总力识别。附件矩阵输出为原生方向，应用显示层默认rotation=3，输出坐垫46×46、靠背50行×64列，显示尺寸由 `matrixMeta` 传递。
+    - `calibrationRuntime.js` 在开发目录 `calibration/`、安装目录 `resources/calibration/` 中查找唯一的 `seatBackrestPressure*.js`，保留原文件名；无匹配或多个匹配均报错。`seatBackrestSession.js` 使用附件原生 `createSensorSession().update/reset`，保留每设备连续识别状态和显式时间保护。算法参数采用文件默认值，应用不改写公式或校验白名单。旧V2.11适配只用于显式历史诊断，不参与默认加载或打包。
     - 串口矩阵在线序转换和 Endi 插值后保持 ADC 原值，靠背不再应用专属乘数。`pressure_config.json` 仅保留公式文件及 profile，旧 `backValueMultiplier` 在后端、前端和 SDK 配置归一化时被丢弃，不能影响实时、采集、回放或导出结果。
     - 总力/面积的置零在原生1024字节输入层执行：`/setZeroBaseline` 拍摄 `zeroState.algorithmRawData`，逐点减基线并下限钳零，附件内部补偿和过滤保持原样。显示输入独立保留去皮前 `algorithmRawSourceFrame`，`arr/rawAdcArr` 只解码、插值及方向变换；`calibrationAdcArr` 与原附件输出仅供诊断。旧显示域基线不能代替原生基线；缺失时总力/面积明确不可用，原始ADC仍可独立显示。
     - 当前仅使用附件完整算法的总压力 `forceMetrics.forceN` 和接触面积 `areaMetrics.areaCm2`，应用压强统一换算为 `P(kPa)=10×F(N)/A(cm²)`。面积非正或输入缺失时压强为null。`algorithmMetrics` 保留原输出用于诊断，应用摘要不再使用原分区均压、逐点曲线最大值或单点力统计，也不使用压力积分/固定单点面积回算总力和面积。
     - `pressureMetrics.js` 进一步集中维护 `getPressureMetricDisplay()` 展示定义，统一返回当前口径的单位、曲线名、坐标轴标题、统计项文案、趋势数组字段和数据前缀；左侧图表、数据对比页和 COP 报告不再各自硬编码 `N/kPa` 与“压力/压强”文案。
-    - `DataService.sendData()` 把同一完整结果广播并入库。当前水印升级为 `backend-force-area-v19-v2110-raw-adc`。V18已有完整总力/面积的历史直接迁移摘要并换算压强，保留原采集识别历史，不重新当空载计算。需要重算且有原生输入的旧历史按原顺序、独立会话重放；原始ADC优先使用去皮前 `algorithmRawSourceFrame`，不能从补偿/过滤或去皮后的显示矩阵猜回原始值。物理摘要与原始可视化分别标记可用状态。
+    - `DataService.sendData()` 把同一完整结果广播并入库。当前水印为 `backend-force-area-v20-external-calibration-raw-adc`，每帧另记录实际算法版本、文件名和SHA256内容身份。同名或新版本文件替换后新建实时会话、失效回放准备缓存；已有完整历史保留原总力/面积与原算法身份。V18摘要仅迁移口径，不重算原识别历史。需要重算且有原生输入的旧历史按原顺序、独立会话重放；物理摘要与原始可视化分别标记可用状态。
     - 可视化统一使用原始ADC：`arr/rawAdcArr` 来自去皮前原生数据按附件线序解码、几何插值和方向转换后的ADC，不补偿、不阈值过滤、不高斯或跨帧平滑。2D数字、3D热图、对比和报告矩阵不再随N/kPa统计口径切换。图表与数值面板独立显示总压力N、面积cm²、换算压强kPa；局部框选只提供ADC空间信息，不从局部ADC或原逐点曲线补造局部总力/面积/压强。
     - 开始采集时 `/startCol` 仍把 `filter/gauss/coherent` 保存为 `collectionProcessingConfig` 并锁定，采集结束后解锁。该行为用于兼容旧界面和历史配置，三个参数不再改变标准矩阵计算结果。
     - 2D 数字和颜色上限均使用ADC单位，调节面板的“当前最大值”为原始ADC最大值。显示几何插值不写回采集、统计或导出；平滑和物理矩阵数据源入口不再影响显示。
     - 图表、COP报告、对比和导出整面摘要统一消费总力、面积及 `10F/A`。导出字段为总压力N、面积cm²、换算压强kPa、原始ADC及时间；与界面的趋势模式无关。新ADC CSV重导入时保留文件声明的总力/面积及原始图像，压强仍由二者换算，不从图像逆推标定。框选导出只保存原始ADC。旧分区均压、最大压强、单点力和压强矩阵仅保留在原件诊断结果中。
     - 固定导出字段 `elapsed_seconds`（表头“秒数(s)”）优先按当前帧时间戳减首帧时间戳计算，首帧为 `0.000`，统一保留三位小数；时间戳不可用时才回退为帧号除以检测采样率。
 
-### 4.2. 最终坐垫/靠背标定函数（V2.11.0）
+### 4.2. 最终坐垫/靠背标定函数与外置升级（V2.12.0 起）
 
-完整接口为 `calculateSensorSequence(frames, sensorType, options)`，每帧提供 `{raw:1024字节, timestampMs}` 或原生 `{physical, timestampMs}`。实时通过等价的 `createSensorSession(...).process(frame)` 保留连续加载方向、滤波及识别历史。SDK携带独立原附件和会话适配器，可脱离后端调用完整序列；只有显示ADC的旧SDK矩阵工具标为 `matrix-only`，其坐垫/靠背总力与面积为null。浏览器消费后端完整输出，不复刻完整力/面积模型。
+完整接口为 `calculateSensorSequence(frames, sensorType, options)`，每帧提供 `{raw:1024字节, timestampMs}` 或原生 `{physical, timestampMs}`。实时附件接口为 `createSensorSession(...).update(frame)`，应用与SDK继续提供兼容的 `process(frame)`。SDK可脱离后端调用完整序列；只有显示ADC的矩阵工具标为 `matrix-only`，总力与面积为null。浏览器消费后端完整输出，不复刻完整力/面积模型。
+
+安装包通过 `extraResources` 把 `calibration/seatBackrestPressure*.js` 放在 `app.asar` 外。以后退出程序，将 `resources/calibration/` 内旧JS移走，放入新的同前缀JS（仅保留一个），重启即可；文件名保留版本号，无需修改配置、接口调用或重新打包。开发目录同理。文件需要保留V2.12的CommonJS导出、两种传感器几何定义和原生会话接口，具体曲线、阈值、标定表与版本可以更新；接口或几何改变需要相应适配。程序还支持检测运行时文件变化，但推荐退出后替换，避免中断正在采集的连续识别状态。`PRESSURE_FORMULA_DIR` / `PRESSURE_FORMULA_PATH` 可用于部署覆盖与测试。SHA只记录溯源，不限制可替换版本。
+
+2026-11-16验证：125项相关回归与前端生产构建通过；使用真实Electron Windows `--dir`产物从 `app.asar` 内加载运行时，替换外置原名文件为模拟后续版本后，总力及换算压强随新实现变化，原始ADC与 `app.asar` 哈希保持不变，验证结束恢复原样V2.12.0文件。此项验证未连接传感器硬件。
 
 2026-11-01起，完整算法只提供应用的总力与面积来源；主压强改为 `10×forceN/areaCm2`，不再取 `forceMetrics.averagePressureKPa`。SDK的完整摘要、后端、历史、图表与报告均按此换算。面积0时不执行除法；原始ADC显示缺失不影响已保存有效力/面积的摘要，但不得把去皮后ADC冒充原始显示。
 
-以下300点公式只描述完整内核中 `pressureMetrics` 的逐点曲线，不能用来替代 `forceMetrics` 的总力、区域平均压强或 `areaMetrics` 的面积。
+V2.12采用原生有状态总力/面积识别及区内逐格压强分配，应用仍只用其总力和面积。以下300点公式是历史V2.11内核的诊断记录，不描述当前V2.12算法，也不参与应用压强计算。
 
 设有效输入为 `x_i = ADC′_i > 30`，有效点数为 `N`，基础曲线为 `F`：
 
@@ -636,6 +643,8 @@ N > 300：P_i = 2.2 × F(x_i)
 | 2026-10-30 | V2.11.0 坐垫靠背标定接入 | 原样接入附件曲线，补齐坐垫默认 ADC 补偿；统一后端、浏览器兜底与 SDK，记录补偿前输入保证历史回放幂等并保留去皮基线 |
 | 2026-10-30 | V2.11.0 完整总力与面积算法 | 坐垫和靠背原生1024点输入进入完整有状态内核，实时/回放/图表/报告/导出及独立SDK统一使用附件总力、面积和区域平均结果 |
 | 2026-11-01 | 压强改为总力除面积、可视化原始ADC | 保留完整算法的总力与面积，压强统一换算10F/A；2D/3D、对比、报告仅显示原始ADC，物理统计与图像数据源解耦 |
+| 2026-11-16 | 外置可替换标定与V2.12接入 | 按前缀读取唯一算法JS并外置打包；未来同接口版本保留原文件名直接替换，实际版本/SHA追踪，新会话与旧历史分别保留算法身份 |
+| 2026-11-16 | Windows V2.12 安装包 | 新构建前端并生成x64 NSIS安装包，位于dist/windows-v2.12.0-20261116；包内外置算法哈希、打包Electron下的原生会话/sqlite3/serialport及安装包归档完整性验证通过 |
 
 ## 9. 更新日志
 
@@ -809,6 +818,8 @@ N > 300：P_i = 2.2 × F(x_i)
 | 2026-10-30 | 配置变更 | 默认启用 `seatBackrestPressure_v2.11.0.js`，旧原生配置自动迁移；同步补偿后曲线、300 点分支及回放重算输入，增加跨端附件一致性回归 |
 | 2026-10-30 | 新增功能 | 接入完整有状态总力/面积/平均压强内核、原生串口去皮与V18序列历史重算；空间矩阵与完整摘要分别使用附件输出，缺原生历史保留不可用状态 |
 | 2026-11-01 | 优化重构 | 总力和面积保留附件原值，应用压强统一改为10F/A；原始ADC展示绕过补偿、过滤和显示平滑，V18已有完整结果直接升级，导出统一为三项物理量与原始ADC |
+| 2026-11-16 | 新增功能 | 标定改为扫描外置calibration目录唯一seatBackrestPressure前缀JS；默认原样使用V2.12.0原生会话，同步SDK与版本无关的前端/导出契约，记录算法实际版本和SHA并保留旧历史 |
+| 2026-11-16 | 配置变更 | 生成SHROOM-SEAT Setup 1.1.1-v2.12.0.exe Windows x64安装包，外置resources/calibration唯一算法JS；生产前端、包内加载及归档完整性验证通过，未连接硬件实测 |
 
 *变更类型：`新增功能` / `优化重构` / `修复缺陷` / `配置变更` / `文档更新` / `依赖升级` / `初始化`*
 

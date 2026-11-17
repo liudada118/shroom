@@ -5,14 +5,21 @@ function finiteOrNull(value) {
 }
 
 export function getFullAlgorithmSummary(algorithmMetrics) {
-  if (!algorithmMetrics || algorithmMetrics.version !== '2.11.0') return null
+  if (!algorithmMetrics || !['complete', 'unavailable'].includes(algorithmMetrics.status)) return null
+  const hasRatioContract = algorithmMetrics.pressureMethod === 'force-over-area'
+    || algorithmMetrics.summary?.pressureMethod === 'force-over-area'
+  // V2.11 saved summaries predate the explicit pressure-method contract.
+  const legacySummary = algorithmMetrics.version === '2.11.0' && algorithmMetrics.summary
+    && !algorithmMetrics.pressureMethod && !algorithmMetrics.summary.pressureMethod
+  if (!hasRatioContract && !legacySummary) return null
   const source = algorithmMetrics.summary || {}
   const unavailable = algorithmMetrics.status === 'unavailable'
   const metric = (key) => unavailable ? null : finiteOrNull(source[key])
   const forceN = metric('forceN')
   const areaCm2 = metric('areaCm2')
   return {
-    source: 'seat-backrest-full-v2110',
+    source: 'seat-backrest-force-area',
+    algorithmVersion: algorithmMetrics.version || null,
     available: !unavailable,
     forceN,
     areaCm2,

@@ -107,6 +107,8 @@ createWsServer()
 
 async function startServer() {
   try {
+    const calibration = require('../util/calibrationRuntime').getCalibrationRuntime()
+    console.log(`[Server] Calibration ${calibration.version}: ${calibration.filePath} (SHA256 ${calibration.checksum})`)
     // 1. 启动 WebSocket HTTP 服务器
     const { db } = await initDb(state.file, dbPath)
     state.currentDb = db

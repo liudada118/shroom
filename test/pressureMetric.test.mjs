@@ -29,12 +29,13 @@ import {
   buildPressureDisplayMetricMatrix,
   summarizePressureDisplayMatrix,
 } from '../client/src/util/pressureDisplayMatrix.js'
+import { getFullAlgorithmSummary } from '../client/src/util/fullAlgorithmMetrics.js'
 
 const require = createRequire(import.meta.url)
 const calibrationFormula = require('../server/kpa/seatBackrestPressure_v2.11.0.js')
 const { normalizePressureConfig } = require('../server/services/PressureConfig.js')
 const { calcPressureFormulaStats } = require('../util/pressureFrameProcessor.js')
-const CALIBRATION_FORMULA_PROFILE = 'seatBackrestPressure_v2.11.0'
+const CALIBRATION_FORMULA_PROFILE = 'seatBackrestPressure_v2.12.0'
 
 setPressureFormulaProfile(CALIBRATION_FORMULA_PROFILE)
 
@@ -67,6 +68,25 @@ test('formula file name overrides a stale configured profile', () => {
     setPressureFormulaProfile('calibration_v2746_seat_v2752_backrest'),
     CALIBRATION_FORMULA_PROFILE,
   )
+})
+
+test('future complete force-area summaries use the stable contract and reject unrelated algorithms', () => {
+  for (const version of ['2.12.0', '2.13.0', '3.0.0']) {
+    assert.equal(setPressureFormulaProfile(`seatBackrestPressure_v${version}`), `seatBackrestPressure_v${version}`)
+    assert.equal(getPressureMetricSummary([100, 120], 'endi-sit', 'pressure').total, null)
+    const metrics = {
+      version, status: 'complete', pressureMethod: 'force-over-area',
+      summary: { forceN: 300, areaCm2: 120, averagePressureKPa: 999 },
+    }
+    const full = getFullAlgorithmSummary(metrics)
+    assert.equal(full.algorithmVersion, version)
+    assert.equal(full.averagePressureKPa, 25)
+    assert.equal(getPressureMetricSummary([5, 25, 255], 'endi-back', 'pressure', { algorithmMetrics: metrics }).total, 25)
+    assert.equal(getFullAlgorithmSummary({ ...metrics, status: 'unavailable' }).forceN, null)
+    assert.equal(getFullAlgorithmSummary({ ...metrics, pressureMethod: 'unrelated' }), null)
+  }
+  assert.equal(getFullAlgorithmSummary({ version: '2.11.0', status: 'complete', pressureMethod: 'unrelated', summary: { forceN: 300, areaCm2: 120 } }), null)
+  setPressureFormulaProfile(CALIBRATION_FORMULA_PROFILE)
 })
 
 test('every visual mode preserves the same raw ADC including low values and decimal precision', () => {

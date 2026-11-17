@@ -2,8 +2,9 @@
 
 const { distributeWeightPointPressures } = require('./weightPointPressureNormalization')
 const fullAlgorithm = require('./seatBackrestAlgorithm')
+const { getResultAlgorithmVersion } = require('./seatBackrestSession')
 
-const DEFAULT_PRESSURE_FORMULA_PROFILE = 'seatBackrestPressure_v2.11.0'
+const DEFAULT_PRESSURE_FORMULA_PROFILE = `seatBackrestPressure_v${fullAlgorithm.VERSION}`
 const LEGACY_NATIVE_CALIBRATION_PROFILES = new Set([
   'adc-matrix-to-pressure-filter30-v2.7.63',
   'point_pressure_calibration',
@@ -142,6 +143,10 @@ PRESSURE_FORMULA_PROFILES['V2.7.37'] = PRESSURE_FORMULA_PROFILES['V2.7.38']
 
 let activePressureFormulaProfile = DEFAULT_PRESSURE_FORMULA_PROFILE
 
+function isNativePressureProfile(profile = activePressureFormulaProfile) {
+  return /^seatBackrestPressure(?:_v.+)?$/i.test(profile)
+}
+
 function getActiveSensorMeta(sensor) {
   return (PRESSURE_FORMULA_PROFILES[activePressureFormulaProfile] || PRESSURE_FORMULA_PROFILES[LEGACY_PRESSURE_FORMULA_PROFILE])[sensor]
 }
@@ -151,7 +156,7 @@ function setPressureFormulaProfile(profile) {
   const nextProfile = LEGACY_NATIVE_CALIBRATION_PROFILES.has(configuredProfile)
     ? DEFAULT_PRESSURE_FORMULA_PROFILE
     : configuredProfile
-  if (nextProfile !== DEFAULT_PRESSURE_FORMULA_PROFILE && !PRESSURE_FORMULA_PROFILES[nextProfile]) {
+  if (!isNativePressureProfile(nextProfile) && !PRESSURE_FORMULA_PROFILES[nextProfile]) {
     activePressureFormulaProfile = DEFAULT_PRESSURE_FORMULA_PROFILE
     return activePressureFormulaProfile
   }
@@ -317,7 +322,7 @@ function calcFiveSegment(adc, meta) {
 }
 
 function estimatePressure(adcAvg, nValid, sensor) {
-  if (activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE) {
+  if (isNativePressureProfile()) {
     const basePressure = calculateNativeBasePressure(adcAvg, sensor)
     if (basePressure === null) return null
     const pointPressureScale = Number(nValid) > NATIVE_HUMAN_VALID_POINT_THRESHOLD
@@ -354,7 +359,7 @@ function computePressureMetrics(arr, key, options = {}) {
   const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
   if (options.algorithmMetrics) return getCompleteAlgorithmMetrics(values, key, options.algorithmMetrics)
   const matrix = computeMatrixPressureMetrics(values, key, options)
-  const requiresCompleteKernel = activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE
+  const requiresCompleteKernel = isNativePressureProfile()
     && (key === 'endi-sit' || key === 'endi-back')
   const rawPositiveValues = values.filter((value) => Number.isFinite(value) && value > 0)
   return {
@@ -411,7 +416,7 @@ function computeMatrixPressureMetrics(arr, key, options = {}) {
     }
   }
 
-  const isNativeCalibration = activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE
+  const isNativeCalibration = isNativePressureProfile()
   const nativeMinAdc = NATIVE_CALIBRATION_MIN_ADC
   const filteredValues = isNativeCalibration
     ? prepareNativeCalibrationValues(values, sensor)
@@ -528,14 +533,14 @@ function getCompleteAlgorithmMetrics(values, key, metrics) {
   const force = complete ? metrics.forceMetrics || {} : {}
   const area = complete ? metrics.areaMetrics || {} : {}
   const positiveAdcValues = values.filter((value) => Number.isFinite(value) && value > 0)
-  const forceN = Number.isFinite(force.forceN) ? force.forceN : null
-  const areaCm2 = Number.isFinite(area.areaCm2) ? area.areaCm2 : null
+  const forceN = Number.isFinite(force.forceN) ? force.forceN : complete && Number.isFinite(metrics.forceN) ? metrics.forceN : null
+  const areaCm2 = Number.isFinite(area.areaCm2) ? area.areaCm2 : complete && Number.isFinite(metrics.areaCm2) ? metrics.areaCm2 : null
   const pressureKPa = forceN !== null && areaCm2 !== null && areaCm2 > 0 ? 10 * forceN / areaCm2 : null
   return {
     calibrationScope: complete ? 'complete-sensor-sequence' : 'unavailable',
     calibrationComplete: complete,
     unavailableReason: complete ? null : metrics.reason ?? 'complete_algorithm_result_required',
-    algorithmVersion: '2.11.0',
+    algorithmVersion: getResultAlgorithmVersion(metrics) || fullAlgorithm.VERSION,
     pressureMethod: 'force-over-area',
     algorithmMetrics: metrics,
     sensor: type === 'endi-23x23' ? 'seat' : 'backrest',

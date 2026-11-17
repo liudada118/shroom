@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const { getFullAlgorithmInput } = require('../server/services/DataService')
 const { processMatrixItem, resetFullAlgorithmSessions } = require('../util/pressureFrameProcessor')
 const { captureAlgorithmZeroBaselines, prepareFullAlgorithmHistory } = require('../util/fullAlgorithmProcessor')
-const reference = require('../server/kpa/seatBackrestPressure_v2.11.0.js')
+const reference = require('../util/calibrationRuntime').getCalibrationRuntime().api
 
 function wire(level) {
   return Array.from({ length: 1024 }, (_, index) => {

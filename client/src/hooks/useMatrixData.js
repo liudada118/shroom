@@ -567,7 +567,7 @@ export function useMatrixData() {
   }
 
   function getExecutedDirectionForFrame(fullKey, frameItem) {
-    if (frameItem?.algorithmMetrics?.version === '2.11.0') return { left: true, up: true, rotateDegree: 0 }
+    if (getFullAlgorithmSummary(frameItem?.algorithmMetrics)) return { left: true, up: true, rotateDegree: 0 }
     const currentDirection = getCurrentDirectionForKey(fullKey)
     const frameDirection = normalizeDataDirection(frameItem?.dataDirection || DEFAULT_DATA_DIRECTION)
     return isDefaultDataDirection(frameDirection) ? currentDirection : frameDirection
@@ -580,7 +580,7 @@ export function useMatrixData() {
       const key = fullKey.includes('-') ? fullKey.split('-')[1] : fullKey
       if (!res[key] || !systemPointConfig[fullKey]) continue
 
-      if (sitData[fullKey]?.algorithmMetrics?.version === '2.11.0') {
+      if (getFullAlgorithmSummary(sitData[fullKey]?.algorithmMetrics)) {
         activeFrameDirectionRef.current[fullKey] = getExecutedDirectionForFrame(fullKey, sitData[fullKey])
         continue
       }

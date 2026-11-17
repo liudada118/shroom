@@ -14,17 +14,17 @@ function mean(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-test('legacy calibration filename migrates to seatBackrestPressure_v2.11.0.js', () => {
+test('legacy calibration filename resolves the active external calibration', () => {
   const config = normalizePressureConfig({
     pressureFormulaFile: 'pressureFormula_calibration_v2746_seat_v2752_backrest.js',
     pressureFormulaProfile: 'calibration_v2746_seat_v2752_backrest',
   })
 
   assert.deepEqual(config, {
-    pressureFormulaFile: 'seatBackrestPressure_v2.11.0.js',
-    pressureFormulaProfile: 'seatBackrestPressure_v2.11.0',
+    pressureFormulaFile: 'seatBackrestPressure_v2.12.0.js',
+    pressureFormulaProfile: 'seatBackrestPressure_v2.12.0',
   })
-  assert.ok(listPressureFormulaFiles().includes('seatBackrestPressure_v2.11.0.js'))
+  assert.ok(listPressureFormulaFiles().includes('seatBackrestPressure_v2.12.0.js'))
 })
 
 test('seat V2.7.46 and backrest V2.7.52 preserve calibration nodes and clamps', () => {

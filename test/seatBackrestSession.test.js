@@ -3,8 +3,14 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('path')
-const { createSensorSession } = require('../util/seatBackrestSession')
+const { createSensorSession: createRuntimeSession } = require('../util/seatBackrestSession')
 const original = require('../server/kpa/seatBackrestPressure_v2.11.0')
+// Keep the historical adapter's differential coverage explicit. Current native
+// v2.12 sessions are tested separately in externalCalibrationRuntime.test.js.
+const createSensorSession = (type, options = {}, runtime = {}) => createRuntimeSession(type, options, {
+  sourcePath: path.join(__dirname, '..', 'server', 'kpa', 'seatBackrestPressure_v2.11.0.js'),
+  ...runtime,
+})
 
 const TYPES = ['endi-23x23', 'new-backrest-32x25']
 
@@ -83,7 +89,7 @@ test('explicit local snapshot path works for a packaged SDK without changing alg
   assert.throws(() => createSensorSession('other-sensor'), /Unsupported/)
   assert.throws(() => createSensorSession(type, {}, {
     sourcePath: path.join(__dirname, '..', 'package.json'),
-  }), /checksum changed/)
+  }), /interface|contract/)
 })
 
 test('raw wire frames take priority over physical input and preserve the complete sequence result', () => {

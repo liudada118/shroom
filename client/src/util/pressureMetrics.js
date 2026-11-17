@@ -3,7 +3,7 @@
 import { distributeWeightPointPressures } from './weightPointPressureNormalization.js'
 import { getFullAlgorithmSummary } from './fullAlgorithmMetrics.js'
 
-const DEFAULT_PRESSURE_FORMULA_PROFILE = 'seatBackrestPressure_v2.11.0'
+const DEFAULT_PRESSURE_FORMULA_PROFILE = 'seatBackrestPressure_v2.12.0'
 const LEGACY_NATIVE_CALIBRATION_PROFILES = new Set([
   'adc-matrix-to-pressure-filter30-v2.7.63',
   'point_pressure_calibration',
@@ -153,6 +153,10 @@ const POINT_PRESSURE_FORMULA_PROFILES = new Set(['V2.8.1'])
 
 let activePressureFormulaProfile = DEFAULT_PRESSURE_FORMULA_PROFILE
 
+function isNativePressureProfile(profile = activePressureFormulaProfile) {
+  return /^seatBackrestPressure(?:_v.+)?$/i.test(profile)
+}
+
 function getActiveSensorMeta(sensor) {
   return (PRESSURE_FORMULA_PROFILES[activePressureFormulaProfile] || PRESSURE_FORMULA_PROFILES[LEGACY_PRESSURE_FORMULA_PROFILE])[sensor]
 }
@@ -162,7 +166,7 @@ export function setPressureFormulaProfile(profile) {
   const nextProfile = LEGACY_NATIVE_CALIBRATION_PROFILES.has(configuredProfile)
     ? DEFAULT_PRESSURE_FORMULA_PROFILE
     : configuredProfile
-  if (nextProfile !== DEFAULT_PRESSURE_FORMULA_PROFILE && !PRESSURE_FORMULA_PROFILES[nextProfile]) {
+  if (!isNativePressureProfile(nextProfile) && !PRESSURE_FORMULA_PROFILES[nextProfile]) {
     activePressureFormulaProfile = DEFAULT_PRESSURE_FORMULA_PROFILE
     return activePressureFormulaProfile
   }
@@ -343,9 +347,9 @@ export function getPressurePointValuesKpa(arr, key, options = {}) {
   const values = Array.isArray(arr) ? arr.map((value) => Number(value) || 0) : []
   const canonicalPressureValues = getCanonicalPressureValues(values, options)
   if (canonicalPressureValues) return canonicalPressureValues
-  if (options.algorithmMetrics?.version === '2.11.0') return values.map(() => null)
+  if (getFullAlgorithmSummary(options.algorithmMetrics)) return values.map(() => null)
   const sensor = getPressureSensor(key) || 'seat'
-  if (activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE) {
+  if (isNativePressureProfile()) {
     return getNativePressureDistribution(prepareNativeCalibrationValues(values, sensor), sensor).pressureValues
   }
 
@@ -390,7 +394,7 @@ function calcFiveSegment(adc, meta) {
 }
 
 export function estimatePressure(adcAvg, nValid, sensor) {
-  if (activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE) {
+  if (isNativePressureProfile()) {
     const basePressure = calculateNativeBasePressure(adcAvg, sensor)
     if (basePressure === null) return null
     const pointPressureScale = Number(nValid) > NATIVE_HUMAN_VALID_POINT_THRESHOLD
@@ -552,7 +556,7 @@ export function getPressureMetricDisplay(mode, t, language) {
 }
 
 function getCalibrationAverage(positiveValues, sensor) {
-  if (activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE) {
+  if (isNativePressureProfile()) {
     return getNativeCalibrationAverage(positiveValues, sensor)
   }
   const meta = getActiveSensorMeta(sensor)
@@ -580,7 +584,7 @@ export function computePressureMetrics(arr, key, options = {}) {
   const rawPress = values.reduce((sum, value) => sum + value, 0)
   const rawMax = values.length ? Math.max(...values) : 0
   const sensor = getPressureSensor(key) || 'seat'
-  const isNativeCalibration = activePressureFormulaProfile === DEFAULT_PRESSURE_FORMULA_PROFILE
+  const isNativeCalibration = isNativePressureProfile()
   const rawActiveValues = isNativeCalibration
     ? prepareNativeCalibrationValues(values, sensor).filter((value) => value > 0)
     : values.filter((value) => Number.isFinite(value) && value > MIN_ADC)

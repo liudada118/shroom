@@ -9,7 +9,7 @@ import { getRawAdcValues, getPhysicalFrameSummary, summarizeAdcValues } from '..
 const require = createRequire(import.meta.url)
 const { processMatrixItem } = require('../util/pressureFrameProcessor')
 const { getCanonicalMetricStats, getExportMetricStats, dbGetData } = require('../util/db')
-const original = require('../server/kpa/seatBackrestPressure_v2.11.0')
+const original = require('../util/calibrationRuntime').getCalibrationRuntime().api
 
 function completeItem(key, full = false) {
   const seat = key === 'endi-sit'

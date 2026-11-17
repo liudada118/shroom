@@ -12,6 +12,7 @@ const {
   processMatrixItem,
 } = require('../util/pressureFrameProcessor')
 const calibrationFormula = require('../server/kpa/seatBackrestPressure_v2.11.0')
+const activeFormula = require('../calibration/seatBackrestPressure_v2.12.0.js')
 const { endiBack1024 } = require('../util/line')
 const {
   FULL_PROCESSING_VERSION,
@@ -87,7 +88,7 @@ test('native input uses complete kernel compensation and filtering independently
   const physical = contactPhysical()
   physical[2][2] = 24
   physical[3][3] = 29
-  const expected = calibrationFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'endi-23x23')
+  const expected = activeFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'endi-23x23')
   const firstConfig = { filter: 0, gauss: 0, coherent: 7 }
   const ignoredProcessingConfig = { filter: 4095, gauss: 4, coherent: 1 }
 
@@ -179,7 +180,7 @@ test('native calibration derives average and maximum from the normalized heatmap
   const seatValues = [0, ...Array.from({ length: 100 }, (_, index) => index + 70)]
   const seatDistribution = referenceMetrics(seatValues, 'seat')
   const seatPressures = seatDistribution.pressureMatrixKPa[0].filter((value) => value > 0)
-  const seatStats = calcPressureFormulaStats(seatValues, 'endi-sit')
+  const seatStats = calcPressureFormulaStats(seatValues, 'endi-sit', undefined, false, calibrationFormula)
 
   assert.equal(seatStats.calibrationSelectedCount, seatDistribution.topCount)
   assert.ok(Math.abs(seatStats.adcAvg - seatDistribution.topMean) < 1e-12)
@@ -193,7 +194,7 @@ test('native calibration derives average and maximum from the normalized heatmap
   const backValues = Array.from({ length: 80 }, (_, index) => index + 100)
   const backDistribution = referenceMetrics(backValues, 'backrest')
   const backPressures = backDistribution.pressureMatrixKPa[0].filter((value) => value > 0)
-  const backStats = calcPressureFormulaStats(backValues, 'endi-back')
+  const backStats = calcPressureFormulaStats(backValues, 'endi-back', undefined, false, calibrationFormula)
 
   assert.equal(backStats.calibrationSelectedCount, backDistribution.topCount)
   assert.ok(Math.abs(backStats.adcAvg - backDistribution.topMean) < 1e-12)
@@ -209,7 +210,7 @@ test('more than 300 effective points multiply every direct point pressure by 2.2
   const expectedPressureValues = prepareReferenceAdc(values, 'seat').map((value) => (
     referenceBasePressure(value, 'seat') * 2.2
   ))
-  const stats = calcPressureFormulaStats(values, 'endi-sit')
+  const stats = calcPressureFormulaStats(values, 'endi-sit', undefined, false, calibrationFormula)
 
   assert.ok(Math.abs(stats.aver - mean(expectedPressureValues)) < 1e-12)
   assert.ok(Math.abs(stats.max - Math.max(...expectedPressureValues)) < 1e-12)
@@ -222,7 +223,7 @@ test('more than 300 effective points multiply every direct point pressure by 2.2
 
 test('canonical pressure and force matrices preserve formula precision and are not processed twice', () => {
   const physical = contactPhysical()
-  const expected = calibrationFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'endi-23x23')
+  const expected = activeFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'endi-23x23')
   const processed = processPhysical('endi-sit', physical, {}, {
     filter: 30,
     gauss: 0.5,
@@ -253,7 +254,7 @@ test('canonical pressure and force matrices preserve formula precision and are n
   assert.equal(processed.algorithmMetrics.summary.areaCm2, expected.areaMetrics.areaCm2)
 })
 
-test('frames with an old processing version or formula watermark are recalculated from native ADC', () => {
+test('legacy native inputs are recalculated and complete saved force/area keep their acquired algorithm identity', () => {
   const physical = contactPhysical()
   const values = new Array(46 * 46).fill(999)
   const legacyItem = {
@@ -288,30 +289,24 @@ test('frames with an old processing version or formula watermark are recalculate
     },
   }
   const formulaRecalculated = ensureProcessedMatrixItem('endi-sit', staleFormulaItem)
-  assert.notEqual(formulaRecalculated.pressureArr[100], 777)
-  assert.notEqual(formulaRecalculated.forceArr[100], 777)
+  assert.deepEqual(formulaRecalculated.algorithmMetrics, recalculated.algorithmMetrics)
+  assert.equal(formulaRecalculated.processing.formulaFile, 'previous-formula.js')
 })
 
-test('complete backrest calibration preserves the original physical validity mask', () => {
+test('complete backrest metrics match the external algorithm independently of raw display', () => {
   const physical = Array.from({ length: 32 }, () => new Array(25).fill(100))
-  const expected = calibrationFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'new-backrest-32x25')
-  const processed = processPhysical('endi-back', physical, {}, {
-    filter: 0,
-    gauss: 0,
-    coherent: 1,
-  })
-
-  assert.deepEqual(processed.algorithmMetrics.pressureMetrics.pressureMatrixKPa, expected.pressureMetrics.pressureMatrixKPa)
+  const expected = activeFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'new-backrest-32x25')
+  const processed = processPhysical('endi-back', physical)
+  assert.deepEqual(processed.algorithmMetrics.pressureMetrics, expected.pressureMetrics)
+  assert.deepEqual(processed.algorithmMetrics.forceMetrics, expected.forceMetrics)
+  assert.deepEqual(processed.algorithmMetrics.areaMetrics, expected.areaMetrics)
   assert.deepEqual(processed.calibrationAdcArr, expected.displayAdcMatrix.flat())
-  assert.equal(processed.algorithmMetrics.pressureMetrics.pressureMatrixKPa.flat().filter((value) => value > 0).length,
-    expected.pressureMetrics.pressureMatrixKPa.flat().filter((value) => value > 0).length)
-  assert.ok(processed.algorithmMetrics.pressureMetrics.pressureMatrixKPa.flat().some(value => value === 0))
   assert.deepEqual(processed.arr, rawDisplay(expected))
 })
 
 test('native backrest ADC is preserved while display interpolation follows the supplied complete algorithm', () => {
   const physical = Array.from({ length: 32 }, () => new Array(25).fill(106.24))
-  const expected = calibrationFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'new-backrest-32x25')
+  const expected = activeFormula.calculateSensorFrame({ physical, timestampMs: 0 }, 'new-backrest-32x25')
   const processed = processPhysical('endi-back', physical, {}, {
     filter: 0,
     gauss: 0,
@@ -329,8 +324,8 @@ test('complete seat and backrest matrices apply the delivered calibration thresh
   ]) {
     const physical = contactPhysical(rows, cols, 31)
     const processed = processPhysical(key, physical)
-    const expected = calibrationFormula.calculateSensorFrame({ physical, timestampMs: 0 }, type)
-    assert.equal(processed.processing.algorithmOptions.filterThreshold, 30)
+    const expected = activeFormula.calculateSensorFrame({ physical, timestampMs: 0 }, type)
+    assert.equal(Object.hasOwn(processed.processing.algorithmOptions, 'filterThreshold'), false)
     assert.deepEqual(processed.calibrationAdcArr, expected.displayAdcMatrix.flat())
     assert.ok(processed.calibrationAdcArr.every((value) => value === 0 || value > 30))
     assert.deepEqual(processed.arr, rawDisplay(expected))

@@ -4,6 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const vm = require('vm')
 const { createHash } = require('crypto')
+const { getCalibrationRuntime } = require('./calibrationRuntime')
 
 const SNAPSHOT_PATH = path.join(__dirname, '..', 'server', 'kpa', 'seatBackrestPressure_v2.11.0.js')
 const SNAPSHOT_SHA256 = '221d9113e8fd777aec1bef6cbb5c43181cb44ad19fa1445e12ffba0cac9f8e4f'
@@ -66,7 +67,7 @@ function loadStreamingApi(snapshotPath = SNAPSHOT_PATH) {
  * it never stores or replays an ever-growing frame list. reset() begins a new
  * acquisition history and permits a new timestamp origin.
  */
-function createSensorSession(sensorType, options = {}, runtimeOptions = {}) {
+function createLegacySensorSession(sensorType, options = {}, runtimeOptions = {}) {
   const api = loadStreamingApi(runtimeOptions.sourcePath || SNAPSHOT_PATH)
   if (!Object.hasOwn(api.SENSOR_DEFINITIONS, sensorType)) throw new RangeError('Unsupported sensorType')
   const sessionOptions = structuredClone(options)
@@ -84,6 +85,36 @@ function createSensorSession(sensorType, options = {}, runtimeOptions = {}) {
     },
     reset() {
       kernel = api._createLocalKernel()
+      lastTimestampMs = -Infinity
+    },
+  }
+}
+
+// V2.12+ supplies the public stateful API. The old checksum/VM adapter above is
+// retained only for explicit historical v2.11 diagnostic calls, never runtime.
+function createSensorSession(sensorType, options = {}, runtimeOptions = {}) {
+  if (runtimeOptions.sourcePath && path.basename(runtimeOptions.sourcePath) === 'seatBackrestPressure_v2.11.0.js') {
+    return createLegacySensorSession(sensorType, options, runtimeOptions)
+  }
+  const runtime = runtimeOptions.runtime || getCalibrationRuntime(runtimeOptions)
+  if (!Object.hasOwn(runtime.api.SENSOR_DEFINITIONS, sensorType)) throw new RangeError('Unsupported sensorType')
+  const session = runtime.api.createSensorSession(sensorType, structuredClone(options))
+  if (!session || typeof session.update !== 'function' || typeof session.reset !== 'function') {
+    throw new TypeError(`Calibration session interface requires update/reset: ${runtime.filePath}`)
+  }
+  let lastTimestampMs = -Infinity
+  return {
+    sensorType,
+    process(frame) {
+      if (!frame || !Number.isFinite(frame.timestampMs) || frame.timestampMs < lastTimestampMs) {
+        throw new RangeError('Explicit nondecreasing timestampMs required')
+      }
+      const output = session.update(frame)
+      lastTimestampMs = frame.timestampMs
+      return output
+    },
+    reset() {
+      session.reset()
       lastTimestampMs = -Infinity
     },
   }
