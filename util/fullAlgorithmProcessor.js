@@ -3,14 +3,16 @@
 const { createSensorSession } = require('./seatBackrestSession')
 const { getCalibrationRuntime } = require('./calibrationRuntime')
 
-const FULL_PROCESSING_VERSION = 'backend-force-area-v20-external-calibration-raw-adc'
+const FULL_PROCESSING_VERSION = 'backend-force-area-v21-legacy-display-orientation'
+const FULL_RAW_DISPLAY_ORIENTATION = 'car-shanghai-v1'
 const FULL_ADC_PREPROCESSING = 'native-force-area-raw-adc-display'
 const FULL_DISTRIBUTION = 'force-over-area'
 const FULL_ALGORITHM_CONTRACT = 'seat-backrest-force-area-v1'
 const LEGACY_FULL_PROCESSING_VERSION = 'backend-force-area-v19-v2110-raw-adc'
 const PREVIOUS_FULL_PROCESSING_VERSION = 'backend-full-seat-backrest-v18-v2110'
 const RAW_DISPLAY_PROCESSING_VERSIONS = [
-  PREVIOUS_FULL_PROCESSING_VERSION, LEGACY_FULL_PROCESSING_VERSION, FULL_PROCESSING_VERSION,
+  PREVIOUS_FULL_PROCESSING_VERSION, LEGACY_FULL_PROCESSING_VERSION,
+  'backend-force-area-v20-external-calibration-raw-adc', FULL_PROCESSING_VERSION,
 ]
 const SENSOR_TYPES = Object.freeze({
   'endi-sit': 'endi-23x23',
@@ -96,12 +98,23 @@ function buildRawDisplayAdc(key, item, rotation = getAlgorithmOptions(item).rota
     physical = decodeNativeRaw(item.algorithmRawFrame, key)
     if (!physical && validPhysical(item.algorithmPhysicalFrame, key)) physical = item.algorithmPhysicalFrame
   }
-  if (physical) return rotateMatrix(interpolateRawPhysical(physical), rotation)
+  if (physical) {
+    const display = rotateMatrix(interpolateRawPhysical(physical), rotation)
+    // Match car上海's Endi seat layout. The old serial adapter included this
+    // 180° turn before display rotation; the native calibration input must not.
+    return key === 'endi-sit' ? rotateMatrix(display, 2) : display
+  }
   // V18 stored rawAdcArr as unfiltered source ADC. With tare enabled that
   // source was already baseline-subtracted and cannot recover pre-tare ADC.
   const knownRawDisplay = RAW_DISPLAY_PROCESSING_VERSIONS.includes(item.processing?.version)
+  const declaredCsv = item.rawDisplaySource === 'csv-declared-raw-adc'
+    || item.algorithmMetrics?.source === 'csv-saved-force-area'
+  const knownPreZeroDisplay = item.processing?.version !== PREVIOUS_FULL_PROCESSING_VERSION
+    && item.rawDisplayAvailable === true
+    && item.processing?.visualizationSource === 'raw-adc-before-zero-compensation-filter'
   const savedRotation = item.processing?.algorithmOptions?.rotation ?? item.algorithmMetrics?.displayRotation
-  if (!hasZeroBaseline(item) && knownRawDisplay && savedRotation === rotation && Array.isArray(item.rawAdcArr)) {
+  if ((!hasZeroBaseline(item) || knownPreZeroDisplay || declaredCsv)
+    && knownRawDisplay && savedRotation === rotation && Array.isArray(item.rawAdcArr)) {
     const native = nativeDimensions(key)
     const rows = rotation % 2 ? native.cols * 2 : native.rows * 2
     const cols = rotation % 2 ? native.rows * 2 : native.cols * 2
@@ -109,7 +122,9 @@ function buildRawDisplayAdc(key, item, rotation = getAlgorithmOptions(item).rota
       && item.rawAdcArr.length === rows * cols && item.rawAdcArr.every((value) => (
       Number.isFinite(value) && value >= 0 && value <= 255
     ))) {
-      return Array.from({ length: rows }, (_, row) => item.rawAdcArr.slice(row * cols, (row + 1) * cols))
+      const display = Array.from({ length: rows }, (_, row) => item.rawAdcArr.slice(row * cols, (row + 1) * cols))
+      return key === 'endi-sit' && !declaredCsv && item.processing?.rawDisplayOrientation !== FULL_RAW_DISPLAY_ORIENTATION
+        ? rotateMatrix(display, 2) : display
     }
   }
   return null
@@ -149,6 +164,20 @@ function savedAlgorithmRuntime(item) {
   }
 }
 
+// These are point-pressure diagnostics supplied by the same acquired frame's
+// calibration. Never infer them from raw ADC, total force or a newer algorithm.
+function getPressureChartMetrics(pressureMetrics) {
+  const pointCounts = [pressureMetrics?.pointPressureCount, pressureMetrics?.validCount]
+  const activePointCount = pointCounts.find((value) => Number.isInteger(value) && value >= 0) ?? null
+  const rawMaximum = finiteOrNull(pressureMetrics?.maxPressureKPa)
+  const maxPressureKPa = activePointCount === 0 ? 0
+    : rawMaximum !== null && rawMaximum >= 0 ? rawMaximum : null
+  const rawAverage = finiteOrNull(pressureMetrics?.avgPressureKPa)
+  const algorithmAveragePressureKPa = activePointCount === 0 ? 0
+    : rawAverage !== null && rawAverage >= 0 ? rawAverage : null
+  return { activePointCount, maxPressureKPa, maximumPressureDisplayKPa: maxPressureKPa, algorithmAveragePressureKPa }
+}
+
 function buildSummary(output) {
   const force = output.forceMetrics
   const area = output.areaMetrics
@@ -159,9 +188,7 @@ function buildSummary(output) {
     areaCm2,
     pressureMethod: 'force-over-area',
     averagePressureKPa: forceOverAreaPressure(forceN, areaCm2),
-    maxPressureKPa: null,
-    maximumPressureDisplayKPa: null,
-    activePointCount: null,
+    ...getPressureChartMetrics(output.pressureMetrics),
     forceMaxN: null,
     forceAverageN: null,
   }
@@ -182,6 +209,7 @@ function fullProcessingMetadata(item, options, runtime) {
     calibrationMethod: 'complete-force-area-global-pressure',
     pressureMethod: 'force-over-area',
     visualizationSource: 'raw-adc-before-zero-compensation-filter',
+    rawDisplayOrientation: FULL_RAW_DISPLAY_ORIENTATION,
     calibrationInputGrid: 'native-physical-before-interpolation',
     statisticsSource: 'algorithmMetrics',
     algorithmOptions: options,
@@ -233,6 +261,7 @@ function unavailableFullAlgorithmItem(key, item, reason, runtime = getCalibratio
       pressureMetrics: null,
       summary: {
         forceN: null, areaCm2: null, averagePressureKPa: null, pressureMethod: 'force-over-area',
+        algorithmAveragePressureKPa: null,
         maxPressureKPa: null, maximumPressureDisplayKPa: null,
         activePointCount: null, forceMaxN: null, forceAverageN: null,
       },
@@ -342,9 +371,9 @@ function upgradeFullAlgorithmItem(key, item) {
 }
 
 function hasFullAlgorithmResult(item) {
-  const legacy = item.processing?.version === LEGACY_FULL_PROCESSING_VERSION
-  return [FULL_PROCESSING_VERSION, LEGACY_FULL_PROCESSING_VERSION].includes(item.processing?.version)
-    && item.processing?.adcPreprocessing === (legacy ? 'native-v2110-force-area-raw-adc-display' : FULL_ADC_PREPROCESSING)
+  return item.processing?.version === FULL_PROCESSING_VERSION
+    && item.processing?.rawDisplayOrientation === FULL_RAW_DISPLAY_ORIENTATION
+    && item.processing?.adcPreprocessing === FULL_ADC_PREPROCESSING
     && item.processing?.pressureMethod === 'force-over-area'
     && item.processing?.algorithmOptions?.rotation === getAlgorithmOptions(item).rotation
     && isFullAlgorithmMetrics(item.algorithmMetrics)
@@ -446,9 +475,9 @@ function captureAlgorithmZeroBaselines(dataMap) {
 }
 
 module.exports = {
-  FULL_PROCESSING_VERSION, FULL_ADC_PREPROCESSING, FULL_DISTRIBUTION, FULL_ALGORITHM_CONTRACT,
+  FULL_PROCESSING_VERSION, FULL_RAW_DISPLAY_ORIENTATION, FULL_ADC_PREPROCESSING, FULL_DISTRIBUTION, FULL_ALGORITHM_CONTRACT,
   isFullAlgorithmSensor, isFullAlgorithmMetrics, processFullAlgorithmItem, hasFullAlgorithmResult,
-  forceOverAreaPressure, buildRawDisplayAdc, upgradeFullAlgorithmItem,
+  forceOverAreaPressure, getPressureChartMetrics, buildRawDisplayAdc, upgradeFullAlgorithmItem,
   prepareFullAlgorithmHistory, resetFullAlgorithmSessions,
   captureAlgorithmZeroBaselines,
 }

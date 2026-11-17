@@ -42,7 +42,7 @@ function contactPhysical(rows = 23, cols = 23, value = 110) {
 function rawDisplay(output) {
   let matrix = output.sourceMatrix
   for (let i = 0; i < 3; i++) matrix = matrix[0].map((_, col) => matrix.map(row => row[col]).reverse())
-  return matrix.flat()
+  return output.sensorType === 'endi-23x23' ? matrix.flat().reverse() : matrix.flat()
 }
 
 function mean(values) {

@@ -160,7 +160,7 @@ test('V18 saved force/area migrate without rerunning recognition or losing pre-r
   assert.equal(upgraded.algorithmMetrics.areaMetrics, item.algorithmMetrics.areaMetrics)
   assert.equal(upgraded.algorithmMetrics.pressureMetrics, item.algorithmMetrics.pressureMetrics)
   assert.equal(upgraded.algorithmMetrics.summary.averagePressureKPa, 10 * 123 / 200)
-  assert.equal(upgraded.algorithmMetrics.summary.maxPressureKPa, null)
+  assert.equal(upgraded.algorithmMetrics.summary.maxPressureKPa, item.algorithmMetrics.pressureMetrics.maxPressureKPa)
   assert.equal(upgraded.algorithmMetrics.summary.forceMaxN, null)
   assert.equal(upgraded.rawDisplayAvailable, true)
   assert.deepEqual(upgraded.arr, item.rawAdcArr)
@@ -175,7 +175,8 @@ test('raw display reconstructs pre-zero ADC without touching the force/area sess
     const rawSource = Array.from({ length: 1024 }, (_, index) => index % 25)
     const rawZeroed = Array(1024).fill(0)
     const source = reference.calculateSensorFrame({ raw: rawSource, timestampMs: 0 }, type)
-    assert.deepEqual(buildRawDisplayAdc(key, { algorithmRawSourceFrame: rawSource }, 0), source.sourceMatrix)
+    const display = key === 'endi-sit' ? source.sourceMatrix.slice().reverse().map(row => row.slice().reverse()) : source.sourceMatrix
+    assert.deepEqual(buildRawDisplayAdc(key, { algorithmRawSourceFrame: rawSource }, 0), display)
     const output = processFullAlgorithmItem(key, {
       algorithmRawSourceFrame: rawSource, algorithmRawFrame: rawZeroed,
       algorithmTimestampMs: 0, algorithmStreamId: `raw-display-${key}`,

@@ -13,8 +13,8 @@ const {
   prepareFullAlgorithmHistory,
 } = require('./pressureFrameProcessor');
 const {
-  FULL_PROCESSING_VERSION, FULL_ADC_PREPROCESSING, FULL_DISTRIBUTION,
-  FULL_ALGORITHM_CONTRACT, isFullAlgorithmMetrics,
+  FULL_PROCESSING_VERSION, FULL_RAW_DISPLAY_ORIENTATION, FULL_ADC_PREPROCESSING, FULL_DISTRIBUTION,
+  FULL_ALGORITHM_CONTRACT, isFullAlgorithmMetrics, getPressureChartMetrics,
 } = require('./fullAlgorithmProcessor');
 
 // ─── 传感器点位配置 ──────────────────────────────────────
@@ -698,6 +698,12 @@ const initDb = async (fileStr, filePath) => {
 //   恢复原 dbGetData 与 /getDbHistory response 中的 rows 字段即可）。
 const PLAYBACK_CHART_TARGET_POINTS = 500
 
+function getAlgorithmAveragePressure(item) {
+  return item?.algorithmMetrics?.status === 'complete'
+    ? getPressureChartMetrics(item.algorithmMetrics.pressureMetrics).algorithmAveragePressureKPa
+    : null
+}
+
 /**
  * 获取历史数据并计算压力/面积统计
  * 核心优化：每行只解析一次 JSON，避免重复 JSON.parse
@@ -713,6 +719,7 @@ async function dbGetData({ db, params }) {
       pressArr: {},
       areaArr: {},
       pressureArr: {},
+      algorithmPressureArr: {},
       forceArr: {},
       pressureAreaArr: {},
       forceAreaArr: {},
@@ -729,10 +736,12 @@ async function dbGetData({ db, params }) {
   const bucketSize = Math.max(1, Math.ceil(length / PLAYBACK_CHART_TARGET_POINTS))
 
   const pressureValue = {}
+  const algorithmPressureValue = {}
   const forceValue = {}
   const pressureAreaValue = {}
   const forceAreaValue = {}
   const pressureBucket = {}
+  const algorithmPressureBucket = {}
   const forceBucket = {}
   const pressureAreaBucket = {}
   const forceAreaBucket = {}
@@ -740,10 +749,12 @@ async function dbGetData({ db, params }) {
   const forceAreaKeys = new Set()
   keyArr.forEach((key) => {
     pressureValue[key] = []
+    algorithmPressureValue[key] = []
     forceValue[key] = []
     pressureAreaValue[key] = []
     forceAreaValue[key] = []
     pressureBucket[key] = 0
+    algorithmPressureBucket[key] = 0
     forceBucket[key] = 0
     pressureAreaBucket[key] = 0
     forceAreaBucket[key] = 0
@@ -766,6 +777,7 @@ async function dbGetData({ db, params }) {
 
       // [PERF-PLAYBACK-OPT] 累加到当前 bucket
       pressureBucket[key] = accumulateMetric(pressureBucket[key], metricStats.pressureTotal)
+      algorithmPressureBucket[key] = accumulateMetric(algorithmPressureBucket[key], getAlgorithmAveragePressure(item))
       forceBucket[key] = accumulateMetric(forceBucket[key], metricStats.forceTotal)
       pressureAreaBucket[key] = accumulateMetric(pressureAreaBucket[key], metricStats.pressureEffectiveArea)
       forceAreaBucket[key] = accumulateMetric(forceAreaBucket[key], metricStats.forceEffectiveArea)
@@ -774,10 +786,12 @@ async function dbGetData({ db, params }) {
       // bucket 满了，写出平均值
       if (bucketCount[key] >= bucketSize) {
         pressureValue[key].push(pressureBucketAverage(pressureBucket[key], forceBucket[key], pressureAreaBucket[key], bucketCount[key], forceAreaKeys.has(key)))
+        algorithmPressureValue[key].push(averageMetric(algorithmPressureBucket[key], bucketCount[key]))
         forceValue[key].push(averageMetric(forceBucket[key], bucketCount[key]))
         pressureAreaValue[key].push(averageMetric(pressureAreaBucket[key], bucketCount[key]))
         forceAreaValue[key].push(averageMetric(forceAreaBucket[key], bucketCount[key]))
         pressureBucket[key] = 0
+        algorithmPressureBucket[key] = 0
         forceBucket[key] = 0
         pressureAreaBucket[key] = 0
         forceAreaBucket[key] = 0
@@ -790,6 +804,7 @@ async function dbGetData({ db, params }) {
   for (const key of keyArr) {
     if (bucketCount[key] > 0) {
       pressureValue[key].push(pressureBucketAverage(pressureBucket[key], forceBucket[key], pressureAreaBucket[key], bucketCount[key], forceAreaKeys.has(key)))
+      algorithmPressureValue[key].push(averageMetric(algorithmPressureBucket[key], bucketCount[key]))
       forceValue[key].push(averageMetric(forceBucket[key], bucketCount[key]))
       pressureAreaValue[key].push(averageMetric(pressureAreaBucket[key], bucketCount[key]))
       forceAreaValue[key].push(averageMetric(forceAreaBucket[key], bucketCount[key]))
@@ -802,6 +817,7 @@ async function dbGetData({ db, params }) {
     areaArr: forceAreaValue,
     areaUnit: 'cm2',
     pressureArr: pressureValue,
+    algorithmPressureArr: algorithmPressureValue,
     forceArr: forceValue,
     pressureAreaArr: pressureAreaValue,
     forceAreaArr: forceAreaValue,
@@ -2041,6 +2057,8 @@ function buildCsvPlaybackData(csvRows) {
             // declared measurements without claiming the installed algorithm.
             formulaFile: null, formulaProfile: null, algorithmVersion: 'unknown',
             algorithmContract: FULL_ALGORITHM_CONTRACT,
+            // CSV ADC is already in its declared display/export coordinates.
+            rawDisplayOrientation: FULL_RAW_DISPLAY_ORIENTATION,
             pressureMethod: 'force-over-area', importedMetric: true, visualizationSource: 'csv-declared-raw-adc',
             algorithmOptions: { rotation: 3 },
           },
@@ -2094,6 +2112,7 @@ function buildCsvPlaybackData(csvRows) {
       pressArr: {},
       areaArr: {},
       pressureArr: {},
+      algorithmPressureArr: {},
       forceArr: {},
       pressureAreaArr: {},
       forceAreaArr: {},
@@ -2105,10 +2124,12 @@ function buildCsvPlaybackData(csvRows) {
   const keyArr = Object.keys(firstData).filter(Boolean)
   const bucketSize = Math.max(1, Math.ceil(rows.length / PLAYBACK_CHART_TARGET_POINTS))
   const pressureArr = {}
+  const algorithmPressureArr = {}
   const forceArr = {}
   const pressureAreaArr = {}
   const forceAreaArr = {}
   const pressureBucket = {}
+  const algorithmPressureBucket = {}
   const forceBucket = {}
   const pressureAreaBucket = {}
   const forceAreaBucket = {}
@@ -2117,10 +2138,12 @@ function buildCsvPlaybackData(csvRows) {
 
   keyArr.forEach((key) => {
     pressureArr[key] = []
+    algorithmPressureArr[key] = []
     forceArr[key] = []
     pressureAreaArr[key] = []
     forceAreaArr[key] = []
     pressureBucket[key] = 0
+    algorithmPressureBucket[key] = 0
     forceBucket[key] = 0
     pressureAreaBucket[key] = 0
     forceAreaBucket[key] = 0
@@ -2139,6 +2162,7 @@ function buildCsvPlaybackData(csvRows) {
       if (metricStats.pressureMethod === 'force-over-area') forceAreaKeys.add(key)
 
       pressureBucket[key] = accumulateMetric(pressureBucket[key], metricStats.pressureTotal)
+      algorithmPressureBucket[key] = accumulateMetric(algorithmPressureBucket[key], getAlgorithmAveragePressure(item))
       forceBucket[key] = accumulateMetric(forceBucket[key], metricStats.forceTotal)
       pressureAreaBucket[key] = accumulateMetric(pressureAreaBucket[key], metricStats.pressureEffectiveArea)
       forceAreaBucket[key] = accumulateMetric(forceAreaBucket[key], metricStats.forceEffectiveArea)
@@ -2146,10 +2170,12 @@ function buildCsvPlaybackData(csvRows) {
 
       if (bucketCount[key] >= bucketSize) {
         pressureArr[key].push(pressureBucketAverage(pressureBucket[key], forceBucket[key], pressureAreaBucket[key], bucketCount[key], forceAreaKeys.has(key)))
+        algorithmPressureArr[key].push(averageMetric(algorithmPressureBucket[key], bucketCount[key]))
         forceArr[key].push(averageMetric(forceBucket[key], bucketCount[key]))
         pressureAreaArr[key].push(averageMetric(pressureAreaBucket[key], bucketCount[key]))
         forceAreaArr[key].push(averageMetric(forceAreaBucket[key], bucketCount[key]))
         pressureBucket[key] = 0
+        algorithmPressureBucket[key] = 0
         forceBucket[key] = 0
         pressureAreaBucket[key] = 0
         forceAreaBucket[key] = 0
@@ -2161,6 +2187,7 @@ function buildCsvPlaybackData(csvRows) {
   keyArr.forEach((key) => {
     if (bucketCount[key] > 0) {
       pressureArr[key].push(pressureBucketAverage(pressureBucket[key], forceBucket[key], pressureAreaBucket[key], bucketCount[key], forceAreaKeys.has(key)))
+      algorithmPressureArr[key].push(averageMetric(algorithmPressureBucket[key], bucketCount[key]))
       forceArr[key].push(averageMetric(forceBucket[key], bucketCount[key]))
       pressureAreaArr[key].push(averageMetric(pressureAreaBucket[key], bucketCount[key]))
       forceAreaArr[key].push(averageMetric(forceAreaBucket[key], bucketCount[key]))
@@ -2173,6 +2200,7 @@ function buildCsvPlaybackData(csvRows) {
     areaArr: forceAreaArr,
     areaUnit: 'cm2',
     pressureArr,
+    algorithmPressureArr,
     forceArr,
     pressureAreaArr,
     forceAreaArr,

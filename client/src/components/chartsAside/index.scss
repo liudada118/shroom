@@ -13,6 +13,8 @@
 
     .draggable-panel-body {
         box-sizing: border-box;
+        max-height: calc(100vh - 10rem);
+        overflow-y: auto;
     }
 }
 
@@ -69,8 +71,8 @@
     }
 
     .chartDataLabel {
-        flex: 0 0 4.7rem;
-        white-space: nowrap;
+        flex: 0 0 5.5rem;
+        line-height: 1.35;
     }
 
     .chartCanvas {

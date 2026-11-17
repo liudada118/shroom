@@ -64,7 +64,7 @@ function assertOriginalMetrics(actual, expected, sensor, rotation = 3) {
   assert.deepEqual(actual.algorithmMetrics.forceMetrics, expected.forceMetrics)
   assert.deepEqual(actual.algorithmMetrics.areaMetrics, expected.areaMetrics)
   assert.deepEqual(actual.algorithmMetrics.pressureMetrics, expected.pressureMetrics)
-  const rawDisplay = rotate(expected.sourceMatrix, rotation).flat()
+  const rawDisplay = rotate(expected.sourceMatrix, rotation + (sensor.key === 'endi-sit' ? 2 : 0)).flat()
   assert.deepEqual(actual.arr, rawDisplay)
   assert.deepEqual(actual.rawAdcArr, rawDisplay)
   assert.deepEqual(actual.calibrationAdcArr, expected.displayAdcMatrix.flat())
@@ -79,7 +79,10 @@ function assertOriginalMetrics(actual, expected, sensor, rotation = 3) {
   assert.equal(summary.averagePressureKPa, expected.areaMetrics.areaCm2 > 0
     ? 10 * expected.forceMetrics.forceN / expected.areaMetrics.areaCm2 : null)
   assert.equal(summary.pressureMethod, 'force-over-area')
-  for (const field of ['maxPressureKPa', 'maximumPressureDisplayKPa', 'forceMaxN', 'forceAverageN', 'activePointCount']) {
+  assert.equal(summary.activePointCount, expected.pressureMetrics.pointPressureCount)
+  assert.equal(summary.maxPressureKPa, expected.pressureMetrics.pointPressureCount === 0 ? 0 : expected.pressureMetrics.maxPressureKPa)
+  assert.equal(summary.maximumPressureDisplayKPa, summary.maxPressureKPa)
+  for (const field of ['forceMaxN', 'forceAverageN']) {
     assert.equal(summary[field], null)
   }
 }
@@ -214,7 +217,7 @@ test('V18 upgrades preserve acquired history-dependent force/area without rerunn
   assert.ok(upgraded.pressureArr.every(value => value === null))
   const withRaw = upgradeFullAlgorithmItem(sensor.key, { ...old, algorithmPhysicalSourceFrame: physical })
   assert.equal(withRaw.rawDisplayAvailable, true)
-  assert.deepEqual(withRaw.arr, rotate(expected.sourceMatrix).flat())
+  assert.deepEqual(withRaw.arr, rotate(expected.sourceMatrix, 5).flat())
   assert.deepEqual(withRaw.algorithmMetrics.summary, upgraded.algorithmMetrics.summary)
 })
 
@@ -308,6 +311,7 @@ test('saved V19 force/area remain exactly attributed to the old algorithm after 
   const missing = Array(2116).fill(null)
   const item = {
     arr: Array(2116).fill(12), rawAdcArr: Array(2116).fill(12), rawDisplayAvailable: true,
+    matrixMeta: { matrix_key: 'endi-sit', width: 46, height: 46 },
     pressureArr: missing, forceArr: missing, pointAreaArr: missing,
     calibrationValidMask: Array(2116).fill(1),
     processing: {
@@ -324,10 +328,12 @@ test('saved V19 force/area remain exactly attributed to the old algorithm after 
     },
   }
   const rows = [{ timestamp: 100, data: { 'endi-sit': item } }]
-  assert.equal(hasFullAlgorithmResult(item), true)
-  assert.equal(prepareFullAlgorithmHistory(rows), rows)
+  assert.equal(hasFullAlgorithmResult(item), false)
+  const migrated = prepareFullAlgorithmHistory(rows)
+  assert.equal(migrated[0].data['endi-sit'].algorithmMetrics.forceMetrics, item.algorithmMetrics.forceMetrics)
   const restored = ensureProcessedMatrixItem('endi-sit', item)
-  assert.deepEqual(restored, item)
+  assert.deepEqual(restored.rawAdcArr, item.rawAdcArr)
+  assert.equal(hasFullAlgorithmResult(restored), true)
   assert.equal(restored.algorithmMetrics.version, '2.11.0')
   assert.equal(restored.algorithmMetrics.summary.forceN, 321)
 })

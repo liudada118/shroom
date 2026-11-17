@@ -1,0 +1,35 @@
+{
+  "sensorType": "endi-23x23",
+  "jsFile": "seatBackrestPressure_v2.12.0.js",
+  "jsSha256": "438564a438c7c453483230907ad826f96134ef2897717d354b8be49d9cd066ed",
+  "jsVersion": "2.12.0",
+  "sourceApplicationVersion": "V2.7.110",
+  "files": 31,
+  "liveFrames": 6200,
+  "liveContactFrames": 6200,
+  "staticSamples": 124,
+  "staticContactSamples": 124,
+  "maxForceN": 86.33,
+  "mismatches": {},
+  "samples": {},
+  "regionModeCounts": {
+    "标准档|standard": 6200
+  },
+  "timingMs": {
+    "hostLive": {
+      "p50": 0.587879000000612,
+      "p95": 0.880710999999792
+    },
+    "jsLive": {
+      "p50": 1.0745919999990292,
+      "p95": 2.010167999999794,
+      "max": 15.636079999999993
+    },
+    "jsMapPhysical": {
+      "p50": 1.283676999999443,
+      "p95": 2.639490999999907,
+      "max": 6.638282000000004
+    }
+  },
+  "passed": true
+}

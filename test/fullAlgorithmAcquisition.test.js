@@ -34,13 +34,18 @@ function assertAlgorithmOutput(actual, expected, rawExpected = expected) {
   for (const field of ['pressureArr', 'forceArr', 'pointAreaArr']) assert.ok(actual[field].every(value => value === null))
   let raw = rawExpected.sourceMatrix
   for (let i = 0; i < 3; i++) raw = raw[0].map((_, column) => raw.map(row => row[column]).reverse())
-  assert.deepEqual(actual.arr, raw.flat())
-  assert.deepEqual(actual.rawAdcArr, raw.flat())
+  const display = rawExpected.sensorType === 'endi-23x23' ? raw.flat().reverse() : raw.flat()
+  assert.deepEqual(actual.arr, display)
+  assert.deepEqual(actual.rawAdcArr, display)
   assert.equal(actual.rawDisplayAvailable, true)
   assert.equal(actual.algorithmMetrics.summary.pressureMethod, 'force-over-area')
-  for (const field of ['maxPressureKPa', 'maximumPressureDisplayKPa', 'forceMaxN', 'forceAverageN']) {
+  for (const field of ['forceMaxN', 'forceAverageN']) {
     assert.equal(actual.algorithmMetrics.summary[field], null)
   }
+  assert.equal(actual.algorithmMetrics.summary.activePointCount, expected.pointPressureStats.validCount)
+  assert.equal(actual.algorithmMetrics.summary.maxPressureKPa, expected.pointPressureStats.maxKpa)
+  assert.equal(actual.algorithmMetrics.summary.maximumPressureDisplayKPa, expected.pointPressureStats.maxKpa)
+  assert.equal(actual.algorithmMetrics.summary.algorithmAveragePressureKPa, expected.pointPressureStats.avgKpa)
   assert.equal(actual.algorithmMetrics.summary.averagePressureKPa,
     expected.areaMetrics.areaCm2 > 0 ? 10 * expected.forceMetrics.forceN / expected.areaMetrics.areaCm2 : null)
 }

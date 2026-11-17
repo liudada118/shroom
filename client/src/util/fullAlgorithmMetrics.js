@@ -4,6 +4,20 @@ function finiteOrNull(value) {
   return value == null || !Number.isFinite(Number(value)) ? null : Number(value)
 }
 
+// Use the acquired algorithm's pressure diagnostics, including older saved
+// frames. Raw ADC and the force/area ratio cannot establish a pressure peak.
+export function getPressureChartMetrics(pressureMetrics) {
+  const activePointCount = [pressureMetrics?.pointPressureCount, pressureMetrics?.validCount]
+    .find(value => Number.isInteger(value) && value >= 0) ?? null
+  const maximum = pressureMetrics?.maxPressureKPa
+  const maxPressureKPa = activePointCount === 0 ? 0
+    : typeof maximum === 'number' && Number.isFinite(maximum) && maximum >= 0 ? maximum : null
+  const average = pressureMetrics?.avgPressureKPa
+  const algorithmAveragePressureKPa = activePointCount === 0 ? 0
+    : typeof average === 'number' && Number.isFinite(average) && average >= 0 ? average : null
+  return { activePointCount, maxPressureKPa, maximumPressureDisplayKPa: maxPressureKPa, algorithmAveragePressureKPa }
+}
+
 export function getFullAlgorithmSummary(algorithmMetrics) {
   if (!algorithmMetrics || !['complete', 'unavailable'].includes(algorithmMetrics.status)) return null
   const hasRatioContract = algorithmMetrics.pressureMethod === 'force-over-area'
@@ -24,11 +38,9 @@ export function getFullAlgorithmSummary(algorithmMetrics) {
     forceN,
     areaCm2,
     averagePressureKPa: forceN == null || areaCm2 == null || areaCm2 <= 0 ? null : 10 * forceN / areaCm2,
-    maxPressureKPa: null,
-    maximumPressureDisplayKPa: null,
+    ...getPressureChartMetrics(unavailable ? null : algorithmMetrics.pressureMetrics),
     forceMaxN: null,
     forceAverageN: null,
-    activePointCount: null,
   }
 }
 

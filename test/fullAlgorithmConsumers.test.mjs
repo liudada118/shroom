@@ -41,7 +41,7 @@ test('UI, reports and export retain original force/area and derive pressure only
     )
     const expectedPressure = expected.areaMetrics.areaCm2 > 0 ? 10 * expected.forceMetrics.forceN / expected.areaMetrics.areaCm2 : null
     assert.equal(pressure.average, expectedPressure)
-    assert.equal(pressure.max, null)
+    assert.equal(pressure.max, expected.pressureMetrics.maxPressureKPa)
     assert.equal(force.total, expected.forceMetrics.forceN)
     assert.equal(force.effectiveArea, expected.areaMetrics.areaCm2)
     const canonical = getCanonicalMetricStats(key, actual)

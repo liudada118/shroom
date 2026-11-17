@@ -20,6 +20,7 @@ import { getDisplayType, useEquipStore } from "../../store/equipStore";
 import { useWhyReRender } from "../../hooks/useWindowsize";
 import { applyZoomBounds, animateCameraZoom, bindZoomValueSync, getZoomValueFromCamera } from "../../util/threeZoom";
 import { getThreeDisplaySettings } from "../../util/threeDisplayProcessing";
+import { prepareChairModelAdc } from "../../util/chairModelDisplay";
 import { isEndiBackPointVisible } from "../../util/endiBackVisibleMask";
 import { disableRightMouseControl } from "../../util/threeInteraction";
 
@@ -1299,37 +1300,8 @@ const Canvas =
                 data.back = rotateMatrix(data.back, dimensions.back.height, dimensions.back.width)
             }
 
-            {
-                const yArr = []
-                for (let i = 0; i < sitH; i++) {
-                    yArr.push(sitH - 1 - i)
-                }
-
-                const newArr = []
-                for (let i = 0; i < sitH; i++) {
-                    for (let j = 0; j < sitW; j++) {
-                        const width = yArr[i]
-                        newArr.push(data.sit[width * sitW + sitW - 1 - j])
-                    }
-                }
-                data.sit = newArr
-            }
-
-            {
-                const yArr = []
-                for (let i = 0; i < backH; i++) {
-                    yArr.push(backH - 1 - i)
-                }
-
-                const newArr = []
-                for (let i = 0; i < backH; i++) {
-                    for (let j = 0; j < backW; j++) {
-                        const width = yArr[i]
-                        newArr.push(data.back[width * backW + backW - 1 - j])
-                    }
-                }
-                data.back = newArr
-            }
+            data.sit = prepareChairModelAdc(data.sit, sitW, sitH)
+            data.back = prepareChairModelAdc(data.back, backW, backH)
 
             Object.keys(allConfig).forEach((key) => {
                 const obj = allConfig[key]

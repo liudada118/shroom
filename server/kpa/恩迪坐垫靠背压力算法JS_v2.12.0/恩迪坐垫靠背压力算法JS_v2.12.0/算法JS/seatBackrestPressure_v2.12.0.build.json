@@ -1,0 +1,35 @@
+{
+  "file": "seatBackrestPressure_v2.12.0.js",
+  "version": "2.12.0",
+  "sourceApplicationVersion": "V2.7.110",
+  "bytes": 184676,
+  "sha256": "438564a438c7c453483230907ad826f96134ef2897717d354b8be49d9cd066ed",
+  "kernelSha256": "bde6f5f8353572580fdc926aef2e5434302d4d6dccb083cf57b2566c315f8323",
+  "sourceFilesSha256": {
+    "sensorConfig.ts": "33af221c48197ab53e84c1496af0bae1bd000efde4785df789ec216eea2dc3eb",
+    "adcCompensation.ts": "76e3bf45311809ad680cc3766db84d2cb65ce2f9caa81461b8c28d6821cb99dd",
+    "endiSeatForce.ts": "27a243a52f3671a095c462008252d75fd0fa6fddeaac03d0aae8b9dc8349a863",
+    "endiBackrestForce.ts": "d73c0e821dc0f45b739af53793fc5045e16449a511f20a76104a30aafd1c62fa",
+    "endiPointPressure.ts": "edf1660db53802d9dfb475dfb1f365e6272fbf38d675dd3eadd9b0010ebc74c9",
+    "pressureUnits.ts": "5904c35c9458d2995c1170dc39a8cfc6da021ab6d604086e89faceb46b3c5699",
+    "version.ts": "c0255aee5471fada66330b36fcfb36a67cc86f8c956906f4c3ba312598e3360e",
+    "endiCushion/endiCushionCore.js": "c3794b57a92aa0f87847c2f2d7fb8c3d4a1ae70e2ea3d0b7783e59ef03910357",
+    "endiBackrest/endiBackrestCore.js": "d7940a674ce9b4a5ef5c0aec2770b420159e5e26f4a04eaae19e2aef2e3711bd"
+  },
+  "forbiddenTokenCounts": {
+    "Date\\.now": 0,
+    "Math\\.random": 0,
+    "\\bperformance\\.": 0,
+    "\\bprocess\\.": 0,
+    "\\brequire\\(": 0,
+    "\\bimport\\(": 0,
+    "localStorage": 0,
+    "\\bwindow\\.": 0,
+    "\\bdocument\\.": 0,
+    "setTimeout": 0,
+    "setInterval": 0,
+    "\\bfetch\\(": 0,
+    "XMLHttpRequest": 0
+  },
+  "dateNowBranch": "靠背核心 process() 缺省时间分支替换为抛错（不可达：静态 0 / 会话显式时间）"
+}

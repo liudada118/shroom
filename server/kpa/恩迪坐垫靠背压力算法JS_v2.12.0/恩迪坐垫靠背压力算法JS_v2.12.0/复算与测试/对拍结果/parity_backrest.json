@@ -1,0 +1,36 @@
+{
+  "sensorType": "new-backrest-32x25",
+  "jsFile": "seatBackrestPressure_v2.12.0.js",
+  "jsSha256": "438564a438c7c453483230907ad826f96134ef2897717d354b8be49d9cd066ed",
+  "jsVersion": "2.12.0",
+  "sourceApplicationVersion": "V2.7.110",
+  "files": 44,
+  "liveFrames": 8800,
+  "liveContactFrames": 8800,
+  "staticSamples": 176,
+  "staticContactSamples": 176,
+  "maxForceN": 82.94,
+  "mismatches": {},
+  "samples": {},
+  "regionModeCounts": {
+    "标准档|standard": 8800,
+    "估算|standard": 3
+  },
+  "timingMs": {
+    "hostLive": {
+      "p50": 0.7346309999993537,
+      "p95": 1.0878100000002178
+    },
+    "jsLive": {
+      "p50": 1.3794920000000275,
+      "p95": 2.4042480000007345,
+      "max": 16.880298999999923
+    },
+    "jsMapPhysical": {
+      "p50": 1.3804110000019136,
+      "p95": 2.506733999998687,
+      "max": 6.186235000000011
+    }
+  },
+  "passed": true
+}

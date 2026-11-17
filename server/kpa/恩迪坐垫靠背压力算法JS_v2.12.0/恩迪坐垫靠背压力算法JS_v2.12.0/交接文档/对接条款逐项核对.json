@@ -1,0 +1,310 @@
+[
+ {
+  "id": "D01",
+  "section": "§1/§12",
+  "requirement": "交付单个 dummyPressure_vX.Y.Z.js，版本号高于 2.10.4，不覆盖已发布版本",
+  "status": "已完成",
+  "evidence": "交付单文件 seatBackrestPressure_v2.12.0.js，VERSION = 2.12.0，高于 2.10.4，也高于本项目已发布的 2.11.1，没有覆盖旧文件。文件名沿用本项目前缀，原因见 T07。"
+ },
+ {
+  "id": "D02",
+  "section": "§1/§5.3/§12",
+  "requirement": "交付标定原始数据表（csv/xlsx）",
+  "status": "已完成",
+  "evidence": "75 份原始采集 CSV（坐垫 31 个位置、靠背 44 个位置）原样交付，逐份 SHA256 见索引。§5.3 格式长表：坐垫 49,800 行、靠背 53,600 行；另有逐帧载荷与读数表（15,000 帧）。覆盖格是推断的，见 G03。"
+ },
+ {
+  "id": "D03",
+  "section": "§1/§12",
+  "requirement": "交付说明：选了哪个方案、拟合方法、残差统计",
+  "status": "已完成",
+  "evidence": "交接说明第 3–5 节：方案选择、拟合方法名称与公式、各档残差（标准档识别、连续拟合、面积三类）。"
+ },
+ {
+  "id": "I01",
+  "section": "§2/§12",
+  "requirement": "新增 calculateDummyMatrixPressureMap(adcMatrix, sensorType)，返回 {kpa, avgKpa, maxKpa, validCount, mode:'per-cell'}",
+  "status": "已完成",
+  "evidence": "已导出，与 calculateMatrixPressureMap 是同一个函数。返回 kpa、avgKpa、maxKpa、validCount、mode = 'per-cell'，另带 unit、grid、forceN、areaCm2 等。"
+ },
+ {
+  "id": "I02",
+  "section": "§2",
+  "requirement": "kpa 与输入同形，无效格填 0，不返回 null/undefined",
+  "status": "已完成",
+  "evidence": "物理形输入（23×23 / 32×25）输出同形物理点压强；插值形输入（46×46 / 64×50）输出同形插值格压强。无效格和无接触格为 0。自检第 2、3 项和 300 帧静态抽样对拍验证。"
+ },
+ {
+  "id": "I03",
+  "section": "§2",
+  "requirement": "avgKpa、maxKpa 必须从 kpa 数组直接统计，不能走另一套路径",
+  "status": "已完成",
+  "evidence": "avgKpa = kpa 中正值格的算术平均，maxKpa = kpa 最大值。实时会话的平均压强、最大压强也由同一帧的逐格矩阵统计，与上位机 V2.7.104 起的口径相同（面板与热力图格子同源）。自检第 3 项断言。"
+ },
+ {
+  "id": "C01",
+  "section": "§3",
+  "requirement": "选择方案一（全局曲线 + 单格 a/b）或方案二（分部位曲线 + 单格 a/b），两者都要 ADC 域逐格修正",
+  "status": "部分完成",
+  "evidence": "选的是分部位方案（相当于方案二）：坐垫、靠背各一套独立的实测拟合模型。部位内的修正是“位置级增益”（坐垫 31 个位置锚点、靠背 44 个节点，按砝码中心插值），不是逐格 a[i]/b[i]。逐格修正的接口和 ADC 域公式已经放进 CELL_CALIBRATION，但没有逐格实测，系数为空。"
+ },
+ {
+  "id": "C02",
+  "section": "§3",
+  "requirement": "分部位时 dummy-body / sleeve / left-leg / right-leg 各一条曲线",
+  "status": "不适用（假人专属）",
+  "evidence": "本项目只有坐垫和靠背两个部位，每个部位一套模型。"
+ },
+ {
+  "id": "C03",
+  "section": "§3",
+  "requirement": "a 分布判据：部位中位数极差 < 10% 且部位内 CV < 15% 用方案一；偏离 > 10% 局部升级；CV > 25% 需讨论",
+  "status": "部分完成",
+  "evidence": "没有逐格 a，用位置增益 g 作代理：中位数 坐垫 1.0038、靠背 1.0013（极差 0.25%，< 10%）；CV 坐垫 7.26%、靠背 7.88%（< 15%）；范围 坐垫 −13.6%…+13.4%、靠背 −20.5%…+17.4%。按判据两部位可以共用一条曲线，但两套模型的特征量不同（坐垫 Σ−ln(1−ADC/256)，靠背 ΣADC²），本版不合并。g 是位置级，不等于逐格 a。"
+ },
+ {
+  "id": "C04",
+  "section": "§3",
+  "requirement": "软件永远调用 calculateDummyMatrixPressureMap(matrix, sensorType)，方案变化不改接口",
+  "status": "已完成",
+  "evidence": "接口和 d.ts 固定。以后补逐格系数只改 CELL_CALIBRATION 的内容，接口不变。"
+ },
+ {
+  "id": "M01",
+  "section": "§4.1/§12",
+  "requirement": "补 0.5 / 1.0 / 1.5 / 2.0 kPa 低压段实测",
+  "status": "需实测（未完成）",
+  "evidence": "现有数据最低一档是 1 块砝码 = 15.925 N，按砝码底面 63.62 cm² 为 2.503 kPa。2 kPa 以下没有实测。连续拟合是过原点的幂律曲线（不是硬拉直线），但 2.5 kPa 以下仍属外推。现场验收表“低压段实测”页给了记录格式。"
+ },
+ {
+  "id": "M02",
+  "section": "§4.2/§12",
+  "requirement": "各部位统一拟合方法（倾向平滑单调样条），给方法名和各档残差",
+  "status": "部分完成",
+  "evidence": "两部位用同一种方法：对数-对数线性最小二乘（幂律）m = e^c0 · (g · X)^k；X 坐垫 = Σ−ln(1−ADC/256)，靠背 = ΣADC²；g 为位置增益（高斯核插值，坐垫 σ = 2.5 格，靠背 σ = 35 mm）。标准砝码档另用位置锚点 + 状态机识别。不是样条。各档残差见交接说明第 5 节和逐档残差统计.csv。"
+ },
+ {
+  "id": "G01",
+  "section": "§5.1",
+  "requirement": "单格修正在 ADC 域 master(a[i] × ADC[i] + b[i])，不要 kPa 域事后补偿",
+  "status": "部分完成",
+  "evidence": "CELL_CALIBRATION 的公式就是 ADC 域，在物理 ADC 进入算法前作用。位置增益乘在特征量上，也在曲线之前。没有任何 kPa 域事后补偿。但逐格系数为空。坐垫热力图的 ADC 补偿（1.0069947916666666 × ADC + 6.018421875）是整片传感器的全局参数，只用于热力图和逐格分配权重，不是逐格系数。"
+ },
+ {
+  "id": "G02",
+  "section": "§5.2/§12",
+  "requirement": "每格 3 档（建议 2.5 / 10 / 20 kPa），最少 2 档；留一点做残差检验",
+  "status": "需实测（未完成）",
+  "evidence": "没有单格小压头多档数据。按本项目尺寸需要 529 + 800 = 1,329 个物理点 × 3 档。"
+ },
+ {
+  "id": "G03",
+  "section": "§5.3",
+  "requirement": "原始表列 sensorType, row, col, load_kPa, measured_adc, repeat_index",
+  "status": "已完成",
+  "evidence": "六列齐全，另加 source_file、round、blocks、sample_index、frame_index、timestamp_ms、cell_distance_mm、coverage_basis。load_kPa = 块数 × 15.925 N ÷ 63.62 cm² × 10 = 块数 × 2.5031 kPa。覆盖格按每轮放稳帧原始 ADC 加权质心 ± 45 mm（砝码底面半径）推断，因为采集时没有记录放置坐标；coverage_basis 列写明 inferred_adc_centroid_r45mm。"
+ },
+ {
+  "id": "G04",
+  "section": "§5.4/§12",
+  "requirement": "单格小压头标定，或记录砝码覆盖格并按实际接触面积算压强；不能把平均压强平摊作单格真值",
+  "status": "部分完成",
+  "evidence": "载荷压强按砝码底面实际接触面积 63.62 cm² 计算，没有按整片传感器平摊。覆盖格是推断，不是现场记录；没有单格小压头数据。"
+ },
+ {
+  "id": "G05",
+  "section": "§5.4/§7/§12",
+  "requirement": "书面确认 DUMMY_POINTWISE_MULTIPLIER = 2 已移除，标定没有用平摊压强",
+  "status": "已完成",
+  "evidence": "书面确认见交接说明第 6 节：本算法没有逐点 ×2；逐格压强不乘倍率；最大压强显示不做 ×2 / ÷3。标定载荷按砝码实际接触面积，没有用平摊压强。仍保留的倍率都是用户指定的业务估算规则（超量程 力×2、靠背超量程 面积×2、坐垫真人 力×0.4 / 面积×0.9 / 最大格×1.5），已逐条列出，不是标定方式。"
+ },
+ {
+  "id": "F01",
+  "section": "§6",
+  "requirement": "CELL_CALIBRATION 与 master 曲线内联在同一个 JS",
+  "status": "已完成",
+  "evidence": "坐垫 31 位置、靠背 44 节点的拟合参数、状态机参数、CELL_CALIBRATION 全部内联在单个 JS（约 185 KB），没有外部参数文件。"
+ },
+ {
+  "id": "F02",
+  "section": "§6",
+  "requirement": "每部位写明 rows / cols / order:'row-major' / origin:'top-left'，cells 长度严格 = rows × cols",
+  "status": "已完成",
+  "evidence": "endi-23x23：rows 23、cols 23、cells 529；new-backrest-32x25：rows 32、cols 25、cells 800；index = row × cols + col。自检第 1 项断言。"
+ },
+ {
+  "id": "F03",
+  "section": "§6",
+  "requirement": "标定失败格给 null，不要 0 或省略；算法回落到该部位有效格平均 a、b",
+  "status": "已完成",
+  "evidence": "回落规则已实现：null 格用该部位有效格平均 a、b；全部为 null 时回落恒等（a = 1，b = 0）。本版 cells 全为 null，status = 'uncalibrated'，表示“没有标定”，不是“标定失败”。"
+ },
+ {
+  "id": "R01",
+  "section": "§7/§12",
+  "requirement": "删除 DUMMY_POINTWISE_THRESHOLD = 150、top50 分支、DUMMY_POINTWISE_MULTIPLIER = 2，所有部位同一路径",
+  "status": "已完成",
+  "evidence": "交付 JS 中检索 POINTWISE_THRESHOLD、POINTWISE_MULTIPLIER、top50、buildTopAverage 均为 0 处，本算法也从来没有这些机制。所有接触区都按 P_i = P_区 × ADC_i / mean(ADC_区) 分配。例外需要说明：坐垫真人估算区按用户 V2.7.110 的要求，用 ADC_i^γ 分配使最大格 = 原最大格 × 1.5（区内平均不变）。"
+ },
+ {
+  "id": "R02",
+  "section": "§7",
+  "requirement": "保留 DUMMY_MIN_VALID_POINTS = 3 与 DUMMY_VALID_ADC_THRESHOLD = 10",
+  "status": "按本项目对应",
+  "evidence": "本项目对应参数：接触区至少 3 个物理点（ADC ≥ 1，八邻域连通）；热力图 ADC 补偿后 ≤ 30 置 0；面积轮廓阈值 坐垫 29、靠背 39。名字不同，数值来自恩迪实测。"
+ },
+ {
+  "id": "P01",
+  "section": "§8",
+  "requirement": "按物理点位标定；先按物理点换算 kPa，再插值到显示网格",
+  "status": "部分完成",
+  "evidence": "力与面积在物理点（未补偿的物理 ADC）上计算。逐格压强在插值网格上按插值 ADC 比例分配，这是上位机热力图已经确定的口径。为满足“物理点 kPa”，逐格接口的物理形输出 = 每个物理点对应的 2×2 插值子格平均（物理点总和 × 4 = 插值格总和，力等价）。计算顺序与 §8 不完全相同。"
+ },
+ {
+  "id": "P02",
+  "section": "§8",
+  "requirement": "物理总点 780 = 上身 324 + 袖 36 × 2 + 腿 192 × 2",
+  "status": "不适用（假人专属）",
+  "evidence": "本项目物理点 = 坐垫 529 + 靠背 800 = 1,329。"
+ },
+ {
+  "id": "B01",
+  "section": "§9/§12",
+  "requirement": "答复通用标定还是每台标定；给出同批次格间差异实测范围，超过 ±20% 需每台标定",
+  "status": "部分完成",
+  "evidence": "答复：按批次通用标定，参数内联 JS。现有数据只来自一台坐垫和一台靠背，没有同批多台数据，给不出“同批次”差异。单台内部位置增益相对中位数：坐垫 −13.6%…+13.4%，靠背 −20.5%…+17.4%（靠背最边缘位置接近 ±20%）。建议同批再测至少 3 台。"
+ },
+ {
+  "id": "B02",
+  "section": "§9",
+  "requirement": "若每台标定：表独立文件绑定机器，不进通用包，设计出厂流程",
+  "status": "需实测（未完成）",
+  "evidence": "本版按通用标定，没有设计每台流程。同批测试若超过 ±20%，再把 CELL_CALIBRATION 拆成按设备号加载的独立文件，交接说明第 7 节有草案。"
+ },
+ {
+  "id": "A01",
+  "section": "§10-1",
+  "requirement": "跨部位一致性：同一砝码依次压各部位，读数互相误差 < 10%",
+  "status": "部分完成",
+  "evidence": "现有数据（同一砝码压不同位置）：最终输出跨位置极差 坐垫 ≤ 1.25%、靠背 ≤ 1.40%，坐垫与靠背之间 ≤ 0.13%，达标。但这是标准砝码档识别的结果；未知载荷走连续拟合，跨位置极差 坐垫 14.5%–40.6%、靠背 11.2%–58.3%（1 块最大），不达标。现场复测待做。"
+ },
+ {
+  "id": "A02",
+  "section": "§10-2",
+  "requirement": "硬币大小压头压出可辨轮廓边界",
+  "status": "需实测（未完成）",
+  "evidence": "没有小压头数据。物理点距 20 mm（靠背行方向 26 mm），硬币（20–25 mm）只覆盖 1–4 个物理点，2× 线性插值后轮廓分辨率受点距限制。需现场测。"
+ },
+ {
+  "id": "A03",
+  "section": "§10-3",
+  "requirement": "同部位均布加载，各格标准差 < 8%，且标定后明显下降",
+  "status": "需实测（未完成）",
+  "evidence": "没有均布加载数据；没有逐格修正，也就没有“标定前后”对比。逐格压强按 ADC 比例分配，均布时的 CV 由传感器 ADC 本身的均匀性决定。"
+ },
+ {
+  "id": "T01",
+  "section": "§11-1",
+  "requirement": "CommonJS module.exports，require 直接加载，加载无副作用",
+  "status": "已完成",
+  "evidence": "module.exports 导出，同时挂浏览器全局 SeatBackrestPressureV2120。加载只定义冻结常量和函数。Node require、delete require.cache 后重载、浏览器无 Node 环境加载均通过。"
+ },
+ {
+  "id": "T02",
+  "section": "§11-2",
+  "requirement": "无第三方 npm 依赖，不 require Node 内置模块，浏览器和 Node 都能运行",
+  "status": "已完成",
+  "evidence": "构建时检查 require(、import(、fs、process.、window.、document.、localStorage、fetch( 等，计数全为 0（build.json）。"
+ },
+ {
+  "id": "T03",
+  "section": "§11-3",
+  "requirement": "现有导出一个不删（名字和签名保留）",
+  "status": "已完成",
+  "evidence": "本项目已发布的 v2.11.1 有 13 个导出，全部保留，参数个数不变。假人的四个函数名（calculateDummyValuesPressure 等）不属于本项目，没有加入，避免软件误以为本文件能算假人。"
+ },
+ {
+  "id": "T04",
+  "section": "§11-4",
+  "requirement": "sensorType 字符串不改",
+  "status": "已完成",
+  "evidence": "endi-23x23、new-backrest-32x25，与上位机一致；其他字符串抛 TypeError。"
+ },
+ {
+  "id": "T05",
+  "section": "§11-5",
+  "requirement": "矩阵维度不改",
+  "status": "已完成",
+  "evidence": "原始帧 1024 字节；物理 23×23、32×25；插值 46×46、64×50。"
+ },
+ {
+  "id": "T06",
+  "section": "§11-6",
+  "requirement": "算法单位 kPa，N/cm² 由显示层换算",
+  "status": "已完成",
+  "evidence": "kpa、avgKpa、maxKpa 都是 kPa；N/cm² 只在 kpaToNcm2（÷10，按 0.001 取整，与上位机写法相同）。"
+ },
+ {
+  "id": "T07",
+  "section": "§11-7",
+  "requirement": "文件名匹配 ^dummyPressure.*\\.js$，带版本号，不覆盖已发布版本",
+  "status": "按本项目对应",
+  "evidence": "文件名 seatBackrestPressure_v2.12.0.js，带版本号、不覆盖旧版。按本项目先例沿用 seatBackrestPressure 前缀，没有用 dummyPressure：本文件不含假人算法，用假人文件名会让软件按假人 sensorType 加载。需要的话可以只改文件名，内容不变。"
+ },
+ {
+  "id": "T08",
+  "section": "§11-8",
+  "requirement": "无状态、可重复加载，无模块级可变全局变量或缓存",
+  "status": "已完成",
+  "evidence": "模块顶层没有可变变量和缓存。每个会话、每次调用都新建内部算法实例；会话的前后帧历史只在会话对象里。重载后结果相同。"
+ },
+ {
+  "id": "T09",
+  "section": "§11-9",
+  "requirement": "纯函数：不用 Math.random、Date.now、环境变量；同输入同输出",
+  "status": "已完成",
+  "evidence": "检索计数全为 0；时间戳由调用方传入；自检第 6 项验证同输入两次结果相同且不修改输入。"
+ },
+ {
+  "id": "T10",
+  "section": "§11-10",
+  "requirement": "1296 格 @30 Hz 整帧 1 ms 量级；逐格循环不分配数组、不拼字符串、不用 Object.keys",
+  "status": "部分完成",
+  "evidence": "耗时达标：实时逐帧（力、面积、逐格压强全部计算）p50 1.07 ms（坐垫 2,116 格）/ 1.38 ms（靠背 3,200 格），p95 2.01 / 2.40 ms。写法部分符合：逐格循环没有字符串拼接和 Object.keys；但接触区归属与分配沿用上位机源码，循环里有 push 小对象，为保证与上位机逐帧完全一致没有改写。"
+ },
+ {
+  "id": "T11",
+  "section": "§11-11",
+  "requirement": "曲线全域单调递增，runSelfCheck 保留单调性断言",
+  "status": "已完成",
+  "evidence": "自检第 5 项：两条连续拟合曲线在 ADC 0–255、步长 0.1 上严格单调递增。"
+ },
+ {
+  "id": "T12",
+  "section": "§11-12",
+  "requirement": "模块不读写文件，标定表内联",
+  "status": "已完成",
+  "evidence": "没有文件 IO；所有参数内联，可以脱离目录单独加载。"
+ },
+ {
+  "id": "S01",
+  "section": "§13-1",
+  "requirement": "软件端改调 calculateDummyMatrixPressureMap，删除 buildTopAveragePointPressures",
+  "status": "按本项目对应",
+  "evidence": "本项目上位机（V2.7.110）已经是面板与格子同源，没有反推逐格值的函数。新软件接入时调本 JS 的会话接口或逐格接口即可。"
+ },
+ {
+  "id": "S02",
+  "section": "§13-2",
+  "requirement": "软件计算顺序改为先物理点换算再插值",
+  "status": "按本项目对应",
+  "evidence": "同 P01：力和面积在物理点计算；逐格接口提供物理点压强输出。"
+ },
+ {
+  "id": "S03",
+  "section": "§13-3",
+  "requirement": "修掉 runSelfCheck 中 N = 100 的过期断言",
+  "status": "不适用（假人专属）",
+  "evidence": "那是假人 JS 的问题。本 JS 的 7 项自检都对应当前规则，全部通过。"
+ }
+]

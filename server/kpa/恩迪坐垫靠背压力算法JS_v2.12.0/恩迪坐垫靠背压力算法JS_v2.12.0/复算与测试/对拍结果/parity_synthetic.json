@@ -1,0 +1,86 @@
+{
+  "jsFile": "seatBackrestPressure_v2.12.0.js",
+  "jsSha256": "438564a438c7c453483230907ad826f96134ef2897717d354b8be49d9cd066ed",
+  "jsVersion": "2.12.0",
+  "sourceApplicationVersion": "V2.7.110",
+  "scenarios": {
+    "S1_坐垫砝码超量程": {
+      "sensorType": "endi-23x23",
+      "frames": 202,
+      "mismatches": {},
+      "factorKindRegionFrames": {
+        "standard": 141,
+        "over_range": 55
+      },
+      "humanFrames": 0,
+      "overRangeFrames": 55,
+      "humanPeakGainFrames": 0,
+      "maxForceN": 235.49,
+      "maxAreaCm2": 107,
+      "passed": true
+    },
+    "S2_坐垫真人": {
+      "sensorType": "endi-23x23",
+      "frames": 56,
+      "mismatches": {},
+      "factorKindRegionFrames": {
+        "standard": 4,
+        "over_range": 14,
+        "human": 32
+      },
+      "humanFrames": 32,
+      "overRangeFrames": 46,
+      "humanPeakGainFrames": 31,
+      "maxForceN": 1437.2,
+      "maxAreaCm2": 603,
+      "passed": true
+    },
+    "S5_坐垫砝码加真人": {
+      "sensorType": "endi-23x23",
+      "frames": 60,
+      "mismatches": {},
+      "factorKindRegionFrames": {
+        "standard": 62,
+        "over_range": 4,
+        "human": 34
+      },
+      "humanFrames": 34,
+      "overRangeFrames": 38,
+      "humanPeakGainFrames": 33,
+      "maxForceN": 1124.88,
+      "maxAreaCm2": 655.49,
+      "passed": true
+    },
+    "S6_坐垫真人退出防抖": {
+      "sensorType": "endi-23x23",
+      "frames": 76,
+      "mismatches": {},
+      "factorKindRegionFrames": {
+        "human": 52,
+        "over_range": 20
+      },
+      "humanFrames": 52,
+      "overRangeFrames": 72,
+      "humanPeakGainFrames": 55,
+      "maxForceN": 843.44,
+      "maxAreaCm2": 553.5,
+      "passed": true
+    },
+    "B1_靠背砝码超量程": {
+      "sensorType": "new-backrest-32x25",
+      "frames": 202,
+      "mismatches": {},
+      "factorKindRegionFrames": {
+        "standard": 139,
+        "over_range": 57
+      },
+      "humanFrames": 0,
+      "overRangeFrames": 57,
+      "humanPeakGainFrames": 0,
+      "maxForceN": 245.14,
+      "maxAreaCm2": 208,
+      "passed": true
+    }
+  },
+  "passed": true
+}

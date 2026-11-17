@@ -42,6 +42,7 @@ function ChartsAside(props) {
     const getMetricTrendField = () => getChartMetricDisplay(pressureMetricModeRef.current).trendField
     const getMetricAreaTrendField = () => `${getChartMetricDisplay(pressureMetricModeRef.current).valuePrefix}AreaArr`
     const getHistoryMetricMap = (historyData) => {
+        if (pressureMetricModeRef.current === 'pressure') return historyData?.algorithmPressureArr || {}
         const field = `${getChartMetricDisplay(pressureMetricModeRef.current).valuePrefix}Arr`
         if (pressureMetricModeRef.current === 'adc') return historyData?.[field] || {}
         return historyData?.[field] || historyData?.pressArr || {}
@@ -56,11 +57,15 @@ function ChartsAside(props) {
     )
     const getCenterForMode = (entry) => pressureMetricModeRef.current === 'adc' ? entry?.adcCenter : entry?.center
     const roundMetricValue = (value, digits = 1) => {
-        if (value == null) return null
+        if (value == null || value === '' || typeof value === 'boolean') return null
         const numeric = Number(value)
-        return Number.isFinite(numeric) ? Number(numeric.toFixed(digits)) : 0
+        return Number.isFinite(numeric) ? Number(numeric.toFixed(digits)) : null
     }
-    const formatMetricValue = (value, digits = 1) => value == null ? '-' : roundMetricValue(value, digits).toFixed(digits)
+    const formatMetricValue = (value, digits = 1) => {
+        const rounded = roundMetricValue(value, digits)
+        return rounded == null ? '—' : rounded.toFixed(digits)
+    }
+    const formatPointCount = value => Number.isInteger(value) && value >= 0 ? String(value) : '—'
     const roundMetricSeries = (values = []) => Array.isArray(values)
         ? values.map((value) => roundMetricValue(value))
         : []
@@ -607,17 +612,20 @@ function ChartsAside(props) {
                         if (!sysConfig || !sysConfig[key]) continue
                         const widthDistance = sysConfig[key].pointWidthDistance || 1
                         const heightDistance = sysConfig[key].pointHeightDistance || 1
-                        dataObj[key].pointTotal = chartData[key].data[currentPointField] ?? chartData[key].data.areaTotal
+                        const metricData = chartData[key].data
+                        dataObj[key].pointTotal = Object.hasOwn(metricData, 'algorithmActivePointCount')
+                            ? metricData.algorithmActivePointCount
+                            : metricData.pressurePointTotal ?? null
                         const preciseAreaTotal = chartData[key].data.areaUnit === 'cm2'
                             ? chartData[key].data.effectiveAreaCm2
                             : dataObj[key].pointTotal * widthDistance * heightDistance / 100
                         dataObj[key].areaTotal = formatMetricValue(preciseAreaTotal, 2)
-                        dataObj[key].pressAver = formatMetricValue(chartData[key].data.pressAver)
-                        dataObj[key].pressMax = formatMetricValue(chartData[key].data.pressMax)
+                        dataObj[key].pressAver = formatMetricValue(chartData[key].data.pressAver, 2)
+                        dataObj[key].pressMax = formatMetricValue(chartData[key].data.pressMax, 2)
                         dataObj[key].pressTotal = formatMetricValue(chartData[key].data.pressTotal)
                         dataObj[key].total = formatMetricValue(chartData[key].data.pressTotal)
-                        dataObj[key].pressureAver = formatMetricValue(chartData[key].data.pressAver)
-                        dataObj[key].pressureMax = formatMetricValue(chartData[key].data.pressMax)
+                        dataObj[key].pressureAver = formatMetricValue(chartData[key].data.pressAver, 2)
+                        dataObj[key].pressureMax = formatMetricValue(chartData[key].data.pressMax, 2)
                         dataObj[key].pressureTotal = formatMetricValue(chartData[key].data.pressureTotal)
                         dataObj[key].forceAver = formatMetricValue(chartData[key].data.forceAver)
                         dataObj[key].forceMax = formatMetricValue(chartData[key].data.forceMax)
@@ -698,8 +706,8 @@ function ChartsAside(props) {
     const { t, i18n } = useTranslation()
 
     const system = getSysType()
-    const pressDataArr = ['total', 'pressure']
-    const areaDataArr = ['areaTotal']
+    const pressDataArr = ['total', 'pressure', 'maximumPressure']
+    const areaDataArr = ['areaTotal', 'pointTotal']
     const centerDataArr = ['pressureCenter']
 
     /**
@@ -721,10 +729,12 @@ function ChartsAside(props) {
     const getMetricValue = (source, item) => {
         if (item === 'total') return source?.forceTotal
         if (item === 'pressure') return source?.pressureAver
+        if (item === 'maximumPressure') return source?.pressureMax
         return source?.[`${metricPrefix}${item.charAt(0).toUpperCase()}${item.slice(1)}`]
     }
     const getMetricLabel = (item) => {
-        if (item === 'pressure') return String(i18n.language || '').startsWith('en') ? 'Pressure' : '压强'
+        if (item === 'pressure') return String(i18n.language || '').startsWith('en') ? 'Average Pressure' : '平均压强'
+        if (item === 'maximumPressure') return String(i18n.language || '').startsWith('en') ? 'Maximum Pressure' : '最大压强'
         if (item === 'aver') return metricDisplay.labels.average
         if (item === 'max') return metricDisplay.labels.max
         if (chartMetricMode === 'adc') return metricDisplay.labels.total
@@ -732,6 +742,14 @@ function ChartsAside(props) {
         return fixedTotalLabel && fixedTotalLabel !== 'forceTotal'
             ? fixedTotalLabel
             : (String(i18n.language || '').toLowerCase().startsWith('en') ? 'Total Force' : '压力总和')
+    }
+
+    const getMetricDescription = (item) => {
+        const english = String(i18n.language || '').toLowerCase().startsWith('en')
+        if (item === 'pointTotal') return english ? 'Positive-pressure cells reported by the calibration algorithm on its interpolated grid.' : '标定公式输出的有效压强格数（插值格，不是原生传感器数量）'
+        if (item === 'pressure') return english ? 'Mean pressure reported by the calibration algorithm for positive-pressure cells.' : '标定公式输出的平均压强：逐格压强中正值格的算术平均'
+        if (item === 'maximumPressure') return english ? 'Maximum cell pressure reported by the calibration algorithm.' : '标定公式输出的最大逐格压强，不额外乘倍率'
+        return undefined
     }
 
     /**
@@ -761,7 +779,7 @@ function ChartsAside(props) {
         return Object.keys(data).map((a) => {
             if (a !== 't') {
                 return <div className='chartTypeItem' key={a}>
-                    <div className='cirlce' style={{ backgroundColor: colorArr[a] }}></div> {t(a)}
+                    <div className='cirlce' style={{ backgroundColor: getDeviceChartColor(a, colorArr) }}></div> {t(a)}
                 </div>
             }
             return null
@@ -773,8 +791,8 @@ function ChartsAside(props) {
      */
     const renderDataRow = (item, colorArr) => {
         const isPressureMetric = pressDataArr.includes(item)
-        const getDisplayValue = (source) => isPressureMetric ? getMetricValue(source, item) : source?.[item]
-        const getDisplayUnit = () => item === 'total' ? 'N' : item === 'pressure' ? 'kPa' : item === 'areaTotal' ? 'cm²' : ''
+        const getDisplayValue = (source) => item === 'pointTotal' ? formatPointCount(source?.pointTotal) : isPressureMetric ? getMetricValue(source, item) : source?.[item]
+        const getDisplayUnit = () => item === 'total' ? 'N' : ['pressure', 'maximumPressure'].includes(item) ? 'kPa' : item === 'areaTotal' ? 'cm²' : item === 'pointTotal' ? (String(i18n.language || '').startsWith('en') ? 'cells' : '个') : ''
         if (hasBoxStats()) {
             // 多框选模式
             const allBoxRows = []
@@ -782,7 +800,7 @@ function ChartsAside(props) {
                 if (data[key]?.boxStats) {
                     data[key].boxStats.forEach((box, idx) => {
                         const color = box.bgc || SELECT_COLORS[box.colorIndex]
-                        const value = getDisplayValue(box) ?? '-'
+                        const value = getDisplayValue(box) ?? '—'
                         allBoxRows.push(
                             <MetricValue
                                 className="chartTypeItem"
@@ -804,8 +822,8 @@ function ChartsAside(props) {
                 return <MetricValue
                     className="chartTypeItem"
                     key={`${a}-${item}`}
-                    indicatorColor={colorArr[a]}
-                    value={getDisplayValue(data[a]) ?? '-'}
+                    indicatorColor={getDeviceChartColor(a, colorArr)}
+                    value={getDisplayValue(data[a]) ?? '—'}
                     unit={getDisplayUnit()}
                 />
             }
@@ -875,7 +893,7 @@ function ChartsAside(props) {
                     <div ref={myChart1Dom} id="myChart1" className="chartCanvas" style={{ opacity: '0.8' }}></div>
                     {pressDataArr.map((item) => (
                         <div className='chartData' key={item}>
-                            <span className="chartDataLabel">{getMetricLabel(item)}</span>
+                            <span className="chartDataLabel" title={getMetricDescription(item)}>{getMetricLabel(item)}</span>
                             <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>{renderDataRow(item, pressColorArr)}</div>
                         </div>
                     ))}
@@ -889,7 +907,7 @@ function ChartsAside(props) {
                     <div ref={myChart2Dom} id="myChart2" className="chartCanvas" style={{ opacity: '0.8' }}></div>
                     {areaDataArr.map((item) => (
                         <div className='chartData' key={item}>
-                            <span className="chartDataLabel">{t(item)}</span>
+                            <span className="chartDataLabel" title={getMetricDescription(item)}>{item === 'pointTotal' ? (String(i18n.language || '').startsWith('en') ? 'Active cells' : '点数') : t(item)}</span>
                             <div className={`chartTypeContent ${hasSelectionStats ? 'chartTypeContent--selection' : ''}`}>{renderDataRow(item, areaColorArr)}</div>
                         </div>
                     ))}

@@ -1,0 +1,817 @@
+{
+ "generatedBy": "make_tables.cjs",
+ "jsVersion": "2.12.0",
+ "sourceApplicationVersion": "V2.7.110",
+ "stableFramesRule": "每档第 11–20 帧",
+ "blockN": 15.925,
+ "footprintCm2": 63.62,
+ "cellRows": {
+  "endi-23x23": 49800,
+  "new-backrest-32x25": 53600
+ },
+ "levels": [
+  {
+   "sensorType": "endi-23x23",
+   "kind": "force",
+   "blocks": 1,
+   "trueForceN": 15.925,
+   "frames": 620,
+   "meanSignedPct": 0.075,
+   "meanAbsPct": 0.078,
+   "p95AbsPct": 0.157,
+   "maxAbsPct": 0.345,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "force",
+   "blocks": 2,
+   "trueForceN": 31.85,
+   "frames": 620,
+   "meanSignedPct": 0.092,
+   "meanAbsPct": 0.092,
+   "p95AbsPct": 0.22,
+   "maxAbsPct": 0.408,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "force",
+   "blocks": 3,
+   "trueForceN": 47.775,
+   "frames": 620,
+   "meanSignedPct": 0.083,
+   "meanAbsPct": 0.084,
+   "p95AbsPct": 0.199,
+   "maxAbsPct": 0.492,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "force",
+   "blocks": 4,
+   "trueForceN": 63.7,
+   "frames": 620,
+   "meanSignedPct": 0.132,
+   "meanAbsPct": 0.142,
+   "p95AbsPct": 0.455,
+   "maxAbsPct": 5.086,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "force",
+   "blocks": 5,
+   "trueForceN": 79.625,
+   "frames": 620,
+   "meanSignedPct": 0.281,
+   "meanAbsPct": 0.293,
+   "p95AbsPct": 1.25,
+   "maxAbsPct": 8.421,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "force",
+   "blocks": "all",
+   "frames": 3100,
+   "meanSignedPct": 0.133,
+   "meanAbsPct": 0.138,
+   "p95AbsPct": 0.421,
+   "maxAbsPct": 8.421,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "fit",
+   "blocks": 1,
+   "trueForceN": 15.925,
+   "frames": 620,
+   "meanSignedPct": -1.144,
+   "meanAbsPct": 9.776,
+   "p95AbsPct": 23.615,
+   "maxAbsPct": 34.044,
+   "within10PctShare": 0.5565
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "fit",
+   "blocks": 2,
+   "trueForceN": 31.85,
+   "frames": 620,
+   "meanSignedPct": 3.961,
+   "meanAbsPct": 7.598,
+   "p95AbsPct": 17.767,
+   "maxAbsPct": 30.62,
+   "within10PctShare": 0.7419
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "fit",
+   "blocks": 3,
+   "trueForceN": 47.775,
+   "frames": 620,
+   "meanSignedPct": 3.519,
+   "meanAbsPct": 6.123,
+   "p95AbsPct": 14.842,
+   "maxAbsPct": 19.411,
+   "within10PctShare": 0.8484
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "fit",
+   "blocks": 4,
+   "trueForceN": 63.7,
+   "frames": 620,
+   "meanSignedPct": 1.363,
+   "meanAbsPct": 4.844,
+   "p95AbsPct": 10.44,
+   "maxAbsPct": 18.026,
+   "within10PctShare": 0.9355
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "fit",
+   "blocks": 5,
+   "trueForceN": 79.625,
+   "frames": 620,
+   "meanSignedPct": -1.685,
+   "meanAbsPct": 3.886,
+   "p95AbsPct": 9.584,
+   "maxAbsPct": 12.896,
+   "within10PctShare": 0.9661
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "fit",
+   "blocks": "all",
+   "frames": 3100,
+   "meanSignedPct": 1.203,
+   "meanAbsPct": 6.446,
+   "p95AbsPct": 16.174,
+   "maxAbsPct": 34.044,
+   "within10PctShare": 0.8097
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "area",
+   "blocks": 1,
+   "trueForceN": 15.925,
+   "frames": 620,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "area",
+   "blocks": 2,
+   "trueForceN": 31.85,
+   "frames": 620,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "area",
+   "blocks": 3,
+   "trueForceN": 47.775,
+   "frames": 620,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "area",
+   "blocks": 4,
+   "trueForceN": 63.7,
+   "frames": 620,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "area",
+   "blocks": 5,
+   "trueForceN": 79.625,
+   "frames": 620,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "endi-23x23",
+   "kind": "area",
+   "blocks": "all",
+   "frames": 3100,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "force",
+   "blocks": 1,
+   "trueForceN": 15.925,
+   "frames": 880,
+   "meanSignedPct": 0.073,
+   "meanAbsPct": 0.079,
+   "p95AbsPct": 0.157,
+   "maxAbsPct": 0.471,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "force",
+   "blocks": 2,
+   "trueForceN": 31.85,
+   "frames": 880,
+   "meanSignedPct": 0.088,
+   "meanAbsPct": 0.089,
+   "p95AbsPct": 0.22,
+   "maxAbsPct": 0.44,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "force",
+   "blocks": 3,
+   "trueForceN": 47.775,
+   "frames": 880,
+   "meanSignedPct": 0.084,
+   "meanAbsPct": 0.085,
+   "p95AbsPct": 0.199,
+   "maxAbsPct": 0.869,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "force",
+   "blocks": 4,
+   "trueForceN": 63.7,
+   "frames": 880,
+   "meanSignedPct": 0.132,
+   "meanAbsPct": 0.138,
+   "p95AbsPct": 0.345,
+   "maxAbsPct": 3.972,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "force",
+   "blocks": 5,
+   "trueForceN": 79.625,
+   "frames": 880,
+   "meanSignedPct": 0.149,
+   "meanAbsPct": 0.16,
+   "p95AbsPct": 0.534,
+   "maxAbsPct": 4.163,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "force",
+   "blocks": "all",
+   "frames": 4400,
+   "meanSignedPct": 0.105,
+   "meanAbsPct": 0.11,
+   "p95AbsPct": 0.257,
+   "maxAbsPct": 4.163,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "fit",
+   "blocks": 1,
+   "trueForceN": 15.925,
+   "frames": 880,
+   "meanSignedPct": -3.335,
+   "meanAbsPct": 12.116,
+   "p95AbsPct": 28.706,
+   "maxAbsPct": 36.194,
+   "within10PctShare": 0.4011
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "fit",
+   "blocks": 2,
+   "trueForceN": 31.85,
+   "frames": 880,
+   "meanSignedPct": 6.31,
+   "meanAbsPct": 8.445,
+   "p95AbsPct": 20.429,
+   "maxAbsPct": 30.114,
+   "within10PctShare": 0.6489
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "fit",
+   "blocks": 3,
+   "trueForceN": 47.775,
+   "frames": 880,
+   "meanSignedPct": 4.291,
+   "meanAbsPct": 5.39,
+   "p95AbsPct": 12.679,
+   "maxAbsPct": 15.494,
+   "within10PctShare": 0.825
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "fit",
+   "blocks": 4,
+   "trueForceN": 63.7,
+   "frames": 880,
+   "meanSignedPct": 0.295,
+   "meanAbsPct": 3.523,
+   "p95AbsPct": 8.04,
+   "maxAbsPct": 12.933,
+   "within10PctShare": 0.9659
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "fit",
+   "blocks": 5,
+   "trueForceN": 79.625,
+   "frames": 880,
+   "meanSignedPct": -4.293,
+   "meanAbsPct": 4.535,
+   "p95AbsPct": 10.223,
+   "maxAbsPct": 15.521,
+   "within10PctShare": 0.9455
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "fit",
+   "blocks": "all",
+   "frames": 4400,
+   "meanSignedPct": 0.654,
+   "meanAbsPct": 6.802,
+   "p95AbsPct": 18.389,
+   "maxAbsPct": 36.194,
+   "within10PctShare": 0.7573
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "area",
+   "blocks": 1,
+   "trueForceN": 15.925,
+   "frames": 880,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "area",
+   "blocks": 2,
+   "trueForceN": 31.85,
+   "frames": 880,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "area",
+   "blocks": 3,
+   "trueForceN": 47.775,
+   "frames": 880,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "area",
+   "blocks": 4,
+   "trueForceN": 63.7,
+   "frames": 880,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "area",
+   "blocks": 5,
+   "trueForceN": 79.625,
+   "frames": 880,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "kind": "area",
+   "blocks": "all",
+   "frames": 4400,
+   "meanSignedPct": 0,
+   "meanAbsPct": 0,
+   "p95AbsPct": 0,
+   "maxAbsPct": 0,
+   "within10PctShare": 1
+  }
+ ],
+ "files": [
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-02-03.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-03-12.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-04-13.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-05-15.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-06-20.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-07-27.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-08-25.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-09-40.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-11-00.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-12-03.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-13-06.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-14-10.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-15-11.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-16-07.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-17-11.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-19-21.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-20-34.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-21-53.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-24-56.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-26-10.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-27-21.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-28-31.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-29-38.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-30-56.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-32-29.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-33-58.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-35-11.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-36-21.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-37-30.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-38-43.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "endi-23x23",
+   "file": "sensor_capture_2026-11-09T03-39-52.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-43-06.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-44-04.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-46-22.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-47-24.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-48-25.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-49-32.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-51-51.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-52-51.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-54-02.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-55-07.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-56-18.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-57-26.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-58-30.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T05-59-34.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-00-32.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-02-37.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-05-48.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-09-05.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-10-13.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-11-25.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-12-25.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-13-22.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-14-20.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-16-27.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-17-40.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-19-08.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-20-19.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-21-32.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-22-49.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-24-04.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-25-22.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-26-26.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-32-15.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-33-24.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-34-55.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-35-55.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-37-06.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-38-08.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-39-07.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-40-01.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-41-10.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-42-15.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-43-17.csv",
+   "frames": 200
+  },
+  {
+   "sensorType": "new-backrest-32x25",
+   "file": "sensor_capture_2026-11-09T06-44-24.csv",
+   "frames": 200
+  }
+ ]
+}

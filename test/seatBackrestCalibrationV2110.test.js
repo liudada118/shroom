@@ -63,7 +63,7 @@ test('the historical V2.11.0 snapshot stays unchanged while the external calibra
   const config = pressureConfig.loadPressureConfig()
   assert.equal(config.pressureFormulaFile, `${ACTIVE_PROFILE}.js`)
   assert.equal(config.pressureFormulaProfile, ACTIVE_PROFILE)
-  assert.match(FULL_PROCESSING_VERSION, /external-calibration/)
+  assert.match(FULL_PROCESSING_VERSION, /legacy-display-orientation/)
   assert.equal(FULL_ADC_PREPROCESSING, 'native-force-area-raw-adc-display')
   assert.equal(FULL_DISTRIBUTION, 'force-over-area')
 })

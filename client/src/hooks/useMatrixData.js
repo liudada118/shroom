@@ -427,7 +427,7 @@ export function useMatrixData() {
     const full = getFullAlgorithmSummary(renderedMetrics.algorithmMetrics)
     const forceN = full?.forceN ?? null
     const areaCm2 = full?.areaCm2 ?? null
-    const pressureKPa = full?.averagePressureKPa ?? null
+    const pressureKPa = full?.algorithmAveragePressureKPa ?? null
     if (!data[key]) data[key] = {}
     for (const field of ['areaArr', 'pressureAreaArr', 'forceAreaArr', 'pressArr', 'pressureArr', 'forceArr']) {
       if (!Array.isArray(data[key][field])) data[key][field] = []
@@ -447,6 +447,11 @@ export function useMatrixData() {
       pressAver: pressureKPa,
       pressureAver: pressureKPa,
       pressureTotal: pressureKPa,
+      pressMax: full?.maximumPressureDisplayKPa ?? null,
+      pressureMax: full?.maximumPressureDisplayKPa ?? null,
+      algorithmActivePointCount: full?.activePointCount ?? null,
+      pressurePointTotal: full?.activePointCount ?? null,
+      forcePointTotal: full?.activePointCount ?? null,
       algorithmMetricsSource: full?.source || null,
     }
     data[key].boxStats = []
